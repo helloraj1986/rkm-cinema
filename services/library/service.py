@@ -131,23 +131,22 @@ class LibraryService:
         return out
 
     # ------------------------------------------------------------- watch links
-    def watch_links(self, match: Optional[LibraryMatch]) -> dict:
-        """Per-available-item watch links for one (already found) match.
+    def watch_links(self, matches) -> dict:
+        """Build the spec §10 ``watch`` map for one available item.
 
-        Returns a dict of provider -> URL, e.g. ``{"plex": "...", "emby": "..."}``.
+        ``matches`` is a single :class:`LibraryMatch` or an iterable of them
+        (pass ``find_all(...)`` to surface both Plex and Emby links for the same
+        item). Returns ``{provider: {"available": bool, "url": str|None,
+        "error": str|None}}``.
+
+        Failure containment (spec §10): a failed provider watch-link resolver
+        yields ``available: False`` and **never** turns AVAILABLE into
+        NOT_REQUESTED — availability is decided separately by the domain state
+        machine from ``find()``.
         """
-        links: dict = {}
-        if match is None:
-            return links
-        for provider in self._providers:
-            if provider.name != match.provider:
-                continue
-            try:
-                links[provider.name] = provider.build_watch_link(match)
-            except Exception as e:
-                logger.warning("watch link build failed for %s: %s", provider.name, e)
-            break
-        return links
+        from services.library.watch_links import WatchLinkResolver
+
+        return WatchLinkResolver(self).resolve(matches)
 
     def recently_added(self, limit: int = 8, provider: Optional[str] = None) -> list[dict]:
         """Recently added items, optionally from one provider."""

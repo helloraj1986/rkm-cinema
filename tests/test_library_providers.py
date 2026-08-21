@@ -207,7 +207,104 @@ class TestLibraryServiceSingleLibrary:
         svc = LibraryService(providers=[_FakeProvider(match)])
         identity = MediaIdentity(media_type=MediaType.MOVIE, tmdb_id=1)
         links = svc.watch_links(svc.find(identity))
-        assert links == {"fake": {"fake_url": "http://fake"}}
+        assert links == {"fake": {"available": True, "url": "http://fake", "error": None}}
+
+
+class _ArmedProvider(_FakeProvider):
+    """Fake provider whose watch-link builder can succeed, fail or raise."""
+
+    def __init__(self, found, *, name="fake", link_url="http://ok", raise_link=False):
+        super().__init__(found)
+        self.name = name
+        self._link_url = link_url
+        self._raise_link = raise_link
+
+    def build_watch_link(self, match):
+        if self._raise_link:
+            raise RuntimeError("boom")
+        if not self._link_url:
+            return {"fake_url": ""}
+        return {"fake_url": self._link_url}
+
+
+class TestWatchLinkResolver:
+    """Spec §10: WatchLink shape + failure containment (never downgrade AVAILABLE)."""
+
+    def _svc(self, providers):
+        return LibraryService(providers=providers)
+
+    def test_plex_match_produces_valid_available_link(self):
+        from services.library import LibraryMatch
+        match = LibraryMatch("plex", "320819", "Mad Max", 2015)
+        svc = self._svc([_ArmedProvider(match, name="plex", link_url="https://plex/#!/server/sid/details?key=/library/metadata/320819")])
+        links = svc.watch_links(match)
+        assert links["plex"]["available"] is True
+        assert links["plex"]["url"].startswith("https://plex/")
+        assert links["plex"]["error"] is None
+
+    def test_emby_match_produces_valid_link(self):
+        from services.library import LibraryMatch
+        match = LibraryMatch("emby", "ITEM1", "The Bear", 2022)
+        svc = self._svc([_ArmedProvider(match, name="emby", link_url="https://emby/web/index.html#!/item?id=ITEM1&serverId=S1")])
+        links = svc.watch_links(match)
+        assert links["emby"]["available"] is True
+        assert links["emby"]["url"] == "https://emby/web/index.html#!/item?id=ITEM1&serverId=S1"
+
+    def test_both_providers_links_when_both_match(self):
+        from services.library import LibraryMatch
+        plex = LibraryMatch("plex", "1", "Arrival", 2016)
+        emby = LibraryMatch("emby", "ITEM9", "Arrival", 2016)
+        svc = self._svc([
+            _ArmedProvider(plex, name="plex", link_url="https://plex/#!/")
+            , _ArmedProvider(emby, name="emby", link_url="https://emby/#!/"),
+        ])
+        links = svc.watch_links([plex, emby])
+        assert links["plex"]["available"] and links["emby"]["available"]
+        assert links["plex"]["url"].startswith("https://plex/")
+        assert links["emby"]["url"].startswith("https://emby/")
+
+    def test_plex_link_failure_emby_success_emby_only(self):
+        """Spec: 'Plex link failure + Emby success -> Emby button only'."""
+        from services.library import LibraryMatch
+        plex = LibraryMatch("plex", "1", "F", 2000)
+        emby = LibraryMatch("emby", "9", "F", 2000)
+        svc = self._svc([
+            _ArmedProvider(plex, name="plex", link_url="https://plex/#!/", raise_link=True),
+            _ArmedProvider(emby, name="emby", link_url="https://emby/#!/"),
+        ])
+        links = svc.watch_links([plex, emby])
+        assert links["plex"]["available"] is False
+        assert links["plex"]["url"] is None
+        assert "boom" in (links["plex"]["error"] or "")
+        assert links["emby"]["available"] is True
+
+    def test_plex_failure_does_not_downgrade_availability(self):
+        """Spec §10 critical rule: a failed link must NOT flip AVAILABLE->NOT_REQUESTED.
+
+        Availability is resolved independently by the domain state machine from
+        find()/has(). A provider whose link builder raises still reports the item
+        as present (find has a match), and the resolver returns a soft-fail link
+        instead of propagating — so the item REMAINS AVAILABLE.
+        """
+        from domain.enums import MediaType, MediaStatus
+        from domain.identity import MediaIdentity
+        from domain.state_machine import StatusFacts, resolve_status
+        from services.library import LibraryMatch
+        match = LibraryMatch("plex", "320819", "Mad Max: Fury Road", 2015)
+        svc = self._svc([_ArmedProvider(match, name="plex", link_url="http://x", raise_link=True)])
+        identity = MediaIdentity(media_type=MediaType.MOVIE, tmdb_id=76341)
+
+        # 1. Availability is independent of link resolution: item present -> AVAILABLE.
+        assert svc.has(identity) is True
+        status = resolve_status(StatusFacts(media_type=MediaType.MOVIE, in_plex=True))
+        assert status.state is MediaStatus.AVAILABLE
+
+        # 2. Link resolution soft-fails (no raise, available=False) — button hidden only.
+        links = svc.watch_links(match)
+        assert links["plex"]["available"] is False
+        assert "boom" in (links["plex"]["error"] or "")
+        # Regardless of the link failure, the media state is still AVAILABLE.
+        assert status.state is MediaStatus.AVAILABLE
 
 
 if __name__ == "__main__":

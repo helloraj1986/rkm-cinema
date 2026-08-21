@@ -9,6 +9,7 @@ from services.library.service import (
     LibraryMatch,
     LibraryService,
 )
+from services.library.watch_links import WatchLink, WatchLinkResolver
 from services.library.plex import PlexLibraryProvider
 from services.library.emby import EmbyLibraryProvider
 
@@ -16,6 +17,8 @@ __all__ = [
     "LibraryProvider",
     "LibraryMatch",
     "LibraryService",
+    "WatchLink",
+    "WatchLinkResolver",
     "PlexLibraryProvider",
     "EmbyLibraryProvider",
 ]

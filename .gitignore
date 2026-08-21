@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Secrets & env — NEVER commit API keys/tokens
+.env
+.env.*
+!.env.example
+*.env
+!*.env.example
+
+# Test / build caches
+.pytest_cache/
+.coverage
+htmlcov/
+build/
+dist/
+
+# Runtime data / state — watchlist data + dashboard output live outside the repo
+watchlist.json
+dashboard-data.json
+index.html
+dashboard.html
+*.log
+*.tmp
+nohup.out
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Container
+docker-compose.override.yml

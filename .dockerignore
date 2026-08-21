@@ -1,0 +1,11 @@
+# build context
+node_modules
+__pycache__
+*.pyc
+.git
+.venv
+venv
+rkm_shots
+*.log
+*.tmp
+.DS_Store

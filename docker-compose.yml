@@ -1,0 +1,43 @@
+services:
+  # --- RKM Cinema API (FastAPI): holds all *arr / TMDB / Plex secrets server-side ---
+  api:
+    build: .
+    image: rkm-cinema-api:latest
+    container_name: rkm-cinema-api
+    restart: unless-stopped
+    env_file:
+      # Canonical secrets live at the workspace root (D:\hermes_agent\hermes-workspace\.env).
+      # media/.env is a WSL symlink to it — Docker Desktop CANNOT follow WSL symlinks,
+      # so point env_file at the real file (../../.env from this compose dir).
+      - ../../.env
+    expose:
+      - "8000"
+    volumes:
+      - ../watchlist.json:/app/watchlist.json:ro
+    networks:
+      - rkm
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health').status==200 else 1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  # --- Static web UI (nginx) + reverse proxy to the API on the same origin ---
+  web:
+    image: nginx:alpine
+    container_name: rkm-watchlist
+    restart: unless-stopped
+    ports:
+      - "0.0.0.0:8123:80"
+    volumes:
+      - ./:/usr/share/nginx/html:ro
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - api
+    networks:
+      - rkm
+
+networks:
+  rkm:
+    driver: bridge

@@ -137,7 +137,15 @@ class WatchlistData:
 class WatchlistService:
     """Watchlist persistence with atomic writes and state management."""
 
-    def __init__(self, path: str = "/workspace/media/watchlist.json"):
+    def __init__(self, path: str | None = None):
+        # Resolve the watchlist path that actually exists: in the Docker
+        # container it is mounted at /app/watchlist.json; in the dev sandbox it
+        # lives one level above the repo at /workspace/media/watchlist.json.
+        if path is None:
+            if Path("/app/watchlist.json").exists():
+                path = "/app/watchlist.json"
+            else:
+                path = "/workspace/media/watchlist.json"
         self.path = Path(path)
         self._cache: Optional[WatchlistData] = None
         self._cache_mtime: float = 0

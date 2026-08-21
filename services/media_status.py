@@ -84,6 +84,7 @@ class MediaStatusService:
             facts.plex_links = WatchLinks(
                 plex_available=bool(self._plex.plex_url_for(title, year, is_series)),
                 plex_url=self._plex.plex_url_for(title, year, is_series),
+                plex_key=self._plex.plex_key_for(title, year, is_series),
                 emby_available=bool(self._plex.emby_url_for(title)),
                 emby_url=self._plex.emby_url_for(title),
             )

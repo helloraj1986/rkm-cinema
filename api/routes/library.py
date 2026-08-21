@@ -7,6 +7,20 @@ from services import PlexService
 router = APIRouter()
 
 
+def _plex_browser_base(cfg) -> str:
+    """Browser-reachable Plex base (Tailscale or PLEX_BROWSER_URL), never app.plex.tv."""
+    if cfg.PLEX_BROWSER_URL:
+        return cfg.PLEX_BROWSER_URL.rstrip("/")
+    return "https://rkm-hp.tail8d5e8.ts.net:32400"
+
+
+def _emby_browser_base(cfg) -> str:
+    """Browser-reachable Emby base, defaulting to the Tailscale host."""
+    if cfg.EMBY_BROWSER_URL:
+        return cfg.EMBY_BROWSER_URL.rstrip("/")
+    return "https://rkm-hp.tail8d5e8.ts.net:8096"
+
+
 @router.get("/library", response_model=LibraryResponse)
 def get_library():
     """Plex first, Emby/Jellyfin fallback."""
@@ -21,8 +35,8 @@ def get_library():
             return LibraryResponse(
                 provider="plex", available=True, counts=counts,
                 recent=recent, server="Plex",
-                urls={"plex": "https://app.plex.tv/desktop",
-                      "emby": "https://rkm-hp.tail8d5e8.ts.net:8096/web/index.html"}
+                urls={"plex": f"{_plex_browser_base(cfg)}/web/index.html",
+                      "emby": f"{_emby_browser_base(cfg)}/web/index.html"}
             )
         except Exception:
             pass
@@ -40,7 +54,7 @@ def get_library():
                 provider="emby", available=True,
                 counts={"movie": d.get("MovieCount", 0), "show": d.get("SeriesCount", 0)},
                 recent=[], server="Emby",
-                urls={"plex": "", "emby": "https://rkm-hp.tail8d5e8.ts.net:8096/web/index.html"}
+                urls={"plex": "", "emby": f"{_emby_browser_base(cfg)}/web/index.html"}
             )
         except Exception:
             pass
@@ -48,6 +62,6 @@ def get_library():
     return LibraryResponse(
         provider=None, available=False,
         counts={"movie": 0, "show": 0}, recent=[], server=None,
-        urls={"plex": "https://app.plex.tv/desktop",
-              "emby": "https://rkm-hp.tail8d5e8.ts.net:8096/web/index.html"}
+        urls={"plex": f"{_plex_browser_base(cfg)}/web/index.html",
+              "emby": f"{_emby_browser_base(cfg)}/web/index.html"}
     )

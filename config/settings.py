@@ -28,6 +28,10 @@ class Config:
     EMBY_API_KEY: Optional[str]
     YOUTUBE_API_KEY: Optional[str]
     QBITTORRENT_URL: str
+    # Browser-reachable (Tailscale MagicDNS) endpoints for deep links. `app.plex.tv`
+    # cloud links fail to auto-open; these point at the local server's own web UI.
+    PLEX_BROWSER_URL: Optional[str]
+    EMBY_BROWSER_URL: Optional[str]
 
     # --- Quality profile overrides (optional) ---
     RADARR_QUALITY_PROFILE_ID: Optional[int]
@@ -84,6 +88,8 @@ class Config:
         self.EMBY_API_KEY = env.get("EMBY_API_KEY") or None
         self.YOUTUBE_API_KEY = env.get("YOUTUBE_API_KEY") or None
         self.QBITTORRENT_URL = self._normalize_url(env.get("QBITTORRENT_URL", f"http://{self.MEDIA_HOST}:1701"))
+        self.PLEX_BROWSER_URL = self._normalize_url(env.get("PLEX_BROWSER_URL") or "") or None
+        self.EMBY_BROWSER_URL = self._normalize_url(env.get("EMBY_BROWSER_URL") or "") or None
 
         # Optional quality profile overrides
         radarr_qp = env.get("RADARR_QUALITY_PROFILE_ID")
@@ -101,6 +107,7 @@ class Config:
             "PLEX_URL", "PLEX_TOKEN", "TMDB_API_KEY", "TVDB_API_KEY", "JELLYFIN_URL",
             "JELLYFIN_API_KEY", "PROWLARR_URL", "PROWLARR_API_KEY", "QBITTORRENT_URL",
             "RADARR_QUALITY_PROFILE_ID", "SONARR_QUALITY_PROFILE_ID",
+            "PLEX_BROWSER_URL", "EMBY_BROWSER_URL",
         }
 
     def validate_required(self) -> list[str]:

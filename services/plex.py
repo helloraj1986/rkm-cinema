@@ -175,6 +175,11 @@ class PlexService(BaseService):
                 return it
         return None
 
+    def plex_key_for(self, title: str, year: Optional[int] = None, is_series: bool = False) -> str:
+        """Return the numeric Plex ratingKey for a title, or '' if not found."""
+        item = self.find_item(title, year, is_series)
+        return str(item.rating_key) if item and item.rating_key else ""
+
     def server_id(self) -> str:
         """Plex machineIdentifier used in app.plex.tv deep links (cached)."""
         if getattr(self, "_server_id_value", None):
@@ -190,20 +195,49 @@ class PlexService(BaseService):
         except Exception:
             return ""
 
+    def _plex_browser_base(self) -> str:
+        """Browser-reachable Plex base for deep links.
+
+        Prefer PLEX_BROWSER_URL (Tailscale MagicDNS HTTPS) when configured; else
+        default to the documented Tailscale host. PLEX_URL is the LAN/API address
+        the backend uses to reach Plex and is NOT browser-reachable, so it is only
+        used as a last-resort fallback.
+        """
+        if self.config.PLEX_BROWSER_URL:
+            return self.config.PLEX_BROWSER_URL.rstrip("/")
+        if self.config.PLEX_URL and "tail8d5e8.ts.net" in self.config.PLEX_URL:
+            return self.config.PLEX_URL.rstrip("/")
+        return "https://rkm-hp.tail8d5e8.ts.net:32400"
+
     def plex_url_for(self, title: str, year: Optional[int] = None, is_series: bool = False) -> str:
-        """Build a working app.plex.tv deep link (machineIdentifier + /library/metadata/<key>)."""
-        import urllib.parse as _up
-        item = self.find_item(title, year, is_series)
-        sid = self.server_id()
-        if item and item.rating_key and sid:
-            key = _up.quote(f"/library/metadata/{item.rating_key}", safe="")
-            return f"https://app.plex.tv/desktop/#!/server/{sid}/details?key={key}"
-        q = _up.quote(f"{title} {year or ''}".strip())
-        return f"https://app.plex.tv/search?query={q}"
+        """Build a working deep link into the Plex server's OWN web UI.
+
+        The old approach pointed at app.plex.tv (Plex's cloud app) which needs
+        account login + remote relay and rarely auto-opens the item. Linking to
+        the local server's /web/index.html over its browser-reachable (Tailscale)
+        host — exactly how the Emby links work — opens the item directly with no
+        relay. Uses the RAW /library/metadata/<key> path (not %2F-encoded, which
+        breaks Plex's hash router).
+        """
+        base = self._plex_browser_base()
+        item = self.find_item(title, year, is_series)  # cached scan
+        sid = self.server_id()                            # cached machineIdentifier
+        if base and item and item.rating_key and sid:
+            return f"{base}/web/index.html#!/server/{sid}/details?key=/library/metadata/{item.rating_key}"
+        q = urllib.parse.quote(f"{title} {year or ''}".strip())
+        return f"{base}/web/search?query={q}"
 
     def emby_url_for(self, title: str) -> str:
         import urllib.parse as _up
-        base = "https://rkm-hp.tail8d5e8.ts.net:8096/web/index.html"
+        # Browser-reachable Emby base: prefer EMBY_BROWSER_URL (Tailscale HTTPS);
+        # EMBY_URL is the LAN/API address and is not browser-reachable.
+        if self.config.EMBY_BROWSER_URL:
+            base = self.config.EMBY_BROWSER_URL.rstrip("/")
+        elif self.config.EMBY_URL and "tail8d5e8.ts.net" in self.config.EMBY_URL:
+            base = self.config.EMBY_URL.rstrip("/")
+        else:
+            base = "https://rkm-hp.tail8d5e8.ts.net:8096"
+        base += "/web/index.html"
         item_id = self._emby_item_id(str(title or ""))
         sid = self._emby_server_id()
         if item_id and sid:

@@ -25,6 +25,7 @@ class WatchLinks:
 
     plex_available: bool = False
     plex_url: str = ""
+    plex_key: str = ""            # numeric Plex ratingKey for the item
     emby_available: bool = False
     emby_url: str = ""
 
@@ -106,7 +107,7 @@ def resolve_status(facts: StatusFacts) -> StatusResult:
             detail="Available in Plex",
             plexUrl=facts.plex_links.plex_url,
             embyUrl=facts.plex_links.emby_url,
-            plexKey=facts.plex_links.plex_url or None,
+            plexKey=facts.plex_links.plex_key or None,
         )
 
     # 2. *arr reports a file on disk (not yet surfaced in Plex).

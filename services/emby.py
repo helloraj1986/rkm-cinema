@@ -36,8 +36,8 @@ class EmbyItem:
 class EmbyService(BaseService):
     """Emby integration - library and playback information."""
 
-    def __init__(self):
-        super().__init__("emby")
+    def __init__(self, *, config=None, http=None):
+        super().__init__("emby", config=config, http=http)
         self._item_cache: dict = {}
         self._item_cache_expiry: float = 0
 

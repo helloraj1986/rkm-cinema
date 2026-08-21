@@ -54,14 +54,15 @@ class RecommendationService:
     FOREIGN_IMDB_GATE = 8.0
     FOREIGN_RT_GATE = 85
 
-    def __init__(self):
-        self.config = get_config()
-        self.http = get_http_client()
-        self.plex = PlexService()
-        self.trailers = TrailerService()
-        self.tmdb = TMDBService()
-        self.youtube = YouTubeService()
-        self.watchlist = WatchlistService()
+    def __init__(self, *, config=None, http=None,
+                 plex=None, trailers=None, tmdb=None, youtube=None, watchlist=None):
+        self.config = config if config is not None else get_config()
+        self.http = http if http is not None else get_http_client()
+        self.plex = plex if plex is not None else PlexService(config=self.config, http=self.http)
+        self.trailers = trailers if trailers is not None else TrailerService(config=self.config, http=self.http)
+        self.tmdb = tmdb if tmdb is not None else TMDBService(config=self.config, http=self.http)
+        self.youtube = youtube if youtube is not None else YouTubeService(config=self.config)
+        self.watchlist = watchlist if watchlist is not None else WatchlistService()
 
     def get_current_category(self) -> str:
         """Get current rotation category."""

@@ -38,8 +38,8 @@ class YouTubeService:
     # Title indicators that it's a real trailer.
     TRAILER_INDICATORS = ("official trailer", "trailer", "teaser trailer", "official teaser")
 
-    def __init__(self):
-        self.config = get_config()
+    def __init__(self, *, config=None):
+        self.config = config if config is not None else get_config()
 
     # ------------------------------------------------------------------ public API
     def has_youtube(self) -> bool:

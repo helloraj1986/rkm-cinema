@@ -1,19 +1,29 @@
-"""Base service class with common patterns."""
+"""Base service class with common patterns.
+
+Services are designed for dependency injection: ``config`` and ``http`` are
+injectable at construction so unit tests can pass fakes without ever touching
+the real LAN. When omitted they default to the process-wide singletons, which
+is what the running app uses.
+"""
+from __future__ import annotations
+
 import logging
 from abc import ABC
 from typing import Any, Optional
-from config.settings import get_config
-from core.http_client import get_http_client, HTTPError, NetworkError
+
+from config.settings import Config, get_config
+from core.http_client import HTTPClient, get_http_client, HTTPError, NetworkError
 from core.exceptions import ServiceUnavailableError
 
 
 class BaseService(ABC):
     """Base class for all external service integrations."""
 
-    def __init__(self, service_name: str):
+    def __init__(self, service_name: str, *, config: Optional[Config] = None,
+                 http: Optional[HTTPClient] = None):
         self.service_name = service_name
-        self.config = get_config()
-        self.http = get_http_client()
+        self.config = config if config is not None else get_config()
+        self.http = http if http is not None else get_http_client()
         self.logger = logging.getLogger(f"rkm.{service_name}")
 
     def _handle_http_error(self, operation: str, error: Exception) -> None:

@@ -17,9 +17,9 @@ class TMDBService:
     BASE_URL = "https://api.themoviedb.org/3"
     IMAGE_BASE_URL = "https://image.tmdb.org/t/p"
 
-    def __init__(self):
-        self.config = get_config()
-        self.http = get_http_client()
+    def __init__(self, *, config=None, http=None):
+        self.config = config if config is not None else get_config()
+        self.http = http if http is not None else get_http_client()
 
     def _request(self, endpoint: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Make a request to TMDB API."""

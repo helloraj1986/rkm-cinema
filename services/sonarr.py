@@ -64,8 +64,8 @@ class AddResult:
 class SonarrService(BaseService):
     """Sonarr integration for TV series management."""
 
-    def __init__(self):
-        super().__init__("sonarr")
+    def __init__(self, *, config=None, http=None):
+        super().__init__("sonarr", config=config, http=http)
         self._series_cache: list = []
         self._series_cache_expiry: float = 0
         self._queue_cache: list = []
@@ -292,7 +292,8 @@ class SonarrService(BaseService):
             if len(candidates) == 1:
                 lookup = candidates[0]
             elif len(candidates) > 1:
-                # Ambiguous -> try to pick exact year/title match
+                # Ambiguous -> pick an exact year (or exact title) match if
+                # one exists, else return AMBIGUOUS rather than guessing.
                 ltitle = str(title).strip().lower()
                 exact = None
                 for c in candidates:
@@ -301,13 +302,19 @@ class SonarrService(BaseService):
                         break
                 if exact is None and ltitle:
                     exact = next((c for c in candidates if c.title.strip().lower() == ltitle), None)
-                lookup = exact or (candidates[0] if candidates else None)
+                if exact:
+                    lookup = exact
+                else:
+                    msg = ("Multiple Sonarr matches — pick one: " +
+                           "; ".join(f"{c.title} ({c.year}, tvdb:{c.tvdbId})" for c in candidates[:10]))
+                    return AddResult(False, None, msg, "ambiguous")
 
         if not lookup or not lookup.tvdbId:
             msg = f"No Sonarr match for imdb:{imdb_id}"
             if candidates:
                 msg = ("Multiple Sonarr matches — pick one: " +
                        "; ".join(f"{c.title} ({c.year}, tvdb:{c.tvdbId})" for c in candidates[:10]))
+                return AddResult(False, None, msg, "ambiguous")
             return AddResult(False, None, msg, "unavailable")
 
         tvdb_id = lookup.tvdbId
@@ -319,6 +326,7 @@ class SonarrService(BaseService):
 
         # Get quality profile
         profiles = self.get_quality_profiles()
+        qp = None
         if quality_profile_id:
             qp = next((p for p in profiles if p.id == quality_profile_id), None)
             if not qp:
@@ -327,8 +335,8 @@ class SonarrService(BaseService):
             qp_id = self.config.SONARR_QUALITY_PROFILE_ID
             if qp_id:
                 qp = next((p for p in profiles if p.id == qp_id), None)
-            if not qp:
-                qp = profiles[0] if profiles else None
+        if not qp:
+            qp = profiles[0] if profiles else None
         if not qp:
             return AddResult(False, None, "Sonarr has no quality profiles configured", "unavailable")
 

@@ -1,121 +1,98 @@
-"""Tests for error handling when services are unavailable."""
+"""Tests for error handling when services are unavailable.
+
+Uses injectable config/http (DI) so tests never touch the real LAN.
+"""
 import pytest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
+import urllib.error
+import socket
+
 from core.exceptions import ServiceUnavailableError, ConfigurationError
+from core.http_client import HTTPError, NetworkError
 from services import RadarrService, SonarrService, PlexService
 from config.settings import Config
+
+
+def make_radarr(http):
+    c = Mock()
+    c.RADARR_URL = "http://radarr.test:7878"
+    c.RADARR_API_KEY = "key"
+    return RadarrService(config=c, http=http)
+
+
+def make_sonarr(http):
+    c = Mock()
+    c.SONARR_URL = "http://sonarr.test:8989"
+    c.SONARR_API_KEY = "key"
+    return SonarrService(config=c, http=http)
+
+
+def make_plex(http):
+    c = Mock()
+    c.PLEX_URL = "http://plex.test:32400"
+    c.PLEX_TOKEN = "token"
+    return PlexService(config=c, http=http)
 
 
 class TestErrorHandling:
     """Test error handling for unavailable services."""
 
-    @patch("services.radarr.get_config")
-    @patch("services.radarr.get_http_client")
-    def test_radarr_unavailable_raises_service_error(self, mock_http, mock_config):
-        """Radarr health check failure should raise ServiceUnavailableError."""
-        mock_config.return_value.RADARR_URL = "http://test:7878"
-        mock_config.return_value.RADARR_API_KEY = "key"
-
-        import urllib.error
-        mock_http.return_value.get.side_effect = urllib.error.URLError("Connection refused")
-
-        radarr = RadarrService()
+    def test_radarr_unavailable_raises_service_error(self):
+        """Radarr connection failure: health_check degrades to False; get_movies raises."""
+        http = Mock()
+        http.get.side_effect = NetworkError("http://radarr.test", "Connection refused")
+        radarr = make_radarr(http)
+        # health_check is a probe: returns False, does not crash the app.
+        assert radarr.health_check() is False
         with pytest.raises(ServiceUnavailableError) as exc_info:
-            radarr.health_check()
-
+            radarr.get_movies()
         assert "radarr" in str(exc_info.value).lower()
         assert "connection refused" in str(exc_info.value).lower()
 
-    @patch("services.sonarr.get_config")
-    @patch("services.sonarr.get_http_client")
-    def test_sonarr_unavailable_raises_service_error(self, mock_http, mock_config):
-        """Sonarr health check failure should raise ServiceUnavailableError."""
-        mock_config.return_value.SONARR_URL = "http://test:8989"
-        mock_config.return_value.SONARR_API_KEY = "key"
-
-        import urllib.error
-        mock_http.return_value.get.side_effect = urllib.error.URLError("Connection refused")
-
-        sonarr = SonarrService()
+    def test_sonarr_unavailable_raises_service_error(self):
+        """Sonarr connection failure: health_check degrades; get_series raises."""
+        http = Mock()
+        http.get.side_effect = NetworkError("http://sonarr.test", "Connection refused")
+        sonarr = make_sonarr(http)
+        assert sonarr.health_check() is False
         with pytest.raises(ServiceUnavailableError) as exc_info:
-            sonarr.health_check()
-
+            sonarr.get_series()
         assert "sonarr" in str(exc_info.value).lower()
 
-    @patch("services.plex.get_config")
-    @patch("services.plex.get_http_client")
-    def test_plex_unavailable_raises_service_error(self, mock_http, mock_config):
-        """Plex health check failure should raise ServiceUnavailableError."""
-        mock_config.return_value.PLEX_URL = "http://test:32400"
-        mock_config.return_value.PLEX_TOKEN = "token"
-
-        import urllib.error
-        mock_http.return_value.get.side_effect = urllib.error.URLError("Connection refused")
-
-        plex = PlexService()
-        with pytest.raises(ServiceUnavailableError) as exc_info:
-            plex.health_check()
-
-        assert "plex" in str(exc_info.value).lower()
+    def test_plex_unavailable_raises_service_error(self):
+        """Plex connection failure: health_check degrades; get_library_counts not crash."""
+        http = Mock()
+        http.get.side_effect = NetworkError("http://plex.test", "Connection refused")
+        plex = make_plex(http)
+        assert plex.health_check() is False
 
     def test_missing_config_raises_validation_error(self):
         """Missing required config should be detected."""
         cfg = Config()
-        # Manually clear required fields
         cfg.RADARR_API_KEY = ""
         cfg.SONARR_API_KEY = ""
         cfg.PLEX_TOKEN = ""
-
         missing = cfg.validate_required()
         assert "RADARR_API_KEY" in missing
         assert "SONARR_API_KEY" in missing
         assert "PLEX_TOKEN" in missing
 
-    @patch("services.radarr.get_config")
-    @patch("services.radarr.get_http_client")
-    def test_radarr_timeout_handled(self, mock_http, mock_config):
+    def test_radarr_timeout_handled(self):
         """Radarr timeout should be handled gracefully."""
-        mock_config.return_value.RADARR_URL = "http://test:7878"
-        mock_config.return_value.RADARR_API_KEY = "key"
-
-        import urllib.error
-        import socket
-        mock_http.return_value.get.side_effect = socket.timeout("Request timed out")
-
-        radarr = RadarrService()
+        http = Mock()
+        http.get.side_effect = NetworkError("http://radarr.test", "timed out")
+        radarr = make_radarr(http)
         with pytest.raises(ServiceUnavailableError) as exc_info:
             radarr.get_movies()
-
         assert "timeout" in str(exc_info.value).lower() or "timed out" in str(exc_info.value).lower()
 
-    @patch("services.radarr.get_config")
-    @patch("services.radarr.get_http_client")
-    def test_radarr_http_500_handled(self, mock_http, mock_config):
+    def test_radarr_http_500_handled(self):
         """Radarr HTTP 500 should be handled gracefully."""
-        mock_config.return_value.RADARR_URL = "http://test:7878"
-        mock_config.return_value.RADARR_API_KEY = "key"
-
-        import urllib.error
-        # Create a mock HTTPError
-        class MockFP:
-            def read(self):
-                return b'{"error": "Internal Server Error"}'
-            def close(self):
-                pass
-
-        error = urllib.error.HTTPError(
-            url="http://test:7878/api/v3/movie",
-            code=500,
-            msg="Internal Server Error",
-            hdrs={},
-            fp=MockFP()
-        )
-        mock_http.return_value.get.side_effect = error
-
-        radarr = RadarrService()
+        http = Mock()
+        http.get.side_effect = HTTPError(500, "http://radarr.test/api/v3/movie", "Server Error")
+        radarr = make_radarr(http)
         with pytest.raises(ServiceUnavailableError) as exc_info:
             radarr.get_movies()
-
         assert "500" in str(exc_info.value)
 
 

@@ -57,8 +57,8 @@ class AddResult:
 class RadarrService(BaseService):
     """Radarr integration for movie management."""
 
-    def __init__(self):
-        super().__init__("radarr")
+    def __init__(self, *, config=None, http=None):
+        super().__init__("radarr", config=config, http=http)
         self._movies_cache: list = []
         self._movies_cache_expiry: float = 0
         self._queue_cache: list = []
@@ -255,19 +255,27 @@ class RadarrService(BaseService):
             if len(candidates) == 1:
                 lookup = candidates[0]
             elif len(candidates) > 1:
-                # Ambiguous -> try to pick exact year/title match
+                # Ambiguous -> pick an exact year match if one exists, else
+                # return AMBIGUOUS rather than silently guessing (spec: never
+                # silently select a potentially incorrect movie).
                 exact = None
                 for c in candidates:
                     if year and c.year == year:
                         exact = c
                         break
-                lookup = exact or candidates[0]
+                if exact:
+                    lookup = exact
+                else:
+                    msg = ("Multiple Radarr matches — pick one: " +
+                           "; ".join(f"{c.title} ({c.year}, tmdb:{c.tmdbId})" for c in candidates[:10]))
+                    return AddResult(False, None, msg, "ambiguous")
 
         if not lookup or not lookup.tmdbId:
             msg = f"No Radarr match for imdb:{imdb_id}"
             if candidates:
                 msg = ("Multiple Radarr matches — pick one: " +
                        "; ".join(f"{c.title} ({c.year}, tmdb:{c.tmdbId})" for c in candidates[:10]))
+                return AddResult(False, None, msg, "ambiguous")
             return AddResult(False, None, msg, "unavailable")
 
         # Check existing
@@ -277,6 +285,7 @@ class RadarrService(BaseService):
 
         # Get quality profile
         profiles = self.get_quality_profiles()
+        qp = None
         if quality_profile_id:
             qp = next((p for p in profiles if p.id == quality_profile_id), None)
             if not qp:
@@ -286,8 +295,8 @@ class RadarrService(BaseService):
             qp_id = self.config.RADARR_QUALITY_PROFILE_ID
             if qp_id:
                 qp = next((p for p in profiles if p.id == qp_id), None)
-            if not qp:
-                qp = profiles[0] if profiles else None
+        if not qp:
+            qp = profiles[0] if profiles else None
         if not qp:
             return AddResult(False, None, "Radarr has no quality profiles configured", "unavailable")
 

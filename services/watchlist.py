@@ -287,16 +287,39 @@ class WatchlistService:
         return False
 
     def update_status(self, imdb_id: str, state: str, detail: str = "", progress: int = 0) -> bool:
-        """Update entry status with validation."""
+        """Update entry status with validation.
+
+        Transitioning an entry to ``recommended`` also moves it from pending
+        into the recommended (completed-history) list — the lifecycle terminal.
+        """
         if state not in VALID_STATES:
             raise WatchlistError(f"Invalid state: {state}")
 
         data = self.load()
-        for entry in data.pending + data.recommended:
+        for i, entry in enumerate(data.pending):
             if entry.imdbId == imdb_id:
                 # Validate transition
                 if state not in VALID_TRANSITIONS.get(entry.state, set()):
                     raise StateTransitionError(entry.state, state, imdb_id)
+
+                if state == "recommended":
+                    # Move to completed history.
+                    entry.state = state
+                    entry.detail = detail
+                    entry.progress = progress or 100
+                    entry.completed = entry.completed or datetime.now().date().isoformat()
+                    data.recommended.append(entry)
+                    data.pending.pop(i)
+                else:
+                    entry.state = state
+                    entry.detail = detail
+                    entry.progress = progress
+                self.save(data)
+                return True
+
+        # Also allow updating entries already in recommended history.
+        for entry in data.recommended:
+            if entry.imdbId == imdb_id:
                 entry.state = state
                 entry.detail = detail
                 entry.progress = progress

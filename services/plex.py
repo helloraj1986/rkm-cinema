@@ -57,8 +57,8 @@ class PlexShow:
 class PlexService(BaseService):
     """Plex integration - source of truth for media ownership."""
 
-    def __init__(self):
-        super().__init__("plex")
+    def __init__(self, *, config=None, http=None):
+        super().__init__("plex", config=config, http=http)
         self._section_cache: dict = {}
         self._section_cache_expiry: float = 0
         self._library_cache: dict = {}

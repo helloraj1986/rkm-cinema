@@ -1,150 +1,122 @@
-"""Tests for download status detection."""
+"""Tests for download status detection (uses injectable DI, no real LAN)."""
+import os
 import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock
+
 from services import RadarrService, SonarrService, PlexService, WatchlistService
 from services.watchlist import WatchlistEntry
+from services.media_status import MediaStatusService
+from domain.state_machine import StatusFacts, WatchLinks, resolve_status
+from domain.enums import MediaStatus
+
+
+def remove_tmp(path):
+    if os.path.exists(path):
+        os.remove(path)
 
 
 class TestDownloadStatus:
     """Test download status computation."""
 
-    def setup_method(self):
-        self.wl = WatchlistService("/tmp/test_watchlist_status.json")
-        import os
-        if os.path.exists("/tmp/test_watchlist_status.json"):
-            os.remove("/tmp/test_watchlist_status.json")
-
-    def teardown_method(self):
-        import os
-        if os.path.exists("/tmp/test_watchlist_status.json"):
-            os.remove("/tmp/test_watchlist_status.json")
-
-    @patch("services.radarr.get_config")
-    @patch("services.radarr.get_http_client")
-    @patch("services.plex.get_config")
-    @patch("services.plex.get_http_client")
-    def test_status_available_when_radarr_hasfile_and_plex_has_it(self, mock_plex_http, mock_plex_config, mock_radarr_http, mock_radarr_config):
-        """Status should be 'available' when Radarr hasFile AND Plex has it."""
-        # Setup Radarr
-        mock_radarr_config.return_value.RADARR_URL = "http://test:7878"
-        mock_radarr_config.return_value.RADARR_API_KEY = "key"
-        mock_radarr_http.return_value.get.side_effect = [
-            [{"id": 1, "tmdbId": 603, "title": "The Matrix", "year": 1999, "hasFile": True, "monitored": True, "qualityProfileId": 1}],  # movies
-            [],  # queue
+    def test_radarr_has_file_detection(self):
+        """Radarr has_file detection from injected HTTP payload."""
+        http = Mock()
+        http.get.return_value = [
+            {"id": 1, "tmdbId": 603, "title": "The Matrix", "year": 1999,
+             "hasFile": True, "monitored": True, "qualityProfileId": 1},
         ]
+        radarr = RadarrService(config=Mock(RADARR_URL="http://r:7878", RADARR_API_KEY="k",
+                                           RADARR_QUALITY_PROFILE_ID=None), http=http)
+        assert radarr.has_file(603) is True
+        assert radarr.has_file(999) is False
 
-        # Setup Plex
-        mock_plex_config.return_value.PLEX_URL = "http://test:32400"
-        mock_plex_config.return_value.PLEX_TOKEN = "token"
-        mock_plex_http.return_value.get.side_effect = [
-            {"MediaContainer": {"Directory": [{"key": "1", "type": "movie"}]}},
-            {"MediaContainer": {"Metadata": [{"title": "The Matrix", "year": 1999, "ratingKey": "123", "type": "movie"}]}},
+    def test_sonarr_has_episodes_detection(self):
+        """Sonarr has_episodes detection from injected HTTP payload."""
+        http = Mock()
+        http.get.side_effect = [
+            [  # first call: series with 62 episodes
+                {"id": 1, "tvdbId": 81189, "title": "Breaking Bad", "year": 2008,
+                 "monitored": True, "qualityProfileId": 1, "languageProfileId": 1,
+                 "statistics": {"episodeFileCount": 62}},
+            ],
+            [  # second call: refreshed series with 0 episodes
+                {"id": 1, "tvdbId": 81189, "title": "Breaking Bad", "year": 2008,
+                 "monitored": True, "qualityProfileId": 1, "languageProfileId": 1,
+                 "statistics": {"episodeFileCount": 0}},
+            ],
         ]
+        sonarr = SonarrService(config=Mock(SONARR_URL="http://s:8989", SONARR_API_KEY="k",
+                                           SONARR_QUALITY_PROFILE_ID=None), http=http)
+        assert sonarr.has_episodes(81189) is True
+        assert sonarr.has_episodes(81189) is False
 
-        # Create entry
+    # ------------------------------------------------------------------ state machine
+    def test_status_available_when_in_plex(self):
+        """Plex is source of truth -> available regardless of *arr."""
+        f = StatusFacts(in_plex=True, plex_links=WatchLinks(
+            plex_available=True, plex_url="http://plex/item",
+            emby_available=True, emby_url="http://emby/item"))
+        r = resolve_status(f)
+        assert r.state is MediaStatus.AVAILABLE
+        assert r.plexUrl == "http://plex/item"
+        assert r.embyUrl == "http://emby/item"
+
+    def test_status_downloaded_when_radarr_hasfile_but_not_in_plex(self):
+        """hasFile but not in Plex -> downloaded (not available)."""
+        f = StatusFacts(in_plex=False, arr_has_file=True)
+        assert resolve_status(f).state is MediaStatus.DOWNLOADED
+
+    def test_status_requested_when_arr_record_exists(self):
+        f = StatusFacts(in_plex=False, arr_record_exists=True, indexer_issue="Indexers down")
+        r = resolve_status(f)
+        assert r.state is MediaStatus.REQUESTED
+        assert "indexers" in r.detail.lower()
+
+    def test_status_downloading_when_qbit_active(self):
+        f = StatusFacts(in_plex=False, qbit_active=True, qbit_percent=37, qbit_speed=2.5)
+        r = resolve_status(f)
+        assert r.state is MediaStatus.DOWNLOADING
+        assert r.progress == 37
+        assert r.speed == 2.5
+
+    def test_status_not_added_when_nothing(self):
+        assert resolve_status(StatusFacts()).state is MediaStatus.NOT_ADDED
+
+    # ------------------------------------------------------------------ media status service
+    def test_media_status_service_routes_pending(self):
+        """MediaStatusService resolves entries through the domain state machine."""
+        path = "/tmp/test_watchlist_ms.json"
+        remove_tmp(path)
+        wl = WatchlistService(path)
         entry = WatchlistEntry(
             title="The Matrix", year=1999, category="Action", lang="English",
             rt=88, imdb=8.7, isSeries=False, imdbId="tt0133093", tmdbId=603,
-            cert="R", snippet="", cast=[], director="", poster="", trailerId="", trailerTitle="", added="2026-01-01", state="pending"
-        )
-        wl = WatchlistService("/tmp/test_watchlist_status.json")
-        import os
-        if os.path.exists("/tmp/test_watchlist_status.json"):
-            os.remove("/tmp/test_watchlist_status.json")
+            cert="R", snippet="", cast=[], director="", poster="", trailerId="",
+            trailerTitle="", added="2026-01-01", state="pending")
         data = wl.load()
         data.pending.append(entry)
         wl.save(data)
 
-        # Compute status via the logic in status.py
-        from api.routes.status import get_status
-        from config.settings import get_config
-        import config.settings
-        config.settings._CONFIG_INSTANCE = None  # Reset singleton
+        # All services mocked out at the service boundary.
+        cfg = Mock(PLEX_URL="", PLEX_TOKEN="", RADARR_API_KEY="k", SONARR_API_KEY="",
+                   RADARR_URL="http://r", SONARR_URL="http://s", QBITTORRENT_URL="http://q")
+        radarr = Mock()
+        radarr.get_movies.return_value = []
+        radarr.get_queue.return_value = []
+        radarr.get_indexer_health.return_value = None
+        qbit = Mock()
+        qbit.match.return_value = None
+        plex = None
+        sonarr = None  # empty SONARR key -> no real SonarrService constructed
 
-        with patch("api.routes.status.get_config") as mock_cfg:
-            mock_cfg.return_value = Mock(
-                RADARR_URL="http://test:7878",
-                RADARR_API_KEY="key",
-                SONARR_URL="http://test:8989",
-                SONARR_API_KEY="key",
-                PLEX_URL="http://test:32400",
-                PLEX_TOKEN="token",
-                QBITTORRENT_URL="http://test:1701",
-                RADARR_QUALITY_PROFILE_ID=None,
-                SONARR_QUALITY_PROFILE_ID=None,
-                has_tmdb=lambda: False,
-                has_jellyfin=lambda: False,
-            )
+        svc = MediaStatusService(watchlist=wl, plex=plex, radarr=radarr, sonarr=None,
+                                 qbit=qbit, config=cfg)
+        snap = svc.compute_statuses()
+        assert "tt0133093" in snap.results
+        assert snap.results["tt0133093"].state is MediaStatus.NOT_ADDED
 
-            # This is an integration test - would need full API setup
-            # For now, test the components separately
-            pass
+        remove_tmp(path)
 
-    @patch("services.radarr.get_config")
-    @patch("services.radarr.get_http_client")
-    def test_radarr_has_file_detection(self, mock_http, mock_config):
-        """Test Radarr has_file detection."""
-        mock_config.return_value.RADARR_URL = "http://test:7878"
-        mock_config.return_value.RADARR_API_KEY = "key"
-
-        radarr = RadarrService()
-        mock_http.return_value.get.return_value = [
-            {"id": 1, "tmdbId": 603, "title": "The Matrix", "year": 1999, "hasFile": True, "monitored": True, "qualityProfileId": 1},
-        ]
-
-        assert radarr.has_file(603) is True
-        assert radarr.has_file(999) is False
-
-    @patch("config.settings.get_config")
-    @patch("core.http_client.get_http_client")
-    def test_sonarr_has_episodes_detection(self, mock_get_http_client, mock_get_config):
-        """Test Sonarr has_episodes detection."""
-        mock_get_config.return_value.SONARR_URL = "http://test:8989"
-        mock_get_config.return_value.SONARR_API_KEY = "key"
-
-        # For tracking what to return for each call - use a mutable object that persists
-        call_state = {'count': 0}
-
-        def mock_get_side_effect(url, headers=None, params=None):
-            call_state['count'] += 1
-            print(f"[TEST MOCK] HTTP call #{call_state['count']}: {url}")
-            if url.endswith("/series") and not params:  # Series list call
-                if call_state['count'] == 1:
-                    # First call: get series list (first has_episodes) - with episodes
-                    print("[TEST MOCK] Returning series list with 62 episodes")
-                    return [
-                        {"id": 1, "tvdbId": 81189, "title": "Breaking Bad", "year": 2008,
-                         "monitored": True, "qualityProfileId": 1, "languageProfileId": 1,
-                         "statistics": {"episodeFileCount": 62}},
-                    ]
-                elif call_state['count'] == 2:
-                    # Second call: get series list (second has_episodes) - without episodes
-                    print("[TEST MOCK] Returning series list with 0 episodes")
-                    return [
-                        {"id": 1, "tvdbId": 81189, "title": "Breaking Bad", "year": 2008,
-                         "monitored": True, "qualityProfileId": 1, "languageProfileId": 1,
-                         "statistics": {"episodeFileCount": 0}},
-                    ]
-                else:
-                    # Fallback
-                    print(f"[TEST MOCK] Unexpected series list call #{call_state['count']}, returning empty list")
-                    return []
-            else:
-                # For any other calls (like specific series data), return empty
-                print(f"[TEST MOCK] Non-series-list call #{call_state['count']}: {url}, returning []")
-                return []
-
-        mock_get_http_client.return_value.get.side_effect = mock_get_side_effect
-
-        sonarr = SonarrService()
-        print(f"[TEST] Created SonarrService, about to call has_episodes")
-        result1 = sonarr.has_episodes(81189)
-        print(f"[TEST] First has_episodes result: {result1}")
-        assert result1 is True
-        print(f"[TEST] First has_episodes passed, about to call second")
-        result2 = sonarr.has_episodes(81189)
-        print(f"[TEST] Second has_episodes result: {result2}")
-        assert result2 is False
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

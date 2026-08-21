@@ -28,9 +28,9 @@ class TrailerService:
     TVDB_BASE = "https://api4.thetvdb.com/v4"
     TMDB_BASE = "https://api.themoviedb.org/3"
 
-    def __init__(self):
-        self.config = get_config()
-        self.http = get_http_client()
+    def __init__(self, *, config=None, http=None):
+        self.config = config if config is not None else get_config()
+        self.http = http if http is not None else get_http_client()
         self._tvdb_token: Optional[str] = None
         self._tvdb_token_expiry: float = 0
         self._tvdb_token_path = "/workspace/media/.tvdb_token"

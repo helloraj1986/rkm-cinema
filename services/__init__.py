@@ -9,6 +9,8 @@ from services.emby import EmbyService
 from services.youtube import YouTubeService
 from services.watchlist import WatchlistService, WatchlistEntry, WatchlistData, VALID_STATES, VALID_TRANSITIONS
 from services.recommendations import RecommendationService, Candidate, EnrichedCandidate
+from services.qbittorrent import QBittorrentService
+from services.media_status import MediaStatusService, StatusSnapshot
 
 __all__ = [
     "BaseService",
@@ -21,4 +23,6 @@ __all__ = [
     "YouTubeService",
     "WatchlistService", "WatchlistEntry", "WatchlistData", "VALID_STATES", "VALID_TRANSITIONS",
     "RecommendationService", "Candidate", "EnrichedCandidate",
+    "QBittorrentService",
+    "MediaStatusService", "StatusSnapshot",
 ]

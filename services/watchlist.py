@@ -137,57 +137,49 @@ class WatchlistData:
 class WatchlistService:
     """Watchlist persistence with atomic writes and state management."""
 
-    def __init__(self, path: str | None = None):
-        # Resolve the watchlist path that actually exists: in the Docker
-        # container it is mounted at /app/watchlist.json; in the dev sandbox it
-        # lives one level above the repo at /workspace/media/watchlist.json.
-        if path is None:
-            if Path("/app/watchlist.json").exists():
-                path = "/app/watchlist.json"
-            else:
-                path = "/workspace/media/watchlist.json"
-        self.path = Path(path)
-        self._cache: Optional[WatchlistData] = None
-        self._cache_mtime: float = 0
+    def __init__(self, path: str | None = None, repository=None):
+        # Backward-compatible: an explicit ``path`` selects the JSON repository.
+        # Otherwise build the single active repository from config (WATCHLIST_STORE).
+        # All persistence goes through the repository so no business code touches
+        # watchlist.json directly (Phase 3).
+        if path is not None:
+            from infrastructure.database.repository import JsonWatchlistRepository
+            self._repo = JsonWatchlistRepository(path)
+        elif repository is not None:
+            self._repo = repository
+        else:
+            from infrastructure.database.repository import build_repository
+            self._repo = build_repository()
+        # Keep a ``path`` attribute for callers that still inspect it.
+        self.path = getattr(self._repo, "path", None)
 
     def load(self) -> WatchlistData:
-        """Load watchlist from disk with caching."""
+        """Load watchlist through the active repository."""
+        raw = self._repo.load()
+        if not raw:
+            logger.warning("Watchlist empty, returning fresh data")
+            return WatchlistData()
+
+        # Convert raw dicts to WatchlistEntry objects
         try:
-            if not self.path.exists():
-                logger.warning("Watchlist file not found, creating empty")
-                return WatchlistData()
-
-            mtime = self.path.stat().st_mtime
-            if self._cache and mtime <= self._cache_mtime:
-                return self._cache
-
-            with open(self.path) as f:
-                raw = json.load(f)
-
-            # Convert raw dicts to WatchlistEntry objects
             pending = [WatchlistEntry.from_dict(e) for e in raw.get("pending", [])]
             recommended = [WatchlistEntry.from_dict(e) for e in raw.get("recommended", [])]
+        except Exception as e:  # noqa: BLE001
+            from core.exceptions import WatchlistError
+            logger.error("Failed to parse watchlist: %s", e)
+            raise WatchlistError(f"Parse failed: {e}")
 
-            data = WatchlistData(
-                rotation_index=raw.get("rotation_index", 0),
-                rotation=raw.get("rotation", WatchlistData().rotation),
-                pending=pending,
-                recommended=recommended,
-                updated=raw.get("updated", ""),
-                hero_mode=raw.get("hero_mode", "auto"),
-            )
-            self._cache = data
-            self._cache_mtime = mtime
-            return data
-        except json.JSONDecodeError as e:
-            logger.error("Watchlist JSON corrupted: %s", e)
-            raise WatchlistError(f"Corrupted watchlist.json: {e}")
-        except Exception as e:
-            logger.error("Failed to load watchlist: %s", e)
-            raise WatchlistError(f"Load failed: {e}")
+        return WatchlistData(
+            rotation_index=raw.get("rotation_index", 0),
+            rotation=raw.get("rotation", WatchlistData().rotation),
+            pending=pending,
+            recommended=recommended,
+            updated=raw.get("updated", ""),
+            hero_mode=raw.get("hero_mode", "auto"),
+        )
 
     def save(self, data: WatchlistData) -> None:
-        """Atomic write to watchlist.json (tmp + os.replace)."""
+        """Persist through the active repository (atomic, dedup, idempotent)."""
         # Validate before saving
         self._validate(data)
 
@@ -204,20 +196,8 @@ class WatchlistService:
             "hero_mode": data.hero_mode,
         }
 
-        # Atomic write
-        tmp_path = self.path.with_suffix(".json.tmp")
-        try:
-            with open(tmp_path, "w") as f:
-                json.dump(raw, f, indent=2)
-            os.replace(tmp_path, self.path)
-            self._cache = data
-            self._cache_mtime = self.path.stat().st_mtime
-            logger.info("Watchlist saved: %d pending, %d recommended", len(data.pending), len(data.recommended))
-        except Exception as e:
-            if tmp_path.exists():
-                tmp_path.unlink()
-            logger.error("Failed to save watchlist: %s", e)
-            raise WatchlistError(f"Save failed: {e}")
+        self._repo.save(raw)
+        logger.info("Watchlist saved: %d pending, %d recommended", len(data.pending), len(data.recommended))
 
     def _validate(self, data: WatchlistData) -> None:
         """Validate watchlist data before publishing."""

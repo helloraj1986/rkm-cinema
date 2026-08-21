@@ -158,6 +158,7 @@ INDEX_SHELL = """<!DOCTYPE html>
 </head>
 <body>
 <div id="app"></div>
+<script src="./api.js" defer></script>
 <script src="./app.js" defer></script>
 </body>
 </html>

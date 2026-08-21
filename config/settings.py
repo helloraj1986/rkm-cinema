@@ -37,6 +37,10 @@ class Config:
     RADARR_QUALITY_PROFILE_ID: Optional[int]
     SONARR_QUALITY_PROFILE_ID: Optional[int]
 
+    # --- Persistence (Phase 3) ---
+    WATCHLIST_STORE: str            # 'json' (default) | 'sqlite'
+    WATCHLIST_DB_PATH: Optional[str]  # SQLite file path; ':memory:' for tests
+
     # --- Internal ---
     _loaded: bool = False
 
@@ -97,6 +101,12 @@ class Config:
         sonarr_qp = env.get("SONARR_QUALITY_PROFILE_ID")
         self.SONARR_QUALITY_PROFILE_ID = int(sonarr_qp) if sonarr_qp and sonarr_qp.isdigit() else None
 
+        # Persistence (Phase 3): 'json' default for backward-compat, 'sqlite' for the new store.
+        self.WATCHLIST_STORE = (env.get("WATCHLIST_STORE") or "json").strip().lower()
+        if self.WATCHLIST_STORE not in ("json", "sqlite"):
+            self.WATCHLIST_STORE = "json"
+        self.WATCHLIST_DB_PATH = env.get("WATCHLIST_DB_PATH") or None
+
     def _normalize_url(self, url: str) -> str:
         """Ensure URL has no trailing slash."""
         return url.rstrip("/")
@@ -108,6 +118,7 @@ class Config:
             "JELLYFIN_API_KEY", "PROWLARR_URL", "PROWLARR_API_KEY", "QBITTORRENT_URL",
             "RADARR_QUALITY_PROFILE_ID", "SONARR_QUALITY_PROFILE_ID",
             "PLEX_BROWSER_URL", "EMBY_BROWSER_URL",
+            "WATCHLIST_STORE", "WATCHLIST_DB_PATH",
         }
 
     def validate_required(self) -> list[str]:

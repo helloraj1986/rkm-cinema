@@ -63,7 +63,7 @@ watchlist/
 │   ├── plex.py              Plex: library, ownership, deep-links, thumb proxy
 │   ├── radarr.py            Radarr: movies, lookup/add (title fallback), profiles
 │   ├── sonarr.py            Sonarr: series, lookup/add (title fallback), tvdb resolve
-│   ├── emby.py              Emby client / counts / deep-links
+│   ├── emby.py              Emby client / counts (deep-links built in plex.py)
 │   ├── tmdb.py              TMDB metadata + artwork
 │   ├── youtube.py           YouTube trailer scraping (no API key)
 │   ├── trailers.py          Legacy trailer fallback (TVDB/TMDB/oEmbed)
@@ -145,6 +145,13 @@ The canonical resolution lives in `domain/state_machine.py::resolve_status`:
 **Plex is the source of truth** for availability. A title in Plex is `available`
 even if its *arr record is stale/missing. `MediaStatusService` gathers the
 external facts and feeds them to `resolve_status`; the domain module decides.
+The `WatchLinks` value object carries `plex_url`, `plex_key` (numeric ratingKey,
+not a URL), and `emby_url` for `available`/`downloaded` titles.
+
+> **Performance guard:** `PlexService.get_all_movies()/get_all_shows()` cache the
+> full library scan for **~60s**. The status pass calls `has_media` for every
+> watchlist entry; without this cache one `/api/status` request triggered 17 full
+> rescans and blew the request window. First scan ~1.3s, cached ~0.2s.
 
 ---
 
@@ -161,11 +168,35 @@ external facts and feeds them to `resolve_status`; the domain module decides.
 
 ---
 
-## 8. External integrations
+## 8. Watch deep-links (Plex / Emby)
+
+Deep-links point **into the local server's own web UI** on the browser-reachable
+**Tailscale MagicDNS HTTPS** host — **not** Plex's `app.plex.tv` cloud app.
+The cloud app needs account login + remote relay and rarely auto-opens the item;
+the server's `/web/index.html` on the Tailnet host opens the item directly with no
+relay, using the same scheme the Emby links always used.
+
+- **Plex:** `https://rkm-hp.tail8d5e8.ts.net:32400/web/index.html#!/server/{machineId}/details?key=/library/metadata/{ratingKey}`
+  - Machine ID = Plex `machineIdentifier` (`/identity`), cached.
+  - `key` is the **raw** `/library/metadata/<rk>` path — **never `%2F`-encoded**
+    (encoding broke Plex's hash router). This is the #1 reason old links did nothing.
+  - No ratingKey found → fall back to `/web/search?query={title year}`.
+- **Emby:** `https://rkm-hp.tail8d5e8.ts.net:8096/web/index.html#!/item?id={itemId}&serverId={serverId}`
+  - Item id resolved via Emby search (per-title, cached), server id via `/System/Info/Public`.
+- **Browser-reachable base** is config-driven: `PLEX_BROWSER_URL` / `EMBY_BROWSER_URL`
+  (optional, defaults to the Tailscale host). LAN `PLEX_URL`/`EMBY_URL` are the
+  backend/API addresses and are **never** used to build user links. The builder
+  falls back to the documented Tailscale host automatically if unset.
+- `plexKey` in the status payload is the **numeric ratingKey** (e.g. `320819`),
+  used where a raw key is needed; `plexUrl` is the full deep link.
+
+---
+
+## 9. External integrations
 
 | Service | Responsibility |
 |---|---|
-| `PlexService` | Library counts, ownership (`has_media`), recently-added, `get_thumb` proxy, deep-link builders (`plex_url_for`, `emby_url_for`) using the Plex machineIdentifier + encoded `/library/metadata/<rk>` key |
+| `PlexService` | Library counts, ownership (`has_media`), recently-added, `get_thumb` proxy, library-scan caching (~60s TTL), deep-link builders (`plex_url_for` → Plex **server web UI** on the browser-reachable Tailscale host; `emby_url_for` → Emby web UI), `plex_key_for` (numeric ratingKey) |
 | `RadarrService` | Movies, `lookup_movie`, `search_movies` (title fallback), `add_movie`, profiles/queue, indexer health |
 | `SonarrService` | Series, `lookup_series`, `search_series` (title fallback), `add_series`, tvdb resolve, profiles/queue |
 | `TMDBService` | Movie/show details, posters/backdrops/genres, search |
@@ -183,16 +214,16 @@ with fakes — **no test touches the live LAN**.
 
 ---
 
-## 9. Config & data
+## 10. Config & data
 
-- **`config/settings.py`** — single `Config` singleton from `/workspace/.env` (+ env overrides). Provides `has_emby()`, `has_tmdb()`, `validate_required()`, etc. **Never returns secrets via `/api/config`.**
+- **`config/settings.py`** — single `Config` singleton from `/workspace/.env` (+ env overrides). Provides `has_emby()`, `has_tmdb()`, `validate_required()`, etc. **Never returns secrets via `/api/config`.** Exposes browser-reachable `PLEX_BROWSER_URL` / `EMBY_BROWSER_URL` used only for deep-links (fall back to the Tailscale host when unset).
 - **`watchlist.json`** — source of truth; volume-mounted into the container at `/app/watchlist.json`. `WatchlistService` auto-resolves the correct path (container vs sandbox).
 - **`dashboard-data.json`** — published snapshot the SPA loads (built by `scripts/rebuild_dashboard.py`).
 - **`.env`** — canonical at `/workspace/.env`, never committed; see `.env.example`.
 
 ---
 
-## 10. Frontend (app.js → api.js)
+## 11. Frontend (app.js → api.js)
 
 - `api.js` — centralized API client (`API.getJSON`, `API.download`, `API.getStatus`, …). Loaded before `app.js` as a plain global.
 - `app.js` — rendering, state, UI. Delegates ALL `/api/*` and `/dashboard-data.json` calls to `API`. No direct `fetch` to backend endpoints anywhere else.
@@ -200,15 +231,15 @@ with fakes — **no test touches the live LAN**.
 
 ---
 
-## 11. Deployment
+## 12. Deployment
 
 - Deploy (RKM-HP / Windows): `.\setup-watchlist.ps1` → `docker compose up -d --build`.
 - Two containers: `api` (FastAPI modular, holds secrets) + `web` (nginx :8123, static + `/api` proxy).
-- Emby on :8096 is **HTTPS-only** over Tailscale; Emby links must use `https://`.
+- **Plex and Emby are both HTTPS-only** over Tailscale (`:32400` / `:8096`); deep-links must use `https://` and target the browser-reachable `PLEX_BROWSER_URL`/`EMBY_BROWSER_URL` host (see §8).
 
 ---
 
-## 12. Adding a feature (recommended path)
+## 13. Adding a feature (recommended path)
 
 1. **Business rule (status/movie-tv)?** → put it in `domain/` (state machine or resolver). Wire service gatherers in `services/`.
 2. **External integration?** → add a method on the relevant `services/*` client; never in a route.
@@ -220,8 +251,8 @@ with fakes — **no test touches the live LAN**.
 
 ---
 
-## 13. Testing
+## 14. Testing
 
-- `tests/` cover: domain state machine, media-type resolver, Radarr/Sonarr routing + title fallback + ambiguity, duplicate prevention, error handling, trailer validation, Plex ownership, recommendation pipeline, and API endpoints.
+- `tests/` cover: domain state machine, media-type resolver, Radarr/Sonarr routing + title fallback + ambiguity, duplicate prevention, error handling, trailer validation, Plex ownership, Plex library-scan caching, **Plex/Emby watch deep-link format** (`tests/test_watch_links.py`), recommendation pipeline, and API endpoints.
 - All tests use **injected fakes** — no real LAN, no real API keys required.
-- Run: `python -m pytest tests/ -q` (from the repo root). **47 tests, all green.**
+- Run: `python -m pytest tests/ -q` (from the repo root). **46 tests, all green** (API/e2e modules verified in the container where fastapi is installed).

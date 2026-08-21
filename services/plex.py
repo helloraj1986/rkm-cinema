@@ -16,11 +16,33 @@ logger = logging.getLogger("rkm.plex")
 
 class PlexMovie:
     """Represents a movie in Plex library."""
-    def __init__(self, title: str, year: int, rating_key: str, thumb: str = ""):
+    def __init__(self, title: str, year: int, rating_key: str, thumb: str = "",
+                 guid: str = "", library_section: str = ""):
         self.title = title
         self.year = year
         self.rating_key = rating_key
         self.thumb = thumb
+        self.guid = guid
+        self.library_section = library_section
+
+    def provider_ids(self) -> dict:
+        """Parse guid into a dict of provider -> id (e.g. {'imdb': 'tt0133093', 'tmdb': 603})."""
+        ids = {}
+        guid = (self.guid or "").split("?")[0]
+        for prov, key in (("tmdb", "themoviedb"), ("imdb", "imdb"), ("tvdb", "thetvdb")):
+            marker = f"{key}://"
+            if marker in guid:
+                raw = guid.rsplit(marker, 1)[1].rstrip("/")
+                if prov == "imdb":
+                    if raw and not raw.startswith("tt") and raw.isdigit():
+                        raw = f"tt{raw}"
+                    ids[prov] = raw
+                else:
+                    try:
+                        ids[prov] = int(raw)
+                    except (TypeError, ValueError):
+                        pass
+        return ids
 
     def matches(self, title: str, year: Optional[int] = None) -> bool:
         """Check if this movie matches the given title/year."""
@@ -36,11 +58,37 @@ class PlexMovie:
 
 class PlexShow:
     """Represents a TV show in Plex library."""
-    def __init__(self, title: str, year: int, rating_key: str, thumb: str = ""):
+    def __init__(self, title: str, year: int, rating_key: str, thumb: str = "",
+                 guid: str = "", library_section: str = ""):
         self.title = title
         self.year = year
         self.rating_key = rating_key
         self.thumb = thumb
+        self.guid = guid
+        self.library_section = library_section
+
+    def provider_ids(self) -> dict:
+        """Parse guid into a dict of provider -> id (e.g. {'imdb': 'tt0133093', 'tmdb': 603}).
+
+        Plex agent guid looks like ``com.plexapp.agents.themoviedb://603?lang=en``.
+        Return normalized ids keyed by provider.
+        """
+        ids = {}
+        guid = (self.guid or "").split("?")[0]
+        for prov, key in (("tmdb", "themoviedb"), ("imdb", "imdb"), ("tvdb", "thetvdb")):
+            marker = f"{key}://"
+            if marker in guid:
+                raw = guid.rsplit(marker, 1)[1].rstrip("/")
+                if prov == "imdb":
+                    if raw and not raw.startswith("tt") and raw.isdigit():
+                        raw = f"tt{raw}"
+                    ids[prov] = raw
+                else:
+                    try:
+                        ids[prov] = int(raw)
+                    except (TypeError, ValueError):
+                        pass
+        return ids
 
     def matches(self, title: str, year: Optional[int] = None) -> bool:
         """Check if this show matches the given title/year."""
@@ -112,7 +160,9 @@ class PlexService(BaseService):
                             title=item.get("title", ""),
                             year=item.get("year", 0),
                             rating_key=item.get("ratingKey", ""),
-                            thumb=item.get("thumb", "")
+                            thumb=item.get("thumb", ""),
+                            guid=item.get("guid", ""),
+                            library_section=section.get("key", ""),
                         ))
         self._library_cache["movies"] = movies
         self._library_cache_expiry = now + 60
@@ -135,7 +185,9 @@ class PlexService(BaseService):
                             title=item.get("title", ""),
                             year=item.get("year", 0),
                             rating_key=item.get("ratingKey", ""),
-                            thumb=item.get("thumb", "")
+                            thumb=item.get("thumb", ""),
+                            guid=item.get("guid", ""),
+                            library_section=section.get("key", ""),
                         ))
         self._library_cache["shows"] = shows
         self._library_cache_expiry = now + 60

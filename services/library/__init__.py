@@ -1,0 +1,21 @@
+"""Library abstraction - unified Plex/Emby library providers.
+
+Spec §4/§6/§7/§8/§9: Plex and Emby are providers of the SAME logical library.
+The application must present one ``LibraryMatch`` / one ``AVAILABLE`` state per
+media item, never "Plex available" and "Emby available" as two states.
+"""
+from services.library.service import (
+    LibraryProvider,
+    LibraryMatch,
+    LibraryService,
+)
+from services.library.plex import PlexLibraryProvider
+from services.library.emby import EmbyLibraryProvider
+
+__all__ = [
+    "LibraryProvider",
+    "LibraryMatch",
+    "LibraryService",
+    "PlexLibraryProvider",
+    "EmbyLibraryProvider",
+]

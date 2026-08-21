@@ -1,31 +1,31 @@
 # RKM Watchlist — Session Handoff & Project Progress
 
-> Last updated: 2026-08-22 (**PRODUCTION REFACTOR in progress — Phases 1–5 done, next: Phase 6**)
+> Last updated: 2026-08-22 (**PRODUCTION REFACTOR in progress — Phases 1–6 done, next: Phase 7**)
 > Live URL: **http://rkm-hp.tail8d5e8.ts.net:8123/** (Tailscale MagicDNS, tailnet-only — NEVER `tailscale funnel` it; page proxies /api → FastAPI which holds secrets server-side)
 > Deploy path (Windows, RKM-HP): `cd D:\hermes_agent\hermes-workspace\media\watchlist; .\setup-watchlist.ps1` — the sandbox's `/workspace` maps to `D:\hermes_agent\hermes-workspace` (9p mount, confirmed via mountinfo 2026-08-18; NOT `D:\media`)
 > Repo: **private `rkm-watchlist` on GitHub** (github.com/helloraj1986/rkm-watchlist)
-> **Status:** ⚠️ **Big production refactor IN PROGRESS.** Groundwork + library abstraction + watch links (Phases 1–5) committed; the running site is still the OLD deployed image — do NOT redeploy mid-refactor.
+> **Status:** ⚠️ **Big production refactor IN PROGRESS.** Groundwork + library abstraction + watch links + canonical status (Phases 1–6) committed; the running site is still the OLD deployed image — do NOT redeploy mid-refactor.
 
-## ▶ LATEST SESSION (2026-08-22) — refactor Phase 5 ✅ (robust watch links)
+## ▶ LATEST SESSION (2026-08-22) — refactor Phase 6 ✅ (canonical status resolver + LibraryService migration)
 
-**Driving spec: `RKM_Watchlist_Production_Refactor_Task.md`** §10/§11. This is THE checklist — follow its §42 implementation order strictly. Audit lives at `docs/ARCHITECTURE_AUDIT.md`. **Baseline before: 87 tests green. After Phase 5: 92 green** (+5 in `tests/test_library_providers.py::TestWatchLinkResolver`, all LAN-free/mockable).
+**Driving spec: `RKM_Watchlist_Production_Refactor_Task.md`** §12 (Phase 6) + §13 (Phase 7 shape). THE checklist / §42 order / audit at `docs/ARCHITECTURE_AUDIT.md`. **Baseline before: 92 green. After Phase 6: 103 green** (+11: 9 in `tests/test_status.py`, 2 in `tests/test_download_status.py`).
 
 ### What was built
-- **`services/library/watch_links.py`** (spec §10):
-  - `WatchLink` dataclass — `{provider, available, url, error}` with `.to_dict()` matching the exact spec §10 shape `{"available": bool, "url": str|None, "error": str|None}`.
-  - `WatchLinkResolver` — takes a single `LibraryMatch` or an iterable (pass `find_all(...)` for both Plex+Emby links) and returns the `watch` map `{provider: {...}}`.
-- **`LibraryService.watch_links()`** now delegates to `WatchLinkResolver` (spec §10/§43, no parallel impl). Returns the spec-shape map; failure-safe.
-- **Failure containment (§10 critical rule):** a provider's `build_watch_link` exception is swallowed → `WatchLink(available=False, error=...)`. It **never** flips AVAILABLE→NOT_REQUESTED because availability is resolved independently by `domain/state_machine.resolve_status()` from `LibraryService.find()/has()`. A broken resolver only hides that provider's button.
-- Config: browser URLs stay config-driven (`PLEX_BROWSER_URL`/`EMBY_BROWSER_URL`) via the providers' `_browser_base()` (from Phase 4) — never hard-coded Tailscale hostname in source, §11 satisfied.
+- **`domain/status.py`** — the CANONICAL status module (spec §12): pure, no-HTTP resolver over `StatusFacts` returning `StatusResult`. Priority (library availability always wins): in_plex→AVAILABLE, qbit_active→DOWNLOADING, arr_record_exists→REQUESTED, arr_has_file→DOWNLOADED, else NOT_ADDED. Also adds the **spec §13 Phase 7 shape**: `Capabilities(can_download/can_watch)::from_status()` and `MediaSnapshot(media_id, status, capabilities, watch_links, detail, service)::from_result()`.
+- **`MediaStatus` enum** — added reserved **ERROR / AMBIGUOUS** (spec §12 recommended; declared now, not yet produced).
+- **`domain/state_machine.py`** is now a **backwards-compatible import shim** re-exporting from `domain.status` (spec §43 — no parallel implementations). New code imports from `domain.status`. All existing imports (`media_status.py`, tests) still work.
+- **`services/media_status.py` migrated to `LibraryService`** (Phase 6 goal): the direct `PlexService.has_media/plex_url_for/emby_url_for/plex_key_for` status path is **removed**. Availability + watch links now come from `LibraryService.find_all(identity)` + `watch_links()` (failure-safe spec §10 map). `plexKey` is taken from the matched provider's `metadata.rating_key`. Legacy `plex=` DI arg is wrapped in a `PlexLibraryProvider` so EVERY route still goes through LibraryService — no parallel PlexService branch (§43); new canonical param is `library=`.
+- **`LibraryService.find_all()` hardened** — per-provider exceptions are swallowed (like `find()`), so one broken backend can't block the whole reconciler.
 
-### Tests (5 new)
-- Plex match → valid AVAILABLE link; Emby match → valid link; both Plex+Emby matches → both links.
-- Spec: "Plex link failure + Emby success → Emby button only" (Plex `available:false` + `error`, Emby `available:true`).
-- Spec critical rule: link failure keeps the item AVAILABLE — `has()` true + `resolve_status(in_plex=True)` stays AVAILABLE while resolver soft-fails the link.
-- Updated 1 Phase-4 assertion (`watch_links` now returns spec shape).
+### Tests (11 new)
+- Pure resolver priority + "library always wins" + "watch-link failure never downgrades AVAILABLE" (§10) + indexer-issue detail + tv→sonarr service.
+- `Capabilities.from_status` + `MediaSnapshot.from_result` (spec §13).
+- BC shim: `domain.state_machine` still exposes the same API (same classes).
+- `MediaStatusService` + `LibraryService` integration → AVAILABLE with Plex/Emby links + numeric plexKey; legacy `plex=` wraps through the library (no `_plex` attr remains).
 
-### Notes for next phase
-- **Migration to `LibraryService` is STILL Phase 6**, not done here (per §42 — no parallel end-runs). `services/media_status.py` still calls legacy `PlexService.plex_url_for/emby_url_for/plex_key_for` directly. Phase 6 will replace those with `LibraryService.find()+watch_links()`.
+### Remaining direct `PlexService` consumers (NOT status-path; belong to Phase 7 reconciler + later)
+- `services/library/plex.py` — the provider itself (correct, single home).
+- Peripheral: `api/routes/health.py`, `api/routes/config.py`, `api/routes/plex_thumb.py`, `services/recommendations.py` (ownership dedupe), `scripts/auto_complete.py` (hasFile+Plex). The `/api/status` state machine is fully on LibraryService now.
 
 ---
 
@@ -33,11 +33,12 @@
 
 **Do NOT skip ahead / do NOT touch the frontend until the state model is done (§42 "do not skip ahead to frontend fixes while the underlying state model is incorrect"; §43.3 no parallel implementations; §43.7 keep `pytest` green after every phase).**
 
-1. ✅ **Phase 5 — Watch links** (`services/library/watch_links.py`) **DONE** (commit `5eb55c9`) — spec §10/§11. `WatchLink{provider, available, url, error}` + failure-safe `WatchLinkResolver`; `LibraryService.watch_links()` returns spec-shape `watch` map; link failure never flips AVAILABLE→NOT_REQUESTED. 92 green.
-2. ⬅️ **Phase 6 — `domain/status.py`**: canonical resolver on `MediaFacts` (pure, no HTTP). Then **Phase 7** reconciler → `MediaSnapshot(status, capabilities, watch)`.
-   - **This is where `MediaStatusService` / `media_status.py` and the state machine consumers migrate to `LibraryService`** — replace the direct `PlexService.has_media/plex_url_for/emby_url_for` calls with `LibraryService.find()/has()/find_all()+watch_links()`. `services/media_status.py` is the primary consumer holding the legacy calls.
-3. **Phase 8** `services/acquisition/` (single routing). **Phase 9** `application/commands/request_media.py` (idempotent). …
-4. Continue down the §42 list; **Phase 3's `job_runs` table is ready** for Phase 13/14 jobs.
+1. ✅ **Phase 5 — Watch links** (**DONE**, commit `5eb55c9`) — `WatchLink` + failure-safe `WatchLinkResolver`; `LibraryService.watch_links()` returns spec-shape `watch` map; link failure never flips AVAILABLE→NOT_REQUESTED.
+2. ✅ **Phase 6 — Canonical status resolver** (**DONE**, commit `bdd4c07`) — `domain/status.py` (spec §12/§13) pure resolver + `Capabilities` + `MediaSnapshot`; `state_machine.py` is a BC shim (§43); `media_status.py` migrated to `LibraryService` (direct PlexService status path removed). 103 green.
+3. ⬅️ **Phase 7 — `services/reconciliation/reconciler.py`** (spec §13): `Reconciler.get_snapshot(media_id)` → `MediaSnapshot(status, capabilities, watch_links)`. Wire `LibraryService` (done) + `AcquisitionService` (Phase 8) + `qBittorrentService` into `MediaFacts`, then `domain.status.resolve_status`. `MediaSnapshot` is already defined; build the reconciler that emits it and make `api/routes/status.py` consume the snapshot as the canonical object.
+   - Also migrate the peripheral `PlexService` consumers here/then: `health.py`, `config.py`, `plex_thumb.py`, `recommendations.py` (ownership dedupe), `auto_complete.py` → `LibraryService`.
+4. **Phase 8** `services/acquisition/` (single routing: `service.py` + `radarr.py` + `sonarr.py`, `AcquisitionProvider{find,request,get_status}`). **Phase 9** `application/commands/request_media.py` (idempotent request). …
+5. Continue down the §42 list; **Phase 3's `job_runs` table is ready** for Phase 13/14 jobs.
 
 See `docs/ARCHITECTURE_AUDIT.md` → "Implementation order (tied to spec §42)" for the full remaining map.
 

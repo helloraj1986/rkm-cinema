@@ -1,10 +1,57 @@
 # RKM Watchlist — Session Handoff & Project Progress
 
-> Last updated: 2026-08-21 (**batch +8 added — 17 pending**)
+> Last updated: 2026-08-22 (**PRODUCTION REFACTOR in progress — Phases 1–3 done, next: Phase 4**)
 > Live URL: **http://rkm-hp.tail8d5e8.ts.net:8123/** (Tailscale MagicDNS, tailnet-only — NEVER `tailscale funnel` it; page proxies /api → FastAPI which holds secrets server-side)
 > Deploy path (Windows, RKM-HP): `cd D:\hermes_agent\hermes-workspace\media\watchlist; .\setup-watchlist.ps1` — the sandbox's `/workspace` maps to `D:\hermes_agent\hermes-workspace` (9p mount, confirmed via mountinfo 2026-08-18; NOT `D:\media`)
 > Repo: **private `rkm-watchlist` on GitHub** (github.com/helloraj1986/rkm-watchlist)
-> **Status:** ✅ CREATED + PUSHED — local git repo `main`, pushed to GitHub `main`. Token = fine-grained, repo-scoped; needs `rkm-watchlist` granted in GitHub token settings before push.
+> **Status:** ⚠️ **Big production refactor IN PROGRESS.** Groundwork (Phases 1–3) committed (`db1fc29`); the running site is still the OLD deployed image — do NOT redeploy mid-refactor.
+
+## ▶ LATEST SESSION (2026-08-22) — refactor Phases 1–3 ✅ (audit → identity → persistent store)
+
+**Driving spec: `RKM_Watchlist_Production_Refactor_Task.md`** (26-phase production architecture → desired-state media orchestration). This is THE checklist — follow its §42 implementation order strictly. **No separate task.md file is created; the spec lives in that one file.** Audit lives at `docs/ARCHITECTURE_AUDIT.md`.
+
+**Baseline before this work:** 56 tests green. **After Phases 1–3: 74 tests green** (`python3 -m pytest tests/ -q`, all mockable — no LAN). Commit `db1fc29`.
+
+### Phase 1 — Repository audit ✅ (`docs/ARCHITECTURE_AUDIT.md`)
+- Documented existing-vs-target, **all duplicate logic**, risky gaps (no canonical identity, JSON-as-authoritative DB, no library/acquisition abstraction, hardcoded recommendation gates, host-cron only), and the exact file merge/delete plan.
+- Key duplication to consolidate later: Emby URL resolution in **3 places**, Plex URL base in **2**, near-identical Plex/Emby has_media matchers, generic `POST /api/download` + `GET /api/status`.
+
+### Phase 2 — Canonical media identity ✅ (`domain/identity.py`) — spec §4
+- `MediaIdentity` (frozen dataclass, TMDB>IMDb>TVDB, normalized ints + `tt`-padded imdb) + `parse_media_id()`. `media_id` strings like `movie:tmdb:603` / `tv:imdb:tt0903747`. Never title-keyed; ambiguity = explicit error. Reuses existing `domain/enums.MediaType` (no parallel enum). 11 tests.
+
+### Phase 3 — Persistent store + repository abstraction ✅ (`infrastructure/database/`) — spec §3/§5
+- `db.py` — SQLite (stdlib `sqlite3`, no new deps) with the spec's 7-table schema: `media`, `watchlist`, `recommendations`, `library_items`, `acquisitions`, `watch_links`, `job_runs`. Rich dashboard fields round-trip via a `payload` JSON column.
+- `repository.py` — `WatchlistRepository` ABC; `JsonWatchlistRepository` (default, backward-compat) + `SqliteWatchlistRepository` (real alternate store). Factory `build_repository()` keyed by config `WATCHLIST_STORE=json|sqlite`, DB path `WATCHLIST_DB_PATH`.
+- `services/watchlist.py` now persists **only through the repository** — no business code reads `watchlist.json` directly (spec §5 mandate). `WatchlistService(path=...)` still works for tests/explicit JSON. `config/settings.py` gained `WATCHLIST_STORE` / `WATCHLIST_DB_PATH` (added to env-override key set).
+- Verified the live 17-entry watchlist still round-trips through the repo-backed load.
+
+### Testing note
+- Local full suite needs `pip install -r requirements.txt` (fastapi) **and** `pip install httpx2` (for `fastapi.testclient`).
+
+---
+
+## ⚡ NEXT SESSION — RESUME EXACTLY HERE (Phase 4)
+
+**Do NOT skip ahead / do NOT touch the frontend until the state model is done (§42 "do not skip ahead to frontend fixes while the underlying state model is incorrect"; §43.3 no parallel implementations; §43.7 keep `pytest` green after every phase).**
+
+1. ⬅️ **Phase 4 — Library abstraction** (`services/library/`) — spec §4/§6/§7/§8 + audit §3-§4 gaps
+   - Create `LibraryProvider` ABC: `health`, `find(identity)`, `recently_added`, `build_watch_link(match)`.
+   - New `services/library/service.py` (`LibraryService` with Plex + Emby providers) + `plex.py` + `emby.py`.
+   - **Consolidate** the 3 Emby URL builders (`PlexService.emby_url_for/_emby_item_id/_emby_server_id` + `api/routes/library.py` + state_machine) and the 2 Plex URL builders into these providers (audit §3). **Merge** `services/emby.py` matcher into `services/library/emby.py`.
+   - Plex match must capture real identity: `ratingKey`, `machineIdentifier`, `guid`, `title`, `year`, `library_section` — and match by **stable ID**, not just title/year.
+   - Treat Plex + Emby as providers of the **same** library (no duplicate "Plex available/Emby available" states).
+2. **Phase 5 — Watch links** (`services/library/watch_links.py`): `WatchLink{provider, available, url, error}`; browser URLs config-driven (`PLEX_BROWSER_URL`/`EMBY_BROWSER_URL`); **watch-link failure must NOT flip AVAILABLE→NOT_REQUESTED**.
+3. **Phase 6 — `domain/status.py`**: canonical resolver on `MediaFacts` (pure, no HTTP). Then **Phase 7** reconciler → `MediaSnapshot(status, capabilities, watch)`. **Phase 8** `services/acquisition/` (single routing). **Phase 9** `application/commands/request_media.py` (idempotent). …
+4. Continue down the §42 list; **Phase 3's `job_runs` table is ready** for Phase 13/14 jobs.
+
+See `docs/ARCHITECTURE_AUDIT.md` → "Implementation order (tied to spec §42)" for the full remaining map.
+
+## ⚡ HOW TO PICK UP WORK HERE (pre-refactor context, superseded for the refactor task)
+
+- **Current refactor source of truth = `RKM_Watchlist_Production_Refactor_Task.md` + `docs/ARCHITECTURE_AUDIT.md`** (this). For the *current live modular backend*, `ARCHITECTURE.md` is the up-to-date map. The **old two-API-layer split is GONE**: the monolithic `api.py` is archived (`archive/api_legacy_monolith.py`) and the live backend is **`uvicorn api.main:app`**. Edit the modular tree — `api/routes/*` (thin), `services/*` (business logic), `domain/*` (state machine + media-type resolver), `infrastructure/database/*` (persistence).
+- **Adding a feature** → follow ARCHITECTURE.md §12 ("Adding a feature").
+- **Quick checklist:** backend change → edit `api/routes/*` + `services/*` (+ `domain/*` for rules, `infrastructure/database/*` for persistence), then `python -m pytest tests/ -q` (must stay green), then `scripts/rebuild_dashboard.py`, then deploy `.\setup-watchlist.ps1`. Frontend (`api.js`/`app.js`/`app.css`) is volume-mounted — no rebuild needed for UI-only changes.
+- **Secrets** live in `/workspace/.env` (canonical). `.env` is git-ignored; use `.env.example` as the template. **Never commit real keys.**
 
 ## Latest session (2026-08-21) — curated batch of 8 added ✅
 

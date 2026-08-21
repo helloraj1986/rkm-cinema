@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from config.settings import get_config
 from core.logging import setup_logging
 
-from api.routes import health, config, status, download, search, library, quality
+from api.routes import health, config, status, download, search, library, quality, plex_thumb
 
 
 def create_app() -> FastAPI:
@@ -37,6 +37,7 @@ def create_app() -> FastAPI:
     app.include_router(search.router, prefix="/api")
     app.include_router(library.router, prefix="/api")
     app.include_router(quality.router, prefix="/api")
+    app.include_router(plex_thumb.router, prefix="/api")
 
     @app.on_event("startup")
     async def startup():

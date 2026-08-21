@@ -285,3 +285,27 @@ class PlexService(BaseService):
             return True
         except Exception:
             return False
+
+    def get_thumb(self, path: str, width: int = 500) -> Optional[dict]:
+        """Proxy a Plex thumbnail without exposing the token.
+
+        Returns a dict of ``{"content": bytes, "content_type": str}`` or None
+        if the thumb cannot be resolved. ``path`` is the Plex item ``thumb``
+        value (e.g. ``/library/metadata/123/thumb/456``).
+        """
+        if not path or ".." in path or "://" in path:
+            return None
+        url = (self.config.PLEX_URL.rstrip("/") + "/photo/:/transcode?width=" + str(width)
+               + "&height=" + str(int(width * 1.5))
+               + "&url=" + urllib.parse.quote("http://127.0.0.1:32400" + path, safe="")
+               + "&X-Plex-Token=" + self.config.PLEX_TOKEN)
+        import urllib.request
+        try:
+            req = urllib.request.Request(url, headers={"Accept": "image/*"})
+            with urllib.request.urlopen(req, timeout=15) as r:
+                return {
+                    "content": r.read(),
+                    "content_type": r.headers.get("Content-Type", "image/jpeg"),
+                }
+        except Exception:
+            return None

@@ -11,6 +11,7 @@ from services.watchlist import WatchlistService, WatchlistEntry, WatchlistData, 
 from services.recommendations import RecommendationService, Candidate, EnrichedCandidate
 from services.qbittorrent import QBittorrentService
 from services.media_status import MediaStatusService, StatusSnapshot
+from services.download import DownloadService
 
 __all__ = [
     "BaseService",
@@ -25,4 +26,5 @@ __all__ = [
     "RecommendationService", "Candidate", "EnrichedCandidate",
     "QBittorrentService",
     "MediaStatusService", "StatusSnapshot",
+    "DownloadService",
 ]

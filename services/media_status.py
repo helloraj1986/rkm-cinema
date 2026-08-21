@@ -95,7 +95,7 @@ class MediaStatusService:
             tvdb_id = self._sonarr.resolve_tvdb_id(entry.imdbId) if self._sonarr else None
             rec = next((s for s in s_series if s.tvdbId == tvdb_id), None) if tvdb_id else None
             service = "sonarr"
-            stats = rec.statistics or {}
+            stats = getattr(rec, "statistics", None) or {}
             facts.arr_has_file = bool(stats.get("episodeFileCount", 0)) > 0
         else:
             rec = next((m for m in r_movies if m.tmdbId == tmdb_id), None)

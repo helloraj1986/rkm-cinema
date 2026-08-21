@@ -84,7 +84,7 @@ class TestDownloadStatus:
 
     # ------------------------------------------------------------------ media status service
     def test_media_status_service_routes_pending(self):
-        """MediaStatusService resolves entries through the domain state machine."""
+        """MediaStatusService resolves entries through the domain status resolver."""
         path = "/tmp/test_watchlist_ms.json"
         remove_tmp(path)
         wl = WatchlistService(path)
@@ -116,6 +116,95 @@ class TestDownloadStatus:
         assert snap.results["tt0133093"].state is MediaStatus.NOT_ADDED
 
         remove_tmp(path)
+
+    # ------------------------------------------------- library-driven availability
+    def _seed_one(self, imdb_id="tt0133093", tmdb_id=603, is_series=False):
+        """Write a single pending entry and return (path, watchlist)."""
+        path = f"/tmp/test_wl_{self.__class__.__name__}_{imdb_id.replace(':','_')}.json"
+        remove_tmp(path)
+        wl = WatchlistService(path)
+        entry = WatchlistEntry(
+            title="The Matrix", year=1999, category="Action", lang="English",
+            rt=88, imdb=8.7, isSeries=is_series, imdbId=imdb_id, tmdbId=tmdb_id,
+            cert="R", snippet="", cast=[], director="", poster="", trailerId="",
+            trailerTitle="", added="2026-01-01", state="pending")
+        data = wl.load()
+        data.pending.append(entry)
+        wl.save(data)
+        return path, wl
+
+    def test_available_via_library_service_with_watch_links(self):
+        """LibraryService (not legacy PlexService) decides AVAILABLE + watch links.
+
+        Phase 6 migration: MediaStatusService must resolve an item found in the
+        unified library to AVAILABLE with per-provider Plex/Emby links and the
+        numeric plexKey — with NO direct PlexService call in the path.
+        """
+        from services.library import LibraryMatch, LibraryService
+
+        class _FakeLib:
+            """Minimal LibraryProvider that always finds the seeded item."""
+
+            def __init__(self, name, match):
+                self.name = name
+                self._match = match
+
+            def health(self):
+                return True
+
+            def find(self, identity, *, title="", year=None):
+                return self._match
+
+            def recently_added(self, limit=8):
+                return []
+
+            def build_watch_link(self, match):
+                if self.name == "plex":
+                    return {"plex_url": ("https://plex/#!/server/sid/details?key="
+                                         f"/library/metadata/{match.metadata['rating_key']}")}
+                return {"emby_url": f"https://emby/#!/item?id={match.provider_item_id}&serverId=S1"}
+
+        plex_match = LibraryMatch("plex", "320819", "The Matrix", 1999,
+                                  metadata={"rating_key": "320819"})
+        emby_match = LibraryMatch("emby", "ITEM1", "The Matrix", 1999)
+        library = LibraryService(providers=[
+            _FakeLib("plex", plex_match), _FakeLib("emby", emby_match)])
+
+        path, wl = self._seed_one()
+        cfg = Mock(PLEX_URL="", PLEX_TOKEN="", EMBY_URL="", EMBY_API_KEY="",
+                   RADARR_API_KEY="k", SONARR_API_KEY="",
+                   RADARR_URL="http://r", SONARR_URL="http://s", QBITTORRENT_URL="http://q")
+        radarr = Mock()
+        radarr.get_movies.return_value = []
+        radarr.get_queue.return_value = []
+        radarr.get_indexer_health.return_value = None
+        qbit = Mock()
+        qbit.match.return_value = None
+
+        svc = MediaStatusService(watchlist=wl, library=library, radarr=radarr,
+                                 sonarr=None, qbit=qbit, config=cfg)
+        snap = svc.compute_statuses()
+        res = snap.results["tt0133093"]
+        assert res.state is MediaStatus.AVAILABLE
+        assert res.plexUrl.startswith("https://plex/")
+        assert "/library/metadata/320819" in res.plexUrl
+        assert res.embyUrl.startswith("https://emby/")
+        assert res.plexKey == "320819"  # numeric ratingKey, not a URL
+
+        remove_tmp(path)
+
+    def test_legacy_plex_arg_is_wrapped_through_library(self):
+        """The legacy `plex=` PlexService is wrapped in a provider — no direct path."""
+        plex = Mock()
+        svc = MediaStatusService(plex=plex, config=Mock(
+            PLEX_URL="http://p", PLEX_TOKEN="t", EMBY_URL=None, EMBY_API_KEY=None,
+            RADARR_API_KEY="k", SONARR_API_KEY="",
+            RADARR_URL="http://r", SONARR_URL="http://s", QBITTORRENT_URL="http://q"))
+        assert svc._library is not None
+        assert [p.name for p in svc._library.providers] == ["plex"]
+        # Library is the only availability source — no `_plex` attribute remains
+        # on the service (the legacy direct member is gone).
+        assert not hasattr(svc, "_plex")
 
 
 if __name__ == "__main__":

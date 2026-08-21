@@ -14,8 +14,14 @@ from dataclasses import dataclass
 from typing import Optional
 
 from domain.enums import MediaType
-from domain.state_machine import StatusFacts, StatusResult, WatchLinks, resolve_status
-from services import PlexService, RadarrService, SonarrService
+from domain.status import StatusFacts, StatusResult, WatchLinks, resolve_status
+from services import RadarrService, SonarrService
+from services.library import (
+    EmbyLibraryProvider,
+    LibraryService,
+    PlexLibraryProvider,
+    resolve_library_identity,
+)
 from services.qbittorrent import QBittorrentService
 from services.watchlist import WatchlistService
 
@@ -31,17 +37,36 @@ class StatusSnapshot:
 
 
 class MediaStatusService:
-    """Compute per-entry StatusResult using the domain state machine."""
+    """Compute per-entry StatusResult using the domain status resolver.
 
-    def __init__(self, *, watchlist=None, plex=None, radarr=None, sonarr=None,
-                 qbit=None, config=None):
+    Availability (spec §12: library always wins) comes from the unified
+    :class:`LibraryService` (Plex + Emby as one logical library) via
+    ``find_all()`` + ``watch_links()`` — the legacy ``PlexService`` direct calls
+    are removed from this path (Phase 6 migration, §42).
+    """
+
+    def __init__(self, *, watchlist=None, library=None, plex=None, radarr=None,
+                 sonarr=None, qbit=None, config=None):
         from config.settings import get_config
         self.config = config if config is not None else get_config()
         self._watchlist = watchlist if watchlist is not None else WatchlistService()
-        self._plex = plex if plex is not None else (PlexService(config=self.config) if (self.config.PLEX_URL and self.config.PLEX_TOKEN) else None)
         self._radarr = radarr if radarr is not None else (RadarrService(config=self.config) if self.config.RADARR_API_KEY else None)
         self._sonarr = sonarr if sonarr is not None else (SonarrService(config=self.config) if self.config.SONARR_API_KEY else None)
         self._qbit = qbit if qbit is not None else QBittorrentService(config=self.config)
+        # Canonical availability/watch-link source. If not injected, build one
+        # lazily from config. The legacy `plex=` arg (a PlexService) is wrapped
+        # in a PlexLibraryProvider so EVERY route goes through LibraryService —
+        # no parallel PlexService branch in the resolver (§43).
+        self._library = library
+        if self._library is None:
+            providers = []
+            if plex is not None:
+                providers.append(PlexLibraryProvider(config=self.config, plex=plex))
+            elif self.config.PLEX_URL and self.config.PLEX_TOKEN:
+                providers.append(PlexLibraryProvider(config=self.config))
+            if self.config.EMBY_URL and self.config.EMBY_API_KEY:
+                providers.append(EmbyLibraryProvider(config=self.config))
+            self._library = LibraryService(providers=providers) if providers else None
 
     # ------------------------------------------------------------------ public
     def compute_statuses(self) -> "StatusSnapshot":
@@ -74,22 +99,33 @@ class MediaStatusService:
         title = entry.title
         year = entry.year
         tmdb_id = getattr(entry, "tmdbId", None)
+        tvdb_id = getattr(entry, "tvdbId", None)
+        imdb_id = getattr(entry, "imdbId", None)
 
-        # Build the fact set the domain state machine consumes.
+        # Build the fact set the domain status resolver consumes.
         facts = StatusFacts(media_type=mt)
 
-        # 1. Plex is source of truth.
-        if self._plex and self._plex.has_media(title, year, is_series):
-            facts.in_plex = True
-            facts.plex_links = WatchLinks(
-                plex_available=bool(self._plex.plex_url_for(title, year, is_series)),
-                plex_url=self._plex.plex_url_for(title, year, is_series),
-                plex_key=self._plex.plex_key_for(title, year, is_series),
-                emby_available=bool(self._plex.emby_url_for(title)),
-                emby_url=self._plex.emby_url_for(title),
-            )
-            facts.indexer_issue = indexer_issue
-            return resolve_status(facts)
+        # 1. Library (Plex/Emby) is source of truth — availability always wins.
+        #    Watch links come from the unified LibraryService (failure-safe,
+        #    spec §10/§12); a link failure can never flip AVAILABLE away.
+        if self._library:
+            identity = resolve_library_identity(
+                media_type=mt, tmdb_id=tmdb_id, imdb_id=imdb_id, tvdb_id=tvdb_id)
+            matches = self._library.find_all(identity, title=title, year=year)
+            if matches:
+                watch = self._library.watch_links(matches)  # spec §10 map
+                plex_match = next((m for m in matches if m.provider == "plex"), None)
+                facts.in_plex = True
+                facts.plex_links = WatchLinks(
+                    plex_available=bool((watch.get("plex") or {}).get("available")),
+                    plex_url=(watch.get("plex") or {}).get("url") or "",
+                    plex_key=str((plex_match.metadata or {}).get("rating_key", ""))
+                    if plex_match else "",
+                    emby_available=bool((watch.get("emby") or {}).get("available")),
+                    emby_url=(watch.get("emby") or {}).get("url") or "",
+                )
+                facts.indexer_issue = indexer_issue
+                return resolve_status(facts)
 
         # 2. *arr facts.
         if mt is MediaType.TV:

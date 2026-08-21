@@ -31,9 +31,11 @@ class MediaType(str, enum.Enum):
 class MediaStatus(str, enum.Enum):
     """Application-level lifecycle state of a watchlist entry.
 
-    A title can only ever be in one of these states. The state machine in
-    ``domain.state_machine`` is authoritative: it decides allowed transitions
-    and derives ``MediaStatus`` from the external (Plex/*arr/qBittorrent) facts.
+    A title can only ever be in one of these states. The canonical resolver in
+    ``domain.status`` derives ``MediaStatus`` from the external
+    (Plex/*arr/qBittorrent) facts — it is the one source of truth. ``ERROR`` and
+    ``AMBIGUOUS`` are the spec §12 recommended statuses; they are declared now
+    (reserved) and produced by the resolver in later phases.
     """
 
     NOT_ADDED = "not_added"
@@ -42,6 +44,8 @@ class MediaStatus(str, enum.Enum):
     DOWNLOADED = "downloaded"
     AVAILABLE = "available"
     RECOMMENDED = "recommended"
+    ERROR = "error"
+    AMBIGUOUS = "ambiguous"
 
 
 class DownloadResultState(str, enum.Enum):

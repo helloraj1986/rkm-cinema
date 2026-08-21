@@ -8,6 +8,7 @@ from services.library.service import (
     LibraryProvider,
     LibraryMatch,
     LibraryService,
+    resolve_library_identity,
 )
 from services.library.watch_links import WatchLink, WatchLinkResolver
 from services.library.plex import PlexLibraryProvider
@@ -17,6 +18,7 @@ __all__ = [
     "LibraryProvider",
     "LibraryMatch",
     "LibraryService",
+    "resolve_library_identity",
     "WatchLink",
     "WatchLinkResolver",
     "PlexLibraryProvider",

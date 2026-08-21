@@ -122,10 +122,18 @@ class LibraryService:
         return self.find(identity, title=title, year=year) is not None
 
     def find_all(self, identity: MediaIdentity, *, title: str = "", year: Optional[int] = None) -> list[LibraryMatch]:
-        """All provider matches (e.g. same film in Plex and Emby)."""
+        """All provider matches (e.g. same film in Plex and Emby).
+
+        Defensive like :meth:`find`: a failing provider is skipped with a warning
+        so one broken backend can't block the whole reconciler.
+        """
         out: list[LibraryMatch] = []
         for provider in self._providers:
-            m = provider.find(identity, title=title, year=year)
+            try:
+                m = provider.find(identity, title=title, year=year)
+            except Exception as e:  # noqa: BLE001 - a provider failure is contained
+                logger.warning("library provider %s find_all failed: %s", provider.name, e)
+                m = None
             if m is not None:
                 out.append(m)
         return out

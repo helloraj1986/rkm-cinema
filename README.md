@@ -47,46 +47,55 @@ A clean, maintainable media recommendation and download orchestration system for
 
 ```text
 /workspace/media/watchlist/
-├── api.py                   # ⚡ LIVE backend (monolithic) — all /api/* routes
 ├── config/
-│   └── settings.py          # Centralized configuration (Config class)
+│   └── settings.py          # Centralized configuration (Config singleton, env-based)
 ├── core/
-│   ├── http_client.py       # Shared HTTP client with caching/retry
+│   ├── http_client.py       # Shared HTTP client with caching/retry/structured errors
 │   ├── logging.py           # Structured logging setup
-│   └── exceptions.py        # Custom exception hierarchy
-├── services/                # Modular domain layer (used by scripts; target backend)
-│   ├── base.py              # BaseService with common patterns
-│   ├── plex.py              # Plex integration (library, ownership, deep links)
-│   ├── radarr.py            # Radarr integration (movies, profiles)
-│   ├── sonarr.py            # Sonarr integration (series)
-│   ├── recommendations.py   # Recommendation pipeline (category, gates)
-│   ├── trailers.py          # Trailer enrichment (legacy fallback)
-│   ├── tmdb.py              # TMDB integration (metadata, artwork)
+│   └── exceptions.py        # Typed exception hierarchy
+├── domain/                  # Business layer (state machine + media-type resolver)
+│   ├── enums.py             # MediaType, MediaStatus, DownloadResultState
+│   ├── models.py            # DownloadResult (typed)
+│   ├── state_machine.py     # resolve_status(): THE availability state machine
+│   └── resolver.py          # resolve_media_type(): single movie/tv resolver
+├── services/                # External integrations + app services (DI-ready)
+│   ├── base.py              # BaseService (config/http injectable)
+│   ├── plex.py              # Plex: library, ownership, deep links, thumb proxy
+│   ├── radarr.py            # Radarr: movies, lookup/add (title fallback), profiles
+│   ├── sonarr.py            # Sonarr: series, lookup/add (title fallback), profiles
+│   ├── emby.py              # Emby: library, deep links
+│   ├── tmdb.py              # TMDB: metadata, artwork
 │   ├── youtube.py           # YouTube trailer scraping (no API key)
-│   ├── emby.py              # Emby integration (library, playback)
-│   └── watchlist.py         # Watchlist CRUD + state machine
-├── api/                     # Modular FastAPI target (not deployed as web backend)
-│   ├── main.py              # FastAPI app factory
+│   ├── trailers.py          # Trailer enrichment (legacy fallback)
+│   ├── qbittorrent.py       # qBittorrent torrents + download state
+│   ├── watchlist.py         # Watchlist CRUD + atomic writes + state validation
+│   ├── media_status.py      # MediaStatusService → domain state machine
+│   ├── download.py          # DownloadService → movie/tv routing + add + fallback
+│   └── recommendations.py   # Recommendation pipeline (rotation, gates, enrich)
+├── api/                     # ⚡ LIVE FastAPI backend (modular)
+│   ├── main.py              # App factory — uvicorn api.main:app
 │   ├── models.py            # Pydantic request/response models
-│   └── routes/ (health, config, status, download, search, library, quality)
+│   └── routes/ (health, config, status, download, search, library, quality, plex_thumb)
 ├── scripts/
 │   ├── daily_recommendations.py  # Daily cron orchestration
 │   ├── auto_complete.py          # pending → recommended transition
 │   ├── backfill_tmdb_artwork.py  # Re-fetch posters/backdrops from TMDB
 │   └── rebuild_dashboard.py      # Dashboard build pipeline
-├── tests/                   # Modular-service tests
-├── archive/                 # One-off / legacy dev scripts (not part of runtime)
-├── app.js / app.css         # Frontend (served by nginx, volume-mounted)
-├── Dockerfile / docker-compose.yml / nginx/ / setup-watchlist.ps1
+├── tests/                   # Mockable unit + API tests (no live LAN needed)
+├── archive/                 # Legacy monolith (api_legacy_monolith.py) + old scripts
+├── api.js / app.js / app.css # Frontend (served by nginx, volume-mounted; api.js = API client)
+├── index.html / dashboard.html
+├── requirements.txt / Dockerfile / docker-compose.yml / nginx/ / setup-watchlist.ps1
 ├── .env.example             # Documented env template (copy to .env)
 ├── ARCHITECTURE.md          # ⭐ Read this: how it works + what each file does
 ├── README.md                # This file
 └── PROGRESS.md              # Project progress tracking
 ```
 
-> ⚠️ **Two API layers:** the **deployed** backend is the monolithic **`api.py`**.
-> The modular `api/`+`services/` is the target refactor used by scripts. See
-> **ARCHITECTURE.md → "Two API layers"** before adding routes so you edit the live one.
+> ✅ **Single modular backend.** The legacy monolith `api.py` is archived
+> (`archive/api_legacy_monolith.py`). Production runs `uvicorn api.main:app`
+> (see `Dockerfile`). There is exactly one implementation of each business rule.
+> See **ARCHITECTURE.md**.
 
 ## Features
 
@@ -262,7 +271,7 @@ python3 scripts/rebuild_dashboard.py
 ### Recommendations not adding
 - Check cron job output
 - Verify TMDB API key in .env (now required)
-- Verify YouTube API key in .env (for optimal trailer results; falls back to legacy if missing)
+- Trailers need **no YouTube API key** — they are scraped from youtube.com
 - Check Plex token validity
 - Check logs for service initialization errors
 
@@ -272,7 +281,7 @@ python3 scripts/rebuild_dashboard.py
 - Check browser console for CORS errors
 
 ### Trailer not playing
-- Verify YouTube API key is set and valid
+- Trailers need **no YouTube API key** — the service scrapes youtube.com for the official trailer
 - Check that the trailer ID is a valid YouTube video ID (11 chars)
 - Ensure the trailer is from an official channel (service attempts to verify)
 - If YouTube fails, legacy trailer service will attempt to provide a trailer ID

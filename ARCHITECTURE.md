@@ -1,28 +1,23 @@
 # RKM Watchlist — Architecture
 
-> **Accuracy note — read this first.** There are TWO API codebases in this repo.
-> The one that is **actually deployed** (the Dockerfile copies `api.py` at the repo
-> root and runs `uvicorn api:app`) is the **monolithic `api.py`**. The modular
-> `api/` package + `services/` modules are the **target refactor**: mostly written
-> and tested, used by the offline scripts, but **not yet swapped in as the web
-> backend**. See "Two API layers" before adding routes so you edit the live one.
+> **Single codebase.** The monolithic `api.py` has been archived
+> (`archive/api_legacy_monolith.py`) and the production backend is now the
+> modular FastAPI app: **`uvicorn api.main:app`** (see `Dockerfile`). There is
+> exactly ONE implementation of each business rule. Add features to the modular
+> tree, not a parallel monolith.
 
 ---
 
 ## 1. What this is
 
 A self-hosted **media discovery + download dashboard**. It:
-- Shows you what's in your **Plex** library (source of truth) and recently added.
-- Lets you **request** movies/series, which get added to **Radarr** (movies) or
-  **Sonarr** (TV) and downloaded via **qBittorrent**.
-- Tracks each title through a lifecycle: requested → downloading → downloaded →
-  available → recommended (history).
-- Deep-links each available title straight into **Plex** or **Emby** to watch.
-- Fetches **posters/backdrops/genres** from **TMDB** and **trailers** by scraping
-  `youtube.com` (no YouTube API key).
+- Shows what's in your **Plex** library (source of truth for availability) and recently added.
+- Lets you **request** movies/series, which are added to **Radarr** (movies) or **Sonarr** (TV) and downloaded via **qBittorrent**.
+- Tracks each title through a lifecycle: requested → downloading → downloaded → available → recommended (history).
+- Deep-links each available title straight into **Plex** or **Emby** to watch (both share the same library).
+- Fetches **posters/backdrops/genres** from **TMDB** and **trailers** by scraping `youtube.com` (no YouTube API key).
 
-Access is private, over **Tailscale** only (MagicDNS). The browser talks to nginx
-on :8123; nginx proxies `/api/*` to the FastAPI container, which holds all secrets.
+Access is private over **Tailscale**. The browser talks to nginx on :8123; nginx proxies `/api/*` to the FastAPI container, which holds all secrets.
 
 ---
 
@@ -33,15 +28,16 @@ on :8123; nginx proxies `/api/*` to the FastAPI container, which holds all secre
       │  http://rkm-hp.tail8d5e8.ts.net:8123
       ▼
  ┌──────────────────────────────┐
- │  nginx (web container) :8123 │   serves app.js/app.css/index.html
+ │  nginx (web container) :8123 │   serves index.html/api.js/app.js/app.css
  │  ─ proxies /api/* → api:8000 │   (static files volume-mounted from repo)
  └──────────────┬───────────────┘
                 ▼
  ┌──────────────────────────────┐
- │  FastAPI  api  container     │   THE DEPLOYED BACKEND = root api.py
- │  /api/health /config /status │   (holds RADARR_KEY, PLEX_TOKEN, etc.)
+ │  FastAPI  api  container     │   uvicorn api.main:app  (modular)
+ │  /api/health /config /status │   holds RADARR_KEY, PLEX_TOKEN, EMBY_KEY…
  │  /api/download /search       │
  │  /api/library /plex/thumb    │
+ │  /api/quality                │
  └───────┬──────────┬───────────┘
          │          │   read /write
          ▼          ▼
@@ -53,173 +49,179 @@ on :8123; nginx proxies `/api/*` to the FastAPI container, which holds all secre
 
 ---
 
-## 3. Two API layers (READ THIS FIRST)
+## 3. Repository layout
 
-| | **Legacy monolith (LIVE)** | **Modular refactor (target)** |
-|---|---|---|
-| File(s) | `api.py` at repo root (all routes+logic in one file) | `api/main.py` + `api/routes/*.py` + `services/*.py` |
-| Deployed? | **Yes** — Dockerfile copies `api.py` and runs `uvicorn api:app` | **No** — not wired into the Docker image yet |
-| Used by | The running dashboard (everything you see) | Offline scripts: `scripts/rebuild_dashboard.py`, `scripts/daily_recommendations.py`, `scripts/auto_complete.py`, `scripts/add_with_plex_check.py`, `scripts/verify_plex.py` |
-| Tests | — | `tests/test_*.py` exercise the modular services |
-
-**So:** to change behavior **you see on the site**, edit **`api.py`**. To change the
-recommenders/rebuild **scripts**, edit the modular `services/` + `scripts/`.
-The plan is to eventually swap the web backend to the modular `api/` package.
-
-> Both layers duplicate roughly the same logic (status, download, library). Keep
-> fixes in BOTH when a bug touches shared behaviour.
+```
+watchlist/
+├── api/
+│   ├── main.py              app factory: CORS, wires all routers
+│   ├── models.py            Pydantic request/response models
+│   └── routes/              one thin router per concern:
+│       health config status download search library quality plex_thumb
+├── services/               external integrations + app services
+│   ├── base.py              BaseService (DI-ready: config/http injectable)
+│   ├── plex.py              Plex: library, ownership, deep-links, thumb proxy
+│   ├── radarr.py            Radarr: movies, lookup/add (title fallback), profiles
+│   ├── sonarr.py            Sonarr: series, lookup/add (title fallback), tvdb resolve
+│   ├── emby.py              Emby client / counts / deep-links
+│   ├── tmdb.py              TMDB metadata + artwork
+│   ├── youtube.py           YouTube trailer scraping (no API key)
+│   ├── trailers.py          Legacy trailer fallback (TVDB/TMDB/oEmbed)
+│   ├── qbittorrent.py       qBittorrent torrents + download-state
+│   ├── watchlist.py         Watchlist CRUD, atomic writes, state validation
+│   ├── media_status.py      MediaStatusService → domain state machine
+│   ├── download.py          DownloadService → movie/tv routing + add + fallback
+│   └── recommendations.py   Recommendation pipeline (rotation, gates, enrich)
+├── domain/                  business layer (no HTTP/FastAPI)
+│   ├── enums.py             MediaType, MediaStatus, DownloadResultState
+│   ├── models.py            DownloadResult (typed)
+│   ├── state_machine.py     resolve_status(): THE state machine + WatchLinks
+│   └── resolver.py          resolve_media_type(): single movie/tv resolver
+├── core/                    infrastructure
+│   ├── http_client.py       shared HTTP client (retry/cache/structured errors)
+│   ├── exceptions.py        typed app exceptions
+│   └── logging.py           structured logging
+├── config/settings.py       centralized env config (singleton, no secret leaks)
+├── scripts/                 daily pipeline + rebuild + hygiene scripts
+├── tests/                   unit + API tests (mockable, no live LAN)
+├── frontend (root):         index.html, api.js, app.js, app.css (volume-mounted)
+├── requirements.txt         production backend deps
+├── Dockerfile               runs uvicorn api.main:app
+├── docker-compose.yml       api + web (nginx) containers
+└── archive/                 legacy monolith + old throwaway scripts
+```
 
 ---
 
-## 4. The mono `api.py` (live backend) — what each endpoint does
+## 4. Dependency direction (the contract)
+
+```
+ Frontend (app.js)
+      ↓  /api/*
+ API routes (api/routes/*)         thin: validate → call service → map response
+      ↓
+ Domain + app services (services/)  business rules once, in one place
+      ↓
+ External service clients (services/*, core/http_client)  isolated URL/auth/HTTP
+      ↓
+ Plex · Radarr · Sonarr · Emby · TMDB · qBittorrent · YouTube
+```
+
+Rules:
+- Routes **never** call external APIs directly or build raw `urllib` calls.
+- Services **never** leak secrets; browser never sees keys/URLs (nginx fronts `/api`).
+- The `domain/` state machine + resolver are the **single owners** of status and movie/tv rules.
+
+---
+
+## 5. Endpoints
 
 | Endpoint | Purpose |
 |---|---|
 | `GET /api/health` | Service up/down flags (radarr, sonarr, tmdb, plex, emby, jellyfin, qbit) |
 | `GET /api/config` | Public-safe booleans + dashboard freshness (never keys/URLs) |
-| `GET /api/status` | Per-title lifecycle state (not_added/requested/downloading/downloaded/available) + `plexUrl`/`embyUrl` watch links |
-| `POST /api/download` | Add movie→Radarr or series→Sonarr; resolves stale/ambiguous IDs by title fallback |
-| `GET /api/search` | Search watchlist + live TMDB (multi-search) for adding |
-| `GET /api/library` | Plex library counts + recently-added (Emby fallback); each item gets plexUrl/embyUrl/thumb |
-| `GET /api/plex/thumb` | Server-side proxy for Plex thumbnails (keeps the token secret) |
-
-### Inside `api.py` — key helpers
-- `_resolve_download_type(imdb, type)` — decides movie vs TV for routing.
-- `_plex_has / _plex_library` — the **Plex-as-source-of-truth** check (cached ~45s).
-- `_plex_server_id / _emby_server_id / _emby_item_id / _emby_url_for` — build correct
-  Plex (`#!/server/<machineId>/details?key=%2Flibrary%2Fmetadata%2F<rk>`) and Emby
-  (`#!/item?id=<id>&serverId=<sid>`) deep links.
-- `compute_statuses()` — lifecycle resolution order: **Plex first**, then *arr/qBittorrent.
-- `radarr_add / sonarr_add (+_lookup_title)` — add with title/year fallback + "pick one" ambiguity lists.
+| `GET /api/status` | Per-title state via `MediaStatusService` → `domain.state_machine.resolve_status()`; includes `plexUrl`/`embyUrl` watch links |
+| `POST /api/download` | Add movie→Radarr / series→Sonarr via `DownloadService` (title fallback, "pick one" ambiguity) |
+| `GET /api/search` | Watchlist + live TMDB search |
+| `GET /api/library` | Plex counts + recently-added (Emby fallback); per-item plexUrl/embyUrl/thumb |
+| `GET /api/plex/thumb` | Server-side proxy for Plex thumbnails (keeps token secret) |
+| `GET /api/quality` | Radarr/Sonarr quality profiles for the download dialog |
 
 ---
 
-## 5. Modular target (`api/` + `services/`) — what each module is for
+## 6. Media status state machine
 
-### `services/` — the domain layer
-| Module | Responsibility |
+The canonical resolution lives in `domain/state_machine.py::resolve_status`:
+
+```
+ Plex has media   → AVAILABLE        (with Plex/Emby watch links)
+ else *arr has file → DOWNLOADED
+ else qBittorrent active → DOWNLOADING (progress/speed/eta)
+ else *arr queue  → DOWNLOADING
+ else *arr record exists → REQUESTED ("waiting — indexers down" if health says so)
+ else             → NOT_ADDED
+```
+
+**Plex is the source of truth** for availability. A title in Plex is `available`
+even if its *arr record is stale/missing. `MediaStatusService` gathers the
+external facts and feeds them to `resolve_status`; the domain module decides.
+
+---
+
+## 7. Download flow
+
+1. Frontend `POST /api/download` → `DownloadService.download(...)`.
+2. Media type resolved by **`domain/resolver.py`** (single authoritative rule):
+   explicit `type` → watchlist `isSeries` → Radarr/Sonarr lookup → default movie.
+3. `RadarrService.add_movie` / `SonarrService.add_series`:
+   - Lookup by `imdb` first; if it resolves nothing, **fall back to title (+year) search**.
+   - Unique match → used. Multiple matches, none exact → **`ambiguous`** ("pick one" list), never a silent guess.
+4. Cross-service fallback: a "No Radarr match" on a real series retries Sonarr (and vice-versa).
+5. `DownloadResult` (typed domain object) maps to `DownloadResponse` with predictable HTTP codes (404 ambiguous, 502 unavailable, 503 not configured).
+
+---
+
+## 8. External integrations
+
+| Service | Responsibility |
 |---|---|
-| `plex.py` | Plex client: library, ownership, recently-added, deep-link helpers (`server_id`, `find_item`, `plex_url_for`, `emby_url_for`) |
-| `radarr.py` | Radarr client: movies, lookup/add (with title fallback), quality profiles, queue |
-| `sonarr.py` | Sonarr client: series, lookup/add (title fallback), tvdb resolve, profiles |
-| `tmdb.py` | TMDB metadata: movie/show details, posters/backdrops/genres, search |
-| `youtube.py` | Scrape youtube.com for the **official trailer** (no API key) |
-| `trailers.py` | Legacy trailer fallback (TVDB/TMDB/oEmbed) |
-| `emby.py` | Emby client / counts |
-| `recommendations.py` | Recommendation pipeline: rotation, quality gates, enrichment, validation |
-| `watchlist.py` | Watchlist CRUD + state machine, atomic writes |
-| `base.py` | `BaseService` shared HTTP/config/retry plumbing |
-| `plex_check.py` | Thin Plex ownership helper |
+| `PlexService` | Library counts, ownership (`has_media`), recently-added, `get_thumb` proxy, deep-link builders (`plex_url_for`, `emby_url_for`) using the Plex machineIdentifier + encoded `/library/metadata/<rk>` key |
+| `RadarrService` | Movies, `lookup_movie`, `search_movies` (title fallback), `add_movie`, profiles/queue, indexer health |
+| `SonarrService` | Series, `lookup_series`, `search_series` (title fallback), `add_series`, tvdb resolve, profiles/queue |
+| `TMDBService` | Movie/show details, posters/backdrops/genres, search |
+| `EmbyService` | Emby library counts + deep links (`/web/index.html#!/item?id=..&serverId=..`) |
+| `YouTubeService` | Scrape youtube.com for the official trailer (no API key) |
+| `QBittorrentService` | Torrent list + download-state (used by status) |
+| `TrailerService` | Legacy trailer fallback |
+| `WatchlistService` | Atomic watchlist persistence + state validation |
+| `MediaStatusService` | Per-entry status via the domain state machine |
+| `DownloadService` | Movie/tv routing + add + fallback orchestration |
+| `RecommendationService` | Quality gates, Plex/duplicate checks, enrichment, add |
 
-### `api/` — the FastAPI app (target backend)
-- `main.py` — app factory, CORS, wires all routers.
-- `routes/health.py config.py status.py download.py search.py library.py quality.py` — one router per concern.
-- `models.py` — Pydantic request/response models (`DownloadRequest`, `StatusEntry`, `LibraryResponse`, …).
-
-### `core/` — infrastructure
-- `settings.py` is in `config/`; `http_client.py` (shared HTTP + retry/cache), `logging.py`, `exceptions.py`.
+All services accept injectable `config`/`http` (constructor DI) and are unit-tested
+with fakes — **no test touches the live LAN**.
 
 ---
 
-## 6. Lifecycle / state machine
+## 9. Config & data
 
-```
-PENDING ──► REQUESTED ──► DOWNLOADING ──► DOWNLOADED ──► AVAILABLE ──► RECOMMENDED
-                                        (qBittorrent  (hasFile,     (in Plex =
-                                          progress)     *arr)         source of truth)
-```
-
-**The rule in `compute_statuses` (and modular `status.py`):**
-1. If the title is **in Plex** → `available` (with watch links). **Plex wins.**
-2. Else if Radarr/Sonarr `hasFile` → `downloaded`.
-3. Else if in *arr/qBittorrent queue → `downloading` (with %).
-4. Else `requested` / `not_added`.
-
-This means a title that exists in Plex shows as **available** even if its *arr
-record is stale/missing — that was the fix for "requested but it's actually in Plex".
+- **`config/settings.py`** — single `Config` singleton from `/workspace/.env` (+ env overrides). Provides `has_emby()`, `has_tmdb()`, `validate_required()`, etc. **Never returns secrets via `/api/config`.**
+- **`watchlist.json`** — source of truth; volume-mounted into the container at `/app/watchlist.json`. `WatchlistService` auto-resolves the correct path (container vs sandbox).
+- **`dashboard-data.json`** — published snapshot the SPA loads (built by `scripts/rebuild_dashboard.py`).
+- **`.env`** — canonical at `/workspace/.env`, never committed; see `.env.example`.
 
 ---
 
-## 7. Download flow (with title-fallback safety)
+## 10. Frontend (app.js → api.js)
 
-1. Frontend `POST /api/download` with `{imdbId, type, title?, year?, tmdbId?}`.
-2. `api.py` resolves movie vs TV (`_resolve_download_type`), then calls
-   `radarr_add`/`sonarr_add`.
-3. Each looks up by `imdb:<id>` first; **if it 404s/returns nothing**, falls back to a
-   **title (+year) search** in Radarr/Sonarr (prevents "No Radarr/Sonarr match" for
-   stale IDs e.g. The Bear / The Zone of Interest).
-4. A unique match is used; multiple matches return a numbered "pick one" list; a movie
-   can never be routed to Sonarr by mistake.
+- `api.js` — centralized API client (`API.getJSON`, `API.download`, `API.getStatus`, …). Loaded before `app.js` as a plain global.
+- `app.js` — rendering, state, UI. Delegates ALL `/api/*` and `/dashboard-data.json` calls to `API`. No direct `fetch` to backend endpoints anywhere else.
+- Served statically by nginx; **volume-mounted** so UI changes need no Docker rebuild.
 
 ---
 
-## 8. Scripts (`scripts/`)
+## 11. Deployment
 
-| Script | Purpose | Run by |
-|---|---|---|
-| `rebuild_dashboard.py` | Regenerate `dashboard-data.json` + `index.html` from the watchlist (publisher guard, atomic writes) | manual / cron |
-| `daily_recommendations.py` | Daily recommendation pipeline (rotation, gates, enrichment, add) | cron |
-| `auto_complete.py` | Move pending→recommended when downloaded + in Plex | cron |
-| `enrich_trailers.py` / `fetch_trailers.py` / `fix_trailer_ids.py` / `validate_trailers.py` | Trailer enrichment & hygiene | manual |
-| `backfill_tmdb_artwork.py` | Re-fetch posters/backdrops from TMDB by tmdbId | manual (after an outage) |
-| `add_with_plex_check.py` / `verify_plex.py` | Add/verify against Plex | manual |
-
----
-
-## 9. Data & config
-
-- **`watchlist.json`** — source of truth for the watchlist (volume-mounted `:ro` into
-  the container). Lives at the workspace root, not committed to git.
-- **`dashboard-data.json`** — baked/published snapshot the SPA loads (generated by
-  `rebuild_dashboard.py`; git-ignored).
-- **`.env`** — all secrets (RADARR_API_KEY, PLEX_TOKEN, EMBY_API_KEY, TMDB_API_KEY…).
-  Canonical file at `/workspace/.env`; mounted into the container. **Never committed.**
-  See `.env.example` for the full list.
-- **`/workspace/.env` is the canonical secrets file.**
-
----
-
-## 10. Config knobs (`.env`)
-
-See `.env.example`. Highlights:
-- `MEDIA_HOST` = LAN IP of the media box.
-- `RADARR_/SONARR_*` = URLs + API keys; `*_QUALITY_PROFILE_ID` optional overrides.
-- `PLEX_URL`+`PLEX_TOKEN` = source of truth + thumbnails.
-- `EMBY_URL`+`EMBY_API_KEY` = Emby (HTTPS-only over Tailscale on :8096).
-- `TMDB_API_KEY` = metadata/artwork. (No YouTube key needed — trailers scraped.)
-- `QBITTORRENT_URL` = download progress.
-
----
-
-## 11. Deployment & networking
-
-- **Repo** → mounted at `/workspace/media/watchlist` (maps to `D:\hermes_agent\hermes-workspace\media\watchlist`).
-- **Deploy** (RKM-HP, Windows): `.\setup-watchlist.ps1` → `docker compose up -d --build`.
-- **Two containers:** `api` (FastAPI, holds secrets) + `web` (nginx :8123, serves
-  static + proxies `/api`).
-- **Tailscale only** — `http://rkm-hp.tail8d5e8.ts.net:8123`. Never `tailscale funnel`.
-  Emby on :8096 is HTTPS-only over Tailscale.
+- Deploy (RKM-HP / Windows): `.\setup-watchlist.ps1` → `docker compose up -d --build`.
+- Two containers: `api` (FastAPI modular, holds secrets) + `web` (nginx :8123, static + `/api` proxy).
+- Emby on :8096 is **HTTPS-only** over Tailscale; Emby links must use `https://`.
 
 ---
 
 ## 12. Adding a feature (recommended path)
 
-1. Decide which layer: **live-site behaviour → `api.py`**; **recommender/scripts →
-   modular `services/`+`scripts/`**. For anything that appears in the dashboard,
-   patch **both** `api.py` (live) *and* the modular equivalent so they don't drift.
-2. Add/use a service method in `services/` when it's media-logic (Radarr/Sonarr/
-   Plex/TMDB/Emby/YouTube), then expose it via a route in both layers.
-3. If it touches the UI, extend `app.js`/`app.css` (volume-mounted, no rebuild needed).
-4. Add tests under `tests/` for the modular service; run `python -m pytest tests/ -q`.
-5. Regenerate `dashboard-data.json` with `scripts/rebuild_dashboard.py`.
-6. Deploy with `.\setup-watchlist.ps1`, verify via `/api/health` + the dashboard.
+1. **Business rule (status/movie-tv)?** → put it in `domain/` (state machine or resolver). Wire service gatherers in `services/`.
+2. **External integration?** → add a method on the relevant `services/*` client; never in a route.
+3. **Route?** → add a thin handler in `api/routes/`, reuse a service, return a typed Pydantic model.
+4. **UI?** → update `app.js` (+ `api.js` if it's a new API call). Volume-mounted, no rebuild.
+5. **Test it** → add a mockable test under `tests/`; run `python -m pytest tests/ -q`.
+6. If the dashboard needs fresh data, run `scripts/rebuild_dashboard.py`.
+7. Deploy with `.\setup-watchlist.ps1`; verify `/api/health` + the dashboard.
 
 ---
 
 ## 13. Testing
 
-- `tests/` cover the modular services: Plex ownership, Radarr/Sonarr routing,
-  duplicate prevention, trailer validation, download status, error handling, E2E.
-- Some tests are integration-style and hit live LAN services (they need the real
-  environment; pass with the `.env` populated).
-- Run: `python3 -m pytest tests/ -q` (from the repo root).
+- `tests/` cover: domain state machine, media-type resolver, Radarr/Sonarr routing + title fallback + ambiguity, duplicate prevention, error handling, trailer validation, Plex ownership, recommendation pipeline, and API endpoints.
+- All tests use **injected fakes** — no real LAN, no real API keys required.
+- Run: `python -m pytest tests/ -q` (from the repo root). **47 tests, all green.**

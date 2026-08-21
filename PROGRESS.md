@@ -1,30 +1,36 @@
 # RKM Watchlist — Session Handoff & Project Progress
 
-> Last updated: 2026-08-21 (git repo creation + architecture docs)
+> Last updated: 2026-08-21 (**production-grade refactor — single modular backend**)
 > Live URL: **http://rkm-hp.tail8d5e8.ts.net:8123/** (Tailscale MagicDNS, tailnet-only — NEVER `tailscale funnel` it; page proxies /api → FastAPI which holds secrets server-side)
 > Deploy path (Windows, RKM-HP): `cd D:\hermes_agent\hermes-workspace\media\watchlist; .\setup-watchlist.ps1` — the sandbox's `/workspace` maps to `D:\hermes_agent\hermes-workspace` (9p mount, confirmed via mountinfo 2026-08-18; NOT `D:\media`)
 > Repo: **private `rkm-watchlist` on GitHub** (github.com/helloraj1986/rkm-watchlist)
-> **Status:** ✅ CREATED + PUSHED — local git repo `main`, initial commit `54900f9`, pushed to
-> GitHub `main` (2026-08-21), remote verified (30 top-level items). Token = fine-grained,
-> repo-scoped; needs `rkm-watchlist` granted in GitHub token settings before push.
+> **Status:** ✅ CREATED + PUSHED — local git repo `main`, pushed to GitHub `main`. Token = fine-grained, repo-scoped; needs `rkm-watchlist` granted in GitHub token settings before push.
 
 ## ⚡ HOW TO PICK UP WORK HERE
 
-- **Start with `ARCHITECTURE.md`** — it's the up-to-date map of how everything works and what each file does. Read the **"Two API layers"** section first: the **live** backend is the monolithic **`api.py`**; the modular **`api/`+`services/`** is the target refactor (used by scripts). Add/adjust routes in **`api.py`** for anything visible on the site, and mirror the change in the modular layer so they don't drift.
+- **Start with `ARCHITECTURE.md`** — it's the up-to-date map. The **old two-API-layer split is GONE**: the monolithic `api.py` is archived (`archive/api_legacy_monolith.py`) and the live backend is now the **modular FastAPI app** (`uvicorn api.main:app`). Edit the modular tree — `api/routes/*` (thin), `services/*` (business logic), `domain/*` (state machine + media-type resolver). There is exactly ONE implementation of each rule.
 - **Adding a feature** → follow ARCHITECTURE.md §12 ("Adding a feature").
-- **Quick checklist:** backend change → edit `api.py` (+ modular `api/routes/*` + `services/*`), then `python -m pytest tests/ -q`, then `scripts/rebuild_dashboard.py`, then deploy `.\setup-watchlist.ps1`. Frontend (`app.js`/`app.css`) is volume-mounted — no rebuild needed for UI-only changes.
+- **Quick checklist:** backend change → edit `api/routes/*` + `services/*` (+ `domain/*` for rules), then `python -m pytest tests/ -q` (must stay green), then `scripts/rebuild_dashboard.py`, then deploy `.\setup-watchlist.ps1`. Frontend (`api.js`/`app.js`/`app.css`) is volume-mounted — no rebuild needed for UI-only changes.
 - **Secrets** live in `/workspace/.env` (canonical). `.env` is git-ignored; use `.env.example` as the template. **Never commit real keys.**
 
-## Latest session (2026-08-21) — git repo + docs
+## Latest session (2026-08-21) — production-grade refactor ✅
 
-- Initialised git repo (`main`), added `.gitignore` (excludes `.env`, runtime data `watchlist.json`/`dashboard-data.json`/`index.html`/`dashboard.html`, caches, `*.tmp`) and `.env.example` (documented env template).
-- Moved one-off/legacy dev scripts into `archive/` (kept out of the active tree).
-- Rewrote **`ARCHITECTURE.md`** from scratch to match the **actual** codebase (was an aspirational "Target Architecture" doc): covers the two API layers, every endpoint in `api.py`, every modular service, the state machine, download/lifecycle flows, config, deployment, and a step-by-step "add a feature" guide.
-- Updated **`README.md`** (accurate project structure + the two-layer warning + correct deploy paths + "no YouTube API key needed").
-- Updated **`PROGRESS.md`** (this file) with a handoff block.
-- **Deployed state note:** the running site is still the **monolithic `api.py`** build. All in-repo fixes made in the 2026-08-20 session (trailers, routing, Watch Now, Plex/Emby deep links, Plex-source-of-truth status, posters) are in the code but require `.\setup-watchlist.ps1` to go live.
+**Goal:** eliminate the two-backend problem and make the modular architecture the single source of truth.
+
+- **Domain layer added (`domain/`):** `enums.py` (`MediaType`, `MediaStatus`, `DownloadResultState`), `models.py` (`DownloadResult`), `state_machine.py` (`resolve_status()` — the ONLY availability resolution: Plex→available, *arr hasFile→downloaded, qBittorrent→downloading, *arr record→requested, else not_added), `resolver.py` (`resolve_media_type()` — single movie/tv resolver).
+- **Services stabilized (DI):** all services now accept injectable `config`/`http` (testable, no real LAN). Extracted **`QBittorrentService`** and **`MediaStatusService`** from the fat status route.
+- **Routes thinned:** `status.py` delegates to `MediaStatusService`; `download.py` delegates to new **`DownloadService`** (routing + add + title-fallback + cross-service fallback + "pick one" ambiguity → typed `DownloadResult`). Added **`/api/plex/thumb`** route (via `PlexService.get_thumb`) so modular cutover doesn't break thumbnails.
+- **Fixed latent bugs found by tests:** `UnboundLocalError` in both `RadarrService.add_movie` & `SonarrService.add_series` when no quality-profile override set; silent-guess ambiguity now returns **`ambiguous`** instead of picking a wrong title; `WatchlistService.update_status` to `recommended` now moves the entry out of pending into history.
+- **Docker migration (Phase 5):** `Dockerfile` now copies `api/ services/ domain/ core/ config/` + `requirements.txt` and runs **`uvicorn api.main:app`**. `WatchlistService` auto-resolves `/app/watchlist.json` (container) vs `/workspace/media/watchlist.json` (sandbox). Verified the copied Docker tree imports and exposes all 8 endpoints.
+- **Frontend (Phase 7):** new **`api.js`** centralized API client (`API.getJSON/getStatus/download/...`); `app.js` delegates all `/api/*`+`/dashboard-data.json` calls to it. `api.js` wired into `index.html` + `dashboard.html`. No rendering/behavior change.
+- **Legacy removed (Phase 6):** `api.py` → `archive/api_legacy_monolith.py` (+ `archive/README.md`).
+- **Tests: 47 passing, all mockable (no live LAN):** domain state machine, media-type resolver, Radarr/Sonarr routing + title fallback + ambiguity, download status, error handling, Plex ownership, duplicate prevention, trailer validation, recommendation pipeline, and API endpoints (`tests/test_api.py`).
+
+**⚠️ DEPLOY REQUIRED:** all of the above is committed but the running site is still the OLD monolithic image. Run `.\setup-watchlist.ps1` on RKM-HP to build & start the modular backend (`uvicorn api.main:app`). Then verify `/api/health`, `/api/config`, `/api/status`, `/api/library`, `/api/plex/thumb`, download flow, and Plex/Emby watch buttons per ARCHITECTURE.md §11.
 
 ---
+
+## Previous sessions
 
 ## Latest session (2026-08-20) — 9 fixes
 

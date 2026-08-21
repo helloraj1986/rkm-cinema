@@ -4,12 +4,9 @@
 > Live URL: **http://rkm-hp.tail8d5e8.ts.net:8123/** (Tailscale MagicDNS, tailnet-only — NEVER `tailscale funnel` it; page proxies /api → FastAPI which holds secrets server-side)
 > Deploy path (Windows, RKM-HP): `cd D:\hermes_agent\hermes-workspace\media\watchlist; .\setup-watchlist.ps1` — the sandbox's `/workspace` maps to `D:\hermes_agent\hermes-workspace` (9p mount, confirmed via mountinfo 2026-08-18; NOT `D:\media`)
 > Repo: **private `rkm-watchlist` on GitHub** (github.com/helloraj1986/rkm-watchlist)
-> **Status:** local git repo initialised + initial commit `073126c` done (this session).
-> **Push pending:** the `GITHUB_TOKEN` in `/workspace/.env` can **list** repos but **cannot create**
-> new ones (HTTP 403 "Resource not accessible by personal access token" — a fine-grained-token
-> scope limit, same as the knot-app setup). → **Step needed from Rajeev:** create an empty private
-> repo named `rkm-watchlist` on GitHub (github.com/new → name `rkm-watchlist`, Private, no README),
-> then tell me and I'll push with the token.
+> **Status:** ✅ CREATED + PUSHED — local git repo `main`, initial commit `54900f9`, pushed to
+> GitHub `main` (2026-08-21), remote verified (30 top-level items). Token = fine-grained,
+> repo-scoped; needs `rkm-watchlist` granted in GitHub token settings before push.
 
 ## ⚡ HOW TO PICK UP WORK HERE
 

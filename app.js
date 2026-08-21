@@ -85,14 +85,13 @@ const app = $('#app');
 
 /* ---------------- api ---------------- */
 async function getJSON(url) {
-  const r = await fetch(url, { headers: { 'Accept': 'application/json' } });
-  if (!r.ok) throw new Error(`HTTP ${r.status}`);
-  return r.json();
+  // Delegates to the centralized API client (api.js).
+  return API.getJSON(url);
 }
 
 async function refreshStatus(silent = false) {
   try {
-    const d = await getJSON('/api/status');
+    const d = await API.getStatus();
     STATUS = d.statuses || {};
     INDEXER_ISSUE = d.indexerIssue || null;
   } catch (e) {
@@ -102,29 +101,18 @@ async function refreshStatus(silent = false) {
 
 async function loadServices() {
   try {
-    const d = await getJSON('/api/config');
+    const d = await API.getConfig();
     SERVICES = d.services || {};
     if (typeof d.heroMode === 'string' && !heroOverride) heroOverride = d.heroMode;
   } catch (e) { /* keep previous */ }
 }
 
 async function loadLibrary() {
-  try { LIB = await getJSON('/api/library'); } catch (e) { LIB = null; }
+  try { LIB = await API.getLibrary(); } catch (e) { LIB = null; }
 }
 
 async function postDownload(entry) {
-  const body = { imdbId: entry.imdbId, type: entry.type, title: entry.title || '', year: entry.year || null, tmdbId: entry.tmdbId || null };
-  const r = await fetch('/api/download', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  if (!r.ok) {
-    let msg = `HTTP ${r.status}`;
-    try { const d = await r.json(); msg = d.detail || msg; } catch (e) { /* ignore */ }
-    throw new Error(msg);
-  }
-  return r.json();
+  return API.download(entry);
 }
 
 /* ---------------- toasts ---------------- */
@@ -823,7 +811,7 @@ async function runSearch(q) {
   box.innerHTML = `<div class="sr-empty">Searching\u2026</div>`;
   let local = [], live = [];
   try {
-    const d = await getJSON('/api/search?q=' + encodeURIComponent(q));
+    const d = await API.search(q);
     local = d.watchlist || [];
     live = d.tmdb || [];
   } catch (e) { /* fall through */ }
@@ -1128,7 +1116,7 @@ function fmtRuntime(min) {
     const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     // minimum skeleton so the page never flashes empty
     app.innerHTML = skeleton();
-    const dataP = getJSON('/dashboard-data.json');
+    const dataP = API.getDashboardData();
     const [d] = await Promise.all([dataP, loadServices()]);
     DATA = d;
     await refreshStatus(true);

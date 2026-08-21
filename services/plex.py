@@ -91,7 +91,16 @@ class PlexService(BaseService):
             self._handle_http_error(f"get_section_content({section_key})", e)
 
     def get_all_movies(self) -> list[PlexMovie]:
-        """Get all movies from all movie library sections."""
+        """Get all movies from all movie library sections (cached ~60s).
+
+        Rescans of the full Plex library (774 movies + 100 shows) are expensive;
+        the status service calls this once per entry, so without caching one
+        /api/status pass can trigger 17 full rescans and blow the request window.
+        """
+        now = time.time()
+        cached = self._library_cache.get("movies")
+        if cached is not None and now < self._library_cache_expiry:
+            return cached
         sections = self._get_sections()
         movies = []
         for section in sections:
@@ -105,10 +114,16 @@ class PlexService(BaseService):
                             rating_key=item.get("ratingKey", ""),
                             thumb=item.get("thumb", "")
                         ))
+        self._library_cache["movies"] = movies
+        self._library_cache_expiry = now + 60
         return movies
 
     def get_all_shows(self) -> list[PlexShow]:
-        """Get all TV shows from all show library sections."""
+        """Get all TV shows from all show library sections (cached ~60s)."""
+        now = time.time()
+        cached = self._library_cache.get("shows")
+        if cached is not None and now < self._library_cache_expiry:
+            return cached
         sections = self._get_sections()
         shows = []
         for section in sections:
@@ -122,6 +137,8 @@ class PlexService(BaseService):
                             rating_key=item.get("ratingKey", ""),
                             thumb=item.get("thumb", "")
                         ))
+        self._library_cache["shows"] = shows
+        self._library_cache_expiry = now + 60
         return shows
 
     def has_movie(self, title: str, year: Optional[int] = None) -> bool:

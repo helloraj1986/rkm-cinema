@@ -97,6 +97,42 @@ class TestPlexOwnership:
         assert self.plex.has_movie("the grand budapest hotel", 2014) is True
         assert self.plex.has_movie("GRAND BUDAPEST", 2014) is True
 
+    def test_library_scan_cached_across_calls(self):
+        """get_all_movies scans the library once, then reuses the 60s cache —
+        this is what keeps /api/status from rescanning on every entry."""
+        self._reset_mock()
+        # Only 2 http calls total: sections + one section content fetch.
+        # A second get_all_movies() must hit the cache, NOT refetch.
+        self.mock_client.get.side_effect = [
+            {"MediaContainer": {"Directory": [{"key": "1", "type": "movie"}]}},
+            {"MediaContainer": {"Metadata": [
+                {"title": "The Matrix", "year": 1999, "ratingKey": "123", "type": "movie"},
+                {"title": "Inception", "year": 2010, "ratingKey": "456", "type": "movie"},
+            ]}},
+        ]
+        first = self.plex.get_all_movies()
+        assert len(first) == 2
+        second = self.plex.get_all_movies()
+        assert len(second) == 2
+        # sections (1) + content (1) = 2 calls; a 3rd would be another content fetch
+        assert self.mock_client.get.call_count == 2
+
+    def test_library_cache_expiry(self):
+        """After the 60s TTL the library is rescanned."""
+        self._reset_mock()
+        self.mock_client.get.side_effect = [
+            {"MediaContainer": {"Directory": [{"key": "1", "type": "movie"}]}},
+            {"MediaContainer": {"Metadata": [{"title": "M", "year": 2000, "ratingKey": "1", "type": "movie"}]}},
+            {"MediaContainer": {"Directory": [{"key": "1", "type": "movie"}]}},
+            {"MediaContainer": {"Metadata": [{"title": "M", "year": 2000, "ratingKey": "1", "type": "movie"}]}},
+        ]
+        self.plex.get_all_movies()
+        self.plex.get_all_movies()           # cache hit
+        self.plex._library_cache_expiry = 0  # force expiry
+        self.plex.get_all_movies()           # refetch content (sections still cached 5min)
+        # sections(1) + content(1) first call, then content(1) after library-expiry = 3
+        assert self.mock_client.get.call_count == 3
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

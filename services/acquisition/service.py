@@ -103,6 +103,10 @@ class AcquisitionProvider(ABC):
         """Optional per-backend indexer health warning (default: none)."""
         return None
 
+    def invalidate(self) -> None:
+        """Drop this backend's cached *arr responses. Overridden by providers
+        that cache; default no-op so fake providers stay cheap (§43)."""
+
 
 class AcquisitionService:
     """Single acquisition facade that routes by media type (spec §14)."""
@@ -195,6 +199,19 @@ class AcquisitionService:
                 p.preload()
             except Exception as e:
                 logger.warning("acquisition %s preload failed: %s", p.name, e)
+
+    def invalidate(self) -> None:
+        """Drop every provider's cached *arr responses.
+
+        Called after a successful request/acquisition write so the next
+        reconcile reflects the newly added record rather than a stale cached
+        snapshot (spec §29: cache invalidation on writes).
+        """
+        for p in self._providers:
+            try:
+                p.invalidate()
+            except Exception as e:
+                logger.warning("acquisition %s invalidate failed: %s", p.name, e)
 
 
 def build_acquisition_service(*, config=None, radarr=None, sonarr=None) -> "AcquisitionService":

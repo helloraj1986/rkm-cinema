@@ -68,6 +68,10 @@ class LibraryProvider(ABC):
     def recently_added(self, limit: int = 8) -> list[dict]:
         """Recently added items as lightweight dicts (title/year/thumb/type)."""
 
+    def invalidate(self) -> None:
+        """Drop any provider-level caches. Default no-op (§43: subclasses
+        override only when they cache, so fake providers stay cheap)."""
+
     @abstractmethod
     def build_watch_link(self, match: LibraryMatch) -> dict:
         """Build the watch links (e.g. ``plex``/``emby`` browser URLs) for a match."""
@@ -166,6 +170,19 @@ class LibraryService:
             except Exception as e:
                 logger.warning("recently_added failed for %s: %s", p.name, e)
         return []
+
+    def invalidate(self) -> None:
+        """Drop every provider's library caches (force a fresh scan next read).
+
+        Called after the app writes media into the library (or knows a change
+        happened) so a subsequent reconcile re-reads instead of serving a
+        stale cached scan (spec §29 invalidation on writes).
+        """
+        for p in self._providers:
+            try:
+                p.invalidate()
+            except Exception as e:  # noqa: BLE001 - never break on a cache clear
+                logger.warning("library invalidate %s failed: %s", p.name, e)
 
 
 def resolve_library_identity(*, media_type: MediaType, tmdb_id=None, imdb_id=None,

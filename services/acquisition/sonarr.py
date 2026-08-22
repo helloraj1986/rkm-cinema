@@ -110,6 +110,13 @@ class SonarrAcquisitionProvider(AcquisitionProvider):
         self._svc.get_series(use_cache=True)
         self._svc.get_queue(use_cache=True)
 
+    def invalidate(self) -> None:
+        """Drop Sonarr's cached series/queue/profiles (spec §29)."""
+        try:
+            self._svc.clear_cache()
+        except Exception as e:
+            logger.warning("sonarr invalidate failed: %s", e)
+
     def quality_profiles(self) -> list[dict]:
         try:
             return [

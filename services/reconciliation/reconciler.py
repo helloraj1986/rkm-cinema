@@ -118,6 +118,25 @@ class Reconciler:
             self._acquisition = AcquisitionService(providers=acq_providers) if acq_providers else None
 
     # ------------------------------------------------------------ public API
+    def invalidate(self) -> None:
+        """Drop library + acquisition caches (force a fresh reconcile).
+
+        After the app writes media to a provider this should be called so a
+        subsequent :meth:`get_snapshot`/:meth:`compute` re-reads the real state
+        instead of serving stale cached scans (spec §29 invalidation on writes).
+        Provider ``invalidate()`` hooks are the canonical choke-point (§43).
+        """
+        if self._library is not None:
+            try:
+                self._library.invalidate()
+            except Exception as e:
+                logger.warning("reconciler invalidate library failed: %s", e)
+        if self._acquisition is not None:
+            try:
+                self._acquisition.invalidate()
+            except Exception as e:
+                logger.warning("reconciler invalidate acquisition failed: %s", e)
+
     def get_snapshot(self, media_id: str) -> MediaSnapshot:
         """Reconcile a single canonical ``media_id`` to a MediaSnapshot.
 

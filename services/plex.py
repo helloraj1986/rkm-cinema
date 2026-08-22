@@ -193,6 +193,13 @@ class PlexService(BaseService):
         self._library_cache_expiry = now + 60
         return shows
 
+    def clear_cache(self) -> None:
+        """Drop Plex's in-memory library/section caches (spec §29 invalidation)."""
+        self._library_cache = {}
+        self._library_cache_expiry = 0
+        self._section_cache = {}
+        self._section_cache_expiry = 0
+
     def has_movie(self, title: str, year: Optional[int] = None) -> bool:
         """Check if a movie exists in Plex library."""
         movies = self.get_all_movies()

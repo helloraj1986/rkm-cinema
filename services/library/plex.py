@@ -91,6 +91,13 @@ class PlexLibraryProvider(LibraryProvider):
         except Exception:
             return None
 
+    def invalidate(self) -> None:
+        """Force a fresh Plex library scan next read (spec §29 invalidation)."""
+        try:
+            self._plex.clear_cache()
+        except Exception:
+            pass
+
     # ------------------------------------------------------------------ URLs
     def _browser_base(self) -> str:
         """Browser-reachable Plex base (Tailscale or PLEX_BROWSER_URL), never app.plex.tv."""

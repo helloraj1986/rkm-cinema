@@ -129,6 +129,13 @@ class RadarrAcquisitionProvider(AcquisitionProvider):
         self._svc.get_movies(use_cache=True)
         self._svc.get_queue(use_cache=True)
 
+    def invalidate(self) -> None:
+        """Drop Radarr's cached movies/queue/profiles (spec §29)."""
+        try:
+            self._svc.clear_cache()
+        except Exception as e:
+            logger.warning("radarr invalidate failed: %s", e)
+
     @staticmethod
     def _queue_pct(q) -> int:
         try:

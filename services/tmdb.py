@@ -20,6 +20,25 @@ class TMDBService:
     def __init__(self, *, config=None, http=None):
         self.config = config if config is not None else get_config()
         self.http = http if http is not None else get_http_client()
+        # Metadata cache (spec §29 "TMDB metadata: hours/days"). TTL from
+        # config (TMDB_CACHE_TTL, default 6h). Shared here so a multi-item
+        # reconcile/daily job never re-fetches the same title's metadata.
+        from core.cache import TTLCache
+        self._cache = TTLCache(default_ttl=getattr(self.config, "TMDB_CACHE_TTL", 21600))
+
+    def clear_cache(self) -> None:
+        """Drop all cached metadata (e.g. before a forced refresh)."""
+        self._cache.clear()
+
+    def _cached(self, key: str, loader):
+        """Return cached *key* or compute via *loader* and store it."""
+        hit = self._cache.get(key)
+        if hit is not None:
+            return hit
+        value = loader()
+        if value is not None:
+            self._cache.set(key, value)
+        return value
 
     def _request(self, endpoint: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Make a request to TMDB API."""
@@ -38,9 +57,12 @@ class TMDBService:
             raise ServiceUnavailableError("tmdb", f"TMDB request failed: {e}") from e
 
     def get_movie_details(self, tmdb_id: int) -> Optional[Dict[str, Any]]:
-        """Get detailed information for a movie."""
+        """Get detailed information for a movie (cached)."""
         if not tmdb_id:
             return None
+        return self._cached(f"movie:{tmdb_id}", lambda: self._get_movie_details(tmdb_id))
+
+    def _get_movie_details(self, tmdb_id: int) -> Optional[Dict[str, Any]]:
         try:
             data = self._request(f"movie/{tmdb_id}", {
                 "append_to_response": "credits,release_dates"
@@ -51,9 +73,12 @@ class TMDBService:
             return None
 
     def get_show_details(self, tmdb_id: int) -> Optional[Dict[str, Any]]:
-        """Get detailed information for a TV show."""
+        """Get detailed information for a TV show (cached)."""
         if not tmdb_id:
             return None
+        return self._cached(f"show:{tmdb_id}", lambda: self._get_show_details(tmdb_id))
+
+    def _get_show_details(self, tmdb_id: int) -> Optional[Dict[str, Any]]:
         try:
             data = self._request(f"tv/{tmdb_id}", {
                 "append_to_response": "credits,content_ratings"
@@ -188,9 +213,13 @@ class TMDBService:
         }
 
     def search_movie(self, title: str, year: Optional[int] = None) -> Optional[Dict[str, Any]]:
-        """Search for a movie by title and year."""
+        """Search for a movie by title and year (cached)."""
         if not title:
             return None
+        key = f"find:movie:{str(title).lower().strip()}:{year or ''}"
+        return self._cached(key, lambda: self._search_movie(title, year))
+
+    def _search_movie(self, title: str, year: Optional[int] = None) -> Optional[Dict[str, Any]]:
         params = {
             "query": title,
             "include_adult": "false",
@@ -208,9 +237,13 @@ class TMDBService:
         return None
 
     def search_show(self, title: str, year: Optional[int] = None) -> Optional[Dict[str, Any]]:
-        """Search for a TV show by title and year."""
+        """Search for a TV show by title and year (cached)."""
         if not title:
             return None
+        key = f"find:show:{str(title).lower().strip()}:{year or ''}"
+        return self._cached(key, lambda: self._search_show(title, year))
+
+    def _search_show(self, title: str, year: Optional[int] = None) -> Optional[Dict[str, Any]]:
         params = {
             "query": title,
             "include_adult": "false",

@@ -111,6 +111,23 @@ class SonarrService(BaseService):
         except Exception as e:
             self._handle_http_error(f"POST {endpoint}", e)
 
+    def _invalidate_after_write(self) -> None:
+        """Drop caches a write invalidates (series + queue + URL-keyed http)."""
+        self._series_cache = []
+        self._queue_cache = []
+        if hasattr(self, "_http_cache"):
+            self._http_cache.clear()
+
+    def clear_cache(self) -> None:
+        """Drop every cached Sonarr response (series/queue/profiles/roots/langs)."""
+        self._series_cache = []
+        self._queue_cache = []
+        self._profiles_cache = []
+        self._roots_cache = []
+        self._langs_cache = []
+        if hasattr(self, "_http_cache"):
+            self._http_cache.clear()
+
     def health_check(self) -> bool:
         """Check if Sonarr is reachable."""
         try:
@@ -401,7 +418,8 @@ class SonarrService(BaseService):
                 languageProfileId=created.get("languageProfileId", lang.id),
                 statistics=created.get("statistics", {}),
             )
-            self._series_cache = []
+            # Invalidate series + queue + http caches (spec §29: invalidation on writes).
+            self._invalidate_after_write()
             return AddResult(True, series, f"{series.title} added to Sonarr — downloads starting", "requested")
         except Exception as e:
             return AddResult(False, None, f"Failed to add to Sonarr: {e}", "unavailable")

@@ -89,6 +89,12 @@ class Config:
 
         self.TMDB_API_KEY = env.get("TMDB_API_KEY") or None
         self.TVDB_API_KEY = env.get("TVDB_API_KEY") or None
+        # TMDB metadata cache TTL (seconds). Metadata is stable over hours/days,
+        # so we cache it long instead of re-fetching per title (spec §29).
+        try:
+            self.TMDB_CACHE_TTL = int(env.get("TMDB_CACHE_TTL") or 21600)  # 6h default
+        except ValueError:
+            self.TMDB_CACHE_TTL = 21600
         self.JELLYFIN_URL = self._normalize_url(env["JELLYFIN_URL"]) if env.get("JELLYFIN_URL") else None
         self.JELLYFIN_API_KEY = env.get("JELLYFIN_API_KEY") or None
         self.PROWLARR_URL = self._normalize_url(env["PROWLARR_URL"]) if env.get("PROWLARR_URL") else None
@@ -136,6 +142,7 @@ class Config:
             "PLEX_BROWSER_URL", "EMBY_BROWSER_URL",
             "WATCHLIST_STORE", "WATCHLIST_DB_PATH",
             "WATCHLIST_SCHEDULER", "RECONCILE_INTERVAL_MIN", "DAILY_JOB_HOUR",
+            "TMDB_CACHE_TTL",
         }
 
     def validate_required(self) -> list[str]:

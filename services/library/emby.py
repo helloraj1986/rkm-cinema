@@ -45,6 +45,9 @@ class EmbyLibraryProvider(LibraryProvider):
 
     name = "emby"
 
+    #: How long a full library scan is considered fresh (spec §29: 60s).
+    EMBY_SCAN_TTL = 60
+
     def __init__(self, *, config=None, http=None):
         # Emby HTTP is routed through urllib in the legacy helpers; we keep the
         # injected client signature for DI parity with other providers.
@@ -118,6 +121,12 @@ class EmbyLibraryProvider(LibraryProvider):
                 })
         return out
 
+    def invalidate(self) -> None:
+        """Force a fresh Emby library scan next read (spec §29 invalidation)."""
+        self._item_cache = None
+        self._item_cache_expiry = 0
+        self._server_id_value = ""
+
     def build_watch_link(self, match: LibraryMatch) -> dict:
         item_id = str(match.metadata.get("item_id", "") or "")
         sid = str(match.metadata.get("server_id", "") or "")
@@ -179,7 +188,7 @@ class EmbyLibraryProvider(LibraryProvider):
             if self._item_cache is None:
                 self._item_cache = {}
             self._item_cache[item_type] = items
-            self._item_cache_expiry = now + 300
+            self._item_cache_expiry = now + self.EMBY_SCAN_TTL
             return items
         except Exception as e:
             logger.warning("Emby _get_items(%s) failed: %s", item_type, e)

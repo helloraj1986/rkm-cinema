@@ -139,6 +139,14 @@ class RequestMediaCommand:
                 service=result.service, candidates=self._candidates(result))
 
         if result.success:
+            # A write just changed *arr state — drop cached snapshots (spec
+            # §29 invalidation on writes) so a subsequent reconcile/status
+            # reflects the newly requested record, not a stale cached find().
+            if self._acquisition is not None:
+                try:
+                    self._acquisition.invalidate()
+                except Exception:
+                    logger.debug("request_media acquisition invalidate failed", exc_info=True)
             if self._persist is not None:
                 try:
                     self._persist(self._safe_id(identity), result.service, "requested")

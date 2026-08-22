@@ -102,6 +102,30 @@ class RadarrService(BaseService):
         except Exception as e:
             self._handle_http_error(f"POST {endpoint}", e)
 
+    def _invalidate_after_write(self) -> None:
+        """Drop caches that a write (add/edit/delete) invalidates.
+
+        The typed caches (movies/queue) AND the URL-keyed ``_http_cache`` must
+        both be cleared: ``get_movies(use_cache=True)`` re-checks the typed
+        cache first but falls through to ``_get`` which consults
+        ``_http_cache`` — a stale entry there would still return the
+        pre-write snapshot for up to the old TTL (spec §29 invalidation).
+        """
+        self._movies_cache = []
+        self._queue_cache = []
+        if hasattr(self, "_http_cache"):
+            self._http_cache.clear()
+
+    def clear_cache(self) -> None:
+        """Drop every cached Radarr response (movies/queue/profiles/roots)."""
+        self._movies_cache = []
+        self._queue_cache = []
+        self._profiles_cache = []
+        self._roots_cache = []
+        self._indexer_health_cache = (0, None)
+        if hasattr(self, "_http_cache"):
+            self._http_cache.clear()
+
     def health_check(self) -> bool:
         """Check if Radarr is reachable."""
         try:
@@ -352,8 +376,9 @@ class RadarrService(BaseService):
                 monitored=created.get("monitored", True),
                 qualityProfileId=created.get("qualityProfileId", qp.id),
             )
-            # Invalidate cache
-            self._movies_cache = []
+            # Invalidate movie + queue + http caches so the next read reflects
+            # the new record (spec §29: cache invalidation on writes).
+            self._invalidate_after_write()
             return AddResult(True, movie, f"{movie.title} added to Radarr — download starting", "requested")
         except Exception as e:
             return AddResult(False, None, f"Failed to add to Radarr: {e}", "unavailable")

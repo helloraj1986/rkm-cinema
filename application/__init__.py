@@ -1,0 +1,1 @@
+"""Application layer — use-case commands that orchestrate domain + services."""

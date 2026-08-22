@@ -55,3 +55,14 @@ class DownloadResultState(str, enum.Enum):
     ALREADY_EXISTS = "already_exists"
     UNAVAILABLE = "unavailable"      # looked up but could not be added
     AMBIGUOUS = "ambiguous"          # multiple matches, needs user choice
+
+
+class RequestMediaState(str, enum.Enum):
+    """Outcome of the idempotent ``request_media`` command (spec §15)."""
+
+    AVAILABLE = "available"              # already in the library
+    ALREADY_REQUESTED = "already_requested"
+    REQUESTED = "requested"              # just requested successfully
+    AMBIGUOUS = "ambiguous"              # multiple provider matches
+    NOT_CONFIGURED = "not_configured"    # the *arr service for this type is off
+    PROVIDER_UNAVAILABLE = "provider_unavailable"  # *arr looked up but couldn't add

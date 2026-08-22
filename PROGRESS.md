@@ -1,6 +1,6 @@
 # RKM Watchlist — Session Handoff & Project Progress
 
-> Last updated: 2026-08-22 (**PRODUCTION REFACTOR in progress — Phases 1–11 done, next: Phase 12; phases 10+11 now DEPLOYED**)
+> Last updated: 2026-08-22 (**PRODUCTION REFACTOR in progress — Phases 1–12 done, next: Phase 13; phases 10+11 deployed**)
 > Live URL: **http://rkm-hp.tail8d5e8.ts.net:8123/** (Tailscale MagicDNS, tailnet-only — NEVER `tailscale funnel` it; page proxies /api → FastAPI which holds secrets server-side)
 > Deploy path (Windows, RKM-HP): `cd D:\hermes_agent\hermes-workspace\media\watchlist; .\setup-watchlist.ps1` — the sandbox's `/workspace` maps to `D:\hermes_agent\hermes-workspace` (9p mount, confirmed via mountinfo 2026-08-18; NOT `D:\media`). The `web`+`api` containers are on RKM-HP (Docker daemon unreachable from sandbox).
 > Repo: **private `rkm-watchlist` on GitHub** (github.com/helloraj1986/rkm-watchlist)
@@ -24,8 +24,8 @@
 - AVAILABLE when in library; ALREADY_REQUESTED when *arr already holds it; REQUESTED on success (movie→radarr, series→sonarr); AMBIGUOUS; PROVIDER_UNAVAILABLE; NOT_CONFIGURED (no provider / unparseable id); idempotency (no double write); persist hook invoked on REQUESTED; module convenience fn.
 
 ### Remaining
-- Phase 12 next — **recommendation engine** (`services/recommendation/{generator,criteria,ranker,manager}.py`); criteria from config, persisted history to stop repeats. Then Phase 13/14 jobs (the `job_runs` table + `list_job_runs()`/`record_job_run()` are ready).
-- ✅ **Deploy DONE (2026-08-22):** Phases 10+11 shipped to the running image via `.\setup-watchlist.ps1`. The frontend's legacy `/api/status` + `/api/download` fallback is now idle (harmless) — the site uses the resource API. See the "Post-deploy user-testing" section below for the two bugs found during live testing.
+- Phase 13 next — **scheduled reconciliation jobs** (`jobs/daily_watchlist.py` + frequent reconcile job updating REQUESTED/DOWNLOADING/DOWNLOADED/AVAILABLE without generating new recs; `job_runs` table + `list_job_runs()`/`record_job_run()` ready). Then Phase 14 health/partial failure.
+- The recommendation **manager + history are built** (Phase 12) but the recommendation **cron job isn't yet wired** — Phase 13/24 creates `jobs/daily_watchlist.py` feeding candidate sources into `RecommendationManager.run()`.
 
 ---
 
@@ -48,7 +48,7 @@ Phases 10+11 deployed → user tested adding titles live. Two backend bugs surfa
 
 ---
 
-## ⚡ NEXT SESSION — RESUME EXACTLY HERE (Phase 11 done, next Phase 12)
+## ⚡ NEXT SESSION — RESUME EXACTLY HERE (Phase 12 done, next Phase 13)
 
 **Do NOT skip ahead (§42; §43.3 no parallel implementations; §43.7 keep `pytest` green after every phase).**
 
@@ -59,7 +59,8 @@ Phases 10+11 deployed → user tested adding titles live. Two backend bugs surfa
 5. ✅ **Phase 9 — Idempotent request command** (**DONE**, commit `f438be3`). `request_media` → `RequestMediaResult`; idempotent guards. 128 green.
 6. ✅ **Phase 10 — Resource API** (**DONE**, commit `478278f`). `GET /api/media/{id}` + `POST /api/media/{id}/request` + `/api/watchlist` + `/api/reconcile` + `/api/jobs`; §18 resources; `config`/`health`/`quality` off direct Radarr/Sonarr → `AcquisitionService`; `list_job_runs()`/`record_job_run()`. 143 green.
 7. ✅ **Phase 11 — Frontend capability-driven** (**DONE**, this session) — `app.js`/`api.js` render off the §18 resource's `status` + `capabilities{can_download,can_watch}` + `watch.{plex,emby}.available`, **never** `if movie.radarr/plex` (spec §19/§20); NEVER shows Download when AVAILABLE. Primary data path = `/api/watchlist`; request path = `POST /api/media/{id}/request`; `_applyRequestResult` optimistic RES patch. `api.js` added `mediaIdOf()`/`legacyStatusToResource()` + resource methods. **Graceful legacy fallback** to `/api/status`+`/api/download` when new endpoints 404 (old image). `MediaResponse` gained `speed/eta/qbitState/qbitName` so §20 progress detail survives the resource path. Node-based frontend test `tests/phase11_frontend.test.mjs` (16 assertions: AVAILABLE→Watch never Download, capability/watch branching, legacy fallback). **Backend 143 green + frontend 16 green**.
-8. ⬅️ **Phase 12 — Recommendation engine** (`services/recommendation/{generator,criteria,ranker,manager}.py`; criteria from config (YAML), persisted recommendation history to stop repeats). `job_runs` table ready for 13/14.
+8. ✅ **Phase 12 — Recommendation engine** (**DONE**, this session, commit `a70fb57`) — `services/recommendation/{criteria,generator,ranker,manager}.py`; criteria in `config/recommendations.yaml` (spec §22, config not Python); `CriteriaEngine.evaluate() -> CriteriaResult{passed, score, reasons}`; `CandidateGenerator` (TMDB discover + DI source_fn); `rank()` by score; `RecommendationManager` pipeline (normalize → criteria → dedupe → library → watchlist → history → rank → persist) → §25-shape result, idempotent. Repository `record_recommendation()`/`list_recommendation_history()` on the SQLite `recommendations` table (spec §23, idempotent UPSERT). Legacy `RecommendationService` gates now delegate to the CriteriaEngine (BC shim §43). PyYAML added to requirements. **160 green** (+15 in `tests/test_recommendation_engine.py`).
+9. ⬅️ **Phase 13 — Scheduled reconciliation / daily job** (`jobs/daily_watchlist.py` feeding `RecommendationManager` + a frequent reconcile job that updates REQUESTED/DOWNLOADING/DOWNLOADED/AVAILABLE without generating new recs; `job_runs` table + repo methods ready; spec §24/§25/§26).
 
 ---
 

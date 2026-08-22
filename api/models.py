@@ -133,3 +133,90 @@ class DashboardDataResponse(BaseModel):
     refreshCron: str
     rotation: List[str]
     entries: List[WatchlistEntryResponse]
+
+
+# --------------------------------------------------------------------------
+# Phase 10 — resource API (spec §17/§18). One complete object per media item.
+# --------------------------------------------------------------------------
+class CapabilitiesModel(BaseModel):
+    """Which user actions are available (spec §18 ``capabilities``)."""
+
+    can_download: bool = False
+    can_watch: bool = False
+
+
+class WatchEntryModel(BaseModel):
+    """One provider's watch link (spec §18 ``watch.<provider>``)."""
+
+    available: bool = False
+    url: Optional[str] = None
+    error: Optional[str] = None
+
+
+class AcquisitionModel(BaseModel):
+    """Acquisition backend facts for one item (spec §18 ``acquisition``)."""
+
+    provider: Optional[str] = None
+    status: Optional[str] = None
+
+
+class MediaResponse(BaseModel):
+    """The canonical single-item object the frontend renders from (§18).
+
+    The frontend must NOT reconstruct status/capabilities from scattered
+    fields — this is one complete, backend-derived resource.
+    """
+
+    id: str
+    title: str = ""
+    year: Optional[int] = None
+    type: str = ""                      # "movie" | "tv"
+    status: str = ""
+    capabilities: CapabilitiesModel = Field(default_factory=CapabilitiesModel)
+    watch: Dict[str, WatchEntryModel] = Field(default_factory=dict)
+    acquisition: Optional[AcquisitionModel] = None
+    detail: Optional[str] = None
+    progress: Optional[int] = None
+
+
+class RequestMediaResponse(BaseModel):
+    """Outcome of POST /api/media/{media_id}/request (§15 vocab)."""
+
+    ok: bool
+    state: str
+    message: str
+    mediaId: str = ""
+    service: str = ""
+    candidates: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+class WatchlistResponse(BaseModel):
+    """GET /api/watchlist — every pending + recommended entry as a resource."""
+
+    entries: List[MediaResponse]
+    indexerIssue: Optional[str] = None
+
+
+class ReconcileResponse(BaseModel):
+    """POST /api/reconcile — re-derive every entry's snapshot in one pass."""
+
+    ok: bool
+    entries: List[MediaResponse]
+    indexerIssue: Optional[str] = None
+
+
+class JobRunResponse(BaseModel):
+    """One row from the job_runs table (spec Phase 13/14)."""
+
+    jobName: str
+    startedAt: Optional[str] = None
+    completedAt: Optional[str] = None
+    status: str = ""
+    itemsProcessed: int = 0
+    error: Optional[str] = None
+
+
+class JobsResponse(BaseModel):
+    """GET /api/jobs — recent job_runs most-recent-first."""
+
+    jobs: List[JobRunResponse]

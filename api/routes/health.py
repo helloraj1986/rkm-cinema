@@ -1,8 +1,8 @@
 """Health check endpoint."""
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from api.models import HealthResponse
 from config.settings import get_config
-from services import RadarrService, SonarrService
+from services.acquisition import build_acquisition_service
 from services.library import PlexLibraryProvider
 
 router = APIRouter()
@@ -13,11 +13,14 @@ def health_check():
     """Service health and watchlist freshness."""
     cfg = get_config()
 
-    # Quick service checks
-    radarr_ok = bool(cfg.RADARR_API_KEY) and RadarrService().health_check()
-    sonarr_ok = bool(cfg.SONARR_API_KEY) and SonarrService().health_check()
+    # Quick service checks — through the acquisition facade (§43), no direct
+    # Radarr/Sonarr branches. qBittorrent has no auth, just mark available.
+    acq = build_acquisition_service(config=cfg)
+    acq_health = acq.health()
+    radarr_ok = bool(cfg.RADARR_API_KEY) and acq_health.get("radarr", False)
+    sonarr_ok = bool(cfg.SONARR_API_KEY) and acq_health.get("sonarr", False)
     plex_ok = bool(cfg.PLEX_URL and cfg.PLEX_TOKEN) and PlexLibraryProvider(config=cfg).health()
-    qbit_ok = True  # qBittorrent has no auth, just try to connect
+    qbit_ok = True
 
     # Load watchlist for count
     try:

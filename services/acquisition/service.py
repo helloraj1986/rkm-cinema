@@ -27,6 +27,7 @@ __all__ = [
     "AcquisitionStatus",
     "AcquisitionRequestResult",
     "AcquisitionService",
+    "build_acquisition_service",
 ]
 
 
@@ -94,6 +95,10 @@ class AcquisitionProvider(ABC):
     def get_status(self, identity: MediaIdentity, *, title: str = "", year: Optional[int] = None) -> AcquisitionStatus:
         """Report download/ownership facts for *identity*."""
 
+    def quality_profiles(self) -> list[dict]:
+        """Quality profiles this backend exposes (spec §10 config materialization)."""
+        return []
+
     def indexer_issue(self) -> Optional[str]:
         """Optional per-backend indexer health warning (default: none)."""
         return None
@@ -155,6 +160,22 @@ class AcquisitionService:
     def health(self) -> dict[str, bool]:
         return {p.name: p.health() for p in self._providers}
 
+    def quality_profiles(self) -> dict[str, list[dict]]:
+        """Quality profiles grouped by provider name, safe against outages.
+
+        Returns ``{name: [ {id, name, items} ]}``. A failing backend yields an
+        empty list for that name instead of raising — quality selection must not
+        brick the config endpoint when one *arr is briefly down.
+        """
+        out: dict[str, list[dict]] = {}
+        for p in self._providers:
+            try:
+                out[p.name] = p.quality_profiles()
+            except Exception as e:
+                logger.warning("acquisition %s quality_profiles failed: %s", p.name, e)
+                out[p.name] = []
+        return out
+
     def indexer_issue(self) -> Optional[str]:
         """Indexer health warning from the acquisition backends (Radarr reports it)."""
         radarr = self.provider_for(MediaType.MOVIE)
@@ -174,3 +195,28 @@ class AcquisitionService:
                 p.preload()
             except Exception as e:
                 logger.warning("acquisition %s preload failed: %s", p.name, e)
+
+
+def build_acquisition_service(*, config=None, radarr=None, sonarr=None) -> "AcquisitionService":
+    """Wire an AcquisitionService from config (or injected low-level services).
+
+    Single helper so routes (config/health/quality) build the acquisition
+    facade the same way as the reconciler and command — no caller re-derives
+    the radarr→provider / sonarr→provider mapping anywhere else (§43).
+    """
+    from config.settings import get_config
+    # Local import to avoid a cycle with the provider modules.
+    from services.acquisition.radarr import RadarrAcquisitionProvider
+    from services.acquisition.sonarr import SonarrAcquisitionProvider
+
+    cfg = config if config is not None else get_config()
+    providers = []
+    if radarr is not None:
+        providers.append(RadarrAcquisitionProvider(service=radarr))
+    elif cfg.RADARR_API_KEY:
+        providers.append(RadarrAcquisitionProvider(config=cfg))
+    if sonarr is not None:
+        providers.append(SonarrAcquisitionProvider(service=sonarr))
+    elif cfg.SONARR_API_KEY:
+        providers.append(SonarrAcquisitionProvider(config=cfg))
+    return AcquisitionService(providers=providers)

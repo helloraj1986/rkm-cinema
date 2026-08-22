@@ -9,6 +9,7 @@ from services.acquisition.service import (
     AcquisitionService,
     AcquisitionStatus,
     AcquisitionRequestResult,
+    build_acquisition_service,
 )
 from services.acquisition.radarr import RadarrAcquisitionProvider
 from services.acquisition.sonarr import SonarrAcquisitionProvider
@@ -18,6 +19,7 @@ __all__ = [
     "AcquisitionService",
     "AcquisitionStatus",
     "AcquisitionRequestResult",
+    "build_acquisition_service",
     "RadarrAcquisitionProvider",
     "SonarrAcquisitionProvider",
 ]

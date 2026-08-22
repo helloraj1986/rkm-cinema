@@ -220,7 +220,8 @@ class Reconciler:
                 )
                 facts.indexer_issue = indexer_issue
                 result = resolve_status(facts)
-                return self._to_snapshot(identity, result, watch)
+                return self._to_snapshot(identity, result, watch,
+                                         title=title, year=year, media_type=mt)
 
         # 2. *arr facts through the single acquisition router (spec §14).
         service = mt.arr_service
@@ -256,13 +257,18 @@ class Reconciler:
 
         result = resolve_status(facts)
         result.service = service
-        return self._to_snapshot(identity, result, watch)
+        return self._to_snapshot(identity, result, watch,
+                                 title=title, year=year, media_type=mt)
 
     @staticmethod
     def _to_snapshot(identity: MediaIdentity, result: StatusResult,
-                     watch: dict) -> MediaSnapshot:
+                     watch: dict, *, title: str = "", year: Optional[int] = None,
+                     media_type: Optional[MediaType] = None) -> MediaSnapshot:
         try:
             mid = identity.media_id
         except ValueError:
             mid = ""
-        return MediaSnapshot.from_result(result, media_id=mid, watch_links=watch)
+        mt = media_type if media_type is not None else (identity.media_type if identity else MediaType.MOVIE)
+        return MediaSnapshot.from_result(
+            result, media_id=mid, media_type=mt, title=title, year=year,
+            watch_links=watch)

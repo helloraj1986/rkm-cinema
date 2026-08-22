@@ -75,10 +75,9 @@ def test_plex_thumb_requires_path(mock_plex, client):
     mock_plex.assert_not_called()
 
 
-@patch("api.routes.health.SonarrService")
-@patch("api.routes.health.RadarrService")
+@patch("api.routes.health.build_acquisition_service")
 @patch("api.routes.health.PlexLibraryProvider")
-def test_health_shape(mock_plex, mock_radarr, mock_sonarr, client, monkeypatch):
+def test_health_shape(mock_plex, mock_acq_factory, client, monkeypatch):
     """Health returns the expected services map."""
     from config import settings as s
     class FakeCfg:
@@ -87,8 +86,8 @@ def test_health_shape(mock_plex, mock_radarr, mock_sonarr, client, monkeypatch):
         def has_jellyfin(self): return False
     monkeypatch.setattr(s, "get_config", lambda: FakeCfg())
     mock_plex.return_value.health.return_value = True
-    mock_radarr.return_value.health_check.return_value = True
-    mock_sonarr.return_value.health_check.return_value = True
+    # The acquisition facade reports per-provider health (spec §14).
+    mock_acq_factory.return_value.health.return_value = {"radarr": True, "sonarr": True}
 
     r = client.get("/api/health")
     assert r.status_code == 200

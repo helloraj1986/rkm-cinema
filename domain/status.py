@@ -135,6 +135,9 @@ class MediaSnapshot:
     """
 
     media_id: str = ""
+    media_type: MediaType = MediaType.MOVIE
+    title: str = ""
+    year: Optional[int] = None
     status: MediaStatus = MediaStatus.NOT_ADDED
     capabilities: Capabilities = field(default_factory=Capabilities)
     watch_links: dict = field(default_factory=dict)
@@ -149,9 +152,14 @@ class MediaSnapshot:
 
     @classmethod
     def from_result(cls, result: StatusResult, *, media_id: str = "",
+                    media_type: MediaType = MediaType.MOVIE,
+                    title: str = "", year: Optional[int] = None,
                     watch_links: Optional[dict] = None) -> "MediaSnapshot":
         return cls(
             media_id=media_id,
+            media_type=media_type,
+            title=title,
+            year=year,
             status=result.state,
             capabilities=Capabilities.from_status(result.state),
             watch_links=watch_links or {},

@@ -24,12 +24,12 @@
 - AVAILABLE when in library; ALREADY_REQUESTED when *arr already holds it; REQUESTED on success (movie→radarr, series→sonarr); AMBIGUOUS; PROVIDER_UNAVAILABLE; NOT_CONFIGURED (no provider / unparseable id); idempotency (no double write); persist hook invoked on REQUESTED; module convenience fn.
 
 ### Remaining
-- The command is not yet wired to a route — Phase 10 (`POST /api/media/{media_id}/request`) consumes it as the canonical request path (replacing the raw `POST /api/download` behavior at the route boundary).
-- `api/routes/config.py`, `health.py`, `quality.py` still call `RadarrService()/SonarrService()` directly for **health/profile queries** — Phase 10 resource API cleanup.
+- Phase 10 resource **routes exist** (`api/routes/media.py|watchlist.py|reconcile.py|jobs.py`); they are live but the **frontend still consumes the legacy endpoints** (`/status`, `/download`) — Phase 11 migrates the frontend to render the §18 resource objects (`capabilities`/`watch`), never `if movie.radarr/plex` or reconstructing state.
+- `POST /api/download` is kept as a BC route but is no longer the canonical request path — `POST /api/media/{media_id}/request` is (routes through `request_media`).
 
 ---
 
-## ⚡ NEXT SESSION — RESUME EXACTLY HERE (Phase 9 done, next Phase 10)
+## ⚡ NEXT SESSION — RESUME EXACTLY HERE (Phase 10 done, next Phase 11)
 
 **Do NOT skip ahead / do NOT touch the frontend until the state model is done (§42 "do not skip ahead to frontend fixes while the underlying state model is incorrect"; §43.3 no parallel implementations; §43.7 keep `pytest` green after every phase).**
 
@@ -37,10 +37,10 @@
 2. ✅ **Phase 6 — Canonical status resolver** (**DONE**, commit `bdd4c07`) — `domain/status.py` + `Capabilities` + `MediaSnapshot`; `state_machine.py` BC shim; `media_status.py` migrated to `LibraryService`. 103 green.
 3. ✅ **Phase 7 — Reconciler** (**DONE**) — `services/reconciliation/reconciler.py` `Reconciler.get_snapshot(media_id)` → `MediaSnapshot`; `api/routes/status.py` consumes snapshots; `MediaStatusService` thin BC shim. 109 green.
 4. ✅ **Phase 8 — Acquisition abstraction** (**DONE**) — `services/acquisition/{service,radarr,sonarr}.py`; `AcquisitionService` single movie/series router; Reconciler + DownloadService rewired. 117 green.
-5. ✅ **Phase 9 — Idempotent request command** (**DONE**, this session) — `application/commands/request_media.py` `RequestMediaCommand.run(media_id)` → `RequestMediaResult` (spec §15 vocab); `domain/enums.RequestMediaState`; library/already-requested guards for idempotency; `persist=` hook. 128 green.
-6. ⬅️ **Phase 10 — Resource API** (`GET/POST /api/media/{media_id}[/request]`, `/watchlist`, `/reconcile`, `/jobs`; response carries `capabilities{can_download,can_watch}` + `watch`). Wire `request_media` as the canonical request path; migrate `config.py`/`health.py`/`quality.py` off direct Radarr/Sonarr to `AcquisitionService`.
-7. **Phase 11** — frontend capability-driven (render off `capabilities`/`watch`, never `if movie.radarr/plex`).
-8. Continue down the §42 list; **Phase 3's `job_runs` table is ready** for Phase 13/14 jobs.
+5. ✅ **Phase 9 — Idempotent request command** (**DONE**, commit `f438be3`) — `application/commands/request_media.py` `RequestMediaCommand.run(media_id)` → `RequestMediaResult` (spec §15 vocab); library/already-requested guards; `persist=` hook. 128 green.
+6. ✅ **Phase 10 — Resource API** (**DONE**, this session) — `GET /api/media/{media_id}` + `POST /api/media/{media_id}/request` (routes through `request_media`, typed §15 HTTP mapping) + `GET /api/watchlist` + `POST /api/reconcile` + `GET /api/jobs` (spec §17); each item renders the complete §18 resource (`id/title/year/type/status/capabilities{can_download,can_watch}/watch/{acquisition}`). `MediaSnapshot` enriched with `media_type/title/year` so the reconciler emits the full §18 shape. `AcquisitionService.quality_profiles()` + per-provider impl + `build_acquisition_service(radarr=/sonarr=/config=)` single wiring helper. `config.py`/`health.py`/`quality.py` migrated OFF direct `RadarrService()/SonarrService()` to the acquisition facade (§43). Repository gained `list_job_runs()`/`record_job_run()` (job_runs ready for Phase 13/14). **143 green**.
+7. ⬅️ **Phase 11 — Frontend capability-driven** (`app.js` renders off `capabilities`/`watch`, never `if movie.radarr/plex`; consume `/api/media/{id}`, `/api/watchlist`, `/api/reconcile`, `/api/jobs`).
+8. Continue down the §42 list (Phase 12 recommendation engine, then 13/14 jobs via the ready `job_runs` table).
 
 ---
 

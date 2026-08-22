@@ -108,6 +108,16 @@ class SonarrAcquisitionProvider(AcquisitionProvider):
         self._svc.get_series(use_cache=True)
         self._svc.get_queue(use_cache=True)
 
+    def quality_profiles(self) -> list[dict]:
+        try:
+            return [
+                {"id": p.id, "name": p.name, "items": p.items}
+                for p in self._svc.get_quality_profiles()
+            ]
+        except Exception as e:
+            logger.warning("sonarr quality_profiles failed: %s", e)
+            return []
+
     @staticmethod
     def _queue_pct(q) -> int:
         try:

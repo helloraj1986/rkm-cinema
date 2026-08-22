@@ -36,6 +36,16 @@ class WatchlistRepository(ABC):
     def save(self, raw: dict) -> None:
         """Persist the structure atomically/durably."""
 
+    def list_job_runs(self, limit: int = 20) -> list[dict]:
+        """Recent job_runs most-recent-first (spec Phase 13/14). Default: none."""
+        return []
+
+    def record_job_run(self, *, job_name: str, completed_at: str,
+                       status: str, items_processed: int = 0,
+                       error: str = "") -> None:
+        """Persist a completed job run. Default: no-op."""
+        return None
+
 
 # --------------------------------------------------------------------------- JSON
 class JsonWatchlistRepository(WatchlistRepository):
@@ -199,6 +209,31 @@ class SqliteWatchlistRepository(WatchlistRepository):
                             json.dumps(e),
                         ),
                     )
+
+    # --------------------------------------------------------------- job runs
+    def list_job_runs(self, limit: int = 20) -> list[dict]:
+        """Recent job_runs most-recent-first (spec Phase 13/14)."""
+        self.db.init()
+        with self.db.connection() as conn:
+            rows = conn.execute(
+                "SELECT job_name, started_at, completed_at, status, "
+                "items_processed, error FROM job_runs "
+                "ORDER BY started_at DESC LIMIT ?",
+                (int(limit),),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def record_job_run(self, *, job_name: str, completed_at: str,
+                       status: str, items_processed: int = 0,
+                       error: str = "") -> None:
+        """Persist a completed job run (started_at = now)."""
+        self.db.init()
+        with self.db.connection() as conn:
+            conn.execute(
+                "INSERT INTO job_runs (job_name, started_at, completed_at, status, "
+                "items_processed, error) VALUES (?, datetime('now'), ?, ?, ?, ?)",
+                (job_name, completed_at, status, int(items_processed), error),
+            )
 
     # ------------------------------------------------------------------ helpers
     @staticmethod

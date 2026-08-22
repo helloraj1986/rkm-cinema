@@ -114,6 +114,16 @@ class RadarrAcquisitionProvider(AcquisitionProvider):
         except Exception:
             return None
 
+    def quality_profiles(self) -> list[dict]:
+        try:
+            return [
+                {"id": p.id, "name": p.name, "items": p.items}
+                for p in self._svc.get_quality_profiles()
+            ]
+        except Exception as e:
+            logger.warning("radarr quality_profiles failed: %s", e)
+            return []
+
     def preload(self) -> None:
         self._svc.get_movies(use_cache=True)
         self._svc.get_queue(use_cache=True)

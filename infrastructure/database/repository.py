@@ -46,6 +46,15 @@ class WatchlistRepository(ABC):
         """Persist a completed job run. Default: no-op."""
         return None
 
+    def list_recommendation_history(self, limit: int = 200) -> list[dict]:
+        """Recently-seen recommendation history (spec §23) most-recent-first."""
+        return []
+
+    def record_recommendation(self, *, media_id: str, decision: str,
+                              score: float = 0.0, payload: dict = None) -> None:
+        """Record that a candidate was considered/persisted (spec §23). Default: no-op."""
+        return None
+
 
 # --------------------------------------------------------------------------- JSON
 class JsonWatchlistRepository(WatchlistRepository):
@@ -233,6 +242,40 @@ class SqliteWatchlistRepository(WatchlistRepository):
                 "INSERT INTO job_runs (job_name, started_at, completed_at, status, "
                 "items_processed, error) VALUES (?, datetime('now'), ?, ?, ?, ?)",
                 (job_name, completed_at, status, int(items_processed), error),
+            )
+
+    # ------------------------------------------------- recommendation history
+    def list_recommendation_history(self, limit: int = 200) -> list[dict]:
+        """Recently-seen recommendation history (spec §23) most-recent-first."""
+        self.db.init()
+        with self.db.connection() as conn:
+            rows = conn.execute(
+                "SELECT media_id, first_seen, last_seen, decision, score, payload "
+                "FROM recommendations ORDER BY last_seen DESC LIMIT ?",
+                (int(limit),),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def record_recommendation(self, *, media_id: str, decision: str,
+                              score: float = 0.0, payload: dict = None) -> None:
+        """Record that a candidate was considered (spec §23). Idempotent on
+        media_id: re-seeing a candidate updates last_seen/decision/score."""
+        self.db.init()
+        import json as _json
+        with self.db.connection() as conn:
+            # Ensure the media row exists so the FK reference is satisfied.
+            conn.execute(
+                "INSERT OR IGNORE INTO media (id, media_type, title, created_at, updated_at) "
+                "VALUES (?, 'movie', '', datetime('now'), datetime('now'))",
+                (media_id,),
+            )
+            conn.execute(
+                "INSERT INTO recommendations (media_id, first_seen, last_seen, decision, score, payload) "
+                "VALUES (?, datetime('now'), datetime('now'), ?, ?, ?) "
+                "ON CONFLICT(media_id) DO UPDATE SET "
+                "last_seen=datetime('now'), decision=excluded.decision, score=excluded.score, "
+                "payload=excluded.payload",
+                (media_id, decision, float(score), _json.dumps(payload or {})),
             )
 
     # ------------------------------------------------------------------ helpers

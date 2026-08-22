@@ -239,6 +239,16 @@ class WatchlistService:
                 return entry
         return None
 
+    def find_by_tmdb(self, tmdb_id: int) -> Optional[WatchlistEntry]:
+        """Find entry by TMDB ID in pending or recommended (canonical id)."""
+        if not tmdb_id:
+            return None
+        data = self.load()
+        for entry in data.pending + data.recommended:
+            if int(entry.tmdbId or 0) == int(tmdb_id):
+                return entry
+        return None
+
     def add_pending(self, entry: WatchlistEntry) -> None:
         """Add new entry to pending (validates no duplicate)."""
         data = self.load()

@@ -13,6 +13,7 @@ from core.exceptions import ValidationError, MetadataError
 from domain.enums import MediaType
 from domain.identity import MediaIdentity
 from services.library import LibraryService, PlexLibraryProvider
+from services.recommendation import CriteriaEngine, RecommendationCandidate
 from services.trailers import TrailerService
 from services.tmdb import TMDBService
 from services.youtube import YouTubeService
@@ -46,9 +47,16 @@ class EnrichedCandidate:
 
 
 class RecommendationService:
-    """Orchestrates the recommendation pipeline."""
+    """Orchestrates the recommendation pipeline.
 
-    # Quality gates (from user preferences)
+    Phase 12 (§22): the quality gates are now **config-driven** via the
+    recommendation CriteriaEngine (config/recommendations.yaml) — the old
+    hardcoded constants below are kept only as BC documentation and are not the
+    source of truth. ``verify_quality_gate`` delegates to the CriteriaEngine
+    (spec §43: criteria must be configuration, not Python).
+    """
+
+    # BC anchors (superseded by criteria config — kept for reference only).
     FILM_IMDB_GATE = 7.5
     FILM_RT_GATE = 80
     SERIES_IMDB_GATE = 8.0
@@ -57,7 +65,8 @@ class RecommendationService:
     FOREIGN_RT_GATE = 85
 
     def __init__(self, *, config=None, http=None,
-                 plex=None, library=None, trailers=None, tmdb=None, youtube=None, watchlist=None):
+                 plex=None, library=None, trailers=None, tmdb=None, youtube=None, watchlist=None,
+                 criteria=None):
         self.config = config if config is not None else get_config()
         self.http = http if http is not None else get_http_client()
         # Canonical ownership source = LibraryService. Legacy ``plex=`` (a
@@ -75,6 +84,8 @@ class RecommendationService:
         self.tmdb = tmdb if tmdb is not None else TMDBService(config=self.config, http=self.http)
         self.youtube = youtube if youtube is not None else YouTubeService(config=self.config)
         self.watchlist = watchlist if watchlist is not None else WatchlistService()
+        # §22 criteria engine (config-driven gates + scoring).
+        self.criteria = criteria if criteria is not None else CriteriaEngine()
 
     def get_current_category(self) -> str:
         """Get current rotation category."""
@@ -85,30 +96,24 @@ class RecommendationService:
         return self.watchlist.rotate_category()
 
     def verify_quality_gate(self, candidate: Candidate) -> bool:
-        """Verify candidate meets quality gates (live verification)."""
-        is_hindi = candidate.lang.lower() in ("hindi", "indian")
-        is_english = candidate.lang.lower() == "english"
+        """Verify candidate meets quality gates (config-driven, spec §22).
 
-        if candidate.is_series:
-            # Series gates
-            if candidate.imdb >= self.SERIES_IMDB_GATE:
-                return True
-            if candidate.rt >= self.SERIES_RT_GATE:
-                return True
-            return False
-        else:
-            # Film gates
-            if is_english or is_hindi:
-                if candidate.imdb >= self.FILM_IMDB_GATE:
-                    return True
-                if candidate.rt >= self.FILM_RT_GATE:
-                    return True
-                return False
-            else:
-                # Foreign language - stricter
-                if candidate.imdb >= self.FOREIGN_IMDB_GATE and candidate.rt >= self.FOREIGN_RT_GATE:
-                    return True
-                return False
+        Delegates to the CriteriaEngine. Builds a RecommendationCandidate from
+        the legacy Candidate shape; the engine's tmdb/imdb/rt gates (from
+        config/recommendations.yaml) decide PASS/FAIL.
+        """
+        rc = RecommendationCandidate(
+            media_type=MediaType.TV if candidate.is_series else MediaType.MOVIE,
+            title=candidate.title,
+            year=candidate.year,
+            tmdb_id=candidate.tmdb_id or None,
+            imdb_id=candidate.imdb_id or None,
+            tmdb_score=0.0,
+            imdb=candidate.imdb,
+            rt=candidate.rt,
+            lang=candidate.lang,
+        )
+        return self.criteria.evaluate(rc).passed
 
     def check_plex_ownership(self, candidate: Candidate) -> bool:
         """Check if media already exists in the library (ground truth).

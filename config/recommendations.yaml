@@ -1,0 +1,43 @@
+# RKM Watchlist — recommendation criteria (spec §22: criteria MUST be config, not Python).
+# The CriteriaEngine reads these PASS/FAIL gates and returns reasons for each decision.
+# Score is a 0-100 quality score used to rank surviving candidates.
+#
+# Criterion semantics:
+#   min_tmdb_rating   - candidate.tmdb_score must be >= this to pass
+#   min_vote_count    - candidate.vote_count (if known) must be >= this
+#   years             - if non-empty, candidate.year must be in this list
+#   genres.include    - if non-empty, candidate must have at least one of these genres
+#   genres.exclude    - if candidate has any of these genres, it FAILS
+#   min_imdb / min_rt - optional scoring anchors (0 = ignore). Old hardcoded gates
+#                       (imdb 7.5 / rt 80 for films, 8.0 / 85 for series) move HERE.
+
+recommendations:
+  movies:
+    min_tmdb_rating: 7.5
+    min_vote_count: 500
+    years: []                 # empty = any year
+    genres:
+      include: []             # empty = any genre
+      exclude: ["horror"]
+    min_imdb: 7.5             # ≥ threshold OR rt≥ (see rt_any below)
+    min_rt: 80
+    rt_any: true              # pass if EITHER imdb>=min_imdb OR rt>=min_rt
+    score_weight: 1.0
+
+  series:
+    min_tmdb_rating: 7.5
+    min_vote_count: 200
+    years: []
+    genres:
+      include: []
+      exclude: []
+    min_imdb: 8.0
+    min_rt: 85
+    rt_any: true
+    score_weight: 1.0
+
+  # Scoring anchors (0..1 weights). Higher weight = more influence on the 0-100 score.
+  score:
+    tmdb_weight: 0.6
+    imdb_weight: 0.3
+    recent_bonus: 0.1         # scales how much newer titles are nudged up

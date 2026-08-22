@@ -1,0 +1,195 @@
+"""Recommendation manager (spec §21 Phase 12).
+
+Orchestrates the full recommendation pipeline:
+
+    Candidate sources -> normalize -> apply criteria -> dedupe ->
+    check library -> check active watchlist -> check recommendation history ->
+    rank -> persist
+
+The manager wires the generator + criteria engine + ranker, plus DI-injectable
+library/watchlist checks and a recommendation-history repository. Each stage
+reports counts so the daily job result matches the spec §25 shape.
+
+Idempotency (spec §1.5 / §43): re-running with the same library/watchlist/history
+never re-adds a title already present or already recommended.
+"""
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass, field
+from typing import Optional
+
+from domain.enums import MediaType
+from services.recommendation.criteria import (
+    CriteriaEngine,
+    CriteriaResult,
+    RecommendationCandidate,
+)
+from services.recommendation.generator import CandidateGenerator
+
+logger = logging.getLogger("rkm.recommendation.manager")
+
+
+@dataclass
+class RecommendationRunResult:
+    """Outcome of one manager run (spec §25 job-result shape)."""
+
+    status: str = "success"
+    candidates: int = 0
+    passed_criteria: int = 0
+    already_in_library: int = 0
+    already_recommended: int = 0
+    watchlist_duplicates: int = 0
+    new_recommendations: int = 0
+    recommended: list = field(default_factory=list)  # list[RankedCandidate]
+    error: Optional[str] = None
+
+
+class RecommendationManager:
+    """The canonical recommendation pipeline (spec §21/§24)."""
+
+    def __init__(self, *, generator=None, criteria=None, library=None,
+                 watchlist=None, history=None, config=None):
+        from config.settings import get_config
+        self.config = config if config is not None else get_config()
+        self.generator = generator if generator is not None else CandidateGenerator(config=self.config)
+        self.criteria = criteria if criteria is not None else CriteriaEngine()
+        self._library = library
+        self._watchlist = watchlist
+        self._history = history  # See note in _history_repo().
+
+    # ------------------------------------------------------------- deps
+    def _history_repo(self):
+        """Lazily build the history repository (persistence seam, §23)."""
+        if self._history is not None:
+            return self._history
+        from infrastructure.database.repository import build_repository
+        self._history = build_repository()
+        return self._history
+
+    def _check_library(self, cand: RecommendationCandidate) -> bool:
+        """True if already in the media library (library = authority, §1.2)."""
+        if self._library is None:
+            return False
+        from domain.identity import MediaIdentity
+        identity = MediaIdentity(
+            media_type=cand.media_type,
+            tmdb_id=cand.tmdb_id or None,
+            imdb_id=cand.imdb_id or None,
+        )
+        try:
+            owner = self._library
+            has = owner.has(identity, title=cand.title, year=cand.year) \
+                if hasattr(owner, "has") else False
+            return bool(has)
+        except Exception as e:
+            logger.warning("manager: library check failed: %s", e)
+            return False
+
+    def _check_watchlist(self, cand: RecommendationCandidate) -> bool:
+        """True if already on the active watchlist (pending)."""
+        wl = self._watchlist
+        if wl is None:
+            return False
+        try:
+            if hasattr(wl, "find_by_imdb") and cand.imdb_id:
+                return wl.find_by_imdb(cand.imdb_id) is not None
+            if hasattr(wl, "find_by_tmdb") and cand.tmdb_id:
+                return wl.find_by_tmdb(cand.tmdb_id) is not None
+        except Exception as e:
+            logger.warning("manager: watchlist check failed: %s", e)
+        return False
+
+    def _check_history(self, cand: RecommendationCandidate) -> bool:
+        """True if this media_id was previously persisted as recommended (§23)."""
+        try:
+            repo = self._history_repo()
+            seen = repo.list_recommendation_history(limit=1000)
+            mid = cand.media_id
+            return any(h.get("media_id") == mid for h in seen)
+        except Exception as e:
+            logger.warning("manager: history check failed: %s", e)
+            return False
+
+    # ------------------------------------------------------------- run
+    def run(self, *, category: str = "", count: int = 20,
+            media_type: Optional[MediaType] = None,
+            persist_recommendations: bool = True,
+            max_persist: int = 5) -> RecommendationRunResult:
+        """Execute the pipeline for a category (or a specific media_type)."""
+        result = RecommendationRunResult()
+        try:
+            # 1. Candidate sources -> normalize (generator owns sourcing).
+            if media_type is not None:
+                cand_all = self.generator.candidates(
+                    category=category, count=count, media_type=media_type)
+            else:
+                cand_all = (self.generator.candidates(category=category, count=count,
+                                                      media_type=MediaType.MOVIE)
+                            + self.generator.candidates(category=category, count=count,
+                                                        media_type=MediaType.TV))
+            result.candidates = len(cand_all)
+
+            # 2. Apply criteria (PASS/FAIL + reasons) -> separate passing.
+            passing: list[tuple[RecommendationCandidate, CriteriaResult]] = []
+            for cand in cand_all:
+                res = self.criteria.evaluate(cand)
+                if res.passed:
+                    passing.append((cand, res))
+            result.passed_criteria = len(passing)
+
+            survivors = []
+            for cand, res in passing:
+                # 3. Library check (exclude available) — library always wins.
+                if self._check_library(cand):
+                    result.already_in_library += 1
+                    continue
+                # 4. Watchlist duplicate check.
+                if self._check_watchlist(cand):
+                    result.watchlist_duplicates += 1
+                    continue
+                # 5. Recommendation history (avoid repeat recommendations).
+                if self._check_history(cand):
+                    result.already_recommended += 1
+                    continue
+                survivors.append((cand, res))
+
+            # 6. Rank survivors by score.
+            from services.recommendation.ranker import rank
+            ranked = rank(survivors, limit=None)
+            result.recommended = ranked
+            result.new_recommendations = len(ranked)
+
+            # 7. Persist recommendations + history (§22/§23).
+            if persist_recommendations:
+                self._persist(ranked, max_persist)
+
+        except Exception as e:
+            logger.exception("recommendation manager run failed")
+            result.status = "error"
+            result.error = str(e)
+        return result
+
+    def _persist(self, ranked, max_persist: int) -> None:
+        """Persist recommendation history for the top-ranked candidates (§23).
+
+        Standard pipeline persists *history only* (the daily job adds actual
+        watchlist entries separately, feeding candidates back in). Kept decoupled
+        from the watchlist add so the manager never double-adds.
+        """
+        repo = self._history_repo()
+        for r in ranked[:max_persist]:
+            try:
+                repo.record_recommendation(
+                    media_id=r.candidate.media_id,
+                    decision="recommended",
+                    score=r.score,
+                    payload={
+                        "title": r.candidate.title,
+                        "year": r.candidate.year,
+                        "media_type": r.candidate.media_type.value,
+                    },
+                )
+            except Exception as e:
+                logger.warning("manager: persist history failed for %s: %s",
+                               r.candidate.media_id, e)

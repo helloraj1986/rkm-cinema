@@ -129,7 +129,9 @@ class MediaSnapshot:
     """Canonical per-item object consumed by API routes (spec §13 Phase 7).
 
     One item -> one status + capabilities + watch links. Routes render this,
-    never re-derive the state machine.
+    never re-derive the state machine. Carries the download-detail fields that
+    ``StatusResult`` captured so `/api/status` keeps its contract while being
+    driven entirely by the reconciler's snapshot.
     """
 
     media_id: str = ""
@@ -138,6 +140,12 @@ class MediaSnapshot:
     watch_links: dict = field(default_factory=dict)
     detail: str = ""
     service: str = ""
+    progress: Optional[int] = None
+    speed: Optional[float] = None
+    eta: Optional[int] = None
+    qbitState: str = ""
+    qbitName: str = ""
+    plexKey: Optional[str] = None
 
     @classmethod
     def from_result(cls, result: StatusResult, *, media_id: str = "",
@@ -149,6 +157,12 @@ class MediaSnapshot:
             watch_links=watch_links or {},
             detail=result.detail,
             service=result.service,
+            progress=result.progress,
+            speed=result.speed,
+            eta=result.eta,
+            qbitState=result.qbitState,
+            qbitName=result.qbitName,
+            plexKey=result.plexKey,
         )
 
 

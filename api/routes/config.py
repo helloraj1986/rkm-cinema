@@ -2,7 +2,8 @@
 from fastapi import APIRouter
 from api.models import ConfigResponse
 from config.settings import get_config
-from services import PlexService, RadarrService, SonarrService
+from services import RadarrService, SonarrService
+from services.library import PlexLibraryProvider
 from services.watchlist import WatchlistService
 
 router = APIRouter()
@@ -16,7 +17,7 @@ def get_config_endpoint():
     # Service health booleans only
     radarr_ok = bool(cfg.RADARR_API_KEY) and RadarrService().health_check()
     sonarr_ok = bool(cfg.SONARR_API_KEY) and SonarrService().health_check()
-    plex_ok = bool(cfg.PLEX_URL and cfg.PLEX_TOKEN) and PlexService().health_check()
+    plex_ok = bool(cfg.PLEX_URL and cfg.PLEX_TOKEN) and PlexLibraryProvider(config=cfg).health()
 
     # Watchlist metadata
     try:

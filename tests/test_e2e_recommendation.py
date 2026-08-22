@@ -19,10 +19,10 @@ def make_test_wl():
 class TestRecommendationFlow:
     """Test complete recommendation pipeline with injected mocks."""
 
-    def make_reco(self, plex=None, watchlist=None, trailers=None, tmdb=None, youtube=None):
+    def make_reco(self, library=None, watchlist=None, trailers=None, tmdb=None, youtube=None):
         return RecommendationService(
             config=Mock(TMDB_API_KEY="k", YOUTUBE_API_KEY=""),
-            plex=plex or Mock(),
+            library=library,
             watchlist=watchlist or Mock(),
             trailers=trailers or Mock(),
             tmdb=tmdb or Mock(),
@@ -31,8 +31,8 @@ class TestRecommendationFlow:
 
     def test_full_pipeline_accepts_quality_movie(self):
         """Full pipeline accepts a movie meeting quality gates and adds it."""
-        plex = Mock()
-        plex.has_media.return_value = False
+        library = Mock()
+        library.has.return_value = False
         watchlist = Mock()
         watchlist.find_by_imdb.return_value = None
         trailers = Mock()
@@ -48,7 +48,7 @@ class TestRecommendationFlow:
         youtube = Mock()
         youtube.has_youtube.return_value = False  # force trailer-service fallback
 
-        reco = self.make_reco(plex=plex, watchlist=watchlist, trailers=trailers, youtube=youtube)
+        reco = self.make_reco(library=library, watchlist=watchlist, trailers=trailers, youtube=youtube)
         candidate = Candidate(
             title="The Matrix", year=1999, category="Action", lang="English",
             imdb=8.7, rt=88, is_series=False, imdb_id="tt0133093", tmdb_id=603,
@@ -61,11 +61,12 @@ class TestRecommendationFlow:
         assert entry.title == "The Matrix"
         watchlist.add_pending.assert_called_once()
 
-    def test_full_pipeline_rejects_plex_owned(self):
-        plex = Mock()
-        plex.has_media.return_value = True
+    def test_full_pipeline_rejects_library_owned(self):
+        """An item already in the library is rejected (ownership dedupe)."""
+        library = Mock()
+        library.has.return_value = True
         watchlist = Mock()
-        reco = self.make_reco(plex=plex, watchlist=watchlist)
+        reco = self.make_reco(library=library, watchlist=watchlist)
         candidate = Candidate(
             title="The Matrix", year=1999, category="Action", lang="English",
             imdb=8.7, rt=88, is_series=False, imdb_id="tt0133093", tmdb_id=603,
@@ -74,19 +75,19 @@ class TestRecommendationFlow:
 
         entry = reco.process_recommendation(candidate)
         assert entry is None
-        plex.has_media.assert_called_once_with("The Matrix", 1999, False)
+        library.has.assert_called_once()
         watchlist.add_pending.assert_not_called()
 
     def test_full_pipeline_rejects_watchlist_duplicate(self):
-        plex = Mock()
-        plex.has_media.return_value = False
+        library = Mock()
+        library.has.return_value = False
         watchlist = Mock()
         watchlist.find_by_imdb.return_value = WatchlistEntry(
             title="The Matrix", year=1999, category="Action", lang="English",
             rt=88, imdb=8.7, isSeries=False, imdbId="tt0133093", tmdbId=603,
             cert="R", snippet="", cast=[], director="", poster="",
             trailerId="", trailerTitle="", added="2026-01-01", state="pending")
-        reco = self.make_reco(plex=plex, watchlist=watchlist)
+        reco = self.make_reco(library=library, watchlist=watchlist)
         candidate = Candidate(
             title="The Matrix", year=1999, category="Action", lang="English",
             imdb=8.7, rt=88, is_series=False, imdb_id="tt0133093", tmdb_id=603,
@@ -98,10 +99,10 @@ class TestRecommendationFlow:
         watchlist.add_pending.assert_not_called()
 
     def test_full_pipeline_rejects_below_quality_gate(self):
-        plex = Mock()
-        plex.has_media.return_value = False
+        library = Mock()
+        library.has.return_value = False
         watchlist = Mock()
-        reco = self.make_reco(plex=plex, watchlist=watchlist)
+        reco = self.make_reco(library=library, watchlist=watchlist)
         candidate = Candidate(
             title="Bad Movie", year=2020, category="Action", lang="English",
             imdb=7.0, rt=70, is_series=False, imdb_id="tt9999999", tmdb_id=99999,

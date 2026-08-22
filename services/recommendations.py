@@ -10,7 +10,9 @@ from dataclasses import dataclass
 from config.settings import get_config
 from core.http_client import get_http_client
 from core.exceptions import ValidationError, MetadataError
-from services.plex import PlexService
+from domain.enums import MediaType
+from domain.identity import MediaIdentity
+from services.library import LibraryService, PlexLibraryProvider
 from services.trailers import TrailerService
 from services.tmdb import TMDBService
 from services.youtube import YouTubeService
@@ -55,10 +57,20 @@ class RecommendationService:
     FOREIGN_RT_GATE = 85
 
     def __init__(self, *, config=None, http=None,
-                 plex=None, trailers=None, tmdb=None, youtube=None, watchlist=None):
+                 plex=None, library=None, trailers=None, tmdb=None, youtube=None, watchlist=None):
         self.config = config if config is not None else get_config()
         self.http = http if http is not None else get_http_client()
-        self.plex = plex if plex is not None else PlexService(config=self.config, http=self.http)
+        # Canonical ownership source = LibraryService. Legacy ``plex=`` (a
+        # PlexService) is wrapped in a provider so every path funnels through
+        # the library abstraction — no parallel PlexService branch (§43).
+        self.library = library
+        if self.library is None:
+            providers = []
+            if plex is not None:
+                providers.append(PlexLibraryProvider(config=self.config, plex=plex))
+            if providers:
+                self.library = LibraryService(providers=providers)
+        self._plex = plex  # kept only for BC-inspection; ownership uses `library`
         self.trailers = trailers if trailers is not None else TrailerService(config=self.config, http=self.http)
         self.tmdb = tmdb if tmdb is not None else TMDBService(config=self.config, http=self.http)
         self.youtube = youtube if youtube is not None else YouTubeService(config=self.config)
@@ -99,8 +111,20 @@ class RecommendationService:
                 return False
 
     def check_plex_ownership(self, candidate: Candidate) -> bool:
-        """Check if media already exists in Plex (ground truth)."""
-        return self.plex.has_media(candidate.title, candidate.year, candidate.is_series)
+        """Check if media already exists in the library (ground truth).
+
+        Uses the unified LibraryService (stable-identity match, spec §1.2
+        library = authority). If no library is configured we conservatively say
+        NOT owned so a recommendation isn't wrongly held back.
+        """
+        if not self.library:
+            return False
+        identity = MediaIdentity(
+            media_type=MediaType.TV if candidate.is_series else MediaType.MOVIE,
+            tmdb_id=candidate.tmdb_id or None,
+            imdb_id=candidate.imdb_id or None,
+        )
+        return self.library.has(identity, title=candidate.title, year=candidate.year)
 
     def check_watchlist_duplicate(self, candidate: Candidate) -> bool:
         """Check if already in watchlist (pending or recommended)."""

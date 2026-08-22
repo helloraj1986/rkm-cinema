@@ -17,7 +17,10 @@ sys.path.insert(0, "/workspace/media/watchlist")
 
 from config.settings import get_config
 from core.logging import setup_logging
-from services import RadarrService, SonarrService, PlexService, WatchlistService
+from domain.enums import MediaType
+from domain.identity import MediaIdentity
+from services import RadarrService, SonarrService, WatchlistService
+from services.library import PlexLibraryProvider
 
 setup_logging(level="INFO", json_format=True)
 logger = logging.getLogger("rkm.auto_complete")
@@ -47,7 +50,7 @@ def run_auto_complete(dry_run: bool = False) -> dict:
 
     radarr = RadarrService() if cfg.RADARR_API_KEY else None
     sonarr = SonarrService() if cfg.SONARR_API_KEY else None
-    plex = PlexService() if cfg.PLEX_URL and cfg.PLEX_TOKEN else None
+    plex = PlexLibraryProvider() if cfg.PLEX_URL and cfg.PLEX_TOKEN else None
 
     if not plex:
         logger.error("Plex not configured - cannot verify ownership")
@@ -81,8 +84,16 @@ def run_auto_complete(dry_run: bool = False) -> dict:
                 logger.debug("%s: No file in *arr yet", title)
                 continue
 
-            # Check Plex (ground truth)
-            in_plex = plex.has_media(title, year, is_series)
+            # Check Plex (ground truth) via stable identity (never bare title).
+            if plex:
+                identity = MediaIdentity(
+                    media_type=MediaType.TV if is_series else MediaType.MOVIE,
+                    tmdb_id=tmdb_id,
+                    imdb_id=imdb_id,
+                )
+                in_plex = plex.find(identity, title=title, year=year) is not None
+            else:
+                in_plex = False
             if not in_plex:
                 logger.debug("%s: File in *arr but not yet in Plex", title)
                 continue

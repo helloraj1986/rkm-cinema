@@ -1,8 +1,9 @@
 """Status endpoint - per-title download state computation.
 
-Thin route: calls MediaStatusService and converts the domain StatusResult
-into the API response model. All status logic lives in the domain state
-machine via services/media_status.py.
+Thin route: drives the Phase 7 :class:`Reconciler` and renders the canonical
+:class:`MediaSnapshot` (spec §13) into the API response model. All status
+logic lives in the reconciler + ``domain.status`` resolver; the route never
+re-derives the state machine.
 """
 from __future__ import annotations
 
@@ -10,7 +11,7 @@ import logging
 from fastapi import APIRouter
 
 from api.models import StatusEntry, StatusResponse
-from services.media_status import MediaStatusService
+from services.reconciliation import Reconciler
 
 router = APIRouter()
 logger = logging.getLogger("rkm.api.status")
@@ -18,24 +19,25 @@ logger = logging.getLogger("rkm.api.status")
 
 @router.get("/status", response_model=StatusResponse)
 def get_status():
-    """Per-title download state computed by the domain state machine."""
-    svc = MediaStatusService()
-    snapshot = svc.compute_statuses()
+    """Per-title download state computed by the reconciler's snapshots."""
+    result = Reconciler().compute()
 
     statuses = {}
-    for imdb, r in snapshot.results.items():
+    for imdb, snap in result.snapshots.items():
+        plex = (snap.watch_links or {}).get("plex") or {}
+        emby = (snap.watch_links or {}).get("emby") or {}
         statuses[imdb] = StatusEntry(
-            state=r.state.value,
-            service=r.service,
-            detail=r.detail,
-            progress=r.progress,
-            speed=r.speed,
-            eta=r.eta,
-            qbitState=r.qbitState,
-            qbitName=r.qbitName,
-            plexKey=r.plexKey,
-            plexUrl=r.plexUrl,
-            embyUrl=r.embyUrl,
+            state=snap.status.value,
+            service=snap.service,
+            detail=snap.detail,
+            progress=snap.progress,
+            speed=snap.speed,
+            eta=snap.eta,
+            qbitState=snap.qbitState,
+            qbitName=snap.qbitName,
+            plexKey=snap.plexKey,
+            plexUrl=plex.get("url") or "",
+            embyUrl=emby.get("url") or "",
         )
 
-    return StatusResponse(statuses=statuses, indexerIssue=snapshot.indexer_issue)
+    return StatusResponse(statuses=statuses, indexerIssue=result.indexer_issue)

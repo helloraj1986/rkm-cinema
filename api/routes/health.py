@@ -2,7 +2,8 @@
 from fastapi import APIRouter, HTTPException
 from api.models import HealthResponse
 from config.settings import get_config
-from services import PlexService, RadarrService, SonarrService
+from services import RadarrService, SonarrService
+from services.library import PlexLibraryProvider
 
 router = APIRouter()
 
@@ -15,7 +16,7 @@ def health_check():
     # Quick service checks
     radarr_ok = bool(cfg.RADARR_API_KEY) and RadarrService().health_check()
     sonarr_ok = bool(cfg.SONARR_API_KEY) and SonarrService().health_check()
-    plex_ok = bool(cfg.PLEX_URL and cfg.PLEX_TOKEN) and PlexService().health_check()
+    plex_ok = bool(cfg.PLEX_URL and cfg.PLEX_TOKEN) and PlexLibraryProvider(config=cfg).health()
     qbit_ok = True  # qBittorrent has no auth, just try to connect
 
     # Load watchlist for count

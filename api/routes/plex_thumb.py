@@ -5,7 +5,7 @@ import logging
 from fastapi import APIRouter, Query
 from fastapi.responses import Response, JSONResponse
 from config.settings import get_config
-from services import PlexService
+from services.library import PlexLibraryProvider
 
 router = APIRouter()
 logger = logging.getLogger("rkm.api.plex_thumb")
@@ -18,7 +18,7 @@ def plex_thumb(path: str = Query(default=""), width: int = Query(default=500, ge
     if not (cfg.PLEX_URL and cfg.PLEX_TOKEN) or not path:
         return Response(status_code=404)
     try:
-        plex = PlexService()
+        plex = PlexLibraryProvider(config=cfg)
         result = plex.get_thumb(path, width)
     except Exception:
         result = None

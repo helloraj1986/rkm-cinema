@@ -67,7 +67,7 @@ def test_download_ambiguous_maps_to_404(mock_svc, client):
     assert "Multiple Radarr matches" in r.json()["detail"]
 
 
-@patch("api.routes.plex_thumb.PlexService")
+@patch("api.routes.plex_thumb.PlexLibraryProvider")
 def test_plex_thumb_requires_path(mock_plex, client):
     """Missing path -> 404, no service call."""
     r = client.get("/api/plex/thumb")
@@ -77,7 +77,7 @@ def test_plex_thumb_requires_path(mock_plex, client):
 
 @patch("api.routes.health.SonarrService")
 @patch("api.routes.health.RadarrService")
-@patch("api.routes.health.PlexService")
+@patch("api.routes.health.PlexLibraryProvider")
 def test_health_shape(mock_plex, mock_radarr, mock_sonarr, client, monkeypatch):
     """Health returns the expected services map."""
     from config import settings as s
@@ -86,7 +86,7 @@ def test_health_shape(mock_plex, mock_radarr, mock_sonarr, client, monkeypatch):
         def has_tmdb(self): return True
         def has_jellyfin(self): return False
     monkeypatch.setattr(s, "get_config", lambda: FakeCfg())
-    mock_plex.return_value.health_check.return_value = True
+    mock_plex.return_value.health.return_value = True
     mock_radarr.return_value.health_check.return_value = True
     mock_sonarr.return_value.health_check.return_value = True
 

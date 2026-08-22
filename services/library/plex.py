@@ -79,6 +79,18 @@ class PlexLibraryProvider(LibraryProvider):
     def build_watch_link(self, match: LibraryMatch) -> dict:
         return {"plex_url": self._plex_url(match)}
 
+    def get_thumb(self, path: str, width: int = 500) -> Optional[dict]:
+        """Proxy a Plex artwork thumbnail (single home for Plex-specific media).
+
+        Exposed so the thumbnail route consumes the provider instead of
+        constructing a bare PlexService (§43 no direct-route service branch).
+        Returns ``{"content": bytes, "content_type": str}`` or ``None``.
+        """
+        try:
+            return self._plex.get_thumb(path, width)
+        except Exception:
+            return None
+
     # ------------------------------------------------------------------ URLs
     def _browser_base(self) -> str:
         """Browser-reachable Plex base (Tailscale or PLEX_BROWSER_URL), never app.plex.tv."""

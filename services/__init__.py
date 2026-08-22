@@ -9,6 +9,9 @@ from services.emby import EmbyService, EmbyItem
 from services.library.service import LibraryProvider, LibraryMatch, LibraryService
 from services.library.plex import PlexLibraryProvider
 from services.library.emby import EmbyLibraryProvider
+from services.acquisition.service import AcquisitionProvider, AcquisitionService, AcquisitionStatus, AcquisitionRequestResult
+from services.acquisition.radarr import RadarrAcquisitionProvider
+from services.acquisition.sonarr import SonarrAcquisitionProvider
 from services.youtube import YouTubeService
 from services.watchlist import WatchlistService, WatchlistEntry, WatchlistData, VALID_STATES, VALID_TRANSITIONS
 from services.recommendations import RecommendationService, Candidate, EnrichedCandidate
@@ -26,6 +29,8 @@ __all__ = [
     "EmbyService", "EmbyItem",
     "LibraryProvider", "LibraryMatch", "LibraryService",
     "PlexLibraryProvider", "EmbyLibraryProvider",
+    "AcquisitionProvider", "AcquisitionService", "AcquisitionStatus", "AcquisitionRequestResult",
+    "RadarrAcquisitionProvider", "SonarrAcquisitionProvider",
     "YouTubeService",
     "WatchlistService", "WatchlistEntry", "WatchlistData", "VALID_STATES", "VALID_TRANSITIONS",
     "RecommendationService", "Candidate", "EnrichedCandidate",

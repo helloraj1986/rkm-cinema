@@ -1,50 +1,49 @@
 # RKM Watchlist — Session Handoff & Project Progress
 
-> Last updated: 2026-08-22 (**PRODUCTION REFACTOR in progress — Phases 1–7 done, next: Phase 8**)
+> Last updated: 2026-08-22 (**PRODUCTION REFACTOR in progress — Phases 1–8 done, next: Phase 9**)
 > Live URL: **http://rkm-hp.tail8d5e8.ts.net:8123/** (Tailscale MagicDNS, tailnet-only — NEVER `tailscale funnel` it; page proxies /api → FastAPI which holds secrets server-side)
 > Deploy path (Windows, RKM-HP): `cd D:\hermes_agent\hermes-workspace\media\watchlist; .\setup-watchlist.ps1` — the sandbox's `/workspace` maps to `D:\hermes_agent\hermes-workspace` (9p mount, confirmed via mountinfo 2026-08-18; NOT `D:\media`)
 > Repo: **private `rkm-watchlist` on GitHub** (github.com/helloraj1986/rkm-watchlist)
-> **Status:** ⚠️ **Big production refactor IN PROGRESS.** Groundwork + library abstraction + watch links + canonical status + reconciler (Phases 1–7) committed; the running site is still the OLD deployed image — do NOT redeploy mid-refactor.
+> **Status:** ⚠️ **Big production refactor IN PROGRESS.** Groundwork + library abstraction + watch links + canonical status + reconciler + acquisition (Phases 1–8) committed; the running site is still the OLD deployed image — do NOT redeploy mid-refactor.
 
-## ▶ LATEST SESSION (2026-08-22) — refactor Phase 7 ✅ (canonical reconciler → MediaSnapshot)
+## ▶ LATEST SESSION (2026-08-22) — refactor Phase 8 ✅ (acquisition abstraction, single routing)
 
-**Driving spec: `RKM_Watchlist_Production_Refactor_Task.md`** §13 (Phase 7). THE checklist / §42 order / audit at `docs/ARCHITECTURE_AUDIT.md`. **Baseline before: 103 green. After Phase 7: 109 green** (+6 in `tests/test_reconciler.py`, all earlier suites untouched).
+**Driving spec: `RKM_Watchlist_Production_Refactor_Task.md`** §14 (Phase 8). THE checklist / §42 order / audit at `docs/ARCHITECTURE_AUDIT.md`. **Baseline before: 109 green. After Phase 8: 117 green** (+8 in `tests/test_acquisition.py`, all earlier suites untouched).
 
 ### What was built
-- **`services/reconciliation/reconciler.py`** — the CANONICAL phase-7 fact-gatherer (spec §13). `Reconciler.get_snapshot(media_id)` → `MediaSnapshot(status, capabilities, watch_links, detail, service, +download-detail fields)`; `Reconciler.compute()` → bulk `ReconcileResult{snapshots keyed by imdbId, indexer_issue}`. Wires `LibraryService` (Plex+Emby, spec §9… one logical library) + Radarr/Sonarr + `qBittorrentService` into `StatusFacts`, then the pure `domain.status.resolve_status` resolver. Fully DI-injectable (watchlist/library/radarr/sonarr/qbit/config) → LAN-free tests.
-- **`domain.status.MediaSnapshot.from_result` extended** — now carries `progress/speed/eta/qbitState/qbitName/plexKey` so `/api/status` keeps its exact response contract while being driven 100% by the snapshot (spec §13: routes consume the snapshot, never re-derive the state machine).
-- **`api/routes/status.py` rewired** — consumes `Reconciler().compute()` snapshots as the canonical object → builds `StatusEntry` from snapshot fields (watch links read from the §10 `watch_links` map).
-- **`MediaStatusService` is now a thin BC shim** over the Reconciler (spec §43 no parallel impl): wraps a `Reconciler`, maps `MediaSnapshot`→legacy `StatusResult` via `snapshot_to_status_result()`, keeps `compute_statuses()`/`StatusSnapshot`/`_library` so every old import/test stays green.
-- **Peripheral `PlexService` consumers migrated to the library abstraction** (Phase 7 cleanup, §43):
-  - `api/routes/health.py` + `api/routes/config.py`: `PlexService().health_check()` → `PlexLibraryProvider(config=cfg).health()`.
-  - `api/routes/plex_thumb.py`: `PlexService().get_thumb()` → new `PlexLibraryProvider.get_thumb()` passthrough (single home for Plex media logic).
-  - `services/recommendations.py`: `check_plex_ownership()` dedupe now uses `LibraryService.has()` on a stable `MediaIdentity` (spec §1.2 library = authority), legacy `plex=` wrapped in a provider; new canonical DI param `library=`.
-  - `scripts/auto_complete.py`: Plex ground-truth check → `PlexLibraryProvider.find(identity, title, year)` (stable ids, never bare title).
-  - **No `PlexService` remains instantiated in `api/` or `scripts/` or the status/recommendation paths** — only `services/library/plex.py` (the provider, correct single home) and the `services/__init__` export remain.
+- **`services/acquisition/`** — the acquisition abstraction (spec §14):
+  - `service.py` — `AcquisitionProvider` ABC (`name`, `media_type`, `health()`, `find(identity)`, `request(identity)` → `AcquisitionRequestResult`, `get_status(identity)` → `AcquisitionStatus`, `indexer_issue()`, `preload()`) + `AcquisitionService` (THE single router). `AcquisitionService.provider_for(media_type)` routes a `MediaIdentity` to Radarr or Sonarr; `find`/`request`/`get_status` have **no `if movie: radarr else: sonarr`** anywhere in callers.
+  - `radarr.py` — `RadarrAcquisitionProvider` (thin facade over `RadarrService`; stable tmdb/imdb find, idempotent request, `get_status` with file/queue facts).
+  - `sonarr.py` — `SonarrAcquisitionProvider` (thin facade over `SonarrService`; TVDB resolution, find by tvdb/title, idempotent request, `get_status`).
+  - `AcquisitionRequestResult` (success/state∈{requested,already_exists,ambiguous,unavailable}/message/item) + `AcquisitionStatus` (record_exists/has_file/queue_active/queue_percent/record_title/record_year for qbit cross-match).
+- **`Reconciler` (Phase 7) rewired** — its `_snapshot_for_entry` *_arr section now routes through `AcquisitionService.get_status(identity)`, no more raw Radarr/Sonarr branch. Constructs `AcquisitionService` from legacy `radarr=`/`sonarr=` DI args (wrapped in providers, §43); new canonical `acquisition=` param. `compute()` bulk-`preload()`s once (warms the 45s cache) then per-entry `get_status` hits memory.
+- **`DownloadService` (the request path) rewired** — `download()` builds a `MediaIdentity` and calls `AcquisitionService.request(identity)`; the cross-service "No Radarr match → try Sonarr" fallback is preserved in `_map` (via `AcquisitionService.request` on a TV identity). No `_do_radarr`/`_do_sonarr` branching remains. Legacy `radarr=`/`sonarr=` wrapped; new canonical `acquisition=` param.
+- **No caller reaches for `RadarrService`/`SonarrService` for acquisition routing** — only the two providers (and `services/__init__` exports) reference them.
 
-### Tests (6 new)
-- `Reconciler.get_snapshot` → AVAILABLE w/ Plex+Emby links + numeric plexKey; NOT_ADDED for unknown; watch-link failure never downgrades AVAILABLE (§10); unparseable media_id → NOT_ADDED not raise.
-- `Reconciler.compute` bulk keyed by imdbId with indexer_issue.
-- `snapshot_to_status_result` round-trip preserves plexKey/plexUrl/embyUrl.
-- `test_api` patches updated to `PlexLibraryProvider`/`.health`; `test_e2e_recommendation` ownership uses injected `library=`.
+### Tests (8 new)
+- `AcquisitionService.provider_for` routes by media type (movie→radarr, series→sonarr).
+- `find` routes movie→Radarr; unknown → None.
+- `request` with no provider → unavailable (not a raw error).
+- `get_status`: Radarr has_file; Radarr queued download (queue_active + percent).
+- Sonarr find by tvdb + get_status episodeFileCount>0 → has_file.
+- `DownloadService` constructor wraps legacy radarr/sonarr into providers.
 
 ### Remaining
-- Transition-gap: `config.py`, `health.py`, `plex_thumb.py`, `recommendations.py`, `auto_complete.py` still go through **PlexLibraryProvider directly** (per-provider), not the unified `LibraryService` — acceptable for health-boolean/ownership/thumbnail one-liners; Phase 10 resource API should route through `LibraryService` where multi-provider semantics matter.
+- Transition-gap: `api/routes/config.py`, `health.py`, `quality.py` still call `RadarrService()/SonarrService()` directly for **health/profile queries** (not acquisition routing — they need *both* services' data for the UI, not one routed identity). These belong to the Phase 10 resource API cleanup. Reconciler + DownloadService (the acquisition paths) are fully on `AcquisitionService`.
 
 ---
 
-## ⚡ NEXT SESSION — RESUME EXACTLY HERE (Phase 7 done, next Phase 8)
+## ⚡ NEXT SESSION — RESUME EXACTLY HERE (Phase 8 done, next Phase 9)
 
 **Do NOT skip ahead / do NOT touch the frontend until the state model is done (§42 "do not skip ahead to frontend fixes while the underlying state model is incorrect"; §43.3 no parallel implementations; §43.7 keep `pytest` green after every phase).**
 
 1. ✅ **Phase 5 — Watch links** (**DONE**, commit `5eb55c9`).
 2. ✅ **Phase 6 — Canonical status resolver** (**DONE**, commit `bdd4c07`) — `domain/status.py` + `Capabilities` + `MediaSnapshot`; `state_machine.py` BC shim; `media_status.py` migrated to `LibraryService`. 103 green.
-3. ✅ **Phase 7 — Reconciler** (**DONE**, this session) — `services/reconciliation/reconciler.py` `Reconciler.get_snapshot(media_id)` → `MediaSnapshot`; `api/routes/status.py` consumes snapshots; `MediaStatusService` thin BC shim; peripheral `PlexService` consumers migrated to library/`PlexLibraryProvider`. 109 green.
-4. ⬅️ **Phase 8 — `services/acquisition/`** (single routing: `service.py` + `radarr.py` + `sonarr.py`, `AcquisitionProvider{find,request,get_status}`). 
-5. **Phase 9** `application/commands/request_media.py` (idempotent request → ALREADY_REQUESTED/NOT_CONFIGURED result set).
-6. Continue down the §42 list; **Phase 3's `job_runs` table is ready** for Phase 13/14 jobs.
-
-*Historical Phase 6 detail (superseded): `domain/status.py` is the canonical pure resolver; `state_machine.py` is a BC shim; `services/media_status.py` was migrated to `LibraryService.find_all()+watch_links()` with the direct `PlexService` status path removed and the legacy `plex=` DI arg wrapped in a `PlexLibraryProvider`; `LibraryService.find_all()` hardened to swallow per-provider exceptions. Phase 6 = commit `bdd4c07`, 103 green.*
+3. ✅ **Phase 7 — Reconciler** (**DONE**) — `services/reconciliation/reconciler.py` `Reconciler.get_snapshot(media_id)` → `MediaSnapshot`; `api/routes/status.py` consumes snapshots; `MediaStatusService` thin BC shim. 109 green.
+4. ✅ **Phase 8 — Acquisition abstraction** (**DONE**, this session) — `services/acquisition/{service,radarr,sonarr}.py`; `AcquisitionService` single movie/series router; Reconciler + DownloadService rewired; 117 green.
+5. ⬅️ **Phase 9 — `application/commands/request_media.py`** (idempotent request → re-check library → already-requested → resolve → ambiguous → request; result set incl. ALREADY_REQUESTED / NOT_CONFIGURED). **Note:** `domain/enums` `DownloadResultState` has the states; the acquisition `request()` already returns normalized states — the command should wrap it with the library re-check.
+6. **Phase 10** resource API (`GET/POST /api/media/{media_id}[/request]`, `/watchlist`, `/reconcile`, `/jobs`; response carries `capabilities{can_download,can_watch}` + `watch`) — migrate `config.py`/`health.py`/`quality.py` off direct Radarr/Sonarr to `AcquisitionService` here.
+7. Continue down the §42 list; **Phase 3's `job_runs` table is ready** for Phase 13/14 jobs.
 
 ---
 

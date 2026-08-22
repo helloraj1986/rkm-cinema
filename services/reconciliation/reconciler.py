@@ -29,7 +29,11 @@ from domain.status import (
     WatchLinks,
     resolve_status,
 )
-from services import RadarrService, SonarrService
+from services.acquisition import (
+    AcquisitionService,
+    RadarrAcquisitionProvider,
+    SonarrAcquisitionProvider,
+)
 from services.library import (
     EmbyLibraryProvider,
     LibraryService,
@@ -79,12 +83,10 @@ class Reconciler:
     """Gathers facts for media item(s) and emits canonical MediaSnapshots."""
 
     def __init__(self, *, watchlist=None, library=None, plex=None, radarr=None,
-                 sonarr=None, qbit=None, config=None):
+                 sonarr=None, qbit=None, acquisition=None, config=None):
         from config.settings import get_config
         self.config = config if config is not None else get_config()
         self._watchlist = watchlist if watchlist is not None else WatchlistService()
-        self._radarr = radarr if radarr is not None else (RadarrService(config=self.config) if self.config.RADARR_API_KEY else None)
-        self._sonarr = sonarr if sonarr is not None else (SonarrService(config=self.config) if self.config.SONARR_API_KEY else None)
         self._qbit = qbit if qbit is not None else QBittorrentService(config=self.config)
         # Canonical availability/watch-link source. Legacy ``plex=`` (a
         # PlexService) is wrapped in a PlexLibraryProvider so every path goes
@@ -99,6 +101,21 @@ class Reconciler:
             if self.config.EMBY_URL and self.config.EMBY_API_KEY:
                 providers.append(EmbyLibraryProvider(config=self.config))
             self._library = LibraryService(providers=providers) if providers else None
+        # Canonical acquisition source. Legacy ``radarr=``/``sonarr=`` (the
+        # low-level HTTP services) are wrapped in providers; everything funnels
+        # through the single AcquisitionService router (§43, spec §14).
+        self._acquisition = acquisition
+        if self._acquisition is None:
+            acq_providers = []
+            if radarr is not None:
+                acq_providers.append(RadarrAcquisitionProvider(service=radarr))
+            elif self.config.RADARR_API_KEY:
+                acq_providers.append(RadarrAcquisitionProvider(config=self.config))
+            if sonarr is not None:
+                acq_providers.append(SonarrAcquisitionProvider(service=sonarr))
+            elif self.config.SONARR_API_KEY:
+                acq_providers.append(SonarrAcquisitionProvider(config=self.config))
+            self._acquisition = AcquisitionService(providers=acq_providers) if acq_providers else None
 
     # ------------------------------------------------------------ public API
     def get_snapshot(self, media_id: str) -> MediaSnapshot:
@@ -122,21 +139,15 @@ class Reconciler:
         data = self._watchlist.load()
         entries = data.pending + data.recommended
 
-        r_movies = self._radarr.get_movies() if self._radarr else []
-        r_queue = self._radarr.get_queue() if self._radarr else []
-        s_series = self._sonarr.get_series() if self._sonarr else []
-        s_queue = self._sonarr.get_queue() if self._sonarr else []
-
-        queue_by_movie = {str(q.movieId): q for q in r_queue}
-        queue_by_series = {str(q.seriesId): q for q in s_queue}
-        indexer_issue = self._radarr.get_indexer_health() if self._radarr else None
+        # One bulk fetch per acquisition backend warms the 45s cache, so each
+        # per-entry get_status below hits memory instead of re-scanning *arr.
+        if self._acquisition:
+            self._acquisition.preload()
+        indexer_issue = self._acquisition.indexer_issue() if self._acquisition else None
 
         snapshots: dict[str, MediaSnapshot] = {}
         for entry in entries:
-            snap = self._snapshot_for_entry(
-                entry, r_movies, r_queue, s_series, s_queue,
-                queue_by_movie, queue_by_series, indexer_issue,
-            )
+            snap = self._snapshot_for_entry(entry, indexer_issue)
             snapshots[entry.imdbId] = snap
         return ReconcileResult(snapshots=snapshots, indexer_issue=indexer_issue)
 
@@ -159,21 +170,12 @@ class Reconciler:
         return None
 
     def _snapshot_for(self, identity: MediaIdentity, entry=None) -> MediaSnapshot:
-        r_movies = self._radarr.get_movies() if self._radarr else []
-        r_queue = self._radarr.get_queue() if self._radarr else []
-        s_series = self._sonarr.get_series() if self._sonarr else []
-        s_queue = self._sonarr.get_queue() if self._sonarr else []
-        queue_by_movie = {str(q.movieId): q for q in r_queue}
-        queue_by_series = {str(q.seriesId): q for q in s_queue}
-        indexer_issue = self._radarr.get_indexer_health() if self._radarr else None
-        return self._snapshot_for_entry(
-            entry, r_movies, r_queue, s_series, s_queue,
-            queue_by_movie, queue_by_series, indexer_issue,
-            identity=identity,
-        )
+        if self._acquisition:
+            self._acquisition.preload()
+        indexer_issue = self._acquisition.indexer_issue() if self._acquisition else None
+        return self._snapshot_for_entry(entry, indexer_issue, identity=identity)
 
-    def _snapshot_for_entry(self, entry, r_movies, r_queue, s_series, s_queue,
-                            queue_by_movie, queue_by_series, indexer_issue,
+    def _snapshot_for_entry(self, entry, indexer_issue=None,
                             *, identity: Optional[MediaIdentity] = None) -> MediaSnapshot:
         if entry is None and identity is None:
             return MediaSnapshot(media_id="", status=MediaStatus.NOT_ADDED)
@@ -220,45 +222,37 @@ class Reconciler:
                 result = resolve_status(facts)
                 return self._to_snapshot(identity, result, watch)
 
-        # 2. *arr facts.
+        # 2. *arr facts through the single acquisition router (spec §14).
         service = mt.arr_service
-        if mt is MediaType.TV:
-            tvdb_id = self._sonarr.resolve_tvdb_id(entry.imdbId) if (self._sonarr and entry and entry.imdbId) else None
-            rec = next((s for s in s_series if s.tvdbId == tvdb_id), None) if tvdb_id else None
-            stats = getattr(rec, "statistics", None) or {}
-            facts.arr_has_file = bool(stats.get("episodeFileCount", 0)) > 0
-        else:
-            tref = int(identity.tmdb_id) if getattr(identity, "tmdb_id", None) is not None else None
-            rec = next((m for m in r_movies if m.tmdbId == tref), None) if tref is not None else None
-            if rec is None and entry and getattr(entry, "tmdbId", None) is not None:
-                rec = next((m for m in r_movies if m.tmdbId == entry.tmdbId), None)
-            facts.arr_has_file = bool(rec and rec.hasFile)
-
-        facts.arr_record_exists = rec is not None
-        facts.indexer_issue = indexer_issue
-
-        if rec is not None and not facts.arr_has_file:
-            if mt is MediaType.TV:
-                q = queue_by_series.get(str(rec.id)) if hasattr(rec, "id") else None
-                t = self._qbit.match(getattr(rec, "title", ""), str(getattr(rec, "year", "") or ""))
-            else:
-                q = queue_by_movie.get(str(rec.id))
-                t = self._qbit.match(getattr(rec, "title", ""), str(getattr(rec, "year", "") or ""))
-            if q:
-                facts.arr_queue_active = q.status != "completed"
-                facts.arr_queue_percent = self._queue_pct(q)
-            if t:
-                prog = float(t.get("progress") or 0)
-                if prog < 1.0:
-                    facts.qbit_active = True
-                    facts.qbit_percent = round(prog * 100)
-                    facts.qbit_speed = float(t.get("dlspeed") or 0) / 1e6
-                    facts.qbit_eta = None if int(t.get("eta") or -1) < 0 else int(t.get("eta"))
-                    facts.qbit_state = t.get("state") or ""
-                    facts.qbit_name = (t.get("name") or "")[:60]
-                else:
-                    facts.qbit_done = True
-                    facts.qbit_percent = 100
+        if self._acquisition:
+            st = None
+            try:
+                st = self._acquisition.get_status(identity, title=title, year=year)
+            except Exception as e:
+                logger.warning("reconcile acquisition get_status failed: %s", e)
+            if st is not None and st.record_exists:
+                facts.arr_record_exists = True
+                facts.arr_has_file = st.has_file
+                facts.indexer_issue = indexer_issue
+                if st.queue_active:
+                    facts.arr_queue_active = True
+                    facts.arr_queue_percent = st.queue_percent
+                if not st.has_file:
+                    # qBittorrent matches by name (the download client has no
+                    # provider id), so cross-match on the *arr record's title/year.
+                    t = self._qbit.match(st.record_title, str(st.record_year or ""))
+                    if t:
+                        prog = float(t.get("progress") or 0)
+                        if prog < 1.0:
+                            facts.qbit_active = True
+                            facts.qbit_percent = round(prog * 100)
+                            facts.qbit_speed = float(t.get("dlspeed") or 0) / 1e6
+                            facts.qbit_eta = None if int(t.get("eta") or -1) < 0 else int(t.get("eta"))
+                            facts.qbit_state = t.get("state") or ""
+                            facts.qbit_name = (t.get("name") or "")[:60]
+                        else:
+                            facts.qbit_done = True
+                            facts.qbit_percent = 100
 
         result = resolve_status(facts)
         result.service = service
@@ -272,15 +266,3 @@ class Reconciler:
         except ValueError:
             mid = ""
         return MediaSnapshot.from_result(result, media_id=mid, watch_links=watch)
-
-    @staticmethod
-    def _queue_pct(q) -> int:
-        """Calculate *arr queue progress percentage."""
-        try:
-            total = float(getattr(q, "size", 0))
-            left = float(getattr(q, "sizeleft", 0))
-            if total <= 0:
-                return 0
-            return max(0, min(99, int((1 - left / total) * 100)))
-        except Exception:
-            return 0

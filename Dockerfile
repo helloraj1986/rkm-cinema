@@ -17,6 +17,7 @@ COPY core /app/core
 COPY config /app/config
 COPY infrastructure /app/infrastructure
 COPY application /app/application
+COPY jobs /app/jobs
 
 # .env is injected at runtime via env_file (docker-compose) or docker run -e.
 # API keys for Radarr/Sonarr/TMDB/Plex/Emby are read from env only.

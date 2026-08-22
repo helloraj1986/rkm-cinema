@@ -1,14 +1,16 @@
-"""Jobs endpoint (spec §17 Phase 10).
+"""Jobs endpoint (spec §17 Phase 10, §24/§40 Phase 13).
 
 Reads recent scheduled-job runs from the job_runs persistence table through
-the repository seam. The jobs themselves run in Phase 13/14; this route exposes
-whatever runs were recorded. LAN-free — the repository handles storage.
+the repository seam, and provides a stable ``POST /api/jobs/{name}/run``
+command the API container (or host cron) can invoke (spec §40: host cron
+should call a stable job command, not contain business logic). The route is
+thin — it delegates to the job modules in ``jobs/``.
 """
 from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from api.models import JobRunResponse, JobsResponse
 from infrastructure.database.repository import build_repository
@@ -39,3 +41,24 @@ def get_jobs(limit: int = 20):
             for r in runs
         ]
     )
+
+
+@router.post("/jobs/{name}/run")
+def run_job_endpoint(name: str):
+    """Run a known job command by name and return its recorded result.
+
+    Supported names: ``daily_watchlist`` (recommendation generation) and
+    ``reconcile`` (frequent status reconcile). Returns the JobResult shape.
+    """
+    from jobs.daily_watchlist import run_daily_watchlist
+    from jobs.reconcile import run_reconcile
+
+    jobs = {
+        "daily_watchlist": run_daily_watchlist,
+        "reconcile": run_reconcile,
+    }
+    fn = jobs.get(name)
+    if fn is None:
+        raise HTTPException(status_code=404, detail=f"Unknown job: {name}")
+    result = fn()
+    return result.to_dict()

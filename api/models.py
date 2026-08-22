@@ -177,6 +177,10 @@ class MediaResponse(BaseModel):
     acquisition: Optional[AcquisitionModel] = None
     detail: Optional[str] = None
     progress: Optional[int] = None
+    speed: Optional[float] = None
+    eta: Optional[int] = None
+    qbitState: Optional[str] = None
+    qbitName: Optional[str] = None
 
 
 class RequestMediaResponse(BaseModel):

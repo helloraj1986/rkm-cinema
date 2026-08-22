@@ -71,8 +71,10 @@ const ICONS = {
 
 /* ---------------- state ---------------- */
 let DATA = null;
-let STATUS = {};       // imdbId -> {state, service, progress, detail}
-let INDEXER_ISSUE = null; // Radarr indexer outage message, if any
+let RES = {};        // media_id -> §18 resource {status, capabilities, watch, acquisition, progress}
+let LEGACY_STATUS = {}; // imdbId -> legacy /api/status entry (fallback only)
+let USES_RESOURCE_API = false; // true once /api/watchlist resolves on this image
+let INDEXER_ISSUE = null; // *arr indexer outage message, if any
 let LIB = null;
 let SERVICES = {};     // service -> bool
 let currentView = 'discover';
@@ -90,10 +92,28 @@ async function getJSON(url) {
 }
 
 async function refreshStatus(silent = false) {
+  // Primary: Phase 10 resource API (spec §17). Each entry arrives as one
+  // complete §18 object carrying status + capabilities + watch, so the
+  // frontend renders off it and never reconstructs state (§19).
   try {
-    const d = await API.getStatus();
-    STATUS = d.statuses || {};
+    const d = await API.getWatchlist();
+    RES = {};
+    for (const e of d.entries || []) RES[e.id] = e;
     INDEXER_ISSUE = d.indexerIssue || null;
+    USES_RESOURCE_API = true;
+    LEGACY_STATUS = {};
+    return;
+  } catch (e) {
+    // Fallback: legacy /api/status (still-running pre-Phase-10 image). Keep the
+    // old per-title path so the site stays live until the next redeploy.
+    if (!silent) toast('Status unavailable', 'Could not reach the RKM API. ' + e.message, 'err');
+  }
+  try {
+    const d = await API.getStatusLegacy();
+    LEGACY_STATUS = d.statuses || {};
+    INDEXER_ISSUE = d.indexerIssue || null;
+    USES_RESOURCE_API = false;
+    RES = {};
   } catch (e) {
     if (!silent) toast('Status unavailable', 'Could not reach the RKM API. ' + e.message, 'err');
   }
@@ -112,7 +132,12 @@ async function loadLibrary() {
 }
 
 async function postDownload(entry) {
-  return API.download(entry);
+  // Canonical request path (§15/§17): POST /api/media/{media_id}/request.
+  // Falls back to the legacy /api/download on a still-running old image.
+  if (USES_RESOURCE_API) {
+    return API.requestMedia(API.mediaIdOf(entry));
+  }
+  return API.downloadLegacy(entry);
 }
 
 /* ---------------- toasts ---------------- */
@@ -138,20 +163,51 @@ function img(entry, size = 'poster') {
 }
 
 /* ---------------- status helpers ---------------- */
+/* Resolve the canonical §18 resource for a watchlist entry. Primary source is
+   the resource API (RES keyed by media_id); falls back to the legacy /api/status
+   map (LEGACY_STATUS keyed by imdbId) so pre-Phase-10 images keep working. */
+function _resFor(entry) {
+  if (USES_RESOURCE_API) return RES[API.mediaIdOf(entry)] || null;
+  const legacy = LEGACY_STATUS[entry.imdbId];
+  if (legacy) return API.legacyStatusToResource(entry, legacy);
+  return null;
+}
+
 function st(entry) {
-  const current = STATUS[entry.imdbId];
-  if (current && current.state !== 'unknown') return current;
+  const r = _resFor(entry);
+  if (r) {
+    return {
+      state: r.status,
+      service: (r.acquisition && r.acquisition.provider) || (entry.type === 'tv' ? 'sonarr' : 'radarr'),
+      detail: r.detail || '',
+      progress: r.progress != null ? r.progress : undefined,
+      speed: r.speed != null ? r.speed : undefined,
+      eta: r.eta != null ? r.eta : undefined,
+      qbitState: r.qbitState || '',
+      qbitName: r.qbitName || '',
+      capabilities: r.capabilities || { can_download: false, can_watch: false },
+      watch: r.watch || {},
+      plexUrl: ((r.watch && r.watch.plex) || {}).url || '',
+      embyUrl: ((r.watch && r.watch.emby) || {}).url || '',
+      acquisition: r.acquisition || null,
+    };
+  }
   const service = entry.type === 'tv' ? 'sonarr' : 'radarr';
-  // When API is reachable and service is healthy, show actionable state
-  if (SERVICES[service] === true) return { state: 'not_added', service };
+  // When API is reachable and service is healthy, show actionable state.
+  if (SERVICES[service] === true) return { state: 'not_added', service, capabilities: { can_download: true, can_watch: false }, watch: {} };
   // When API is unreachable (SERVICES empty), don't show "unavailable" —
   // allow the user to attempt download; the backend will handle errors.
-  if (Object.keys(SERVICES).length === 0) return { state: 'not_added', service };
-  return current || { state: 'not_added', service };
+  if (Object.keys(SERVICES).length === 0) return { state: 'not_added', service, capabilities: { can_download: true, can_watch: false }, watch: {} };
+  return { state: 'not_added', service, capabilities: { can_download: true, can_watch: false }, watch: {} };
 }
+
+const canWatch = (entry) => !!(st(entry).capabilities && st(entry).capabilities.can_watch);
+const canDownload = (entry) => st(entry).state === 'not_added' && !!(st(entry).capabilities && st(entry).capabilities.can_download);
+
 const isDownloaded = (entry) => {
-  const s = st(entry).state;
-  return s === 'downloaded' || s === 'available';
+  const s = st(entry);
+  const own = s.capabilities && s.capabilities.can_watch;
+  return !!own || s.state === 'downloaded' || s.state === 'available';
 };
 const isBusy = (entry) => {
   const s = st(entry).state;
@@ -215,57 +271,55 @@ function cardMarkup(entry, opts = {}) {
 }
 
 /* ---------------- download button with states ---------------- */
+// Phase 11: the button is capability/watch-driven (spec §19/§20). We branch on
+// resource capabilities {can_download,can_watch} and watch.{plex,emby}.available —
+// never on provider names or reconstructed state.
+function _watchButtons(entry, s, svc, mini) {
+  const plex = (s.watch && s.watch.plex && s.watch.plex.available) ? s.watch.plex : null;
+  const emby = (s.watch && s.watch.emby && s.watch.emby.available) ? s.watch.emby : null;
+  const sm = mini ? 'btn-sm mini-btn' : '';
+  if (!plex && !emby) return null;
+  if (plex && emby) {
+    // Both available — show the Watch Now dropdown trigger.
+    return `<button class="btn btn-purple ${sm}" data-act="watchnow" data-plex-url="${esc(plex.url || '')}" data-emby-url="${esc(emby.url || '')}" aria-label="Watch ${esc(entry.title)}">${ICONS.play} Watch Now ▼</button>`;
+  }
+  if (plex) {
+    return `<button class="btn btn-purple ${sm}" data-act="watch-plex" data-url="${esc(plex.url || '')}" aria-label="Watch ${esc(entry.title)} on Plex">${ICONS.play} Watch on Plex</button>`;
+  }
+  return `<button class="btn btn-purple ${sm}" data-act="watch-emby" data-url="${esc(emby.url || '')}" aria-label="Watch ${esc(entry.title)} on Emby">${ICONS.play} Watch on Emby</button>`;
+}
+
 function downloadButton(entry, mini = false) {
   const s = st(entry);
-  const svc = entry.type === 'tv' ? 'Sonarr' : 'Radarr';
-  let label = 'Download', cls = 'btn-gold', disabled = false;
-  
-  if (s.state === 'downloaded') { 
-    label = 'Available'; 
-    cls = 'btn-green'; 
-    disabled = true; 
+  const caps = s.capabilities || { can_download: false, can_watch: false };
+  const svc = (entry.type === 'tv' ? 'Sonarr' : 'Radarr');
+  const sm = mini ? 'btn-sm mini-btn' : '';
+
+  // WATCH path — driven purely by capability.can_watch + watch links (§19/§20).
+  if (caps.can_watch) {
+    const w = _watchButtons(entry, s, svc, mini);
+    if (w) return w;
+    // capability says watch is possible but no live link right now (link outage
+    // is a capability problem, never status): show a disabled Available (§10).
+    return `<button class="btn btn-green ${sm}" disabled>${ICONS.check} Available</button>`;
   }
-  else if (s.state === 'available') {
-    // Watch Now button for content that's downloaded AND in Plex
-    if (s.plexUrl && s.embyUrl) {
-      // Both Plex and Emby available - show dropdown
-      label = 'Watch Now ▼';
-      cls = 'btn-purple';
-      // We'll handle the dropdown logic in the click handler via data-act="watchnow"
-      return `<button class="btn ${cls} btn-sm mini-btn" data-act="watchnow" data-plex-url="${esc(s.plexUrl)}" data-emby-url="${esc(s.embyUrl)}" aria-label="Watch ${esc(entry.title)}">${ICONS.play} ${label}</button>`;
-    } else if (s.plexUrl) {
-      // Only Plex available
-      label = 'Watch on Plex';
-      cls = 'btn-purple';
-      return `<button class="btn ${cls} btn-sm mini-btn" data-act="watch-plex" data-url="${esc(s.plexUrl)}" aria-label="Watch ${esc(entry.title)} on Plex">${ICONS.play} ${label}</button>`;
-    } else if (s.embyUrl) {
-      // Only Emby available
-      label = 'Watch on Emby';
-      cls = 'btn-purple';
-      return `<button class="btn ${cls} btn-sm mini-btn" data-act="watch-emby" data-url="${esc(s.embyUrl)}" aria-label="Watch ${esc(entry.title)} on Emby">${ICONS.play} ${label}</button>`;
-    } else {
-      // Fallback to original behavior
-      label = 'Available';
-      cls = 'btn-green';
-      disabled = true;
-    }
+
+  // DOWNLOAD / progress path — driven by capability.can_download + state.
+  if (s.state === 'downloaded') {
+    return `<button class="btn btn-green ${sm}" disabled>${ICONS.check} Available</button>`;
   }
-  else if (s.state === 'requested') { 
-    label = 'Requested'; 
-    cls = 'btn-blue'; 
-    disabled = true; 
+  if (s.state === 'requested') {
+    return `<button class="btn btn-blue ${sm}" disabled>${ICONS.check} Requested</button>`;
   }
-  else if (s.state === 'downloading') { 
-    label = `Downloading ${s.progress || 0}%`; 
-    cls = 'btn-blue'; 
-    disabled = true; 
+  if (s.state === 'downloading') {
+    return `<button class="btn btn-blue ${sm}" disabled>${ICONS.down} Downloading ${s.progress || 0}%</button>`;
   }
-  else if (s.state === 'unavailable' || s.state === 'unknown') { 
-    label = 'Unavailable'; 
-    cls = 'btn-ghost'; 
-    disabled = true; 
+  // not_added / ambiguous / unavailable: only offer Download when the backend
+  // says the user can request it (capability.can_download).
+  if (caps.can_download) {
+    return `<button class="btn btn-gold ${sm}" data-act="download" aria-label="${esc(entry.title)}: add to ${svc}">${ICONS.down} Download</button>`;
   }
-  return `<button class="btn ${cls} btn-sm mini-btn" data-act="download" ${disabled ? 'disabled' : ''} aria-label="${esc(entry.title)}: add to ${svc}">${ICONS.down} ${label}</button>`;
+  return `<button class="btn btn-ghost ${sm}" disabled>Unavailable</button>`;
 }
 
 /* ---------------- rows ---------------- */
@@ -437,27 +491,31 @@ function heroMarkup(e) {
 }
 
 function heroDownloadButton(e, s) {
-  let label, cls = 'btn-gold', disabled = false;
-  if (s.state === 'available') {
-    // Show Watch on Plex/Emby for available content.
-    if (s.plexUrl && s.embyUrl) {
+  const caps = s.capabilities || { can_download: false, can_watch: false };
+  // WATCH path — capability.can_watch + watch links (§19/§20).
+  if (caps.can_watch) {
+    const plex = (s.watch && s.watch.plex && s.watch.plex.available) ? s.watch.plex : null;
+    const emby = (s.watch && s.watch.emby && s.watch.emby.available) ? s.watch.emby : null;
+    if (plex && emby) {
       return `<span class="hero-watch-group">
-        <a class="btn btn-purple" target="_blank" rel="noopener" data-watchplex href="${esc(s.plexUrl)}">${ICONS.play} Plex</a>
-        <a class="btn btn-purple" target="_blank" rel="noopener" data-watchebmy href="${esc(s.embyUrl)}">${ICONS.play} Emby</a>
+        <a class="btn btn-purple" target="_blank" rel="noopener" data-watchplex href="${esc(plex.url || '')}">${ICONS.play} Plex</a>
+        <a class="btn btn-purple" target="_blank" rel="noopener" data-watchebmy href="${esc(emby.url || '')}">${ICONS.play} Emby</a>
       </span>`;
-    } else if (s.plexUrl) {
-      return `<a class="btn btn-purple" target="_blank" rel="noopener" data-watchplex href="${esc(s.plexUrl)}">${ICONS.play} Watch on Plex</a>`;
-    } else if (s.embyUrl) {
-      return `<a class="btn btn-purple" target="_blank" rel="noopener" data-watchebmy href="${esc(s.embyUrl)}">${ICONS.play} Watch on Emby</a>`;
+    } else if (plex) {
+      return `<a class="btn btn-purple" target="_blank" rel="noopener" data-watchplex href="${esc(plex.url || '')}">${ICONS.play} Watch on Plex</a>`;
+    } else if (emby) {
+      return `<a class="btn btn-purple" target="_blank" rel="noopener" data-watchebmy href="${esc(emby.url || '')}">${ICONS.play} Watch on Emby</a>`;
     }
-    label = 'Available'; cls = 'btn-green'; disabled = true;
+    return `<button class="btn btn-green" id="heroDownload" data-act="download" data-hero="1" data-id="${esc(e.imdbId)}" disabled>${ICONS.check} Available</button>`;
   }
-  else if (s.state === 'downloaded') { label = 'Available'; cls = 'btn-green'; disabled = true; }
-  else if (s.state === 'requested') { label = 'Requested'; cls = 'btn-blue'; disabled = true; }
-  else if (s.state === 'downloading') { label = `Downloading ${s.progress || 0}%`; cls = 'btn-blue'; disabled = true; }
-  else if (s.state === 'unavailable' || s.state === 'unknown') { label = 'Unavailable'; cls = 'btn-ghost'; disabled = true; }
-  else label = 'Download';
-  return `<button class="btn ${cls}" id="heroDownload" data-act="download" data-hero="1" data-id="${esc(e.imdbId)}" ${disabled ? 'disabled' : ''} aria-label="${esc(e.title)}: add to ${e.type === 'tv' ? 'Sonarr' : 'Radarr'}">${ICONS.down} ${label}</button>`;
+  // DOWNLOAD / progress path — capability.can_download + state.
+  if (s.state === 'downloaded') return `<button class="btn btn-green" id="heroDownload" data-hero="1" data-id="${esc(e.imdbId)}" disabled>${ICONS.check} Available</button>`;
+  if (s.state === 'requested') return `<button class="btn btn-blue" id="heroDownload" data-hero="1" data-id="${esc(e.imdbId)}" disabled>${ICONS.check} Requested</button>`;
+  if (s.state === 'downloading') return `<button class="btn btn-blue" id="heroDownload" data-hero="1" data-id="${esc(e.imdbId)}" disabled>${ICONS.down} Downloading ${s.progress || 0}%</button>`;
+  if (caps.can_download) {
+    return `<button class="btn btn-gold" id="heroDownload" data-act="download" data-hero="1" data-id="${esc(e.imdbId)}" aria-label="${esc(e.title)}: add to ${e.type === 'tv' ? 'Sonarr' : 'Radarr'}">${ICONS.down} Download</button>`;
+  }
+  return `<button class="btn btn-ghost" id="heroDownload" data-hero="1" data-id="${esc(e.imdbId)}" disabled>Unavailable</button>`;
 }
 
 function rowMarkup(row) {
@@ -690,26 +748,32 @@ function trailerButton(entry) {
 }
 
 function modalDownloadButton(entry, s) {
+  const caps = s.capabilities || { can_download: false, can_watch: false };
   const svc = entry.type === 'tv' ? 'Sonarr' : 'Radarr';
-  if (s.state === 'available') {
-    if (s.plexUrl && s.embyUrl) {
+  // WATCH path — capability.can_watch + watch links (§19/§20).
+  if (caps.can_watch) {
+    const plex = (s.watch && s.watch.plex && s.watch.plex.available) ? s.watch.plex : null;
+    const emby = (s.watch && s.watch.emby && s.watch.emby.available) ? s.watch.emby : null;
+    if (plex && emby) {
       return `<div class="modal-watch-group">
-        <a class="btn btn-purple" target="_blank" rel="noopener" data-role="watchplex" href="${esc(s.plexUrl)}">${ICONS.play} Watch on Plex</a>
-        <a class="btn btn-purple" target="_blank" rel="noopener" data-role="watchemby" href="${esc(s.embyUrl)}">${ICONS.play} Watch on Emby</a>
+        <a class="btn btn-purple" target="_blank" rel="noopener" data-role="watchplex" href="${esc(plex.url || '')}">${ICONS.play} Watch on Plex</a>
+        <a class="btn btn-purple" target="_blank" rel="noopener" data-role="watchemby" href="${esc(emby.url || '')}">${ICONS.play} Watch on Emby</a>
       </div>`;
-    } else if (s.plexUrl) {
-      return `<a class="btn btn-purple" data-role="watchplex" target="_blank" rel="noopener" href="${esc(s.plexUrl)}">${ICONS.play} Watch on Plex</a>`;
-    } else if (s.embyUrl) {
-      return `<a class="btn btn-purple" data-role="watchemby" target="_blank" rel="noopener" href="${esc(s.embyUrl)}">${ICONS.play} Watch on Emby</a>`;
+    } else if (plex) {
+      return `<a class="btn btn-purple" data-role="watchplex" target="_blank" rel="noopener" href="${esc(plex.url || '')}">${ICONS.play} Watch on Plex</a>`;
+    } else if (emby) {
+      return `<a class="btn btn-purple" data-role="watchemby" target="_blank" rel="noopener" href="${esc(emby.url || '')}">${ICONS.play} Watch on Emby</a>`;
     }
-    return `<button class="btn btn-green" data-role="download" disabled>${ICONS.check} Available in Plex</button>`;
+    return `<button class="btn btn-green" data-role="download" disabled>${ICONS.check} Available</button>`;
   }
-  let label = `Download`, cls = 'btn-gold', disabled = false;
-  if (s.state === 'downloaded') { label = `Available in library`; cls = 'btn-green'; disabled = true; }
-  else if (s.state === 'requested') { label = `Requested`; cls = 'btn-blue'; disabled = true; }
-  else if (s.state === 'downloading') { label = `Downloading ${s.progress || 0}%`; cls = 'btn-blue'; disabled = true; }
-  else if (s.state === 'unavailable' || s.state === 'unknown') { label = 'Unavailable'; cls = 'btn-ghost'; disabled = true; }
-  return `<button class="btn ${cls}" data-role="download" ${disabled ? 'disabled' : ''} aria-label="Add ${esc(entry.title)} to ${svc}">${ICONS.down} ${label}</button>`;
+  // DOWNLOAD / progress path — capability.can_download + state.
+  if (s.state === 'downloaded') return `<button class="btn btn-green" data-role="download" disabled>${ICONS.check} Available in library</button>`;
+  if (s.state === 'requested') return `<button class="btn btn-blue" data-role="download" disabled>${ICONS.check} Requested</button>`;
+  if (s.state === 'downloading') return `<button class="btn btn-blue" data-role="download" disabled>${ICONS.down} Downloading ${s.progress || 0}%</button>`;
+  if (caps.can_download) {
+    return `<button class="btn btn-gold" data-role="download" aria-label="Add ${esc(entry.title)} to ${svc}">${ICONS.down} Download</button>`;
+  }
+  return `<button class="btn btn-ghost" data-role="download" disabled>Unavailable</button>`;
 }
 
 /* trailer lazy-load: iframe only created on demand */
@@ -726,6 +790,35 @@ function loadTrailer() {
 }
 
 /* ---------------- interactions ---------------- */
+/* Optimistically patch the in-memory resource so the UI reflects a just-made
+   request without waiting for the 15s poll. §15 vocab: requested/already_requested
+   both mean "now have it" for the controlling state flow here. */
+function _applyRequestResult(entry, res) {
+  const mid = API.mediaIdOf(entry);
+  const provider = res.service || (entry.type === 'tv' ? 'sonarr' : 'radarr');
+  // A terminal success (requested / already requested / available) -> REQUESTED-style.
+  const terminal = (res.state === 'requested' || res.state === 'already_requested' || res.state === 'available');
+  const state = terminal ? 'requested' : (res.state === 'ambiguous' ? 'ambiguous' : 'not_added');
+  if (USES_RESOURCE_API) {
+    RES[mid] = {
+      id: mid,
+      title: entry.title || '',
+      year: entry.year || null,
+      type: (entry.type === 'tv' || entry.isSeries) ? 'tv' : 'movie',
+      status: state,
+      capabilities: { can_download: true, can_watch: false },
+      watch: {},
+      acquisition: { provider, status: state },
+      detail: res.message || '',
+    };
+  } else {
+    const legacy = LEGACY_STATUS[entry.imdbId] || {};
+    LEGACY_STATUS[entry.imdbId] = Object.assign({}, legacy, {
+      state, service: provider, detail: res.message || legacy.detail,
+    });
+  }
+}
+
 async function doDownload(entry, opts = {}) {
   const svc = entry.type === 'tv' ? 'Sonarr' : 'Radarr';
   const sizeCls = opts.in === 'hero' || opts.in === 'modal' ? '' : ' btn-sm';
@@ -740,7 +833,7 @@ async function doDownload(entry, opts = {}) {
 
   try {
     const res = await postDownload(entry);
-    STATUS[entry.imdbId] = { state: res.state || 'requested', service: entry.type === 'tv' ? 'sonarr' : 'radarr', detail: res.message };
+    _applyRequestResult(entry, res);
     toast(res.message || `${entry.title} added to ${svc}`, entry.type === 'tv' ? 'Episodes will start downloading shortly.' : 'Your download will begin shortly.', 'ok');
     paint(`✓ Added to ${svc}`, 'btn-green', true);
     if (panel && panel.dataset.role === 'dlstate') { panel.className = 'dl-state showing ok'; panel.innerHTML = `<span>${ICONS.check} Requested — search running</span>`; }
@@ -748,26 +841,48 @@ async function doDownload(entry, opts = {}) {
   } catch (e) {
     toast('Download failed', e.message || 'Could not reach the download service.', 'err', 6000);
     paint('Failed — Retry', 'btn-danger', false);
-    STATUS[entry.imdbId] = { state: 'unavailable', service: entry.type === 'tv' ? 'sonarr' : 'radarr' };
+    if (USES_RESOURCE_API) {
+      const mid = API.mediaIdOf(entry);
+      const r = RES[mid] || {};
+      RES[mid] = Object.assign({}, r, { status: 'unavailable', capabilities: { can_download: true, can_watch: false }, detail: e.message });
+    } else {
+      const legacy = LEGACY_STATUS[entry.imdbId] || {};
+      LEGACY_STATUS[entry.imdbId] = Object.assign({}, legacy, { state: 'unavailable', service: entry.type === 'tv' ? 'sonarr' : 'radarr' });
+    }
   }
   if (opts.in !== 'hero' && opts.in !== 'modal') rerenderDownloadButtons(entry);
 }
 
 function rerenderDownloadButtons(entry) {
   const s = st(entry);
-  // update any visible card download buttons for this entry
-  $$(`[data-id="${entry.imdbId}"] [data-act="download"]`).forEach((b) => {
-    const label = s.state === 'downloaded' ? 'Available' : s.state === 'available' ? 'Available' : s.state === 'requested' ? 'Requested' : s.state === 'downloading' ? `Downloading ${s.progress || 0}%` : 'Download';
+  // update any visible card buttons for this entry using the same capability logic
+  const btns = $$(`[data-id="${entry.imdbId}"] [data-act="download"]`);
+  const labels = { downloaded: 'Available', requested: 'Requested', downloading: 'Downloading', unavailable: 'Unavailable' };
+  btns.forEach((b) => {
+    if (canWatch(entry)) {
+      b.innerHTML = `${ICONS.play} Watch Now`;
+      b.className = `btn btn-purple btn-sm mini-btn`;
+      b.disabled = false;
+      return;
+    }
+    const label = labels[s.state] || 'Download';
+    const cls = s.state === 'downloaded' ? 'btn-green' : (s.state === 'requested' || s.state === 'downloading') ? 'btn-blue' : s.state === 'unavailable' ? 'btn-ghost' : 'btn-gold';
     b.innerHTML = `${ICONS.down} ${label}`;
-    b.className = `btn ${s.state === 'downloaded' || s.state === 'available' ? 'btn-green' : s.state === 'requested' || s.state === 'downloading' ? 'btn-blue' : 'btn-gold'} btn-sm mini-btn`;
-    b.disabled = s.state !== 'not_added';
+    b.className = `btn ${cls} btn-sm mini-btn`;
+    b.disabled = !(s.state === 'not_added' && canDownload(entry));
   });
 }
 
 /* only rebuild markup for entries whose state changed */
 let lastStatusKey = '';
+function _statusKey() {
+  if (USES_RESOURCE_API) {
+    return Object.values(RES).map((r) => r.status + (r.progress || '')).join('|') + '|' + (INDEXER_ISSUE || '');
+  }
+  return Object.values(LEGACY_STATUS).map((s) => s.state + (s.progress || '')).join('|') + '|' + (INDEXER_ISSUE || '');
+}
 function renderMinimal() {
-  const key = JSON.stringify(Object.values(STATUS).map((s) => s.state + (s.progress || ''))) + '|' + (INDEXER_ISSUE || '');
+  const key = _statusKey();
   if (key === lastStatusKey) return;
   lastStatusKey = key;
   render();
@@ -1168,4 +1283,4 @@ function skeleton() {
 }
 
 /* expose a few internals for debug/devtools */
-window.RKM = { get state() { return { DATA, STATUS, LIB, SERVICES, view: currentView }; } };
+window.RKM = { get state() { return { DATA, RES, LEGACY_STATUS, LIB, SERVICES, view: currentView, usesResourceApi: USES_RESOURCE_API }; } };

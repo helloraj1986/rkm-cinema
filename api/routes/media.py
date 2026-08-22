@@ -58,6 +58,10 @@ def _snapshot_to_media(snap: MediaSnapshot) -> MediaResponse:
         acquisition=acquisition,
         detail=snap.detail or None,
         progress=snap.progress,
+        speed=snap.speed,
+        eta=snap.eta,
+        qbitState=snap.qbitState or None,
+        qbitName=snap.qbitName or None,
     )
 
 

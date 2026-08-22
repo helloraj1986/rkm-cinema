@@ -24,23 +24,23 @@
 - AVAILABLE when in library; ALREADY_REQUESTED when *arr already holds it; REQUESTED on success (movie→radarr, series→sonarr); AMBIGUOUS; PROVIDER_UNAVAILABLE; NOT_CONFIGURED (no provider / unparseable id); idempotency (no double write); persist hook invoked on REQUESTED; module convenience fn.
 
 ### Remaining
-- Phase 10 resource **routes exist** (`api/routes/media.py|watchlist.py|reconcile.py|jobs.py`); they are live but the **frontend still consumes the legacy endpoints** (`/status`, `/download`) — Phase 11 migrates the frontend to render the §18 resource objects (`capabilities`/`watch`), never `if movie.radarr/plex` or reconstructing state.
-- `POST /api/download` is kept as a BC route but is no longer the canonical request path — `POST /api/media/{media_id}/request` is (routes through `request_media`).
+- Phase 12 next — **recommendation engine** (`services/recommendation/{generator,criteria,ranker,manager}.py`); criteria from config, persisted history to stop repeats. Then Phase 13/14 jobs (the `job_runs` table + `list_job_runs()`/`record_job_run()` are ready).
+- **DEBUG/PENDING deploy note:** frontend (`app.js`/`api.js`) now prefers the Phase 10 resource API but **falls back to legacy `/api/status` + `/api/download`** when the new endpoints 404 (old running image), so the live site survives until the Phase 10+11 backend/image deploys. Run `.\setup-watchlist.ps1` on RKM-HP, then hard-refresh.
 
 ---
 
-## ⚡ NEXT SESSION — RESUME EXACTLY HERE (Phase 10 done, next Phase 11)
+## ⚡ NEXT SESSION — RESUME EXACTLY HERE (Phase 11 done, next Phase 12)
 
-**Do NOT skip ahead / do NOT touch the frontend until the state model is done (§42 "do not skip ahead to frontend fixes while the underlying state model is incorrect"; §43.3 no parallel implementations; §43.7 keep `pytest` green after every phase).**
+**Do NOT skip ahead (§42; §43.3 no parallel implementations; §43.7 keep `pytest` green after every phase).**
 
-1. ✅ **Phase 5 — Watch links** (**DONE**, commit `5eb55c9`).
-2. ✅ **Phase 6 — Canonical status resolver** (**DONE**, commit `bdd4c07`) — `domain/status.py` + `Capabilities` + `MediaSnapshot`; `state_machine.py` BC shim; `media_status.py` migrated to `LibraryService`. 103 green.
-3. ✅ **Phase 7 — Reconciler** (**DONE**) — `services/reconciliation/reconciler.py` `Reconciler.get_snapshot(media_id)` → `MediaSnapshot`; `api/routes/status.py` consumes snapshots; `MediaStatusService` thin BC shim. 109 green.
-4. ✅ **Phase 8 — Acquisition abstraction** (**DONE**) — `services/acquisition/{service,radarr,sonarr}.py`; `AcquisitionService` single movie/series router; Reconciler + DownloadService rewired. 117 green.
-5. ✅ **Phase 9 — Idempotent request command** (**DONE**, commit `f438be3`) — `application/commands/request_media.py` `RequestMediaCommand.run(media_id)` → `RequestMediaResult` (spec §15 vocab); library/already-requested guards; `persist=` hook. 128 green.
-6. ✅ **Phase 10 — Resource API** (**DONE**, this session) — `GET /api/media/{media_id}` + `POST /api/media/{media_id}/request` (routes through `request_media`, typed §15 HTTP mapping) + `GET /api/watchlist` + `POST /api/reconcile` + `GET /api/jobs` (spec §17); each item renders the complete §18 resource (`id/title/year/type/status/capabilities{can_download,can_watch}/watch/{acquisition}`). `MediaSnapshot` enriched with `media_type/title/year` so the reconciler emits the full §18 shape. `AcquisitionService.quality_profiles()` + per-provider impl + `build_acquisition_service(radarr=/sonarr=/config=)` single wiring helper. `config.py`/`health.py`/`quality.py` migrated OFF direct `RadarrService()/SonarrService()` to the acquisition facade (§43). Repository gained `list_job_runs()`/`record_job_run()` (job_runs ready for Phase 13/14). **143 green**.
-7. ⬅️ **Phase 11 — Frontend capability-driven** (`app.js` renders off `capabilities`/`watch`, never `if movie.radarr/plex`; consume `/api/media/{id}`, `/api/watchlist`, `/api/reconcile`, `/api/jobs`).
-8. Continue down the §42 list (Phase 12 recommendation engine, then 13/14 jobs via the ready `job_runs` table).
+1. ✅ **Phase 5 — Watch links** (**DONE**, commit `5eb55c9`). 92 green.
+2. ✅ **Phase 6 — Canonical status resolver** (**DONE**, commit `bdd4c07`). 103 green.
+3. ✅ **Phase 7 — Reconciler** (**DONE**). `services/reconciliation/reconciler.py` → `MediaSnapshot`; `api/routes/status.py` consumes snapshots. 109 green.
+4. ✅ **Phase 8 — Acquisition abstraction** (**DONE**). `AcquisitionService` single router; Reconciler + DownloadService rewired. 117 green.
+5. ✅ **Phase 9 — Idempotent request command** (**DONE**, commit `f438be3`). `request_media` → `RequestMediaResult`; idempotent guards. 128 green.
+6. ✅ **Phase 10 — Resource API** (**DONE**, commit `478278f`). `GET /api/media/{id}` + `POST /api/media/{id}/request` + `/api/watchlist` + `/api/reconcile` + `/api/jobs`; §18 resources; `config`/`health`/`quality` off direct Radarr/Sonarr → `AcquisitionService`; `list_job_runs()`/`record_job_run()`. 143 green.
+7. ✅ **Phase 11 — Frontend capability-driven** (**DONE**, this session) — `app.js`/`api.js` render off the §18 resource's `status` + `capabilities{can_download,can_watch}` + `watch.{plex,emby}.available`, **never** `if movie.radarr/plex` (spec §19/§20); NEVER shows Download when AVAILABLE. Primary data path = `/api/watchlist`; request path = `POST /api/media/{id}/request`; `_applyRequestResult` optimistic RES patch. `api.js` added `mediaIdOf()`/`legacyStatusToResource()` + resource methods. **Graceful legacy fallback** to `/api/status`+`/api/download` when new endpoints 404 (old image). `MediaResponse` gained `speed/eta/qbitState/qbitName` so §20 progress detail survives the resource path. Node-based frontend test `tests/phase11_frontend.test.mjs` (16 assertions: AVAILABLE→Watch never Download, capability/watch branching, legacy fallback). **Backend 143 green + frontend 16 green**.
+8. ⬅️ **Phase 12 — Recommendation engine** (`services/recommendation/{generator,criteria,ranker,manager}.py`; criteria from config (YAML), persisted recommendation history to stop repeats). `job_runs` table ready for 13/14.
 
 ---
 

@@ -1,10 +1,10 @@
 # RKM Watchlist — Session Handoff & Project Progress
 
-> Last updated: 2026-08-22 (**PRODUCTION REFACTOR in progress — Phases 1–9 done, next: Phase 10**)
+> Last updated: 2026-08-22 (**PRODUCTION REFACTOR in progress — Phases 1–11 done, next: Phase 12; phases 10+11 now DEPLOYED**)
 > Live URL: **http://rkm-hp.tail8d5e8.ts.net:8123/** (Tailscale MagicDNS, tailnet-only — NEVER `tailscale funnel` it; page proxies /api → FastAPI which holds secrets server-side)
-> Deploy path (Windows, RKM-HP): `cd D:\hermes_agent\hermes-workspace\media\watchlist; .\setup-watchlist.ps1` — the sandbox's `/workspace` maps to `D:\hermes_agent\hermes-workspace` (9p mount, confirmed via mountinfo 2026-08-18; NOT `D:\media`)
+> Deploy path (Windows, RKM-HP): `cd D:\hermes_agent\hermes-workspace\media\watchlist; .\setup-watchlist.ps1` — the sandbox's `/workspace` maps to `D:\hermes_agent\hermes-workspace` (9p mount, confirmed via mountinfo 2026-08-18; NOT `D:\media`). The `web`+`api` containers are on RKM-HP (Docker daemon unreachable from sandbox).
 > Repo: **private `rkm-watchlist` on GitHub** (github.com/helloraj1986/rkm-watchlist)
-> **Status:** ⚠️ **Big production refactor IN PROGRESS.** Groundwork + library abstraction + watch links + canonical status + reconciler + acquisition + idempotent request command (Phases 1–9) committed; the running site is still the OLD deployed image — do NOT redeploy mid-refactor.
+> **Status:** ✅ **Phases 1–11 committed AND deployed.** Running site is the Phase 10+11 image (resource API + capability-driven frontend). Two post-deploy user-testing bugs found and fixed (Dockerfile missing dirs; tmdb-only request). Unit + frontend suites green.
 
 ## ▶ LATEST SESSION (2026-08-22) — refactor Phase 9 ✅ (idempotent request command)
 
@@ -25,7 +25,26 @@
 
 ### Remaining
 - Phase 12 next — **recommendation engine** (`services/recommendation/{generator,criteria,ranker,manager}.py`); criteria from config, persisted history to stop repeats. Then Phase 13/14 jobs (the `job_runs` table + `list_job_runs()`/`record_job_run()` are ready).
-- **DEBUG/PENDING deploy note:** frontend (`app.js`/`api.js`) now prefers the Phase 10 resource API but **falls back to legacy `/api/status` + `/api/download`** when the new endpoints 404 (old running image), so the live site survives until the Phase 10+11 backend/image deploys. Run `.\setup-watchlist.ps1` on RKM-HP, then hard-refresh.
+- ✅ **Deploy DONE (2026-08-22):** Phases 10+11 shipped to the running image via `.\setup-watchlist.ps1`. The frontend's legacy `/api/status` + `/api/download` fallback is now idle (harmless) — the site uses the resource API. See the "Post-deploy user-testing" section below for the two bugs found during live testing.
+
+---
+
+## ▶ POST-DEPLOY USER-TESTING (2026-08-22) — 2 bugs found & fixed ✅
+
+Phases 10+11 deployed → user tested adding titles live. Two backend bugs surfaced and fixed (both reproduced against the real stack from the sandbox before the fixes were committed).
+
+### Bug 1 — API down after first Phase 10/11 redeploy (502 on every `/api/*`)
+- **Symptom:** after `.\setup-watchlist.ps1`, "API not reachable — check 'docker compose logs api'"; all `/api/*` returned 502; UI showed "Download failed — Retry" for **any** title (not Ex Machina specifically). Frontend loaded (200) because it's volume-mounted; only the API was down.
+- **Root cause:** the **`Dockerfile` did not `COPY application` or `COPY infrastructure`** — it only copied `api/ services/ domain/ core/ config/`. Phase 10/11 routes import `application.commands.request_media` (`api/routes/media.py`) and `infrastructure.database.repository` (`api/routes/jobs.py`) **at module load**, so uvicorn died at import (`ModuleNotFoundError: No module named 'application'`) → never bound :8000 → nginx 502. Old image predated these routes, so it only broke on the first build that included them.
+- **Fix (commit `2c3cbed`):** added `COPY infrastructure /app/infrastructure` + `COPY application /app/application`. Verified by simulating the container build context (import + boot + `/api/health` `/api/jobs` `/api/reconcile` all 200).
+- **Pitfall recorded** in the rkm-watchlist skill: **whenever a route imports a new top-level package, add the matching Dockerfile COPY line.** Sandbox tests pass (dirs exist locally) while the deployed image 502s — reproduce by copying only the Dockerfile's dirs to a temp dir and importing `api.main`.
+
+### Bug 2 — "No Radarr match for imdb:" on There Will Be Blood
+- **Symptom:** specific title failed to add; message "no radarr match for imdb".
+- **Root cause:** canonical `media_id` is **tmdb-preferred** (`movie:tmdb:7345`), so `request_media` builds an identity with **`imdb_id=None`**. But `RadarrAcquisitionProvider.request` / `add_movie` only ever looked up **by IMDb id** (`identity.imdb_id or ""` → empty string) → empty `imdb:` lookup → no result; title-search fallback also had no title → "No Radarr match". Radarr itself resolved fine by both `imdb:tt0469494` and `tmdb:7345` (verified live) — the bug was the lookup call, not Radarr.
+- **Fix (commit `072f46a`):** added `lookup_movie_by_tmdb()` / `lookup_series_by_tvdb()`; `add_movie()`/`add_series()` now accept `tmdb_id`/`tvdb_id` and resolve by TMDB/TVDB when there's no IMDb id (the canonical case), before the title fallback. Closes a quiet §43 inconsistency too (`find()` already used tmdb/tvdb; `request()` only used imdb).
+- **Regression tests (2)** in `tests/test_acquisition.py` (tmdb-only movie, tvdb-only series) → **145 green**. **Live-verified** against real Radarr: `movie:tmdb:7345` → *"There Will Be Blood added to Radarr — download starting"*.
+- **Outcome:** user re-deployed, tested, and confirmed **working as intended**. No further reports.
 
 ---
 

@@ -4,7 +4,9 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # Copy the full application tree needed to run the modular API
-# (api/, services/, domain/, core/, config/) plus requirements.
+# (api/, services/, domain/, core/, config/, infrastructure/, application/)
+# plus requirements. `infrastructure/` (persistence seam) and `application/`
+# (use-case commands) are both required at import time by Phase 10/11 routes.
 COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
@@ -13,6 +15,8 @@ COPY services /app/services
 COPY domain /app/domain
 COPY core /app/core
 COPY config /app/config
+COPY infrastructure /app/infrastructure
+COPY application /app/application
 
 # .env is injected at runtime via env_file (docker-compose) or docker run -e.
 # API keys for Radarr/Sonarr/TMDB/Plex/Emby are read from env only.

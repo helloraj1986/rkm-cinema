@@ -11,23 +11,16 @@ class TestPlexOwnership:
         # Patch get_http_client at the source (core.http_client) BEFORE creating service
         self.http_patcher = patch("core.http_client.get_http_client")
         self.mock_http_client_factory = self.http_patcher.start()
-        self.config_patcher = patch("core.http_client.get_config")
-        self.mock_config = self.config_patcher.start()
-        
-        # Setup default config
-        self.mock_config.return_value.PLEX_URL = "http://test:32400"
-        self.mock_config.return_value.PLEX_TOKEN = "token"
-        
+
         # Create a fresh MagicMock for each call to get_http_client()
         self.mock_client = MagicMock()
         self.mock_http_client_factory.return_value = self.mock_client
-        
+
         # Create service AFTER patches are applied
         self.plex = PlexService()
 
     def teardown_method(self):
         self.http_patcher.stop()
-        self.config_patcher.stop()
 
     def _reset_mock(self):
         """Reset the mock client for a new test."""

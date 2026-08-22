@@ -55,6 +55,15 @@ def create_app() -> FastAPI:
         if missing:
             import logging
             logging.warning("Missing required config: %s", missing)
+        # Phase 14: start the in-process job scheduler if enabled (spec §26/§40).
+        try:
+            from jobs.scheduler import start_if_enabled
+            if start_if_enabled(config=cfg):
+                import logging
+                logging.info("RKM job scheduler started")
+        except Exception:
+            import logging
+            logging.exception("Failed to start job scheduler")
 
     return app
 

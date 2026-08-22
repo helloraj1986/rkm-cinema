@@ -22,12 +22,52 @@ class ServiceUnavailableError(RKMError):
         self.status_code = status_code
 
 
+# --- Phase 14: typed per-service errors (spec §28). One failed service must
+# never destroy the whole response — callers catch the specific type and keep
+# other providers working.
+class PlexUnavailableError(ServiceUnavailableError):
+    def __init__(self, message: str = "Plex is unreachable", status_code: Optional[int] = None):
+        super().__init__("Plex", message, status_code)
+
+class EmbyUnavailableError(ServiceUnavailableError):
+    def __init__(self, message: str = "Emby is unreachable", status_code: Optional[int] = None):
+        super().__init__("Emby", message, status_code)
+
+class RadarrUnavailableError(ServiceUnavailableError):
+    def __init__(self, message: str = "Radarr is unreachable", status_code: Optional[int] = None):
+        super().__init__("Radarr", message, status_code)
+
+class SonarrUnavailableError(ServiceUnavailableError):
+    def __init__(self, message: str = "Sonarr is unreachable", status_code: Optional[int] = None):
+        super().__init__("Sonarr", message, status_code)
+
+class QBittorrentUnavailableError(ServiceUnavailableError):
+    def __init__(self, message: str = "qBittorrent is unreachable", status_code: Optional[int] = None):
+        super().__init__("qBittorrent", message, status_code)
+
+class TMDBUnavailableError(ServiceUnavailableError):
+    def __init__(self, message: str = "TMDB is unreachable", status_code: Optional[int] = None):
+        super().__init__("TMDB", message, status_code)
+
+
+class AmbiguousMediaError(RKMError):
+    """Multiple media matched a request; an explicit choice is required."""
+    def __init__(self, candidates: list, message: str = "Multiple matches — pick one"):
+        super().__init__(message)
+        self.candidates = candidates
+
+
 class NotFoundError(RKMError):
     """Resource not found."""
     def __init__(self, resource: str, identifier: str):
         super().__init__(f"{resource} not found: {identifier}")
         self.resource = resource
         self.identifier = identifier
+
+
+class MediaNotFoundError(NotFoundError):
+    """A requested media item could not be resolved to an external provider."""
+    pass
 
 
 class DuplicateError(RKMError):

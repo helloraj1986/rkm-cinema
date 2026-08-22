@@ -13,6 +13,7 @@ Jobs:
 from jobs.base import JobResult, JobRunner, run_job, last_job_runs
 from jobs.daily_watchlist import DailyWatchlistJob, run_daily_watchlist
 from jobs.reconcile import ReconcileJob, run_reconcile
+from jobs.scheduler import JobScheduler, start_if_enabled
 
 __all__ = [
     "JobResult",
@@ -23,4 +24,6 @@ __all__ = [
     "run_daily_watchlist",
     "ReconcileJob",
     "run_reconcile",
+    "JobScheduler",
+    "start_if_enabled",
 ]

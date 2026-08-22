@@ -41,6 +41,11 @@ class Config:
     WATCHLIST_STORE: str            # 'json' (default) | 'sqlite'
     WATCHLIST_DB_PATH: Optional[str]  # SQLite file path; ':memory:' for tests
 
+    # --- Scheduling (Phase 13/14) ---
+    WATCHLIST_SCHEDULER: bool       # run the in-process background job loop (spec §26)
+    RECONCILE_INTERVAL_MIN: int     # frequent reconcile cadence (default 10 min)
+    DAILY_JOB_HOUR: int             # daily recommendation job hour (24h, default 18)
+
     # --- Internal ---
     _loaded: bool = False
 
@@ -107,6 +112,17 @@ class Config:
             self.WATCHLIST_STORE = "json"
         self.WATCHLIST_DB_PATH = env.get("WATCHLIST_DB_PATH") or None
 
+        # Scheduling (Phase 13/14). Off by default; enable via WATCHLIST_SCHEDULER=true.
+        self.WATCHLIST_SCHEDULER = (env.get("WATCHLIST_SCHEDULER") or "").strip().lower() in ("1", "true", "yes", "on")
+        try:
+            self.RECONCILE_INTERVAL_MIN = int(env.get("RECONCILE_INTERVAL_MIN") or 10)
+        except ValueError:
+            self.RECONCILE_INTERVAL_MIN = 10
+        try:
+            self.DAILY_JOB_HOUR = int(env.get("DAILY_JOB_HOUR") or 18)
+        except ValueError:
+            self.DAILY_JOB_HOUR = 18
+
     def _normalize_url(self, url: str) -> str:
         """Ensure URL has no trailing slash."""
         return url.rstrip("/")
@@ -119,6 +135,7 @@ class Config:
             "RADARR_QUALITY_PROFILE_ID", "SONARR_QUALITY_PROFILE_ID",
             "PLEX_BROWSER_URL", "EMBY_BROWSER_URL",
             "WATCHLIST_STORE", "WATCHLIST_DB_PATH",
+            "WATCHLIST_SCHEDULER", "RECONCILE_INTERVAL_MIN", "DAILY_JOB_HOUR",
         }
 
     def validate_required(self) -> list[str]:

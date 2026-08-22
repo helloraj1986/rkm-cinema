@@ -29,6 +29,18 @@ class QBittorrentService:
         self._cache: list = []
         self._cache_expiry: float = 0
 
+    # ------------------------------------------------------------------ health
+    def health(self) -> bool:
+        """Reachable if we can connect + list torrents (unauthenticated)."""
+        import urllib.request
+        try:
+            url = f"{self.config.QBITTORRENT_URL}/api/v2/torrents/info"
+            req = urllib.request.Request(url, headers={"User-Agent": "RKM-Cinema/2.0"})
+            with urllib.request.urlopen(req, timeout=8) as r:
+                return r.status == 200
+        except Exception:
+            return False
+
     # ------------------------------------------------------------------ data
     def get_torrents(self, *, use_cache: bool = True, ttl: int = 30) -> list[dict]:
         """Return all qBittorrent torrents (short-TTL cached)."""

@@ -24,7 +24,10 @@ class HealthResponse(BaseModel):
     ok: bool
     updated: str
     titleCount: int
-    services: Dict[str, bool]
+    services: Dict[str, bool] = Field(default_factory=dict)
+    # Phase 14 (spec §28): structured per-service health + partial-failure flag.
+    degraded: bool = False
+    serviceDetail: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
 
 
 class ConfigResponse(BaseModel):

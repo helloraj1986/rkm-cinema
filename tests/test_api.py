@@ -75,9 +75,8 @@ def test_plex_thumb_requires_path(mock_plex, client):
     mock_plex.assert_not_called()
 
 
-@patch("api.routes.health.build_acquisition_service")
-@patch("api.routes.health.PlexLibraryProvider")
-def test_health_shape(mock_plex, mock_acq_factory, client, monkeypatch):
+@patch("api.routes.health.HealthChecker")
+def test_health_shape(mock_checker, client, monkeypatch):
     """Health returns the expected services map."""
     from config import settings as s
     class FakeCfg:
@@ -85,12 +84,19 @@ def test_health_shape(mock_plex, mock_acq_factory, client, monkeypatch):
         def has_tmdb(self): return True
         def has_jellyfin(self): return False
     monkeypatch.setattr(s, "get_config", lambda: FakeCfg())
-    mock_plex.return_value.health.return_value = True
-    # The acquisition facade reports per-provider health (spec §14).
-    mock_acq_factory.return_value.health.return_value = {"radarr": True, "sonarr": True}
+    # The checker reports per-service health (spec §28); one stub result keeps
+    # the BC services bool map + structured detail + degraded flag.
+    report = Mock()
+    report.services = {"radarr": True, "sonarr": True, "plex": True, "emby": False,
+                        "qbit": True, "tmdb": True, "jellyfin": False}
+    report.degraded = False
+    report.serviceDetail = {"radarr": {"ok": True}, "plex": {"ok": True}}
+    mock_checker.return_value.check.return_value = report
 
     r = client.get("/api/health")
     assert r.status_code == 200
     body = r.json()
     assert body["services"]["radarr"] is True
     assert body["services"]["plex"] is True
+    assert body["degraded"] is False
+    assert body["serviceDetail"]["radarr"]["ok"] is True

@@ -203,6 +203,25 @@ class RadarrService(BaseService):
             qualityProfileId=0,
         )
 
+    def lookup_movie_by_tmdb(self, tmdb_id: int) -> Optional[RadarrMovie]:
+        """Lookup movie by TMDB ID (canonical ids are often tmdb-only)."""
+        try:
+            data = self._get("/movie/lookup", params={"term": f"tmdb:{tmdb_id}"}, timeout=20)
+        except Exception:
+            return None
+        if not data:
+            return None
+        m = data[0]
+        return RadarrMovie(
+            id=0,
+            tmdbId=m.get("tmdbId", tmdb_id),
+            title=m.get("title", ""),
+            year=m.get("year", 0),
+            hasFile=False,
+            monitored=True,
+            qualityProfileId=0,
+        )
+
     def search_movies(self, title: str, year: Optional[int] = None) -> list[RadarrMovie]:
         """Search Radarr by title (and optionally year). Returns candidate matches."""
         if not title:
@@ -239,18 +258,25 @@ class RadarrService(BaseService):
         return None
 
     def add_movie(self, imdb_id: str, quality_profile_id: Optional[int] = None,
-                  title: str = "", year: Optional[int] = None) -> AddResult:
-        """Add movie to Radarr by IMDb ID.
+                  title: str = "", year: Optional[int] = None,
+                  tmdb_id: Optional[int] = None) -> AddResult:
+        """Add movie to Radarr.
 
-        Falls back to a title/year search when the stored IMDb ID doesn't
-        resolve in Radarr (stale/ambiguous ID), so a valid movie is never
-        rejected just because its ID is out of date.
+        Lookup priority: IMDb ID first, then TMDB ID (canonical media ids are
+        often ``movie:tmdb:*`` with no IMDb id), then a title/year search as a
+        last resort so a valid movie is never rejected just because its id is
+        stale/absent.
         """
-        # Lookup by IMDb ID first
-        lookup = self.lookup_movie(imdb_id)
+        # Lookup by IMDb ID first.
+        lookup = None
+        if imdb_id:
+            lookup = self.lookup_movie(imdb_id)
+        # Canonical ids are frequently tmdb-only -> fall back to TMDB lookup.
+        if (not lookup or not lookup.tmdbId) and tmdb_id:
+            lookup = self.lookup_movie_by_tmdb(tmdb_id)
         candidates = []
         if not lookup or not lookup.tmdbId:
-            # IMDb lookup failed -> try title/year search
+            # Imdb+tmdb lookup failed -> try title/year search
             candidates = self.search_movies(title, year) if title else []
             if len(candidates) == 1:
                 lookup = candidates[0]

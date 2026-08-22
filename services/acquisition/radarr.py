@@ -70,7 +70,8 @@ class RadarrAcquisitionProvider(AcquisitionProvider):
                 False, "unavailable", "No stable id to request in Radarr",
                 MediaType.MOVIE, self.name)
         add = self._svc.add_movie(
-            identity.imdb_id or "", quality_profile_id, title=title, year=year)
+            identity.imdb_id or "", quality_profile_id, title=title, year=year,
+            tmdb_id=identity.tmdb_id)
         state = add.state  # "requested" | "ambiguous" | "unavailable"
         mapped = {
             "requested": "already_exists" if ("already" in (add.message or "").lower()) else "requested",

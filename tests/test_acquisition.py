@@ -4,6 +4,7 @@ Verifies the single-service movie→Radarr / series→Sonarr routing (spec §14)
 no `if movie: radarr else: sonarr` in callers. Fakes at the service boundary.
 """
 import pytest
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 from domain.enums import MediaType
@@ -50,12 +51,15 @@ class _FakeRadarr:
     def lookup_movie(self, imdb):
         return next((m for m in self.movies if m.imdbId == imdb), None)
 
+    def lookup_movie_by_tmdb(self, tmdb):
+        return next((m for m in self.movies if m.tmdbId == tmdb), None)
+
     def search_movies(self, title, year=None):
         return [m for m in self.movies if m.title == title]
 
-    def add_movie(self, imdb, qp=None, title="", year=None):
+    def add_movie(self, imdb, qp=None, title="", year=None, tmdb_id=None):
         from services.radarr import AddResult
-        m = self.lookup_movie(imdb)
+        m = self.lookup_movie(imdb) if imdb else self.lookup_movie_by_tmdb(tmdb_id)
         if m:
             return AddResult(True, m, f"{m.title} is already in Radarr", "requested")
         return AddResult(False, None, "No Radarr match for imdb:" + imdb, "unavailable")
@@ -120,6 +124,18 @@ class TestAcquisitionServiceRouting:
         assert st.queue_active is True
         assert st.queue_percent == 60
 
+    def test_request_movie_tmdb_only(self):
+        """Canonical movie:tmdb:* ids carry no imdb -> Radarr must resolve by
+        TMDB (fix: There Will Be Blood 'No Radarr match for imdb')."""
+        f = _FakeRadarr(movies=[make_radarr_movie(tmdb=7345, imdb="tt0469494",
+                                                 title="There Will Be Blood", year=2007)])
+        svc = AcquisitionService(providers=[RadarrAcquisitionProvider(service=f)])
+        ident = MediaIdentity(media_type=MediaType.MOVIE, tmdb_id=7345, imdb_id=None)
+        res = svc.request(ident)
+        assert res.success is True
+        assert "No Radarr match" not in res.message
+        assert res.item.title == "There Will Be Blood"
+
 
 class TestSonarrRouting:
     def test_sonarr_find_by_tvdb(self):
@@ -146,6 +162,35 @@ class TestSonarrRouting:
         st = svc.get_status(series_ident())
         assert st.record_exists is True
         assert st.has_file is True
+
+    def test_request_series_tvdb_only(self):
+        """Canonical tv:tvdb:* ids carry no imdb -> Sonarr must resolve by TVDB."""
+        class _FakeSonarr:
+            def __init__(self):
+                self.add_kwargs = {}
+            def lookup_series(self, imdb):
+                return None
+            def lookup_series_by_tvdb(self, tvdb):
+                return SimpleNamespace(tvdbId=tvdb, title="Breaking Bad", year=2008)
+            def find_series_by_tvdb(self, tvdb):
+                return None
+            def add_series(self, imdb, qp=None, title="", year=None, tvdb_id=None):
+                self.add_kwargs = {"imdb": imdb, "tvdb_id": tvdb_id}
+                return SimpleNamespace(
+                    success=True, state="requested",
+                    message="Breaking Bad added to Sonarr — downloads starting",
+                    series=SimpleNamespace(title="Breaking Bad", tvdbId=tvdb_id))
+            def health_check(self):
+                return True
+
+        svc = AcquisitionService(providers=[SonarrAcquisitionProvider(service=_FakeSonarr())])
+        ident = MediaIdentity(media_type=MediaType.TV, tvdb_id=81189, imdb_id=None)
+        res = svc.request(ident)
+        assert res.success is True
+        assert res.state == "requested"
+        assert res.item.title == "Breaking Bad"
+        # the provider resolved & passed the tvdb id (not the empty imdb)
+        assert res.item.tvdbId == 81189
 
 
 class TestDownloadServiceThroughAcquisition:

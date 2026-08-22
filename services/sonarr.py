@@ -229,6 +229,27 @@ class SonarrService(BaseService):
             imdbId=s.get("imdbId", ""),
         )
 
+    def lookup_series_by_tvdb(self, tvdb_id: int) -> Optional[SonarrSeries]:
+        """Lookup series by TVDB ID (canonical tv:tvdb:* ids are common)."""
+        try:
+            data = self._get("/series/lookup", params={"term": f"tvdb:{tvdb_id}"}, timeout=20)
+        except Exception:
+            return None
+        if not data:
+            return None
+        s = data[0]
+        return SonarrSeries(
+            id=0,
+            tvdbId=s.get("tvdbId", tvdb_id),
+            title=s.get("title", ""),
+            year=s.get("year", 0),
+            monitored=True,
+            qualityProfileId=0,
+            languageProfileId=0,
+            statistics={},
+            imdbId=s.get("imdbId", ""),
+        )
+
     def search_series(self, title: str, year: Optional[int] = None) -> list[SonarrSeries]:
         """Search Sonarr by title (and optionally year). Returns candidate matches."""
         if not title:
@@ -276,15 +297,21 @@ class SonarrService(BaseService):
         return None
 
     def add_series(self, imdb_id: str, quality_profile_id: Optional[int] = None,
-                   title: str = "", year: Optional[int] = None) -> AddResult:
-        """Add series to Sonarr by IMDb ID.
+                   title: str = "", year: Optional[int] = None,
+                   tvdb_id: Optional[int] = None) -> AddResult:
+        """Add series to Sonarr.
 
-        Falls back to a title/year search when the stored IMDb ID doesn't
-        resolve in Sonarr (stale/ambiguous ID), so a valid series is never
-        rejected just because its ID is out of date.
+        Lookup priority: IMDb ID first, then the given TVDB ID (canonical
+        ``tv:tvdb:*`` ids), then a title/year search as a last resort so a
+        valid series is never rejected just because its id is stale/absent.
         """
-        # Lookup by IMDb ID first
-        lookup = self.lookup_series(imdb_id)
+        # Lookup by IMDb ID first.
+        lookup = None
+        if imdb_id:
+            lookup = self.lookup_series(imdb_id)
+        # Canonical ids are often tvdb/tmdb-only -> fall back to TVDB lookup.
+        if (not lookup or not lookup.tvdbId) and tvdb_id:
+            lookup = self.lookup_series_by_tvdb(tvdb_id)
         candidates = []
         if not lookup or not lookup.tvdbId:
             # IMDb lookup failed -> try title/year search

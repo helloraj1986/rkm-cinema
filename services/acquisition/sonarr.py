@@ -68,8 +68,10 @@ class SonarrAcquisitionProvider(AcquisitionProvider):
 
     def request(self, identity, *, title: str = "", year: Optional[int] = None,
                 quality_profile_id: Optional[int] = None) -> AcquisitionRequestResult:
+        tvdb = self._tvdb_for(identity)
         add = self._svc.add_series(
-            identity.imdb_id or "", quality_profile_id, title=title, year=year)
+            identity.imdb_id or "", quality_profile_id, title=title, year=year,
+            tvdb_id=tvdb)
         mapped = {
             "requested": "already_exists" if ("already" in (add.message or "").lower()) else "requested",
             "ambiguous": "ambiguous",

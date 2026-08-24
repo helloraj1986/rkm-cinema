@@ -56,6 +56,32 @@ class TestResolveStatus:
         assert resolve_status(StatusFacts(media_type=MediaType.TV)).service == "sonarr"
         assert resolve_status(StatusFacts()).service == "radarr"
 
+    def test_library_wins_over_downloading(self):
+        """§30: in-library + an active qBittorrent download -> AVAILABLE, not DOWNLOADING."""
+        f = StatusFacts(in_plex=True, qbit_active=True, qbit_percent=42)
+        r = resolve_status(f)
+        assert r.state is MediaStatus.AVAILABLE
+        assert r.detail == "Available in Plex"
+
+    def test_library_wins_over_requested(self):
+        """§30: in-library + an existing *arr record -> AVAILABLE, not REQUESTED."""
+        f = StatusFacts(in_plex=True, arr_record_exists=True)
+        r = resolve_status(f)
+        assert r.state is MediaStatus.AVAILABLE
+
+    def test_emby_button_only_when_plex_link_fails(self):
+        """§30: Plex link failure + Emby success -> AVAILABLE carries ONLY the Emby button.
+
+        A missing Plex watch-link is a capability problem (spec §10), never a state
+        downgrade — and when the Emby link still resolves, the item exposes Emby.
+        """
+        links = WatchLinks(plex_available=False, plex_url="",
+                           emby_available=True, emby_url="http://e")
+        r = resolve_status(StatusFacts(in_plex=True, plex_links=links))
+        assert r.state is MediaStatus.AVAILABLE
+        assert r.plexUrl == ""
+        assert r.embyUrl == "http://e"
+
 
 class TestCapabilitiesAndSnapshot:
     def test_capabilities_from_status(self):

@@ -164,6 +164,23 @@ class TestRecommendationManager:
         assert res.new_recommendations == 0
         library.has.assert_called_once()
 
+    def test_watchlist_exclusion(self):
+        """§30: a candidate already on the active watchlist (pending) is excluded."""
+        generator = CandidateGenerator(source_fn=lambda mt, cat, n: [
+            {"id": 1, "title": "Pending", "release_date": "2025",
+             "vote_average": 8.5, "vote_count": 1000, "genre_ids": ["drama"],
+             "imdb_id": "tt9999999", "imdb": 8.0, "rt": 85}])
+        library = Mock(); library.has.return_value = False
+        watchlist = Mock()
+        watchlist.find_by_imdb.return_value = {"media_id": "movie:tmdb:1"}  # already pending
+        watchlist.find_by_tmdb.return_value = None
+        history = Mock(); history.list_recommendation_history.return_value = []
+        m = RecommendationManager(generator=generator, criteria=engine(),
+                                  library=library, watchlist=watchlist, history=history)
+        res = m.run(media_type=MediaType.MOVIE, count=1)
+        assert res.watchlist_duplicates == 1
+        assert res.new_recommendations == 0
+
     def test_persists_history(self):
         generator = CandidateGenerator(source_fn=lambda mt, cat, n: [
             {"id": i, "title": f"T{i}", "release_date": "2025",

@@ -1,10 +1,28 @@
 # RKM Watchlist — Session Handoff & Project Progress
 
-> Last updated: 2026-08-25 (**PRODUCTION REFACTOR in progress — Phases 1–16 done, next: Phase 17; phases 10+11 deployed**)
+> Last updated: 2026-08-25 (**PRODUCTION REFACTOR in progress — Phases 1–17 done, next: Phase 18; phases 10+11 deployed**)
 > Live URL: **http://rkm-hp.tail8d5e8.ts.net:8123/** (Tailscale MagicDNS, tailnet-only — NEVER `tailscale funnel` it; page proxies /api → FastAPI which holds secrets server-side)
 > Deploy path (Windows, RKM-HP): `cd D:\hermes_agent\hermes-workspace\media\watchlist; .\setup-watchlist.ps1` — the sandbox's `/workspace` maps to `D:\hermes_agent\hermes-workspace` (9p mount, confirmed via mountinfo 2026-08-18; NOT `D:\media`). The `web`+`api` containers are on RKM-HP (Docker daemon unreachable from sandbox).
 > Repo: **private `rkm-watchlist` on GitHub** (github.com/helloraj1986/rkm-watchlist)
-> **Status:** ✅ **Phases 1–11 committed AND deployed.** Running site is the Phase 10+11 image (resource API + capability-driven frontend). Two post-deploy user-testing bugs found and fixed (Dockerfile missing dirs; tmdb-only request). Unit + frontend suites green.
+> **Status:** ✅ **Phases 1–17 committed; 1–11 deployed.** Running site is the Phase 10+11 image (resource API + capability-driven frontend). Post-deploy user-testing bugs fixed (Dockerfile missing dirs; tmdb-only request). Backend 208 green + frontend 16 green.
+
+## ▶ LATEST SESSION (2026-08-25) — Phase 17 API-test/§31 consolidation ✅
+
+**Driving spec:** `RKM_Watchlist_Production_Refactor_Task.md` §31 (Phase 17) — API tests. **Before: 205 backend + 16 frontend green. After: 208 backend + 16 frontend green** (+3 in `tests/test_resource_api.py`). Test-only change; **no redeploy needed** (frontend volume-mounted, backend image unchanged — test files aren't shipped).
+
+### §31 audit result
+The §31 endpoint matrix was almost fully covered already by `test_resource_api.py` + `test_api.py`: `GET/POST /api/media/{id}`, `/api/watchlist`, `/api/reconcile`, `/api/jobs`, `/api/quality`, `/api/health` + the behavior asserts (AVAILABLE→can_download false, NOT_REQUESTED→can_download true, watch links exposed). The **one endpoint with zero coverage was `GET /api/library`**. Added 3 tests driving its Plex→Emby→partial fallback chain:
+
+1. `test_library_plex_primary_success` — Plex healthy → full §18 Plex view (counts/recents/urls).
+2. `test_library_plex_fail_falls_back_to_emby` — Plex down → Emby fallback, **200** with Emby counts.
+3. `test_library_both_providers_fail_is_partial_not_error` — the §31 **"provider failure → partial response"** assert at API level: both providers down → **200 `provider=None available=False`**, never a 5xx (spec §28).
+
+Fakes mock the provider boundary exactly (`PlexLibraryProvider` reaches `service.providers()` — a **method** returning a copy of `_providers`, not a bare attribute — and `provider._plex.get_library_counts()`/`runner._browser_base()`). No LAN, no keys.
+
+### Next
+**Phase 18 — Frontend tests/manual verification (spec §32)**: audit the Node suite against the §32 card-state matrix (NOT_REQUESTED/REQUESTED/DOWNLOADING/DOWNLOADED/AVAILABLE renders, can_download-gated Download button, plex/emby-gated buttons, **double-click Download → no duplicate request**). Then Phase 19 observability (§33), Phase 20 config cleanup (§34), Phase 21 frontend API boundary (§35), Phase 22 remove legacy duplication (§36).
+
+---
 
 ## ▶ LATEST SESSION (2026-08-25) — Phase 16 testing/§30 consolidation ✅
 
@@ -22,7 +40,7 @@ The spec's domain/identity/request/recommendation/watch-link test matrix was **a
 - Existing §30 cases confirmed present: domain available/downloading/requested/nothing + watch-link-availability (`test_status.py`); all identity forms (`test_identity.py`); request suite (`test_request_media.py`); rec pass/fail-rating/fail-genre/in-library/in-history/dup (`test_recommendation_engine.py`); Plex-match + Emby-match links (`test_watch_links.py`).
 
 ### Next
-**Phase 17 — API tests (spec §31)**. Most already exist in `tests/test_resource_api.py` (GET/POST /api/media/{id}, /api/watchlist, /api/reconcile, /api/jobs, /api/quality); remaining to verify per §31: `GET /api/library`, `GET /api/health`, and the explicit behavior asserts (AVAILABLE→can_download false, NOT_REQUESTED→can_download true, watch links exposed, provider failure→partial response). Then Phases 18 (removal of legacy duplication, §36) and 19 (observability, §33).
+_Led into Phase 17 (now done). See the top-of-file Phase 17 block for the current next step._
 
 ---
 
@@ -44,7 +62,7 @@ The spec's domain/identity/request/recommendation/watch-link test matrix was **a
 - AVAILABLE when in library; ALREADY_REQUESTED when *arr already holds it; REQUESTED on success (movie→radarr, series→sonarr); AMBIGUOUS; PROVIDER_UNAVAILABLE; NOT_CONFIGURED (no provider / unparseable id); idempotency (no double write); persist hook invoked on REQUESTED; module convenience fn.
 
 ### Remaining
-- **Phase 17 next — API tests** (spec §31): `GET /api/media/{id}`, `POST /api/media/{id}/request`, `GET /api/watchlist`, `GET /api/library`, `POST /api/reconcile`, `GET /api/health`; verify AVAILABLE→can_download false, NOT_REQUESTED→can_download true, watch links exposed, provider failure→partial response. Most already exist in `tests/test_resource_api.py` — audit + close gaps. Then Phase 18 legacy duplication removal (§36), Phase 19 observability (§33).
+- **Phase 18 next — Frontend tests/manual verification** (spec §32): verify each card state (NOT_REQUESTED/REQUESTED/DOWNLOADING/DOWNLOADED/AVAILABLE) renders; Download button only when can_download; Plex button only when Plex link available; Emby button only when Emby link available; **double-click Download creates no duplicate request**. The Node-based frontend suite (`tests/phase11_frontend.test.mjs`, 16 green) already asserts the capability-driven branching + legacy fallback — audit the remaining §32 card-state renders and idempotent-download asserts against it, add what's missing. Then Phase 19 observability (§33 structured logging), Phase 20 config cleanup (§34), Phase 21 frontend API boundary (§35), Phase 22 remove legacy duplication (§36).
 - The **scheduler is built + wired** (Phase 14) but **off by default** — to enable the container job loop set `WATCHLIST_SCHEDULER=true` in `.env` (plus `RECONCILE_INTERVAL_MIN`, `DAILY_JOB_HOUR`). The existing host cron (`scripts/daily_recommendations.py`) still runs; it now coexists until you flip to the in-container loop (spec §40 prefers container jobs).
 
 ---
@@ -68,7 +86,7 @@ Phases 10+11 deployed → user tested adding titles live. Two backend bugs surfa
 
 ---
 
-## ⚡ NEXT SESSION — RESUME EXACTLY HERE (Phase 16 done, next Phase 17)
+## ⚡ NEXT SESSION — RESUME EXACTLY HERE (Phase 17 done, next Phase 18)
 
 **Do NOT skip ahead (§42; §43.3 no parallel implementations; §43.7 keep `pytest` green after every phase).**
 
@@ -84,6 +102,7 @@ Phases 10+11 deployed → user tested adding titles live. Two backend bugs surfa
 10. ✅ **Phase 14 — Health / partial failure + scheduling** (**DONE**, this session, commit `11d8484`) — typed per-service errors in `core/exceptions.py` (Plex/Emby/Radarr/Sonarr/QBittorrent/TMDB Unavailable + AmbiguousMedia + MediaNotFound; one failed service never destroys the response — spec §28). `core/http_client.py` real retry + exponential backoff (GET: network+5xx, POST: network only). `services/health.py` `HealthChecker` — canonical per-service structured health (`configured/ok/detail/error`) + `degraded` flag, DI-injectable; `/api/health` thin route keeps BC `services` bool map AND adds `serviceDetail` + `degraded`. `jobs/scheduler.py` opt-in in-container job loop (frequent reconcile at `RECONCILE_INTERVAL_MIN` + daily job at `DAILY_JOB_HOUR`) wired from app startup under `WATCHLIST_SCHEDULER=true` (default off), each run via JobRunner → job_runs. **183 green** (+15 in `tests/test_health_and_scheduler.py`).
 | 11. ✅ **Phase 15 — Caching** (**DONE**, commit `54b9d53`). `core/cache.py` `TTLCache` (monotonic TTL, invalidate/clear, thread-safe) — the ONE cache primitive (§43). `TMDBService` metadata long-TTL cache (`config.TMDB_CACHE_TTL`, default 6h; movie/show details + searches). Emby scan TTL corrected 300s→**60s** (`EmbyLibraryProvider.EMBY_SCAN_TTL`). *arr write-path invalidation fixed: `add_movie`/`add_series` now clear the URL-keyed `_http_cache` too (was left stale up to 45s) via `_invalidate_after_write()`; new `clear_cache()`. `invalidate()` hoisted: `LibraryProvider`/`AcquisitionProvider` ABCs (no-op default → fake-safe) + concrete Plex/Emby/Radarr/Sonarr providers + `LibraryService.invalidate()` + `AcquisitionService.invalidate()` + `Reconciler.invalidate()`; `request_media` invalidates acquisition after a successful write. **201 green** (+18 in `tests/test_caching.py`).
 | 12. ✅ **Phase 16 — Testing/e2e consolidation** (**DONE**, commit `17d4acf`). **205 green** (201 backend + 4 new in `test_status.py` + `test_recommendation_engine.py`, frontend 16 green). Spec §30 audit: most cases already existed from Phases 4–15; closed 3 real gaps — (a) domain: **in-library + active qBittorrent → AVAILABLE** (`test_library_wins_over_downloading`) and **in-library + *arr record → AVAILABLE** (`test_library_wins_over_requested`), the explicit §30 "library available + downloading/requested" combos; (b) watch-link: **Plex link failure + Emby success → AVAILABLE carries ONLY the Emby button** (`test_emby_button_only_when_plex_link_fails`, spec §10 capability-not-state); (c) recommendation: **already-on-watchlist → excluded** (`test_watchlist_exclusion`, exercises the `watchlist_duplicates` counter). §30 domain/identity/request/rec/watch-link matrix now fully covered (NOT: the codebase enum is `NOT_ADDED`, which §30's wording calls "nothing → NOT_REQUESTED" — same state, different label; no rename so resource API/frontend stay stable).
+| 13. ✅ **Phase 17 — API tests** (**DONE**, commit `14ba4b2`). **208 green** (205 + 3 new in `test_resource_api.py`, frontend 16 green). Spec §31 audit: media/request/watchlist/reconcile/health endpoints + the AVAILABLE→can_download false, NOT_REQUESTED→can_download true, watch-links-exposed asserts were already covered by `test_resource_api.py` + `test_api.py`. The one endpoint gap was **`GET /api/library`** — added 3 tests driving its Plex→Emby→partial fallback chain: `test_library_plex_primary_success` (Plex healthy → full Plex §18 view, counts/recents/urls), `test_library_plex_fail_falls_back_to_emby` (Plex down → Emby fallback, still 200 with Emby counts), `test_library_both_providers_fail_is_partial_not_error` — the §31 "provider failure → partial response" assert at API level (both providers down → **200** `provider=None available=False`, never a 5xx; spec §28). Fakes mock the provider boundary (no LAN); exercised `service.providers()` (note: a method returning a copy of `_providers`, not an attribute).
 
 ---
 

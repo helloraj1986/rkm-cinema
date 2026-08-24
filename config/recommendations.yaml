@@ -19,7 +19,7 @@ recommendations:
     genres:
       include: []             # empty = any genre
       exclude: ["horror"]
-    min_imdb: 7.5             # ≥ threshold OR rt≥ (see rt_any below)
+    min_imdb: 7.5             # ≥ threshold OR rt≥ (see rt_any below); skipped when both unknown
     min_rt: 80
     rt_any: true              # pass if EITHER imdb>=min_imdb OR rt>=min_rt
     score_weight: 1.0

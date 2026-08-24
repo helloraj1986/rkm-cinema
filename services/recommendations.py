@@ -38,6 +38,8 @@ class Candidate:
     cast: List[str]
     snippet: str
     poster: str = ""
+    tmdb_score: float = 0.0     # TMDB rating (carried so the legacy gate can score
+    vote_count: int = 0         # discover-sourced candidates, spec §22)
 
 
 @dataclass
@@ -108,7 +110,8 @@ class RecommendationService:
             year=candidate.year,
             tmdb_id=candidate.tmdb_id or None,
             imdb_id=candidate.imdb_id or None,
-            tmdb_score=0.0,
+            tmdb_score=candidate.tmdb_score,
+            vote_count=candidate.vote_count,
             imdb=candidate.imdb,
             rt=candidate.rt,
             lang=candidate.lang,
@@ -132,9 +135,14 @@ class RecommendationService:
         return self.library.has(identity, title=candidate.title, year=candidate.year)
 
     def check_watchlist_duplicate(self, candidate: Candidate) -> bool:
-        """Check if already in watchlist (pending or recommended)."""
-        existing = self.watchlist.find_by_imdb(candidate.imdb_id)
-        return existing is not None
+        """Check if already in watchlist (pending or recommended), by either
+        canonical id (imdb or tmdb). TMDB-discover candidates often carry only
+        a tmdb id, so the imdb-only check alone would miss duplicates."""
+        if candidate.imdb_id and self.watchlist.find_by_imdb(candidate.imdb_id):
+            return True
+        if candidate.tmdb_id and self.watchlist.find_by_tmdb(candidate.tmdb_id):
+            return True
+        return False
 
     def find_candidates(self, category: str, count: int = 2) -> List[Candidate]:
         """
@@ -233,10 +241,17 @@ class RecommendationService:
             return False
 
     def _validate_entry(self, entry: dict) -> None:
-        """Validate all required fields are present and valid."""
-        for field in ["title", "year", "imdbId", "tmdbId", "added"]:
+        """Validate all required fields are present and valid.
+
+        A canonical media id (imdbId OR tmdbId) is required — TMDB-discover
+        yields tmdb-only titles, which is the canonical identity (§8/§9). Both
+        are not needed simultaneously.
+        """
+        for field in ["title", "year", "added"]:
             if not entry.get(field):
                 raise ValidationError(field, entry.get(field), "Required field missing")
+        if not (entry.get("imdbId") or entry.get("tmdbId")):
+            raise ValidationError("imdbId/tmdbId", None, "Required: a canonical media id (imdb or tmdb)")
 
         if entry.get("trailerId") and not self.trailers.validate_trailer(entry["trailerId"]):
             logger.warning("Invalid trailer ID for %s: %s", entry["title"], entry["trailerId"])

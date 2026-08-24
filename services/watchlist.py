@@ -250,10 +250,12 @@ class WatchlistService:
         return None
 
     def add_pending(self, entry: WatchlistEntry) -> None:
-        """Add new entry to pending (validates no duplicate)."""
+        """Add new entry to pending (validates no duplicate by canonical id)."""
         data = self.load()
-        if self.find_by_imdb(entry.imdbId):
+        if entry.imdbId and self.find_by_imdb(entry.imdbId):
             raise DuplicateError("Watchlist entry", entry.imdbId)
+        if entry.tmdbId and self.find_by_tmdb(entry.tmdbId):
+            raise DuplicateError("Watchlist entry", str(entry.tmdbId))
 
         # Ensure state is pending
         entry.state = "pending"

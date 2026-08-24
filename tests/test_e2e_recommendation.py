@@ -35,6 +35,7 @@ class TestRecommendationFlow:
         library.has.return_value = False
         watchlist = Mock()
         watchlist.find_by_imdb.return_value = None
+        watchlist.find_by_tmdb.return_value = None
         trailers = Mock()
         trailers.enrich_entry.return_value = {
             "title": "The Matrix", "year": 1999, "category": "Action", "lang": "English",

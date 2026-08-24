@@ -14,6 +14,8 @@ from typing import Optional
 from domain.enums import MediaType
 from services.recommendation.criteria import RecommendationCandidate
 
+from services.tmdb import TMDBService
+
 logger = logging.getLogger("rkm.recommendation.generator")
 
 
@@ -35,16 +37,15 @@ class CandidateGenerator:
     def __init__(self, *, tmdb=None, source_fn=None, config=None):
         from config.settings import get_config
         self.config = config if config is not None else get_config()
-        self._tmdb = tmdb
+        self._tmdb_injected = tmdb
         self.source_fn = source_fn
 
     # ------------------------------------------------------------- sourcing
     def _tmdb(self):
-        if self._tmdb is not None:
-            return self._tmdb
-        from services.tmdb import TMDBService
-        self._tmdb = TMDBService(config=self.config)
-        return self._tmdb
+        if self._tmdb_injected is not None:
+            return self._tmdb_injected
+        self._tmdb_injected = TMDBService(config=self.config)
+        return self._tmdb_injected
 
     def candidates(self, *, category: str = "", count: int = 20,
                    media_type: MediaType = MediaType.MOVIE) -> list[RecommendationCandidate]:
@@ -82,7 +83,15 @@ class CandidateGenerator:
             "include_adult": "false",
         }
         data = tmdb._request(endpoint, params)
-        return (data or {}).get("results", [])[:count]
+        raw = list((data or {}).get("results", [])[:count])
+        # Map the numeric genre_ids TMDB discover returns into names so the
+        # name-based genre criteria (include/exclude) work on this path.
+        names = getattr(tmdb, "genre_names", lambda: {})()
+        for item in raw:
+            ids = item.get("genre_ids") or []
+            if ids and names:
+                item["genres"] = [names.get(int(i), str(i)) for i in ids]
+        return raw
 
     # -------------------------------------------------------- normalization
     def _normalize_all(self, raw: list[dict], media_type: MediaType) -> list[RecommendationCandidate]:

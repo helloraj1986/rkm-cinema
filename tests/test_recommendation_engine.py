@@ -82,6 +82,19 @@ class TestCriteriaEngine:
         r = engine().evaluate(cand(ts=0, imdb=8.2, rt=90))
         assert r.passed is True
 
+    def test_imdb_rt_both_unknown_skips_anchor(self):
+        """A TMDB-discover candidate (imdb=0 AND rt=0) passes on TMDB alone.
+
+        The IMDb/RT anchor is a real gate ONLY when the scores are known;
+        when both are unknown (TMDB-discover case) the candidate is scored on
+        its TMDB rating (spec §22).
+        """
+        r = engine().evaluate(cand(ts=8.0, vc=1000, imdb=0, rt=0, genres=None))
+        assert r.passed is True
+        # a genuinely low-TMDB discover candidate still fails on tmdb
+        low = engine().evaluate(cand(ts=6.0, vc=1000, imdb=0, rt=0, genres=None))
+        assert low.passed is False
+
 
 class TestCandidateGenerator:
     def test_normalizes_tmdb_movie_shape(self):
@@ -109,6 +122,22 @@ class TestCandidateGenerator:
         # malformed that raise are skipped. Assert no exception and no crash.
         out = gen.candidates(media_type=MediaType.MOVIE)
         assert isinstance(out, list)
+
+    def test_discover_maps_genre_ids_to_names(self):
+        """TMDB discover returns numeric genre_ids; the generator must map them
+        to names so name-based criteria (exclude horror) fire on this path."""
+        raw = [{"id": 1, "title": "The Thing", "release_date": "1982-01-01",
+                "vote_average": 8.2, "vote_count": 1000, "genre_ids": [27, 878]}]
+
+        class _FakeDiscover:
+            def genre_names(self):
+                return {878: "Science Fiction", 27: "Horror", 12: "Adventure"}
+
+            def _request(self, *a, **k):
+                return {"results": raw}
+
+        out = CandidateGenerator._discover_tmdb(_FakeDiscover(), "discover/movie", 10)
+        assert out[0]["genres"] == ["Horror", "Science Fiction"]
 
 
 class TestRanker:

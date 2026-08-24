@@ -200,9 +200,14 @@ class CriteriaEngine:
             reasons.append(f"Excluded genre {', '.join(sorted(excl))}")
 
         # 6. IMDb / RT anchor (mirrors old gates; rt_any = either suffices).
-        imdb_ok = mc.min_imdb > 0 and cand.imdb >= mc.min_imdb
-        rt_ok = mc.min_rt > 0 and cand.rt >= mc.min_rt
-        if mc.min_imdb > 0 or mc.min_rt > 0:
+        #    When BOTH imdb and rt are unknown (0) — e.g. a TMDB-discover-only
+        #    candidate — the anchor is skipped, exactly like tmdb_score==0 being
+        #    unknown above. This keeps the curated IMDb/RT bar while letting
+        #    discover-sourced titles pass on their TMDB rating alone.
+        anchor_unknown = (cand.imdb <= 0) and (cand.rt <= 0)
+        imdb_ok = (not anchor_unknown) and mc.min_imdb > 0 and cand.imdb >= mc.min_imdb
+        rt_ok = (not anchor_unknown) and mc.min_rt > 0 and cand.rt >= mc.min_rt
+        if not anchor_unknown and (mc.min_imdb > 0 or mc.min_rt > 0):
             if mc.rt_any:
                 if imdb_ok or rt_ok:
                     reasons.append(f"IMDb {cand.imdb:.1f} or RT {cand.rt}% passes quality anchor")
@@ -226,9 +231,10 @@ class CriteriaEngine:
             passed = False
         if excl:
             passed = False
-        # IMDb/RT anchor: when configured it is a real gate. rt_any -> either
-        # passes; otherwise BOTH must pass. Mirrors the old hardcoded gates.
-        if mc.min_imdb > 0 or mc.min_rt > 0:
+        # IMDb/RT anchor: when configured (and scores are known) it is a real
+        # gate. rt_any -> either passes; otherwise BOTH must pass. When BOTH
+        # imdb and rt are unknown the anchor is skipped (TMDB-discover case).
+        if not anchor_unknown and (mc.min_imdb > 0 or mc.min_rt > 0):
             if mc.rt_any:
                 if not (imdb_ok or rt_ok):
                     passed = False

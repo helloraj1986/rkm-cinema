@@ -30,6 +30,22 @@ class TMDBService:
         """Drop all cached metadata (e.g. before a forced refresh)."""
         self._cache.clear()
 
+    def genre_names(self) -> dict[int, str]:
+        """TMDB genre id -> name for movie + tv lists (merged, cached 6h).
+
+        Lets the recommendation generator map the numeric ``genre_ids`` TMDB
+        discover returns into names, so name-based criteria (e.g. exclude
+        ["horror"]) actually fire on the TMDB path.
+        """
+        def _load():
+            merged: dict[int, str] = {}
+            for endpoint in ("genre/movie/list", "genre/tv/list"):
+                data = self._request(endpoint)
+                for g in (data or {}).get("genres", []) or []:
+                    merged[int(g["id"])] = str(g["name"])
+            return merged
+        return self._cached("genres:all", _load) or {}
+
     def _cached(self, key: str, loader):
         """Return cached *key* or compute via *loader* and store it."""
         hit = self._cache.get(key)

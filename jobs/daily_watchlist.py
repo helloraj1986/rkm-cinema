@@ -104,6 +104,8 @@ def _to_legacy_candidate(cand):
         is_series=(cand.media_type.value == "tv"),
         imdb_id=cand.imdb_id or "",
         tmdb_id=cand.tmdb_id or 0,
+        tmdb_score=cand.tmdb_score,
+        vote_count=cand.vote_count,
         director="",
         cast=[],
         snippet=cand.snippet or "",

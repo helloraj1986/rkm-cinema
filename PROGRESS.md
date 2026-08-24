@@ -1,10 +1,30 @@
 # RKM Watchlist — Session Handoff & Project Progress
 
-> Last updated: 2026-08-23 (**PRODUCTION REFACTOR in progress — Phases 1–15 done, next: Phase 16; phases 10+11 deployed**)
+> Last updated: 2026-08-25 (**PRODUCTION REFACTOR in progress — Phases 1–16 done, next: Phase 17; phases 10+11 deployed**)
 > Live URL: **http://rkm-hp.tail8d5e8.ts.net:8123/** (Tailscale MagicDNS, tailnet-only — NEVER `tailscale funnel` it; page proxies /api → FastAPI which holds secrets server-side)
 > Deploy path (Windows, RKM-HP): `cd D:\hermes_agent\hermes-workspace\media\watchlist; .\setup-watchlist.ps1` — the sandbox's `/workspace` maps to `D:\hermes_agent\hermes-workspace` (9p mount, confirmed via mountinfo 2026-08-18; NOT `D:\media`). The `web`+`api` containers are on RKM-HP (Docker daemon unreachable from sandbox).
 > Repo: **private `rkm-watchlist` on GitHub** (github.com/helloraj1986/rkm-watchlist)
 > **Status:** ✅ **Phases 1–11 committed AND deployed.** Running site is the Phase 10+11 image (resource API + capability-driven frontend). Two post-deploy user-testing bugs found and fixed (Dockerfile missing dirs; tmdb-only request). Unit + frontend suites green.
+
+## ▶ LATEST SESSION (2026-08-25) — Phase 16 testing/§30 consolidation ✅
+
+**Driving spec:** `RKM_Watchlist_Production_Refactor_Task.md` §30 (Phase 16) — test requirements. **Before: 201 backend + 16 frontend green. After: 205 backend + 16 frontend green** (+4 in `tests/test_status.py` + `tests/test_recommendation_engine.py`). Test-only change; **no redeploy needed** (frontend volume-mounted, backend image unchanged — test files aren't shipped).
+
+### §30 audit result
+The spec's domain/identity/request/recommendation/watch-link test matrix was **already ~90% covered** by suites added across Phases 4–15 (a deliberate Phase 16 design: the tests came *with* the code). Audited each required case and found **3 genuine gaps**, all closed:
+
+1. **Domain combos** (§30 "library available + downloading/requested → AVAILABLE"): `resolve_status` short-circuits on `in_plex` for every case, but no test pinned the two explicit combos. Added `test_library_wins_over_downloading` (in_plex + qbit_active → AVAILABLE, not DOWNLOADING) and `test_library_wins_over_requested` (in_plex + arr record → AVAILABLE, not REQUESTED).
+2. **Watch link, Emby-only** (§30 "Plex link failure + Emby success → Emby button only"): only "Plex failure still AVAILABLE" was tested. Added `test_emby_button_only_when_plex_link_fails` — asserts AVAILABLE is preserved (spec §10: capability problem, never a state downgrade) with `plexUrl=""` and `embyUrl` intact.
+3. **Recommendation watchlist exclusion** (§30 "already in watchlist → excluded"): the manager has a `watchlist_duplicates` counter but no test exercised it. Added `test_watchlist_exclusion` (candidate with `imdb_id` already pending → `watchlist_duplicates == 1`, `new_recommendations == 0`).
+
+### Notes
+- **Naming:** §30 writes the "nothing" state as `NOT_REQUESTED`; the codebase enum is `NOT_ADDED` (consistent since Phase 4, consumed by the resource API + frontend). Same state, different label — **no rename** to avoid churn across API/frontend. Documented in PROGRESS.
+- Existing §30 cases confirmed present: domain available/downloading/requested/nothing + watch-link-availability (`test_status.py`); all identity forms (`test_identity.py`); request suite (`test_request_media.py`); rec pass/fail-rating/fail-genre/in-library/in-history/dup (`test_recommendation_engine.py`); Plex-match + Emby-match links (`test_watch_links.py`).
+
+### Next
+**Phase 17 — API tests (spec §31)**. Most already exist in `tests/test_resource_api.py` (GET/POST /api/media/{id}, /api/watchlist, /api/reconcile, /api/jobs, /api/quality); remaining to verify per §31: `GET /api/library`, `GET /api/health`, and the explicit behavior asserts (AVAILABLE→can_download false, NOT_REQUESTED→can_download true, watch links exposed, provider failure→partial response). Then Phases 18 (removal of legacy duplication, §36) and 19 (observability, §33).
+
+---
 
 ## ▶ LATEST SESSION (2026-08-22) — refactor Phase 9 ✅ (idempotent request command)
 
@@ -24,7 +44,7 @@
 - AVAILABLE when in library; ALREADY_REQUESTED when *arr already holds it; REQUESTED on success (movie→radarr, series→sonarr); AMBIGUOUS; PROVIDER_UNAVAILABLE; NOT_CONFIGURED (no provider / unparseable id); idempotency (no double write); persist hook invoked on REQUESTED; module convenience fn.
 
 ### Remaining
-- Phase 16 next — **testing / e2e** (spec §30): the required domain/identity/request/recommendation/watch-link tests already exist (Phases 4–15 added them), so Phase 16 is the consolidation + full end-to-end verification. Then Phases 17 API tests, 18 removal of legacy duplication, 19 observability.
+- **Phase 17 next — API tests** (spec §31): `GET /api/media/{id}`, `POST /api/media/{id}/request`, `GET /api/watchlist`, `GET /api/library`, `POST /api/reconcile`, `GET /api/health`; verify AVAILABLE→can_download false, NOT_REQUESTED→can_download true, watch links exposed, provider failure→partial response. Most already exist in `tests/test_resource_api.py` — audit + close gaps. Then Phase 18 legacy duplication removal (§36), Phase 19 observability (§33).
 - The **scheduler is built + wired** (Phase 14) but **off by default** — to enable the container job loop set `WATCHLIST_SCHEDULER=true` in `.env` (plus `RECONCILE_INTERVAL_MIN`, `DAILY_JOB_HOUR`). The existing host cron (`scripts/daily_recommendations.py`) still runs; it now coexists until you flip to the in-container loop (spec §40 prefers container jobs).
 
 ---
@@ -48,7 +68,7 @@ Phases 10+11 deployed → user tested adding titles live. Two backend bugs surfa
 
 ---
 
-## ⚡ NEXT SESSION — RESUME EXACTLY HERE (Phase 15 done, next Phase 16)
+## ⚡ NEXT SESSION — RESUME EXACTLY HERE (Phase 16 done, next Phase 17)
 
 **Do NOT skip ahead (§42; §43.3 no parallel implementations; §43.7 keep `pytest` green after every phase).**
 
@@ -62,7 +82,8 @@ Phases 10+11 deployed → user tested adding titles live. Two backend bugs surfa
 8. ✅ **Phase 12 — Recommendation engine** (**DONE**, this session, commit `a70fb57`) — `services/recommendation/{criteria,generator,ranker,manager}.py`; criteria in `config/recommendations.yaml` (spec §22, config not Python); `CriteriaEngine.evaluate() -> CriteriaResult{passed, score, reasons}`; `CandidateGenerator` (TMDB discover + DI source_fn); `rank()` by score; `RecommendationManager` pipeline (normalize → criteria → dedupe → library → watchlist → history → rank → persist) → §25-shape result, idempotent. Repository `record_recommendation()`/`list_recommendation_history()` on the SQLite `recommendations` table (spec §23, idempotent UPSERT). Legacy `RecommendationService` gates now delegate to the CriteriaEngine (BC shim §43). PyYAML added to requirements. **160 green** (+15 in `tests/test_recommendation_engine.py`).
 9. ✅ **Phase 13 — Scheduled jobs** (**DONE**, this session, commit `ec2537a`) — `jobs/base.py` (`JobRunner` records every run to the `job_runs` table, success AND error visible — spec "job execution is recorded"/"failures visible"), `jobs/daily_watchlist.py` (`DailyWatchlistJob` feeds the Phase 12 `RecommendationManager` then adds survivors to the watchlist, idempotent, §25-shaped counts), `jobs/reconcile.py` (`ReconcileJob` → `Reconciler.compute()` tallies statuses, NO new recs — spec §26). `POST /api/jobs/{name}/run` stable command route (thin Route → job, 404 unknown; spec §40 host cron calls a stable command). Dockerfile `COPY jobs`. **168 green** (+8 in `tests/test_jobs.py`).
 10. ✅ **Phase 14 — Health / partial failure + scheduling** (**DONE**, this session, commit `11d8484`) — typed per-service errors in `core/exceptions.py` (Plex/Emby/Radarr/Sonarr/QBittorrent/TMDB Unavailable + AmbiguousMedia + MediaNotFound; one failed service never destroys the response — spec §28). `core/http_client.py` real retry + exponential backoff (GET: network+5xx, POST: network only). `services/health.py` `HealthChecker` — canonical per-service structured health (`configured/ok/detail/error`) + `degraded` flag, DI-injectable; `/api/health` thin route keeps BC `services` bool map AND adds `serviceDetail` + `degraded`. `jobs/scheduler.py` opt-in in-container job loop (frequent reconcile at `RECONCILE_INTERVAL_MIN` + daily job at `DAILY_JOB_HOUR`) wired from app startup under `WATCHLIST_SCHEDULER=true` (default off), each run via JobRunner → job_runs. **183 green** (+15 in `tests/test_health_and_scheduler.py`).
-11. ✅ **Phase 15 — Caching** (**DONE**, commit `54b9d53`). `core/cache.py` `TTLCache` (monotonic TTL, invalidate/clear, thread-safe) — the ONE cache primitive (§43). `TMDBService` metadata long-TTL cache (`config.TMDB_CACHE_TTL`, default 6h; movie/show details + searches). Emby scan TTL corrected 300s→**60s** (`EmbyLibraryProvider.EMBY_SCAN_TTL`). *arr write-path invalidation fixed: `add_movie`/`add_series` now clear the URL-keyed `_http_cache` too (was left stale up to 45s) via `_invalidate_after_write()`; new `clear_cache()`. `invalidate()` hoisted: `LibraryProvider`/`AcquisitionProvider` ABCs (no-op default → fake-safe) + concrete Plex/Emby/Radarr/Sonarr providers + `LibraryService.invalidate()` + `AcquisitionService.invalidate()` + `Reconciler.invalidate()`; `request_media` invalidates acquisition after a successful write. **201 green** (+18 in `tests/test_caching.py`).
+| 11. ✅ **Phase 15 — Caching** (**DONE**, commit `54b9d53`). `core/cache.py` `TTLCache` (monotonic TTL, invalidate/clear, thread-safe) — the ONE cache primitive (§43). `TMDBService` metadata long-TTL cache (`config.TMDB_CACHE_TTL`, default 6h; movie/show details + searches). Emby scan TTL corrected 300s→**60s** (`EmbyLibraryProvider.EMBY_SCAN_TTL`). *arr write-path invalidation fixed: `add_movie`/`add_series` now clear the URL-keyed `_http_cache` too (was left stale up to 45s) via `_invalidate_after_write()`; new `clear_cache()`. `invalidate()` hoisted: `LibraryProvider`/`AcquisitionProvider` ABCs (no-op default → fake-safe) + concrete Plex/Emby/Radarr/Sonarr providers + `LibraryService.invalidate()` + `AcquisitionService.invalidate()` + `Reconciler.invalidate()`; `request_media` invalidates acquisition after a successful write. **201 green** (+18 in `tests/test_caching.py`).
+| 12. ✅ **Phase 16 — Testing/e2e consolidation** (**DONE**, commit `17d4acf`). **205 green** (201 backend + 4 new in `test_status.py` + `test_recommendation_engine.py`, frontend 16 green). Spec §30 audit: most cases already existed from Phases 4–15; closed 3 real gaps — (a) domain: **in-library + active qBittorrent → AVAILABLE** (`test_library_wins_over_downloading`) and **in-library + *arr record → AVAILABLE** (`test_library_wins_over_requested`), the explicit §30 "library available + downloading/requested" combos; (b) watch-link: **Plex link failure + Emby success → AVAILABLE carries ONLY the Emby button** (`test_emby_button_only_when_plex_link_fails`, spec §10 capability-not-state); (c) recommendation: **already-on-watchlist → excluded** (`test_watchlist_exclusion`, exercises the `watchlist_duplicates` counter). §30 domain/identity/request/rec/watch-link matrix now fully covered (NOT: the codebase enum is `NOT_ADDED`, which §30's wording calls "nothing → NOT_REQUESTED" — same state, different label; no rename so resource API/frontend stay stable).
 
 ---
 

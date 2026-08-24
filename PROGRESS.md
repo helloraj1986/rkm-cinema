@@ -1,10 +1,32 @@
 # RKM Watchlist — Session Handoff & Project Progress
 
-> Last updated: 2026-08-25 (**PRODUCTION REFACTOR in progress — Phases 1–17 done, next: Phase 18; phases 10+11 deployed**)
+> Last updated: 2026-08-25 (**PRODUCTION REFACTOR in progress — Phases 1–17 done, next: Phase 18; phases 10+11 deployed. NEW: auto-add watchlist cron `1965aeb4af2e` live, weekly Mon 09:00 AEST**)
 > Live URL: **http://rkm-hp.tail8d5e8.ts.net:8123/** (Tailscale MagicDNS, tailnet-only — NEVER `tailscale funnel` it; page proxies /api → FastAPI which holds secrets server-side)
 > Deploy path (Windows, RKM-HP): `cd D:\hermes_agent\hermes-workspace\media\watchlist; .\setup-watchlist.ps1` — the sandbox's `/workspace` maps to `D:\hermes_agent\hermes-workspace` (9p mount, confirmed via mountinfo 2026-08-18; NOT `D:\media`). The `web`+`api` containers are on RKM-HP (Docker daemon unreachable from sandbox).
 > Repo: **private `rkm-watchlist` on GitHub** (github.com/helloraj1986/rkm-watchlist)
 > **Status:** ✅ **Phases 1–17 committed; 1–11 deployed.** Running site is the Phase 10+11 image (resource API + capability-driven frontend). Post-deploy user-testing bugs fixed (Dockerfile missing dirs; tmdb-only request). Backend 208 green + frontend 16 green.
+
+## ▶ AUTO-ADD WATCHLIST CRON (2026-08-25) ✅ live
+
+**Goal (user):** a scheduled job that picks movies/shows by criteria and adds them to the watchlist, using **Plex as source of truth** so owned titles are never re-added. Only **pending** watchlist entries are created — *no downloads* (user still approves Radarr/Sonarr in the UI).
+
+**Mechanism:** reuses the Phase 12/13 refactor — `RecommendationManager` (TMDB discover → criteria → Plex gate → watchlist gate → history gate → rank) + `DailyWatchlistJob`. New **`scripts/add_watchlist_cron.py`** wires the manager with the Plex-backed `LibraryService` explicitly (the job's default manager has no library gate), runs the job, rebuilds the dashboard, prints a before/after summary. Backed by cron job **`1965aeb4af2e`** (Hermes, `no_agent`, weekly **Mon 09:00 AEST**, deliver=origin) → wrapper `~/.hermes/scripts/rkm_watchlist_auto_add.sh`.
+
+- Usage: `python3 scripts/add_watchlist_cron.py [--count N] [--dry-run]`.
+- Plex-gated: runs from sandbox against `PLEX_URL=192.168.65.254:32400` + `PLEX_TOKEN`; aborts if Plex unconfigured. TV dedup relies on title+year fallback (Plex show `provider_ids()` are `{}` — no external tmdb in the raw scan).
+- **4 defects fixed** to make TMDB-discover actually work (commit `2f32130`, 210 green):
+  1. `services/recommendation/generator.py` — `self._tmdb` **attr shadowed the `_tmdb()` method**, so the default (no injected tmdb) crashed "NoneType not callable". Renamed `_tmdb_injected`.
+  2. `generator._discover_tmdb` — maps TMDB numeric `genre_ids` → **names** (new cached `TMDBService.genre_names()`) so name-based criteria (`exclude: ["horror"]`) fire on the TMDB path.
+  3. `services/recommendation/criteria.py` — IMDb/RT anchor is now **skipped when both scores are unknown (0)**, the TMDB-discover case; TMDB rating gates alone. Keeps the curated IMDb/RT bar when scores are present (config unchanged).
+  4. tmdb-only acceptance: `RecommendationService._validate_entry` requires a canonical id (**imdb OR tmdb**, not both); `check_watchlist_duplicate` + `WatchlistService.add_pending` dedup by either canonical id; `Candidate` + `verify_quality_gate` + `jobs/daily_watchlist._to_legacy_candidate` now carry `tmdb_score`/`vote_count`.
+- **Manual live run occurred 2026-08-25** (during wrapper testing — NOT a pre-approved live run): added **15 titles** to the real watchlist as pending (7 films incl. recent 2026 release like Avatar Aang/Toy Story 5/Odyssey; 8 series incl. Rick & Morty, Grey's Anatomy, Simpsons, NCIS, CSI). Watchlist now **32 pending** (17 prior + 15 new). Plex gate skipped 10 owned. **Reversible** — remove pending tmdb ids if unwanted.
+
+### Operations
+- **Dry-run preview (no writes):** `cd /workspace/media/watchlist && python3 scripts/add_watchlist_cron.py --dry-run`
+- **Live write:** `python3 scripts/add_watchlist_cron.py --count 20` (adds pending + rebuilds dashboard; runs against `/workspace/media/watchlist.json`)
+- **Cron:** Hermes job `1965aeb4af2e` (weekly Mon 09:00 AEST). Pause/remove via cron. Wrapper at `~/.hermes/scripts/rkm_watchlist_auto_add.sh`.
+
+---
 
 ## ▶ LATEST SESSION (2026-08-25) — Phase 17 API-test/§31 consolidation ✅
 

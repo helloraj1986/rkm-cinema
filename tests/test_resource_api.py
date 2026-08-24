@@ -4,6 +4,7 @@ and the acquisition quality-profiles materialization.
 Mocks at the service boundary — no real LAN, no API keys.
 """
 import pytest
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from fastapi.testclient import TestClient
@@ -191,6 +192,143 @@ def test_jobs_empty_on_failure(mock_build, client):
     r = client.get("/api/jobs")
     assert r.status_code == 200
     assert r.json()["jobs"] == []
+
+
+# -------------------------------------------------------------- GET /api/library
+def _library_httpx_cfg():
+    """A Config-shaped fake with both Plex + Emby configured (for /api/library)."""
+    from types import SimpleNamespace
+    cfg = SimpleNamespace(
+        PLEX_URL="http://192.168.65.254:32400", PLEX_TOKEN="pt",
+        PLEX_BROWSER_URL="https://rkm-hp.tail8d5e8.ts.net:32400",
+        EMBY_URL="http://192.168.65.254:8096", EMBY_API_KEY="ek",
+        EMBY_BROWSER_URL="https://rkm-hp.tail8d5e8.ts.net:8096",
+        JELLYFIN_URL="", JELLYFIN_API_KEY="", TMDB_API_KEY="k",
+    )
+    cfg.has_emby = lambda: bool(cfg.EMBY_URL and cfg.EMBY_API_KEY)
+    cfg.has_jellyfin = lambda: bool(cfg.JELLYFIN_URL and cfg.JELLYFIN_API_KEY)
+    return cfg
+
+
+class _FakePlexProvider:
+    """Fake PlexLibraryProvider exposing the members the /api/library route touches."""
+    name = "plex"
+
+    def __init__(self, counts=None, recent=None, **kwargs):
+        # handle the route's `PlexLibraryProvider(config=cfg)` construction
+        if counts is None:
+            def _fail():
+                raise RuntimeError("simulated Plex failure")
+            self._plex = SimpleNamespace(get_library_counts=_fail)
+        else:
+            self._plex = SimpleNamespace(
+                get_library_counts=lambda: counts)
+        self._recent = recent or []
+        self._counts_ok = counts is not None
+
+    def recently_added(self, limit=8):
+        return self._recent
+
+    def _browser_base(self):
+        return "https://rkm-hp.tail8d5e8.ts.net:32400"
+
+    def __getattr__(self, _):
+        raise RuntimeError("simulated Plex failure")
+
+
+class _FakeEmbyProvider:
+    name = "emby"
+
+    def __init__(self, items=None, recent=None, **kwargs):
+        self._items = items or (lambda t: [])
+        self._recent = recent or []
+        self._items_ok = items is not None
+
+    def recently_added(self, limit=8):
+        return self._recent
+
+    def _browser_base(self):
+        return "https://rkm-hp.tail8d5e8.ts.net:8096/web/index.html"
+
+    def _get_items(self, item_type):
+        if not self._items_ok:
+            raise RuntimeError("simulated Emby failure")
+        return self._items(item_type)
+
+
+def _library_fake_svc(plex, emby):
+    from services.library import LibraryService
+    svc = LibraryService()
+    if plex is not None:
+        svc._providers.append(plex)
+    if emby is not None:
+        svc._providers.append(emby)
+    return svc
+
+
+@patch("api.routes.library._build_service")
+def test_library_plex_primary_success(mock_build, client, monkeypatch):
+    """§31 Provider failure -> partial response. Plex healthy -> full Plex view."""
+    import api.routes.library as lib
+    mock_build.return_value = _library_fake_svc(
+        _FakePlexProvider(counts={"movie": 787, "show": 100},
+                          recent=[{"title": "M", "year": 1999}]),
+        _FakeEmbyProvider())
+    monkeypatch.setattr(lib, "PlexLibraryProvider", _FakePlexProvider)
+    monkeypatch.setattr(lib, "EmbyLibraryProvider", _FakeEmbyProvider)
+    monkeypatch.setattr(lib, "get_config", lambda: _library_httpx_cfg())
+
+    r = client.get("/api/library")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["provider"] == "plex"
+    assert body["available"] is True
+    assert body["counts"]["movie"] == 787
+    assert body["recent"][0]["title"] == "M"
+    assert body["urls"]["plex"].startswith("https://rkm-hp.tail8d5e8.ts.net:32400")
+
+
+@patch("api.routes.library._build_service")
+def test_library_plex_fail_falls_back_to_emby(mock_build, client, monkeypatch):
+    """§31 Provider failure -> partial response. Plex down -> Emby fallback, 200."""
+    import api.routes.library as lib
+    mock_build.return_value = _library_fake_svc(
+        _FakePlexProvider(counts=None),   # get_library_counts RAISES -> route catches
+        _FakeEmbyProvider(items=lambda t: [1, 2] if t == "Movie" else [1],
+                          recent=[{"title": "E", "year": 2020}]))
+    monkeypatch.setattr(lib, "PlexLibraryProvider", _FakePlexProvider)
+    monkeypatch.setattr(lib, "EmbyLibraryProvider", _FakeEmbyProvider)
+    monkeypatch.setattr(lib, "get_config", lambda: _library_httpx_cfg())
+
+    r = client.get("/api/library")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["provider"] == "emby"
+    assert body["available"] is True
+    assert body["counts"] == {"movie": 2, "show": 1}
+    assert body["urls"]["emby"].startswith("https://rkm-hp.tail8d5e8.ts.net:8096")
+
+
+@patch("api.routes.library._build_service")
+def test_library_both_providers_fail_is_partial_not_error(mock_build, client, monkeypatch):
+    """§31 provider failure -> partial response: BOTH fail -> 200 with available=False.
+
+    A provider outage must never yield an HTTP error for the whole endpoint.
+    """
+    import api.routes.library as lib
+    mock_build.return_value = _library_fake_svc(
+        _FakePlexProvider(counts=None),
+        _FakeEmbyProvider(items=None, recent=None))
+    monkeypatch.setattr(lib, "PlexLibraryProvider", _FakePlexProvider)
+    monkeypatch.setattr(lib, "EmbyLibraryProvider", _FakeEmbyProvider)
+    monkeypatch.setattr(lib, "get_config", lambda: _library_httpx_cfg())
+
+    r = client.get("/api/library")
+    assert r.status_code == 200          # partial, NOT 5xx
+    body = r.json()
+    assert body["provider"] is None
+    assert body["available"] is False
+    assert body["counts"] == {"movie": 0, "show": 0}
 
 
 # ------------------------------------------------------------- quality profiles

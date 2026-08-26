@@ -167,7 +167,20 @@ class Reconciler:
         snapshots: dict[str, MediaSnapshot] = {}
         for entry in entries:
             snap = self._snapshot_for_entry(entry, indexer_issue)
-            snapshots[entry.imdbId] = snap
+            # Key must be unique PER ENTRY. Keying purely by `entry.imdbId`
+            # collapsed every TMDB-only (imdb-less) entry onto one `None` key,
+            # so /api/watchlist (+ reconcile + job snapshots, which iterate
+            # .values()) silently dropped all but one of them. Use imdbId when
+            # present, else tmdbId, else a title-based key. The legacy /api/status
+            # path (api/routes/status.py, services/media_status.py) relies on the
+            # key being the imdb id for imdb-carrying entries, so imdbId stays the
+            # first choice; imdb-less entries get a unique non-empty key.
+            key = entry.imdbId
+            if not key:
+                key = entry.tmdbId
+            if not key:
+                key = f"title:{getattr(entry, 'title', '') or ''}"
+            snapshots[key] = snap
         return ReconcileResult(snapshots=snapshots, indexer_issue=indexer_issue)
 
     # ------------------------------------------------------------- internals

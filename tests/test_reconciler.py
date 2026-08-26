@@ -151,6 +151,32 @@ class TestReconcilerBulk:
         assert snap.status is MediaStatus.AVAILABLE
         os.remove(path)
 
+    def test_compute_keeps_all_tmdb_only_entries(self):
+        """Regression: keying by imdbId collapsed every imdb-less (TMDB-only)
+        entry onto one None key, so /api/watchlist dropped all but one. Each
+        pending entry must yield a snapshot with a unique key."""
+        path = "/tmp/test_rec_tmdb_only.json"
+        if os.path.exists(path):
+            os.remove(path)
+        wl = WatchlistService(path)
+        data = wl.load()
+        for imdb, tm in [(None, 111), (None, 222), ("tt0133093", 603)]:
+            data.pending.append(WatchlistEntry(
+                title=f"T-{tm}", year=2020, category="Action", lang="English",
+                rt=80, imdb=7.0, isSeries=False, imdbId=imdb, tmdbId=tm,
+                cert="PG", snippet="", cast=[], director="", poster="",
+                trailerId="", trailerTitle="", added="2026-01-01", state="pending"))
+        wl.save(data)
+        rec = Reconciler(watchlist=wl, library=None, radarr=None, sonarr=None,
+                         qbit=Mock(), config=_cfg())
+        result = rec.compute()
+        ids = sorted(str(k) for k in result.snapshots)  # str(111)!=str('111')
+        non_empty = [k for k in ids if k]
+        assert len(result.snapshots) == 3, f"entries dropped: {len(result.snapshots)}"
+        assert len(set(ids)) == 3, "keys must be unique"
+        assert len(non_empty) == 3, "no entry may be keyed by None/empty"
+        os.remove(path)
+
 
 class TestSnapshotToStatusResult:
     def test_roundtrip_available(self):

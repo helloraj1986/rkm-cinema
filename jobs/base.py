@@ -1,17 +1,19 @@
 """Job run helpers (spec §24/§40 Phase 13).
 
 Wraps a job function with job_runs recording so every invocation is auditable
-and failures are visible (spec "Job execution is recorded" / "Job failures are
-visible"). Uses the repository seam — never touches the DB directly.
+and failures are visible (spec \"Job execution is recorded\" / \"Job failures are
+visible\"). Uses the repository seam — never touches the DB directly.
 """
 from __future__ import annotations
 
 import logging
+import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Callable, Optional
 
 from infrastructure.database.repository import build_repository
+from core.logging import log_event
 
 logger = logging.getLogger("rkm.jobs.base")
 
@@ -55,23 +57,24 @@ class JobRunner:
         return self._repository
 
     def run(self, name: str, fn: Callable[..., JobResult], *args, **kwargs) -> JobResult:
-        logger.info("job start: %s", name)
+        job_run_id = str(uuid.uuid4())
+        log_event(logger, "job.start", job_run_id=job_run_id, job_name=name)
         try:
             result = fn(*args, **kwargs)
             if not isinstance(result, JobResult):
                 result = JobResult(name=name, items_processed=result or 0)
             result.name = name
-            self._record(name, result)
-            logger.info("job done: %s status=%s processed=%s",
-                        name, result.status, result.items_processed)
+            self._record(name, result, job_run_id=job_run_id)
+            log_event(logger, "job.done", job_run_id=job_run_id, job_name=name, status=result.status, processed=result.items_processed)
             return result
         except Exception as e:
+            log_event(logger, "job.failed", job_run_id=job_run_id, job_name=name, error=str(e))
             logger.exception("job failed: %s", name)
             result = JobResult(name=name, status="error", error=str(e))
-            self._record(name, result)
+            self._record(name, result, job_run_id=job_run_id)
             return result
 
-    def _record(self, name: str, result: JobResult) -> None:
+    def _record(self, name: str, result: JobResult, job_run_id: str) -> None:
         try:
             self.repo.record_job_run(
                 job_name=name,

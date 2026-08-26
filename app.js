@@ -255,7 +255,7 @@ function cardMarkup(entry, opts = {}) {
     <button class="btn btn-ghost btn-sm mini-btn" data-act="trailer" aria-label="Watch trailer for ${esc(entry.title)}">${ICONS.play} Trailer</button>
     ${dlBtn}
   </div>`;
-  return `<article class="card" tabindex="0" role="button" aria-label="${esc(entry.title)} (${entry.year})" data-id="${esc(entry.imdbId)}">
+  return `<article class="card" tabindex="0" role="button" aria-label="${esc(entry.title)} (${entry.year})" data-id="${esc(entry.tmdbId)}">
     <div class="card-inner">
       <div class="imgbox">${img(entry)}</div>
       <div class="shade" aria-hidden="true"></div>
@@ -1107,14 +1107,31 @@ function wireSearchKeys() {
   const clear = $('#searchClear');
   if (clear) clear.addEventListener('click', () => { const i = $('#searchInput'); if (i) i.value = ''; clear.classList.remove('show'); runSearch(''); });
   const refresh = $('#refreshBtn');
-  if (refresh) refresh.addEventListener('click', async (e) => {
-    const b = e.currentTarget;
-    b.classList.add('spin');
-    await refreshStatus(true); await loadServices(); await loadLibrary();
-    b.classList.remove('spin');
-    render();
-    toast('Refreshed', 'Status and library info are up to date.', 'ok', 2500);
-  });
+    if (refresh) refresh.addEventListener('click', async (e) => {
+      const b = e.currentTarget;
+      b.classList.add('spin');
+      await refreshStatus(true); await loadServices(); await loadLibrary();
+      // Trigger the add watchlist job on demand.
+      // NOTE: must use the `/api` prefix — nginx only reverse-proxies /api/*;
+      // a bare `/jobs/...` falls to the static fallback and returns 405.
+      try {
+        const job = await API.postJSON('/api/jobs/add_watchlist/run', { count: 20 });
+        if (job && job.status === 'error') {
+          // Endpoint returns HTTP 200 with status:'error' on failure — check it.
+          console.warn('Watchlist update failed:', job.error);
+          toast('Watchlist update failed', job.error || 'Could not fetch new recommendations.', 'warn', 3000);
+        } else {
+          toast('Watchlist updated', 'New recommendations have been fetched and added.', 'ok', 3000);
+        }
+      } catch (jobErr) {
+        console.warn('Watchlist update failed:', jobErr);
+        // Don't fail the whole refresh if the job fails
+        toast('Watchlist update failed', 'Could not fetch new recommendations.', 'warn', 3000);
+      }
+      b.classList.remove('spin');
+      render();
+      toast('Refreshed', 'Status and library info are up to date.', 'ok', 2500);
+    });
   const gear = $('#gearBtn');
   if (gear) gear.addEventListener('click', toggleSettings);
 }
@@ -1125,7 +1142,16 @@ function paintSearchSel(items) {
 }
 
 function entryById(id) {
-  return DATA?.entries.find((e) => e.imdbId === id) || null;
+  if (!DATA?.entries) return null;
+  // Try imdbId first
+  const byImdb = DATA.entries.find(e => e.imdbId === id);
+  if (byImdb) return byImdb;
+  // Then try tmdbId (note: tmdbId is number, but id is string)
+  const tmdbNum = parseInt(id, 10);
+  if (!isNaN(tmdbNum)) {
+    return DATA.entries.find(e => e.tmdbId === tmdbNum);
+  }
+  return null;
 }
 
 /* ---------------- settings ---------- */

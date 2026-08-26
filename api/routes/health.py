@@ -10,6 +10,10 @@ from api.models import HealthResponse
 from config.settings import get_config
 from services.health import HealthChecker
 from services.watchlist import WatchlistService
+from core.logging import log_event
+import logging
+
+logger = logging.getLogger("rkm.api.health")
 
 router = APIRouter()
 
@@ -17,6 +21,7 @@ router = APIRouter()
 @router.get("/health", response_model=HealthResponse)
 def health_check():
     """Service health (per-service, structured) and watchlist freshness."""
+    log_event(logger, "health.check.start")
     cfg = get_config()
 
     report = HealthChecker(config=cfg).check()
@@ -30,7 +35,14 @@ def health_check():
     except Exception:
         title_count = 0
         updated = ""
+        log_event(logger, "health.check.watchlist.error", error="failed to load watchlist")
 
+    log_event(logger, "health.check.completed", 
+              ok=True, 
+              updated=updated, 
+              titleCount=title_count, 
+              degraded=report.degraded, 
+              services=report.services)
     return HealthResponse(
         ok=True,
         updated=updated,

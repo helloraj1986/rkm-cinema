@@ -11,9 +11,11 @@ entries.
 from __future__ import annotations
 
 import logging
+import uuid
 from typing import Optional
 
 from jobs.base import JobResult
+from core.logging import log_event
 
 logger = logging.getLogger("rkm.jobs.reconcile")
 
@@ -33,6 +35,8 @@ class ReconcileJob:
         return self._reconciler
 
     def run(self) -> JobResult:
+        job_id = str(uuid.uuid4())
+        log_event(logger, "reconciliation.start", job_id=job_id)
         rec = self._rec()
         result = rec.compute()
 
@@ -44,6 +48,8 @@ class ReconcileJob:
             val = key.value if isinstance(key, MediaStatus) else str(key or "unknown")
             status_counts[val] = status_counts.get(val, 0) + 1
 
+        log_event(logger, "reconciliation.complete", job_id=job_id,
+                  snapshots_count=len(result.snapshots), indexer_issue=bool(result.indexer_issue))
         return JobResult(
             name="reconcile",
             status="success",

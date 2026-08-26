@@ -18,6 +18,7 @@ Sonarr):
 from __future__ import annotations
 
 import logging
+import uuid
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 
@@ -35,6 +36,7 @@ from services.library import (
     PlexLibraryProvider,
     resolve_library_identity,
 )
+from core.logging import log_event
 
 logger = logging.getLogger("rkm.commands.request_media")
 
@@ -99,15 +101,20 @@ class RequestMediaCommand:
     # ------------------------------------------------------------------ run
     def run(self, media_id: str, *, title: str = "", year: Optional[int] = None) -> RequestMediaResult:
         """Execute the idempotent request for a canonical ``media_id``."""
+        request_id = str(uuid.uuid4())
+        log_event(logger, "media.request.start", request_id=request_id, media_id=media_id)
+
         try:
             identity = parse_media_id(media_id)
         except ValueError as e:
+            log_event(logger, "media.request.not_configured", request_id=request_id, media_id=media_id, error=str(e))
             logger.warning("request_media: unparseable media_id=%r", media_id)
             return RequestMediaResult(
                 state=RequestMediaState.NOT_CONFIGURED, message=str(e), media_id=media_id)
 
         # 2. Library always wins (spec §1.2) — never show/re-request available media.
         if self._library and self._library.has(identity, title=title, year=year):
+            log_event(logger, "media.request.already_available", request_id=request_id, media_id=identity.media_id)
             return RequestMediaResult(
                 state=RequestMediaState.AVAILABLE,
                 message="Already in the library",
@@ -115,6 +122,8 @@ class RequestMediaCommand:
 
         provider = self._acquisition.provider_for(identity.media_type) if self._acquisition else None
         if provider is None:
+            log_event(logger, "media.request.not_configured", request_id=request_id, media_id=identity.media_id,
+                      media_type=identity.media_type.value)
             return RequestMediaResult(
                 state=RequestMediaState.NOT_CONFIGURED,
                 message=f"{identity.media_type.value} acquisition is not configured",
@@ -122,6 +131,8 @@ class RequestMediaCommand:
 
         # 3. Already requested (spec §15 step 5) — idempotency guard.
         if self._acquisition.find(identity, title=title, year=year) is not None:
+            log_event(logger, "media.request.already_requested", request_id=request_id, media_id=identity.media_id,
+                      service=provider.name)
             return RequestMediaResult(
                 state=RequestMediaState.ALREADY_REQUESTED,
                 message="Already requested",
@@ -133,6 +144,8 @@ class RequestMediaCommand:
             identity, title=title, year=year)
 
         if result.state == "ambiguous":
+            log_event(logger, "media.request.ambiguous", request_id=request_id, media_id=identity.media_id,
+                      service=result.service)
             return RequestMediaResult(
                 state=RequestMediaState.AMBIGUOUS, message=result.message,
                 media_id=self._safe_id(identity), media_type=identity.media_type,
@@ -152,12 +165,16 @@ class RequestMediaCommand:
                     self._persist(self._safe_id(identity), result.service, "requested")
                 except Exception as e:  # persistence must not break the request
                     logger.warning("request_media persist failed: %s", e)
+            log_event(logger, f"media.request.{result.service}", request_id=request_id, media_id=identity.media_id,
+                      service=result.service)
             return RequestMediaResult(
                 state=RequestMediaState.REQUESTED, message=result.message,
                 media_id=self._safe_id(identity), media_type=identity.media_type,
                 service=result.service, item=result.item)
 
         # Reached a *arr but couldn't add it.
+        log_event(logger, "media.request.provider_unavailable", request_id=request_id, media_id=identity.media_id,
+                  service=result.service)
         return RequestMediaResult(
             state=RequestMediaState.PROVIDER_UNAVAILABLE, message=result.message,
             media_id=self._safe_id(identity), media_type=identity.media_type,

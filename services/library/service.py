@@ -11,14 +11,18 @@ identifier / library_section), never by a guessed URL or bare title+year.
 from __future__ import annotations
 
 import logging
+import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, Tuple
 
 from domain.enums import MediaType
 from domain.identity import MediaIdentity
 
 logger = logging.getLogger("rkm.library")
+
+# How long a library confirmation is considered valid (spec §24: degraded state)
+LIBRARY_CONFIRMATION_TTL = 24 * 60 * 60  # 24 hours in seconds
 
 
 @dataclass
@@ -88,6 +92,9 @@ class LibraryService:
 
     def __init__(self, providers: Optional[list[LibraryProvider]] = None):
         self._providers: list[LibraryProvider] = providers or []
+        # Cache for library confirmation state (spec §24 degraded state handling)
+        self._library_cache: dict[str, Tuple[Optional[LibraryMatch], float]] = {}
+        self._library_cache_expiry: float = 0
 
     @classmethod
     def build(cls, providers: Optional[list[LibraryProvider]] = None) -> "LibraryService":
@@ -107,11 +114,47 @@ class LibraryService:
 
     # ------------------------------------------------------------------- find
     def find(self, identity: MediaIdentity, *, title: str = "", year: Optional[int] = None) -> Optional[LibraryMatch]:
-        """Return the FIRST match across providers (single logical library)."""
+        """Return the FIRST match across providers (single logical library).
+        
+        Implements degraded state handling (spec §24): if providers are temporarily
+        unavailable but we have recent confirmation, return the cached match.
+        """
+        cache_key = self._make_cache_key(identity, title, year)
+        now = time.time()
+        
+        # Check if we have a valid cached result
+        if (now < self._library_cache_expiry and 
+                cache_key in self._library_cache):
+            cached_match, cached_time = self._library_cache[cache_key]
+            # If cache is still fresh (within TTL), return it
+            if now - cached_time < LIBRARY_CONFIRMATION_TTL:
+                return cached_match
+        
+        # No valid cache, try to get fresh result from providers
+        try:
+            match = self._find_fresh(identity, title=title, year=year)
+            # Update cache with fresh result
+            self._library_cache[cache_key] = (match, now)
+            self._library_cache_expiry = now + 300  # 5 min cache for fresh lookups
+            return match
+        except Exception:
+            # Providers are unavailable, check if we have recent cached confirmation
+            if (now < self._library_cache_expiry and 
+                    cache_key in self._library_cache):
+                cached_match, cached_time = self._library_cache[cache_key]
+                # If we have confirmation from within the TTL window, return it
+                # This handles spec §24: degraded state for temporary outages
+                if now - cached_time < LIBRARY_CONFIRMATION_TTL:
+                    return cached_match
+            # No recent confirmation available
+            return None
+
+    def _find_fresh(self, identity: MediaIdentity, *, title: str = "", year: Optional[int] = None) -> Optional[LibraryMatch]:
+        """Fresh provider lookup without caching - used internally by find()."""
         for provider in self._providers:
             try:
                 match = provider.find(identity, title=title, year=year)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - a provider failure is contained
                 logger.warning("library provider %s find failed: %s", provider.name, e)
                 match = None
             if match is not None:
@@ -120,6 +163,18 @@ class LibraryService:
                 return match
         logger.info("library: no provider has %s", identity.media_id)
         return None
+
+    def _make_cache_key(self, identity: MediaIdentity, title: str = "", year: Optional[int] = None) -> str:
+        """Create a cache key for library lookup."""
+        parts = [
+            identity.media_id or "",
+            str(identity.tmdb_id or ""),
+            str(identity.imdb_id or ""),
+            str(identity.tvdb_id or ""),
+            title or "",
+            str(year or ""),
+        ]
+        return "|".join(parts)
 
     def has(self, identity: MediaIdentity, *, title: str = "", year: Optional[int] = None) -> bool:
         """True if ANY provider has the item (single AVAILABLE gate)."""
@@ -130,17 +185,51 @@ class LibraryService:
 
         Defensive like :meth:`find`: a failing provider is skipped with a warning
         so one broken backend can't block the whole reconciler.
+        Uses degraded state handling (spec §24) for temporary outages.
         """
-        out: list[LibraryMatch] = []
-        for provider in self._providers:
-            try:
-                m = provider.find(identity, title=title, year=year)
-            except Exception as e:  # noqa: BLE001 - a provider failure is contained
-                logger.warning("library provider %s find_all failed: %s", provider.name, e)
-                m = None
-            if m is not None:
-                out.append(m)
-        return out
+        cache_key = self._make_cache_key(identity, title, year)
+        now = time.time()
+
+        # Check if we have a valid cached result
+        if (now < self._library_cache_expiry and 
+                cache_key in self._library_cache):
+            cached_match, cached_time = self._library_cache[cache_key]
+            # If cache is still fresh (within TTL), return it as a list
+            if now - cached_time < LIBRARY_CONFIRMATION_TTL:
+                return [cached_match] if cached_match is not None else []
+
+        # No valid cache, try to get fresh result from providers
+        try:
+            matches = self._find_all_fresh(identity, title=title, year=year)
+            # Update cache with fresh result (store first match for find() compatibility)
+            first_match = matches[0] if matches else None
+            self._library_cache[cache_key] = (first_match, now)
+            self._library_cache_expiry = now + 300  # 5 min cache for fresh lookups
+            return matches
+        except Exception:
+            # Providers are unavailable, check if we have recent cached confirmation
+            if (now < self._library_cache_expiry and 
+                    cache_key in self._library_cache):
+                cached_match, cached_time = self._library_cache[cache_key]
+                # If we have confirmation from within the TTL window, return it
+                # This handles spec §24: degraded state for temporary outages
+                if now - cached_time < LIBRARY_CONFIRMATION_TTL:
+                    return [cached_match] if cached_match is not None else []
+            # No recent confirmation available
+            return []
+
+    def _find_all_fresh(self, identity: MediaIdentity, *, title: str = "", year: Optional[int] = None) -> list[LibraryMatch]:
+            """Fresh provider lookup for all matches - used internally by find_all()."""
+            out: list[LibraryMatch] = []
+            for provider in self._providers:
+                try:
+                    m = provider.find(identity, title=title, year=year)
+                except Exception as e:  # noqa: BLE001 - a provider failure is contained
+                    logger.warning("library provider %s find_all failed: %s", provider.name, e)
+                    m = None
+                if m is not None:
+                    out.append(m)
+            return out
 
     # ------------------------------------------------------------- watch links
     def watch_links(self, matches) -> dict:

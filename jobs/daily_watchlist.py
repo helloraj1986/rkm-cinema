@@ -13,10 +13,12 @@ recommended is never re-added. Only NEW survivors flow into the watchlist.
 from __future__ import annotations
 
 import logging
+import uuid
 from dataclasses import dataclass
 from typing import Optional
 
 from jobs.base import JobResult
+from core.logging import log_event
 
 logger = logging.getLogger("rkm.jobs.daily_watchlist")
 
@@ -62,10 +64,13 @@ class DailyWatchlistJob:
 
     # ------------------------------------------------------------- run
     def run(self) -> JobResult:
+        job_id = str(uuid.uuid4())
+        log_event(logger, "recommendation.job.start", job_id=job_id, category=self.category, count=self.count)
         mgr = self._mgmt()
         result = mgr.run(category=self.category, count=self.count,
                          persist_recommendations=True)
         if result.status == "error":
+            log_event(logger, "recommendation.job.error", job_id=job_id, error=result.error)
             return JobResult(name="daily_watchlist", status="error",
                              error=result.error, counts=result.counts if hasattr(result, "counts") else {})
 
@@ -74,6 +79,11 @@ class DailyWatchlistJob:
             if self._add(ranked.candidate, ranked.score):
                 added += 1
 
+        log_event(logger, "recommendation.job.complete", job_id=job_id, 
+                  candidates=result.candidates, passed_criteria=result.passed_criteria,
+                  already_in_library=result.already_in_library, watchlist_duplicates=result.watchlist_duplicates,
+                  already_recommended=result.already_recommended, new_recommendations=result.new_recommendations,
+                  watchlist_added=added)
         return JobResult(
             name="daily_watchlist",
             status="success",

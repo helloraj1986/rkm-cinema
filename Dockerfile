@@ -18,6 +18,10 @@ COPY config /app/config
 COPY infrastructure /app/infrastructure
 COPY application /app/application
 COPY jobs /app/jobs
+# scripts/ is imported by jobs/add_watchlist.py at request time
+# (`from scripts.add_watchlist_cron import main`) for the on-demand refresh
+# button. Without it the endpoint fails with "No module named 'scripts'".
+COPY scripts /app/scripts
 
 # .env is injected at runtime via env_file (docker-compose) or docker run -e.
 # API keys for Radarr/Sonarr/TMDB/Plex/Emby are read from env only.

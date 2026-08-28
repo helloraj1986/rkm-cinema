@@ -95,6 +95,13 @@ class Config:
             self.TMDB_CACHE_TTL = int(env.get("TMDB_CACHE_TTL") or 21600)  # 6h default
         except ValueError:
             self.TMDB_CACHE_TTL = 21600
+        # Plex full-library scan cache TTL (seconds). The library changes rarely,
+        # so the refresh button / reconcile reuse one scan instead of re-scanning
+        # Plex on every click. Default 1h; invalidate via clear_cache() on writes.
+        try:
+            self.PLEX_SCAN_TTL = int(env.get("PLEX_SCAN_TTL") or 3600)
+        except ValueError:
+            self.PLEX_SCAN_TTL = 3600
         self.JELLYFIN_URL = self._normalize_url(env["JELLYFIN_URL"]) if env.get("JELLYFIN_URL") else None
         self.JELLYFIN_API_KEY = env.get("JELLYFIN_API_KEY") or None
         self.PROWLARR_URL = self._normalize_url(env["PROWLARR_URL"]) if env.get("PROWLARR_URL") else None
@@ -142,7 +149,7 @@ class Config:
             "PLEX_BROWSER_URL", "EMBY_BROWSER_URL",
             "WATCHLIST_STORE", "WATCHLIST_DB_PATH",
             "WATCHLIST_SCHEDULER", "RECONCILE_INTERVAL_MIN", "DAILY_JOB_HOUR",
-            "TMDB_CACHE_TTL",
+            "TMDB_CACHE_TTL", "PLEX_SCAN_TTL",
         }
 
     def validate_required(self) -> list[str]:

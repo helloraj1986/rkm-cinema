@@ -107,6 +107,59 @@ class JsonWatchlistRepository(WatchlistRepository):
             logger.error("Failed to save watchlist: %s", e)
             raise WatchlistError(f"Save failed: {e}")
 
+    # ------------------------------------------------- recommendation history
+    # The recommendation pipeline records EVERY candidate it evaluates (spec §23
+    # "failures/decisions are visible"), so a candidate is only ever processed
+    # once. Kept in a sidecar file rather than watchlist.json so the persistent
+    # watchlist shape (`WatchlistService.save`) never drops it.
+    _HISTORY_CAP = 3000
+
+    def _history_path(self):
+        return self.path.with_name("recommendations_history.json")
+
+    def list_recommendation_history(self, limit: int = 200) -> list[dict]:
+        path = self._history_path()
+        try:
+            if not path.exists():
+                return []
+            with open(path) as f:
+                rows = json.load(f)
+            rows.sort(key=lambda r: str(r.get("last_seen", "")), reverse=True)
+            return rows[: max(1, int(limit))]
+        except Exception as e:  # noqa: BLE001
+            logger.warning("recommendation history read failed: %s", e)
+            return []
+
+    def record_recommendation(self, *, media_id: str, decision: str,
+                              score: float = 0.0, payload: dict = None) -> None:
+        path = self._history_path()
+        rows: list[dict] = []
+        try:
+            if path.exists():
+                with open(path) as f:
+                    rows = json.load(f)
+        except Exception:  # noqa: BLE001
+            rows = []
+        now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        existing = next((r for r in rows if r.get("media_id") == media_id), None)
+        if existing is None:  # idempotent per media_id
+            existing = {"media_id": media_id, "first_seen": now}
+            rows.append(existing)
+        existing["decision"] = decision or ""
+        existing["score"] = float(score or 0)
+        existing["payload"] = payload or {}
+        existing["last_seen"] = now
+        if len(rows) > self._HISTORY_CAP:
+            rows.sort(key=lambda r: str(r.get("last_seen", "")), reverse=True)
+            rows = rows[: self._HISTORY_CAP]
+        tmp = path.with_suffix(".json.tmp")
+        try:
+            with open(tmp, "w") as f:
+                json.dump(rows, f, indent=1)
+            os.replace(tmp, path)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("recommendation history write failed: %s", e)
+
 
 # --------------------------------------------------------------------------- SQLite
 class SqliteWatchlistRepository(WatchlistRepository):

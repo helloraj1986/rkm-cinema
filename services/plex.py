@@ -165,7 +165,7 @@ class PlexService(BaseService):
                             library_section=section.get("key", ""),
                         ))
         self._library_cache["movies"] = movies
-        self._library_cache_expiry = now + 60
+        self._library_cache_expiry = now + self._scan_ttl()
         return movies
 
     def get_all_shows(self) -> list[PlexShow]:
@@ -190,8 +190,14 @@ class PlexService(BaseService):
                             library_section=section.get("key", ""),
                         ))
         self._library_cache["shows"] = shows
-        self._library_cache_expiry = now + 60
+        self._library_cache_expiry = now + self._scan_ttl()
         return shows
+
+    def _scan_ttl(self) -> float:
+        """How long a full-library scan stays cached (seconds). Configurable via
+        PLEX_SCAN_TTL so the refresh button / reconcile don't re-scan Plex on every
+        click; the library changes rarely. Invalidate explicitly via clear_cache()."""
+        return float(getattr(self.config, "PLEX_SCAN_TTL", 3600) or 3600)
 
     def clear_cache(self) -> None:
         """Drop Plex's in-memory library/section caches (spec §29 invalidation)."""

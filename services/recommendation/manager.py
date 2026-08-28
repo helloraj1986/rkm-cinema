@@ -119,6 +119,13 @@ class RecommendationManager:
         """Execute the pipeline for a category (or a specific media_type)."""
         result = RecommendationRunResult()
         try:
+            # 0. Seen-set: candidates already evaluated on a prior run are skipped
+            #    BEFORE criteria/Plex so re-runs don't reprocess the same TMDB
+            #    popular titles (spec §23 history; every candidate is recorded).
+            repo = self._history_repo()
+            seen = {h.get("media_id") for h in
+                    repo.list_recommendation_history(limit=1000)}
+
             # 1. Candidate sources -> normalize (generator owns sourcing).
             if media_type is not None:
                 cand_all = self.generator.candidates(
@@ -130,9 +137,15 @@ class RecommendationManager:
                                                         media_type=MediaType.TV))
             result.candidates = len(cand_all)
 
-            # 2. Apply criteria (PASS/FAIL + reasons) -> separate passing.
+            decision: dict[str, str] = {}  # media_id -> reason seen/criteria/library/etc.
             passing: list[tuple[RecommendationCandidate, CriteriaResult]] = []
             for cand in cand_all:
+                # 2. Seen-set dedup (cheap) — skip, don't re-evaluate.
+                if cand.media_id in seen:
+                    result.already_recommended += 1
+                    decision[cand.media_id] = "seen"
+                    continue
+                decision[cand.media_id] = "criteria_fail"
                 res = self.criteria.evaluate(cand)
                 if res.passed:
                     passing.append((cand, res))
@@ -142,27 +155,27 @@ class RecommendationManager:
             for cand, res in passing:
                 # 3. Library check (exclude available) — library always wins.
                 if self._check_library(cand):
+                    decision[cand.media_id] = "in_library"
                     result.already_in_library += 1
                     continue
                 # 4. Watchlist duplicate check.
                 if self._check_watchlist(cand):
+                    decision[cand.media_id] = "on_watchlist"
                     result.watchlist_duplicates += 1
                     continue
-                # 5. Recommendation history (avoid repeat recommendations).
-                if self._check_history(cand):
-                    result.already_recommended += 1
-                    continue
+                decision[cand.media_id] = "recommended"
                 survivors.append((cand, res))
 
-            # 6. Rank survivors by score.
+            # 5. Rank survivors by score.
             from services.recommendation.ranker import rank
             ranked = rank(survivors, limit=None)
             result.recommended = ranked
             result.new_recommendations = len(ranked)
 
-            # 7. Persist recommendations + history (§22/§23).
+            # 6. Persist recommendation history for every NEWLY-seen candidate
+            #    (with its reason) so future runs skip it (§23). Idempotent upsert.
             if persist_recommendations:
-                self._persist(ranked, max_persist)
+                self._persist(decision, ranked, max_persist, seen)
 
         except Exception as e:
             logger.exception("recommendation manager run failed")
@@ -170,26 +183,28 @@ class RecommendationManager:
             result.error = str(e)
         return result
 
-    def _persist(self, ranked, max_persist: int) -> None:
-        """Persist recommendation history for the top-ranked candidates (§23).
+    def _persist(self, decisions: dict, ranked, max_persist: int, seen: set) -> None:
+        """Persist recommendation history (spec §23) for every NEWLY-seen candidate.
 
-        Standard pipeline persists *history only* (the daily job adds actual
-        watchlist entries separately, feeding candidates back in). Kept decoupled
-        from the watchlist add so the manager never double-adds.
+        ``decisions`` maps media_id -> why it was handled (criteria_fail /
+        in_library / on_watchlist / recommended / seen). Candidates already in
+        ``seen`` were recorded on a prior run and are skipped. Ranked survivors
+        carry their score. This is what makes the seen-set dedup idempotent:
+        once a media_id is recorded, future runs skip it.
         """
         repo = self._history_repo()
-        for r in ranked[:max_persist]:
+        scores = {r.candidate.media_id: r.score for r in ranked}
+        for mid, decision in decisions.items():
+            if mid in seen:
+                continue  # previously recorded — no need to rewrite
             try:
+                is_ranked = decision == "recommended"
                 repo.record_recommendation(
-                    media_id=r.candidate.media_id,
-                    decision="recommended",
-                    score=r.score,
-                    payload={
-                        "title": r.candidate.title,
-                        "year": r.candidate.year,
-                        "media_type": r.candidate.media_type.value,
-                    },
+                    media_id=mid,
+                    decision=decision,
+                    score=float(scores.get(mid, 0.0)) if is_ranked else 0.0,
+                    payload={"decision": decision},
                 )
             except Exception as e:
                 logger.warning("manager: persist history failed for %s: %s",
-                               r.candidate.media_id, e)
+                               mid, e)

@@ -173,9 +173,9 @@ class TestRecommendationManager:
                                   library=library, watchlist=watchlist, history=history)
         res = m.run(media_type=MediaType.MOVIE, count=5)
         assert res.candidates == 5
-        assert res.already_recommended == 1
+        assert res.already_recommended == 1  # tmdb:3 already seen -> skipped before criteria
         assert res.new_recommendations == 4
-        assert res.passed_criteria == 5
+        assert res.passed_criteria == 4  # seen candidate isn't re-evaluated
 
     def test_library_exclusion(self):
         generator = CandidateGenerator(source_fn=lambda mt, cat, n: [
@@ -221,14 +221,39 @@ class TestRecommendationManager:
         history = Mock(); history.list_recommendation_history.return_value = []
         m = RecommendationManager(generator=generator, criteria=engine(),
                                   library=library, watchlist=watchlist, history=history)
-        res = m.run(media_type=MediaType.MOVIE, count=3, max_persist=2)
+        res = m.run(media_type=MediaType.MOVIE, count=3)
         assert res.new_recommendations == 3
         calls = history.record_recommendation.call_count
-        assert calls == 2  # max_persist caps history writes
+        # Every evaluated candidate is recorded (the seen-set must grow so future
+        # runs skip them), not just the top max_persist.
+        assert calls == 3
         # each recorded media_id is canonical and carries a score
-        kwargs = history.record_recommendation.call_args_list[0].kwargs
-        assert kwargs["media_id"].startswith("movie:tmdb:")
-        assert kwargs["score"] > 0
+        for call in history.record_recommendation.call_args_list:
+            kwargs = call.kwargs
+            assert kwargs["media_id"].startswith("movie:tmdb:")
+            assert kwargs["score"] > 0
+
+    def test_seen_set_skips_repeat_candidates(self, tmp_path):
+        """Regression: on re-run, candidates already recorded in history (spec §23
+        seen-set) are skipped BEFORE criteria/Plex — no re-processing."""
+        from infrastructure.database.repository import JsonWatchlistRepository
+        wl = tmp_path / "wl.json"
+        wl.write_text('{"pending":[],"recommended":[]}')
+        hist = JsonWatchlistRepository(str(wl))
+        generator = CandidateGenerator(source_fn=lambda mt, cat, n: [
+            {"id": i, "title": f"T{i}", "release_date": "2025",
+             "vote_average": 8.5, "vote_count": 1000, "genre_ids": ["drama"],
+             "imdb": 8.0, "rt": 85} for i in range(1, 5)])
+        library = Mock(); library.has.return_value = False
+        watchlist = Mock(); watchlist.find_by_imdb.return_value = None; watchlist.find_by_tmdb.return_value = None
+        m = RecommendationManager(generator=generator, criteria=engine(),
+                                  library=library, watchlist=watchlist, history=hist)
+        r1 = m.run(media_type=MediaType.MOVIE, count=4)
+        assert r1.new_recommendations == 4
+        assert len(hist.list_recommendation_history(100)) == 4  # all recorded
+        r2 = m.run(media_type=MediaType.MOVIE, count=4)
+        assert r2.new_recommendations == 0      # nothing new
+        assert r2.already_recommended == 4      # all skipped via seen-set
 
 
 class TestRepoHistory:

@@ -1,6 +1,6 @@
-# RKM Cinema - one-command deploy (run from D:\hermes_agent\hermes-workspace\media\watchlist)
+# RKM Cinema - one-command deploy (run from D:\hermes_agent\hermes-workspace\projects\rkm-cinema)
 # PowerShell:
-#   cd D:\hermes_agent\hermes-workspace\media\watchlist
+#   cd D:\hermes_agent\hermes-workspace\projects\rkm-cinema
 #   .\setup-watchlist.ps1
 # Then open http://rkm-hp.tail8d5e8.ts.net:8123/ from any tailnet device.
 #
@@ -16,11 +16,14 @@ Write-Host "== RKM Cinema deploy ==" -ForegroundColor Cyan
 # Path-agnostic: work from this script's own folder so compose finds docker-compose.yml
 Set-Location $PSScriptRoot
 
-# Build context needs .env + watchlist.json + api.py/Dockerfile alongside docker-compose.yml.
-# Pull the latest watchlist data into this folder if it lives one level up.
-if (!(Test-Path .\watchlist.json) -and (Test-Path ..\watchlist.json)) {
-    Copy-Item ..\watchlist.json .\watchlist.json -Force
-    Write-Host "Copied ..\watchlist.json -> .\watchlist.json" -ForegroundColor DarkGray
+# The live watchlist data lives at D:\hermes_agent\hermes-workspace\media\watchlist.json
+# (kept in media/ because it is shared with the rest of the media stack). The api
+# container mounts ../../media (i.e. /workspace/media) and reads it directly, so no
+# copy is required. This fallback only mirrors the file in if this repo is checked
+# out somewhere that lacks the sibling data dir.
+if (!(Test-Path .\watchlist.json) -and (Test-Path ..\..\media\watchlist.json)) {
+    Copy-Item ..\..\media\watchlist.json .\watchlist.json -Force
+    Write-Host "Copied ..\..\media\watchlist.json -> .\watchlist.json" -ForegroundColor DarkGray
 }
 
 # Tear down any previous containers for a clean rebuild

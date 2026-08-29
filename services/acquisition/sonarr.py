@@ -35,6 +35,16 @@ class SonarrAcquisitionProvider(AcquisitionProvider):
     def _tvdb_for(self, identity: MediaIdentity) -> Optional[int]:
         if identity.tvdb_id is not None:
             return identity.tvdb_id
+        # tmdb-only canonical ids (tv:tmdb:*) — resolve via Sonarr lookup; the
+        # low-level add_series also handles tmdb_id, but find/get_status need a
+        # tvdb to match the series list, so resolve here too.
+        if identity.tmdb_id is not None:
+            try:
+                s = self._svc.lookup_series_by_tmdb(identity.tmdb_id)
+                if s is not None and s.tvdbId:
+                    return s.tvdbId
+            except Exception:
+                return None
         if identity.imdb_id:
             try:
                 return self._svc.resolve_tvdb_id(identity.imdb_id)
@@ -68,10 +78,13 @@ class SonarrAcquisitionProvider(AcquisitionProvider):
 
     def request(self, identity, *, title: str = "", year: Optional[int] = None,
                 quality_profile_id: Optional[int] = None) -> AcquisitionRequestResult:
-        tvdb = self._tvdb_for(identity)
+        if not identity.imdb_id and not identity.tmdb_id and not identity.tvdb_id:
+            return AcquisitionRequestResult(
+                False, "unavailable", "No stable id to request in Sonarr",
+                MediaType.TV, self.name)
         add = self._svc.add_series(
             identity.imdb_id or "", quality_profile_id, title=title, year=year,
-            tvdb_id=tvdb)
+            tvdb_id=identity.tvdb_id, tmdb_id=identity.tmdb_id)
         mapped = {
             "requested": "already_exists" if ("already" in (add.message or "").lower()) else "requested",
             "ambiguous": "ambiguous",

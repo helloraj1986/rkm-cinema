@@ -174,8 +174,8 @@ class TestSonarrRouting:
                 return SimpleNamespace(tvdbId=tvdb, title="Breaking Bad", year=2008)
             def find_series_by_tvdb(self, tvdb):
                 return None
-            def add_series(self, imdb, qp=None, title="", year=None, tvdb_id=None):
-                self.add_kwargs = {"imdb": imdb, "tvdb_id": tvdb_id}
+            def add_series(self, imdb, qp=None, title="", year=None, tvdb_id=None, tmdb_id=None):
+                self.add_kwargs = {"imdb": imdb, "tvdb_id": tvdb_id, "tmdb_id": tmdb_id}
                 return SimpleNamespace(
                     success=True, state="requested",
                     message="Breaking Bad added to Sonarr — downloads starting",

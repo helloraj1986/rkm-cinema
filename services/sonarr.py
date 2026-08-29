@@ -267,6 +267,27 @@ class SonarrService(BaseService):
             imdbId=s.get("imdbId", ""),
         )
 
+    def lookup_series_by_tmdb(self, tmdb_id: int) -> Optional[SonarrSeries]:
+        """Lookup series by TMDB ID (canonical ids are frequently tmdb-only)."""
+        try:
+            data = self._get("/series/lookup", params={"term": f"tmdb:{tmdb_id}"}, timeout=20)
+        except Exception:
+            return None
+        if not data:
+            return None
+        s = data[0]
+        return SonarrSeries(
+            id=0,
+            tvdbId=s.get("tvdbId", 0),
+            title=s.get("title", ""),
+            year=s.get("year", 0),
+            monitored=True,
+            qualityProfileId=0,
+            languageProfileId=0,
+            statistics={},
+            imdbId=s.get("imdbId", ""),
+        )
+
     def search_series(self, title: str, year: Optional[int] = None) -> list[SonarrSeries]:
         """Search Sonarr by title (and optionally year). Returns candidate matches."""
         if not title:
@@ -315,12 +336,15 @@ class SonarrService(BaseService):
 
     def add_series(self, imdb_id: str, quality_profile_id: Optional[int] = None,
                    title: str = "", year: Optional[int] = None,
-                   tvdb_id: Optional[int] = None) -> AddResult:
+                   tvdb_id: Optional[int] = None,
+                   tmdb_id: Optional[int] = None) -> AddResult:
         """Add series to Sonarr.
 
         Lookup priority: IMDb ID first, then the given TVDB ID (canonical
-        ``tv:tvdb:*`` ids), then a title/year search as a last resort so a
-        valid series is never rejected just because its id is stale/absent.
+        ``tv:tvdb:*`` ids), then TMDB ID (canonical ``tv:tmdb:*`` ids, resolved
+        to TVDB) to mirror Radarr's tmdb lookup, then a title/year search as a
+        last resort so a valid series is never rejected just because its id is
+        stale/absent.
         """
         # Lookup by IMDb ID first.
         lookup = None
@@ -329,6 +353,10 @@ class SonarrService(BaseService):
         # Canonical ids are often tvdb/tmdb-only -> fall back to TVDB lookup.
         if (not lookup or not lookup.tvdbId) and tvdb_id:
             lookup = self.lookup_series_by_tvdb(tvdb_id)
+        # Canonical ids are frequently tmdb-only -> fall back to TMDB lookup
+        # (resolves tmdb -> tvdb via Sonarr's lookup endpoint), mirroring Radarr.
+        if (not lookup or not lookup.tvdbId) and tmdb_id:
+            lookup = self.lookup_series_by_tmdb(tmdb_id)
         candidates = []
         if not lookup or not lookup.tvdbId:
             # IMDb lookup failed -> try title/year search

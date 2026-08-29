@@ -81,6 +81,67 @@ class TestSonarrRouting:
         assert result.success is True
         assert result.series.tvdbId == 403294
 
+    def test_add_series_tmdb_only_fallback(self):
+        """tmdb-only identity (canonical tv:tmdb:* id) must still add to Sonarr.
+
+        Canonical ids are tmdb-first and Sonarr has no 'tmdb' term on its own —
+        we must resolve tmdb -> tvdb via lookup_series_by_tmdb, then add.
+        """
+        svc = SonarrService(config=make_config(), http=make_http())
+        svc.lookup_series = Mock(return_value=None)          # no imdb
+        svc.lookup_series_by_tmdb = Mock(return_value=SonarrSeries(
+            id=0, tvdbId=79744, title="The Rookie", year=2018,
+            monitored=True, qualityProfileId=0, languageProfileId=0,
+            statistics={}, imdbId="tt7587890"))
+        svc.get_quality_profiles = Mock(return_value=[Mock(id=1, name="HD-1080p", items=[])])
+        svc.get_language_profiles = Mock(return_value=[Mock(id=1, name="English")])
+        svc.get_root_folders = Mock(return_value=[Mock(path="/tv")])
+        svc.find_series_by_tvdb = Mock(return_value=None)
+        svc._post = Mock(return_value={
+            "id": 5, "tvdbId": 79744, "title": "The Rookie", "year": 2018,
+            "monitored": True, "qualityProfileId": 1, "languageProfileId": 1,
+            "statistics": {"episodeFileCount": 0}})
+
+        # tmdb-only identity (no imdb, no tvdb) — the canonical cast.
+        result = svc.add_series("", tmdb_id=91979, title="The Rookie", year=2018)
+
+        assert result.success is True
+        assert result.state == "requested"
+        assert result.series.tvdbId == 79744
+        svc.lookup_series_by_tmdb.assert_called_once_with(91979)
+
+    def test_provider_requests_tmdb_only_series(self):
+        """End-to-end through the acquisition provider: tv:tmdb:* -> Sonarr."""
+        from services.acquisition.sonarr import SonarrAcquisitionProvider
+        from domain.enums import MediaType
+        from domain.identity import MediaIdentity
+
+        svc = SonarrService(config=make_config(), http=make_http())
+        svc.lookup_series_by_tmdb = Mock(return_value=SonarrSeries(
+            id=0, tvdbId=63639, title="The Expanse", year=2015,
+            monitored=True, qualityProfileId=0, languageProfileId=0,
+            statistics={}, imdbId="tt3230854"))
+        svc.get_quality_profiles = Mock(return_value=[Mock(id=1, name="HD-1080p", items=[])])
+        svc.get_language_profiles = Mock(return_value=[Mock(id=1, name="English")])
+        svc.get_root_folders = Mock(return_value=[Mock(path="/tv")])
+        svc.find_series_by_tvdb = Mock(return_value=None)
+        svc._post = Mock(return_value={
+            "id": 7, "tvdbId": 63639, "title": "The Expanse", "year": 2015,
+            "monitored": True, "qualityProfileId": 1, "languageProfileId": 1,
+            "statistics": {"episodeFileCount": 0}})
+
+        provider = SonarrAcquisitionProvider(service=svc)
+        identity = MediaIdentity(media_type=MediaType.TV, tmdb_id=63639)
+
+        result = provider.request(identity, title="The Expanse", year=2015)
+
+        assert result.success is True
+        assert result.state == "requested"
+        assert result.service == "sonarr"
+        # The provider must never give up on a valid tmdb-only canonical id.
+        svc.lookup_series_by_tmdb.assert_called()
+        assert result.item is not None and result.item.tvdbId == 63639
+
     def test_add_series_ambiguous(self):
         """Multiple distinct title matches, no exact -> ambiguous, not silent guess."""
         svc = SonarrService(config=make_config(), http=make_http())

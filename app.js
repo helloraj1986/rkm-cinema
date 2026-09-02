@@ -596,6 +596,14 @@ function entryFromSuggestItem(item) {
 function entryFromWatchlistEntry(w) {
   if (!w) return null;
   const isSeries = !!w.isSeries;
+  // The persisted WatchlistEntry schema stores the synopsis under `snippet` /
+  // `tmdb_overview` (NOT `overview`) and the TMDB score under `tmdb_score`
+  // (snake_case). The dashboard generator (`rebuild_dashboard.py`) normalizes
+  // these before writing `/dashboard-data.json`; here we must do the same so a
+  // freshly-added Suggest card matches an existing dashboard card (synopsis +
+  // scores in the detail modal).
+  const overview = w.overview || w.snippet || w.tmdb_overview || '';
+  const tmdbScore = Number(w.tmdbScore || w.tmdb_score || 0);
   return {
     id: (isSeries ? 'tv' : 'movie') + ':tmdb:' + w.tmdbId,
     title: w.title, year: w.year,
@@ -603,10 +611,11 @@ function entryFromWatchlistEntry(w) {
     isSeries,
     tmdbId: w.tmdbId, imdbId: w.imdbId || '', imdb: w.imdb || 0, rt: w.rt || 0,
     poster: w.poster || '', backdrop: w.backdrop || '',
-    genres: w.genres || [], overview: w.overview || '',
+    genres: w.genres || [], overview,
     director: w.director || '', cast: w.cast || [],
     trailerId: w.trailerId || '',
-    tmdb_score: w.tmdb_score || 0,
+    tmdbScore,                  // what openModal()/hero read (camelCase)
+    tmdb_score: tmdbScore,      // what suggest badges read (snake_case)
     runtime: w.runtime || 0,
     category: w.category || 'Other',
     added: w.added || new Date().toISOString().slice(0, 10),

@@ -195,6 +195,32 @@ ok('entryFromWatchlistEntry: builds a FULL card (trailer/director/cast/scores)',
   assert.deepStrictEqual(e.cast, ['Brian Cox']);
   assert.strictEqual(e.imdb, 8.9);
   assert.strictEqual(e.tmdb_score, 8.5);
+  // So the modal (openModal reads entry.tmdbScore) also shows the score.
+  assert.strictEqual(e.tmdbScore, 8.5, 'tmdbScore (camelCase) must be set');
+});
+
+ok('entryFromWatchlistEntry: restores synopsis from persisted schema (snippet/tmdb_overview, no overview key)', () => {
+  // The persisted WatchlistEntry.to_dict() stores the synopsis under snippet and
+  // tmdb_overview, NOT `overview`. Regression: the fresh-add card must still show
+  // the synopsis in the detail modal (matches dashboard-data normalization).
+  const viaSnippet = get('entryFromWatchlistEntry')(
+    { title: 'X', year: 1, isSeries: false, tmdbId: 10, snippet: 'The plot of X.' });
+  assert.strictEqual(viaSnippet.overview, 'The plot of X.', 'snippet must fall back into overview');
+
+  const viaTmdbOverview = get('entryFromWatchlistEntry')(
+    { title: 'X', year: 1, isSeries: false, tmdbId: 11, tmdb_overview: 'TMDB overview.' });
+  assert.strictEqual(viaTmdbOverview.overview, 'TMDB overview.', 'tmdb_overview must fall back into overview');
+
+  // Explicit overview still wins (dashboard-shaped input).
+  const explicit = get('entryFromWatchlistEntry')(
+    { title: 'X', year: 1, isSeries: false, tmdbId: 12, overview: 'O', snippet: 'S', tmdb_overview: 'T' });
+  assert.strictEqual(explicit.overview, 'O', 'explicit overview wins');
+
+  // tmdbScore camelCase also derived from tmdb_score (the persisted field).
+  const score = get('entryFromWatchlistEntry')(
+    { title: 'X', year: 1, isSeries: false, tmdbId: 13, tmdb_score: 7.4 });
+  assert.strictEqual(score.tmdbScore, 7.4, 'tmdbScore derived from tmdb_score');
+  assert.strictEqual(score.tmdb_score, 7.4, 'tmdb_score preserved');
 });
 
 console.log('\n' + (failures === 0 ? 'ALL PASS' : failures + ' FAILURES'));

@@ -95,10 +95,17 @@ def test_sqlite_repository_job_runs_table_exists():
 
 # ------------------------------------------------------- config-driven factory
 def test_build_repository_defaults_to_json():
-    # No WATCHLIST_STORE set in env -> json (backward compatible).
-    os.environ.pop("WATCHLIST_STORE", None)
+    # Code fallback (store unconfigured anywhere) is JSON for backward compat.
+    # We set an EMPTY (present-but-empty) env value so it OVERRIDES the checked-in
+    # /workspace/.env, which now sets WATCHLIST_STORE=sqlite for this deployment.
+    # Asserting "" -> the json fallback proves the safety net is intact.
+    os.environ["WATCHLIST_STORE"] = ""
     get_config.cache_clear()
-    assert isinstance(build_repository(), JsonWatchlistRepository)
+    try:
+        assert isinstance(build_repository(), JsonWatchlistRepository)
+    finally:
+        os.environ.pop("WATCHLIST_STORE", None)
+        get_config.cache_clear()
 
 
 def test_build_repository_sqlite(tmp_path, monkeypatch):

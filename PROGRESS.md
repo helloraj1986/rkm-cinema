@@ -1,10 +1,35 @@
 # RKM Watchlist — Session Handoff & Project Progress
 
-> Last updated: 2026-09-02 (**504 / runaway-polling ROOT CAUSE FIXED + Suggest shipped + suggest UX round. Commit `e69e9f7` (perf + suggest) + `1c8d9b1` (hover buttons). NEW: 216 pytest + phase11/18/25 node tests green. DEPLOY PENDING on RKM-HP — run setup-watchlist.ps1 to bake the API changes + suggest route.**)
+> Last updated: 2026-09-02 (**504 / runaway-polling ROOT CAUSE FIXED + Suggest shipped + suggest UX round. NEW: canonical store migrated JSON→SQLite at `/workspace/media/watchlist.db` — survives rebuilds. Commits `d7c9a10` + pending sqlite/synopsis work. 216 pytest + phase11/18/25 node green.**)
 > Live URL: **http://rkm-hp.tail8d5e8.ts.net:8123/** (Tailscale MagicDNS, tailnet-only — NEVER `tailscale funnel` it; page proxies /api → FastAPI which holds secrets server-side)
 > Deploy path (Windows, RKM-HP): `cd D:\hermes_agent\hermes-workspace\projects\rkm-cinema; .\setup-watchlist.ps1` — the sandbox's `/workspace` maps to `D:\hermes_agent\hermes-workspace` (9p mount, confirmed via mountinfo 2026-08-18; NOT `D:\media`). The `web`+`api` containers are on RKM-HP (Docker daemon unreachable from sandbox).
-> Repo: **private `rkm-watchlist` on GitHub** (github.com/helloraj1986/rkm-watchlist)
-> **Status:** ✅ **Phases 1–18 committed; 1–11 deployed.** Running site is the Phase 10+11 image (resource API + capability-driven frontend). Post-deploy user-testing bugs fixed (Dockerfile missing dirs; tmdb-only request). Backend 208 green + frontend 16 green.
+> Repo: **private `rkm-cinema` on GitHub** (github.com/helloraj1986/rkm-cinema)
+> **Status:** ✅ **Phases 1–18 committed. SQLite is now the AUTHORITATIVE watchlist store** (`WATCHLIST_STORE=sqlite`, DB on the shared `/workspace/media` volume so it survives every rebuild). `watchlist.json` is now a generated mirror/export, NOT authoritative. **DEPLOY PENDING on RKM-HP** to bake the 504/suggest API fixes + the SQLite store into the running image (`setup-watchlist.ps1`). Frontend-only (app.js synopsis fix) is already live via the volume mount.
+
+## ▶ LATEST SESSION (2026-09-02, follow-up) — Canonical store → SQLite + Suggest fresh-add card bug ✅
+
+**User asked to move the watchlist off `watchlist.json` into a database, and to make it survive rebuilds.** The Phase 3 SQLite seam (spec §5) already existed but was idle; this session activated it and fixed a fresh-add card bug.
+
+**1. Suggest fresh-add card showed no synopsis + no TMDB score (root-caused & fixed).**
+`pushSuggestEntryToApp(entryFromWatchlistEntry(resp.entry))` maps the live-added card client-side, but `entryFromWatchlistEntry` read `w.overview` — which the persisted `WatchlistEntry` schema does NOT have (it stores the synopsis under `snippet`/`tmdb_overview`) and set `tmdb_score` (snake_case) while the modal reads `entry.tmdbScore`. So the fresh card's detail modal showed "No synopsis available yet." and no TMDB score. Existing dashboard cards were fine because `rebuild_dashboard.py` normalizes `overview = tmdb_overview || snippet` + camelCase `tmdbScore`.
+**Fix (`app.js`, eslint-ok):** `entryFromWatchlistEntry` maps `overview = w.overview || w.snippet || w.tmdb_overview` and sets BOTH `tmdbScore` + `tmdb_score`. **Trailer:** the fresh card carries `trailerId` through (enrich persisted it); the modal `trailerButton` plays in-app if present, else "Search YouTube" fallback. Added regression test `tests/phase25_suggest_frontend.test.mjs`. Frontend is volume-mounted → **goes live on hard-refresh, no rebuild**.
+
+**2. JSON → SQLite migration (activating the existing Phase 3 seam).**
+- `.env` (canonical) now sets `WATCHLIST_STORE=sqlite` + `WATCHLIST_DB_PATH=/workspace/media/watchlist.db` — the DB lives on the **shared media volume** (/workspace/media, bind-mounted `:rw`), so `docker compose down`/rebuild no longer loses it (the old risk was the default `/app/watchlist.db`, which sits in the container's throwaway writable layer).
+- **`scripts/migrate_json_to_sqlite.py`** (new, idempotent): JSON → SQLite, carries the recommendation seen-set (385 rows) across, round-trip verifies counts, re-exports watchlist.json as a one-time mirror, rebuilds the dashboard. **Ran successfully: 296 pending → SQLite, dashboard rebuilt (296 cards, 274 with trailers).**
+- The whole app routes persistence through `build_repository()` (API, `rebuild_dashboard`, `add_watchlist_cron`, jobs, recommendation manager) — a flip requires no code changes; verified the API boots on the SQLite repo (`/api/health` + `/api/config` 200, "Using SQLite watchlist repository").
+- **One test made deployment-immune:** `test_repository.test_build_repository_defaults_to_json` now forces an empty `WATCHLIST_STORE` env override (the checked-in `.env` previously carried it to sqlite). No test writes to the real DB — every other suite passes an explicit path.
+- **216 pytest + phase11/18/25 node green.**
+
+**⚠️ DEPLOY REQUIRED on RKM-HP** to bake the SQLite store + 504/suggest fixes into the running image:
+```powershell
+cd D:\hermes_agent\hermes-workspace\projects\rkm-cinema
+.\setup-watchlist.ps1
+```
+The container reads `/workspace/.env` (env_file `../../.env`) and the shared `/workspace/media` volume, so the already-migrated `/workspace/media/watchlist.db` is picked up automatically. Verify `/api/health` 200 + entries still served after deploy.
+**Note:** after the flip, `/workspace/media/watchlist.json` is a **frozen mirror** (last exported at migration). External media-stack scripts that read it directly still see pre-flip data until the next export — point them at the repository (or a fresh rebuild) if they must be live.
+
+---
 
 ## ⭐ LATEST SESSION (2026-09-02) — 504 root-caused & fixed + Suggest UX round ✅
 (previous latest session: 2026-08-28 below)

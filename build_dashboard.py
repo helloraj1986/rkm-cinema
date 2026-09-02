@@ -10,7 +10,7 @@ Changes vs v1:
     folder; only dashboard-data.json is regenerated per build (no JS rebuild needed).
   - Atomic writes (tmp + os.replace), 0-card publish guard, asset-existence guard.
 
-Outputs (all under /workspace/media/watchlist/):
+Outputs (all under /workspace/projects/rkm-cinema/):
   dashboard-data.json   entries + meta for the SPA
   index.html            thin shell referencing ./app.css and ./app.js
   dashboard.html        identical copy (backward-compatible alias)
@@ -24,7 +24,7 @@ import time
 import urllib.parse
 
 SRC = "/workspace/media/watchlist.json"
-BASE = "/workspace/media/watchlist"
+BASE = "/workspace/projects/rkm-cinema"
 DATA_OUT = os.path.join(BASE, "dashboard-data.json")
 HTML_OUT = os.path.join(BASE, "index.html")
 ALIAS_OUT = os.path.join(BASE, "dashboard.html")

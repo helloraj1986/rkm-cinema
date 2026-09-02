@@ -59,7 +59,7 @@ for e in wl.get("pending", []):
 if changed:
     json.dump(wl, open(wl_path, "w"), indent=2)
     print("\nwatchlist.json updated with posters — rebuilding dashboard")
-    subprocess.run(["python3", "/workspace/media/watchlist/build_dashboard.py"], capture_output=True, text=True)
+    subprocess.run(["python3", "/workspace/projects/rkm-cinema/build_dashboard.py"], capture_output=True, text=True)
     print("dashboard rebuilt")
 else:
     print("\nno poster changes (placeholders will show)")

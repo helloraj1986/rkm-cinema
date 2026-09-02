@@ -22,7 +22,9 @@ services:
       # With the dir mounted at /workspace/media (repo's native fallback path),
       # JsonWatchlistRepository uses /workspace/media/watchlist.json (live +
       # writable) and rebuild_dashboard.py lands on the served files.
-      - ../:/workspace/media:rw
+      # Compose lives in projects/rkm-cinema, so the data dir is ../../media
+      # (i.e. /workspace/media), NOT ../ which would resolve to /workspace/projects.
+      - ../../media:/workspace/media:rw
     networks:
       - rkm
     healthcheck:
@@ -35,7 +37,7 @@ services:
   # --- Static web UI (nginx) + reverse proxy to the API on the same origin ---
   web:
     image: nginx:alpine
-    container_name: rkm-watchlist
+    container_name: rkm-cinema
     restart: unless-stopped
     ports:
       - "0.0.0.0:8123:80"

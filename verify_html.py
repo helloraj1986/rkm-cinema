@@ -2,7 +2,7 @@
 """Verify dashboard.html integrity: cards, buttons, no unreplaced placeholders."""
 import json, re
 
-html = open("/workspace/media/watchlist/dashboard.html").read()
+html = open("/workspace/projects/rkm-cinema/dashboard.html").read()
 wl = json.load(open("/workspace/media/watchlist.json"))
 
 print("== dashboard.html checks ==")

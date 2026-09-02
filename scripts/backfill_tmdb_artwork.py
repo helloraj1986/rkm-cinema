@@ -12,7 +12,7 @@ import os
 import sys
 import urllib.request
 
-sys.path.insert(0, "/workspace/media/watchlist")
+sys.path.insert(0, "/workspace/projects/rkm-cinema")
 
 from config.settings import get_config
 

@@ -4,10 +4,16 @@ Turns candidate *sources* (TMDB discover/search endpoints, or an injected
 curated list) into normalized :class:`RecommendationCandidate` objects. The
 generator owns "where candidates come from"; the criteria engine decides
 which survive. LAN-free in tests via a DI-injected ``tmdb``.
+
+Multi-strategy discover: each run rotates through 3 strategies to pull
+from a wider pool — popular (trending), top-rated (critically acclaimed),
+and hidden gems (high rating, lower vote count). This prevents the pipeline
+from always returning the same popular content already in Plex.
 """
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -17,6 +23,21 @@ from services.recommendation.criteria import RecommendationCandidate
 from services.tmdb import TMDBService
 
 logger = logging.getLogger("rkm.recommendation.generator")
+
+# Discover strategies — each returns different slices of TMDB content.
+# The index rotates each run (time-based) so consecutive runs don't repeat.
+_DISCOVER_STRATEGIES = [
+    # Popular: trending content, high visibility
+    {"sort_by": "popularity.desc", "vote_average.gte": 7.0, "label": "popular"},
+    # Top-rated: critically acclaimed, may be older
+    {"sort_by": "vote_average.desc", "vote_count.gte": 500, "vote_average.gte": 7.5, "label": "top_rated"},
+    # Hidden gems: high quality, fewer votes (lesser-known but excellent)
+    {"sort_by": "vote_average.desc", "vote_count.gte": 100, "vote_count.lte": 2000,
+     "vote_average.gte": 7.0, "label": "hidden_gems"},
+    # Recent: newest releases (last 2 years)
+    {"sort_by": "primary_release_date.desc", "vote_average.gte": 6.5,
+     "vote_count.gte": 50, "label": "recent"},
+]
 
 
 @dataclass
@@ -52,7 +73,7 @@ class CandidateGenerator:
         """Fetch + normalize candidate media for a category.
 
         Uses the injected ``source_fn(media_type, category, count)`` when given
-        (returns raw dicts); otherwise TMDB discover.
+        (returns raw dicts); otherwise TMDB discover with multi-strategy rotation.
         """
         if self.source_fn is not None:
             raw = self.source_fn(media_type, category, count) or []
@@ -61,27 +82,47 @@ class CandidateGenerator:
         return self._normalize_all(raw, media_type)
 
     def _discover(self, media_type: MediaType, count: int) -> list[dict]:
-        """TMDB discover (popular/discovering) for the media type."""
+        """TMDB discover with multi-strategy rotation.
+
+        Rotates through popular / top-rated / hidden-gems / recent strategies
+        so consecutive runs pull from different slices of the catalog.
+        """
         tmdb = self._tmdb()
         if not self.config.TMDB_API_KEY:
             logger.warning("generator: no TMDB API key; no live candidates")
             return []
         try:
-            if media_type is MediaType.TV:
-                return self._discover_tmdb(tmdb, "discover/tv", count)
-            return self._discover_tmdb(tmdb, "discover/movie", count)
+            endpoint = "discover/tv" if media_type is MediaType.TV else "discover/movie"
+            strategy = self._pick_strategy()
+            logger.info("generator: using '%s' strategy for %s",
+                        strategy["label"], media_type.value)
+            return self._discover_tmdb(tmdb, endpoint, count, strategy)
         except Exception as e:
             logger.warning("generator: TMDB discover failed: %s", e)
             return []
 
     @staticmethod
-    def _discover_tmdb(tmdb, endpoint: str, count: int) -> list[dict]:
+    def _pick_strategy() -> dict:
+        """Pick a discover strategy by rotating through the list (time-based)."""
+        idx = int(time.time()) % len(_DISCOVER_STRATEGIES)
+        return _DISCOVER_STRATEGIES[idx]
+
+    @staticmethod
+    def _discover_tmdb(tmdb, endpoint: str, count: int,
+                       strategy: Optional[dict] = None) -> list[dict]:
+        if strategy is None:
+            strategy = _DISCOVER_STRATEGIES[0]  # popular (legacy default)
+
         params = {
-            "sort_by": "popularity.desc",
-            "vote_average.gte": 7.0,
+            "sort_by": strategy["sort_by"],
             "page": 1,
             "include_adult": "false",
         }
+        # Add optional filters from the strategy
+        for key in ("vote_average.gte", "vote_count.gte", "vote_count.lte"):
+            if key in strategy:
+                params[key] = strategy[key]
+
         data = tmdb._request(endpoint, params)
         raw = list((data or {}).get("results", [])[:count])
         # Map the numeric genre_ids TMDB discover returns into names so the

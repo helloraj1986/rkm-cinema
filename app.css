@@ -652,3 +652,162 @@ img { display: block; max-width: 100%; }
 /* hero backdrop image fade-in (no inline <style> needed) */
 .hero-bg img { opacity: 0; transition: opacity 0.6s ease; }
 .hero-bg img.loaded { opacity: 1; }
+
+/* ============================================================
+   SUGGEST VIEW — filter panel + results grid
+   ============================================================ */
+.suggest-filters {
+  background: var(--card);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  padding: 20px;
+  margin-bottom: 24px;
+}
+.sg-row {
+  margin-bottom: 14px;
+}
+.sg-row:last-child { margin-bottom: 0; }
+.sg-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--faint);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 8px;
+}
+.sg-opts {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.sg-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.sg-chip {
+  padding: 5px 12px;
+  font-size: 12.5px;
+  border-radius: 20px;
+  border: 1px solid var(--hairline-2);
+  background: rgba(255,255,255,0.04);
+  color: var(--faint);
+  cursor: pointer;
+  transition: 0.15s var(--ease);
+  white-space: nowrap;
+}
+.sg-chip:hover { background: rgba(255,255,255,0.08); color: var(--txt); }
+.sg-chip.active {
+  background: rgba(232,184,109,0.15);
+  border-color: var(--gold);
+  color: var(--gold);
+}
+.sg-row-inline {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+.sg-field {
+  flex: 1;
+  min-width: 100px;
+}
+.sg-input {
+  width: 100%;
+  padding: 8px 12px;
+  font-size: 14px;
+  font-family: inherit;
+  color: var(--txt);
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--hairline-2);
+  border-radius: 8px;
+  outline: none;
+  transition: 0.15s var(--ease);
+}
+.sg-input:focus { border-color: var(--gold); box-shadow: 0 0 0 2px rgba(232,184,109,0.15); }
+.sg-input option { background: var(--card); color: var(--txt); }
+.sg-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding-top: 6px;
+}
+.sg-count {
+  font-size: 13px;
+  color: var(--faint);
+  margin-left: auto;
+}
+.suggest-results {
+  min-height: 200px;
+}
+.suggest-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 16px;
+}
+.suggest-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 60px 0;
+  color: var(--faint);
+  font-size: 15px;
+}
+.suggest-empty {
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--faint);
+  font-size: 15px;
+  line-height: 1.6;
+}
+.spinner {
+  width: 20px; height: 20px;
+  border: 2px solid var(--hairline-2);
+  border-top-color: var(--gold);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* mobile adjustments */
+@media (max-width: 600px) {
+  .sg-row-inline { flex-direction: column; }
+  .sg-field { min-width: 100%; }
+  .suggest-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; }
+  .suggest-filters { padding: 14px; }
+}
+
+/* ============================================================
+   SUGGEST CARD ACTIONS (fix: skewed / overflowing buttons)
+   ============================================================ */
+/* Stack the two actions full-width, always visible, so they are easy to
+   click and never overflow the narrow poster. Overrides the shared hidden-
+   until-hover side-by-side layout (.grid .card .card-actions). */
+.suggest-grid .card .card-actions {
+  top: auto; left: 10px; right: 10px; bottom: 40px;
+  flex-direction: column; gap: 8px; padding: 0;
+  opacity: 1; transform: none;
+}
+.suggest-grid .card .card-actions .mini-btn {
+  width: 100%; justify-content: center; min-height: 30px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+}
+.suggest-grid .card .card-actions .mini-btn.done {
+  color: var(--green); border-color: rgba(74, 222, 128, 0.4);
+}
+.suggest-grid .card:hover .card-actions { opacity: 1; transform: translateY(-2px); }
+
+/* ============================================================
+   SUGGEST DETAIL MODAL (card click -> IMDb rating + synopsis)
+   ============================================================ */
+.suggest-detail .modal-back { height: clamp(200px, 30vh, 300px); }
+.suggest-detail-loading {
+  display: flex; align-items: center; gap: 12px;
+  padding: 30px 0; color: var(--faint); font-size: 14.5px;
+}
+.suggest-detail .modal-overview { max-width: 760px; }
+.suggest-detail .score.imdb { background: rgba(245, 196, 81, 0.1); border-color: rgba(245, 196, 81, 0.28); }
+.suggest-detail .score.tmdb { background: rgba(124, 96, 241, 0.12); border-color: rgba(124, 96, 241, 0.3); }

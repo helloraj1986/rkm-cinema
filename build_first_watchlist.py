@@ -132,7 +132,7 @@ watchlist = {
     "recommended": [],
     "updated": time.strftime("%Y-%m-%dT%H:%M:%S"),
 }
-os.makedirs("/workspace/media/watchlist", exist_ok=True)
+os.makedirs("/workspace/projects/rkm-cinema", exist_ok=True)
 with open("/workspace/media/watchlist.json", "w") as f:
     json.dump(watchlist, f, indent=2)
 print(f"\nwatchlist.json written: {len(pending)} pending")

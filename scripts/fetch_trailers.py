@@ -131,7 +131,7 @@ def fetch_and_validate_trailers():
         
         # Rebuild dashboard
         import subprocess
-        subprocess.run(['python3', 'scripts/rebuild_dashboard.py'], cwd='/workspace/media/watchlist')
+        subprocess.run(['python3', 'scripts/rebuild_dashboard.py'], cwd='/workspace/projects/rkm-cinema')
     else:
         print("\nNo trailers updated")
 

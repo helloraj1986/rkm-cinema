@@ -30,6 +30,35 @@ class TMDBService:
         """Drop all cached metadata (e.g. before a forced refresh)."""
         self._cache.clear()
 
+    def get_imdb_rating(self, imdb_id: str) -> float:
+        """Fetch IMDb rating by IMDb ID (e.g. 'tt0133093').
+
+        Uses OMDb API (free tier, 1000 req/day). Returns 0.0 on failure.
+        """
+        if not imdb_id or not imdb_id.startswith("tt"):
+            return 0.0
+        cache_key = f"imdb:{imdb_id}"
+        cached = self._cache.get(cache_key)
+        if cached is not None:
+            return cached
+        try:
+            import urllib.request
+            import urllib.parse
+            import json as _json
+            # OMDb free tier (limited but no key needed for basic lookups)
+            # Falls back to 0.0 if unavailable
+            url = f"http://www.omdbapi.com/?i={imdb_id}&apikey=trilogy"
+            req = urllib.request.Request(url, headers={"User-Agent": "RKM-Cinema/3.0"})
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = _json.loads(resp.read())
+                rating = float(data.get("imdbRating") or 0)
+                if rating > 0:
+                    self._cache.set(cache_key, rating)
+                return rating
+        except Exception as e:
+            logger.debug("IMDb rating fetch failed for %s: %s", imdb_id, e)
+            return 0.0
+
     def genre_names(self) -> dict[int, str]:
         """TMDB genre id -> name for movie + tv lists (merged, cached 6h).
 
@@ -81,9 +110,14 @@ class TMDBService:
     def _get_movie_details(self, tmdb_id: int) -> Optional[Dict[str, Any]]:
         try:
             data = self._request(f"movie/{tmdb_id}", {
-                "append_to_response": "credits,release_dates"
+                "append_to_response": "credits,release_dates,external_ids"
             })
-            return self._parse_movie_data(data)
+            result = self._parse_movie_data(data)
+            # Attach IMDb ID from external_ids (for rating lookup)
+            ext_ids = data.get("external_ids", {})
+            if ext_ids and ext_ids.get("imdb_id"):
+                result["imdb_id"] = ext_ids["imdb_id"]
+            return result
         except Exception as e:
             logger.error(f"Failed to get movie details for TMDB ID {tmdb_id}: {e}")
             return None
@@ -94,12 +128,44 @@ class TMDBService:
             return None
         return self._cached(f"show:{tmdb_id}", lambda: self._get_show_details(tmdb_id))
 
+    def get_show_external_ids(self, tmdb_id: int) -> Optional[str]:
+        """Resolve a TMDB show id to its TVDB id via the lightweight
+        ``/tv/{id}/external_ids`` endpoint (fast, cached).
+
+        Returns None when the id is missing or the fetch fails. Callers use this
+        to map tmdb-only canonical ids (``tv:tmdb:*``) onto a TVDB id so the
+        acquisition layer can match Sonarr's series list — far lighter than a
+        full ``get_show_details`` and immune to the live Sonarr lookup timeout.
+        """
+        if not tmdb_id:
+            return None
+        try:
+            data = self._cached(
+                f"tv:{tmdb_id}:external_ids",
+                lambda: self._request(f"tv/{tmdb_id}/external_ids"),
+            )
+        except Exception as e:
+            logger.warning("tmdb external_ids lookup failed for %s: %s", tmdb_id, e)
+            return None
+        if not data:
+            return None
+        tvdb = (data or {}).get("tvdb_id")
+        return str(tvdb) if tvdb else None
+
     def _get_show_details(self, tmdb_id: int) -> Optional[Dict[str, Any]]:
         try:
             data = self._request(f"tv/{tmdb_id}", {
-                "append_to_response": "credits,content_ratings"
+                "append_to_response": "credits,content_ratings,external_ids"
             })
-            return self._parse_show_data(data)
+            result = self._parse_show_data(data)
+            # Attach IMDb / TVDB ids from external_ids (for rating lookup +
+            # tmdb→tvdb resolution; cache them both).
+            ext_ids = data.get("external_ids", {})
+            if ext_ids and ext_ids.get("imdb_id"):
+                result["imdb_id"] = ext_ids["imdb_id"]
+            if ext_ids and ext_ids.get("tvdb_id"):
+                result["tvdb_id"] = ext_ids["tvdb_id"]
+            return result
         except Exception as e:
             logger.error(f"Failed to get show details for TMDB ID {tmdb_id}: {e}")
             return None
@@ -124,6 +190,7 @@ class TMDBService:
 
         # Extract vote average
         vote_average = data.get("vote_average", 0.0)
+        vote_count = data.get("vote_count", 0)
 
         # Extract credits (cast and director)
         credits = data.get("credits", {})
@@ -156,6 +223,7 @@ class TMDBService:
             "backdrop": backdrop,
             "runtime": runtime,
             "tmdb_score": vote_average,
+            "vote_count": vote_count,
             "overview": overview,
             "cert": cert,
             "cast": cast,
@@ -186,6 +254,7 @@ class TMDBService:
 
         # Extract vote average
         vote_average = data.get("vote_average", 0.0)
+        vote_count = data.get("vote_count", 0)
 
         # Extract credits (cast and creator/director)
         credits = data.get("credits", {})
@@ -222,6 +291,7 @@ class TMDBService:
             "backdrop": backdrop,
             "runtime": runtime,
             "tmdb_score": vote_average,
+            "vote_count": vote_count,
             "overview": overview,
             "cert": cert,
             "cast": cast,

@@ -115,7 +115,7 @@ class Database:
         """A persistent file location in the container or dev sandbox."""
         if Path("/app").is_dir():
             return "/app/watchlist.db"
-        return "/workspace/media/watchlist.db"
+        return "/workspace/projects/rkm-cinema.db"
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.path, timeout=15)

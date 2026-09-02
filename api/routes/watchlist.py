@@ -21,6 +21,6 @@ logger = logging.getLogger("rkm.api.watchlist")
 @router.get("/watchlist", response_model=WatchlistResponse)
 def get_watchlist():
     """Every watchlist entry as a backend-derived §18 resource."""
-    result = Reconciler().compute()
+    result = Reconciler().compute_cached()
     entries = [_snapshot_to_media(snap) for snap in result.snapshots.values()]
     return WatchlistResponse(entries=entries, indexerIssue=result.indexer_issue)

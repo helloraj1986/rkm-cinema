@@ -20,7 +20,7 @@ logger = logging.getLogger("rkm.api.status")
 @router.get("/status", response_model=StatusResponse)
 def get_status():
     """Per-title download state computed by the reconciler's snapshots."""
-    result = Reconciler().compute()
+    result = Reconciler().compute_cached()
 
     statuses = {}
     for imdb, snap in result.snapshots.items():

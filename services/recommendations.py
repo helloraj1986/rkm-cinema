@@ -195,7 +195,16 @@ class RecommendationService:
                 tmdb_poster = tmdb_data.get("poster", "")
                 if self._is_valid_poster(tmdb_poster):
                     entry.poster = tmdb_poster
-                # Note: certification from TMDB could be used to update cert, but we leave it as is for now.
+                # IMDb ID from external_ids + rating from OMDb
+                ext_imdb_id = tmdb_data.get("imdb_id", "")
+                if ext_imdb_id:
+                    entry.imdbId = ext_imdb_id
+                    try:
+                        imdb_rating = self.tmdb.get_imdb_rating(ext_imdb_id)
+                        if isinstance(imdb_rating, (int, float)) and imdb_rating > 0:
+                            entry.imdb = imdb_rating
+                    except Exception:
+                        pass  # IMDb rating is optional enrichment
 
         # 2. Enrich with trailer: try YouTube first, then fallback to trailer service
         trailer_info = None

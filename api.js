@@ -102,6 +102,12 @@
       return postJSON('/api/download', body);
     },
 
+    /* ---- suggest ---- */
+    async suggest(filters) { return postJSON('/api/suggest', filters); },
+    async suggestDetail(tmdbId, mediaType) {
+      return getJSON('/api/suggest/detail/' + encodeURIComponent(tmdbId) + '?media_type=' + encodeURIComponent(mediaType || 'movie'));
+    },
+
     /* ---- shared (both paths) ---- */
     async getConfig()        { return getJSON('/api/config'); },
     async getLibrary()       { return getJSON('/api/library'); },

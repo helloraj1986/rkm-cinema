@@ -16,7 +16,7 @@ import json, os, re, subprocess, sys, time, urllib.request, urllib.parse
 WL = "/workspace/media/watchlist.json"
 ENV = "/workspace/media/.env"
 TOKEN_CACHE = "/workspace/media/.tvdb_token"
-BASE = "/workspace/media/watchlist"
+BASE = "/workspace/projects/rkm-cinema"
 
 def load_env():
     env = {}

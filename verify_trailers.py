@@ -15,7 +15,7 @@ Usage:
 import json, os, re, subprocess, sys, time, urllib.request, urllib.parse
 
 WL = "/workspace/media/watchlist.json"
-BASE = "/workspace/media/watchlist"
+BASE = "/workspace/projects/rkm-cinema"
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/126.0 Safari/537.36")
 

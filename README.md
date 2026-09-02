@@ -46,7 +46,7 @@ A clean, maintainable media recommendation and download orchestration system for
 ## Project Structure
 
 ```text
-/workspace/media/watchlist/
+/workspace/projects/rkm-cinema/
 ├── config/
 │   └── settings.py          # Centralized configuration (Config singleton, env-based)
 ├── core/
@@ -176,14 +176,14 @@ SONARR_QUALITY_PROFILE_ID=...
 
 ### Development (Sandbox)
 ```bash
-cd /workspace/media/watchlist
+cd /workspace/projects/rkm-cinema
 python3 scripts/rebuild_dashboard.py
 python3 -m api.main  # Runs on :8000
 ```
 
 ### Production (RKM-HP Windows)
 ```powershell
-cd D:\hermes_agent\hermes-workspace\media\watchlist
+cd D:\hermes_agent\hermes-workspace\projects\rkm-cinema
 .\setup-watchlist.ps1
 ```
 
@@ -232,7 +232,7 @@ Note: This script is kept as a fallback; primary trailer enrichment now happens 
 ## Running Tests
 
 ```bash
-cd /workspace/media/watchlist
+cd /workspace/projects/rkm-cinema
 pytest tests/ -v
 ```
 
@@ -248,10 +248,10 @@ pytest tests/ -v
 
 ## Development Workflow
 
-1. Make changes in `/workspace/media/watchlist/`
+1. Make changes in `/workspace/projects/rkm-cinema/`
 2. Run tests: `pytest tests/ -v`
 3. Rebuild dashboard: `python3 scripts/rebuild_dashboard.py`
-4. Deploy to RKM-HP: `cd D:\hermes_agent\hermes-workspace\media\watchlist && .\setup-watchlist.ps1`
+4. Deploy to RKM-HP: `cd D:\hermes_agent\hermes-workspace\projects\rkm-cinema && .\setup-watchlist.ps1`
 5. Verify at `http://rkm-hp.tail8d5e8.ts.net:8123/`
 
 ## Troubleshooting

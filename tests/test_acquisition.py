@@ -208,3 +208,53 @@ class TestDownloadServiceThroughAcquisition:
         assert svc._acquisition is not None
         names = [p.name for p in svc._acquisition.providers]
         assert "radarr" in names and "sonarr" in names
+
+class TestSonarrTmdbOnlyNoSlowLookup:
+    """Regression guard for the 504 fix: tmdb-only series must NOT trigger the
+    live Sonarr /series/lookup (times out when indexers are down) — TMDB
+    external_ids first, then a title+year match against the cached series list."""
+
+    def _provider(self, series=None, lookup_calls=None):
+        class _FakeSonarr:
+            def __init__(self):
+                self.lookup_calls = 0
+            def get_series(self, use_cache=True):
+                return series or []
+            def get_queue(self, use_cache=True):
+                return []
+            def lookup_series_by_tmdb(self, tmdb):
+                self.lookup_calls += 1
+                return None
+            def resolve_tvdb_id(self, imdb):
+                return None
+            def health_check(self):
+                return True
+        return SonarrAcquisitionProvider(service=_FakeSonarr())
+
+    def _tmdb_only_series_ident(self, tmdb_id):
+        return MediaIdentity(media_type=MediaType.TV, tmdb_id=tmdb_id, imdb_id=None, tvdb_id=None)
+
+    def test_tmdb_only_matches_by_title_year_no_lookup(self, monkeypatch):
+        class _Series:
+            tvdbId = 81189
+            title = "Breaking Bad"
+            year = 2008
+            statistics = {"episodeFileCount": 62}
+        prov = self._provider(series=[_Series()])
+        # TMDB cannot resolve this id -> must fall through to cached title+year match.
+        monkeypatch.setattr(SonarrAcquisitionProvider, "_tvdb_via_tmdb", lambda self, tid: None)
+        # Ensure the process cache is empty for this id.
+        SonarrAcquisitionProvider._TMDB_TO_TVDB.clear()
+        st = prov.get_status(self._tmdb_only_series_ident(12345), title="Breaking Bad", year=2008)
+        assert st.record_exists is True
+        assert st.has_file is True
+        # The slow live lookup must NEVER be hit (that was the 504 root cause).
+        assert prov._svc.lookup_calls == 0
+
+    def test_unresolved_tmdb_only_not_in_series_returns_false(self, monkeypatch):
+        prov = self._provider(series=[])
+        monkeypatch.setattr(SonarrAcquisitionProvider, "_tvdb_via_tmdb", lambda self, tid: None)
+        SonarrAcquisitionProvider._TMDB_TO_TVDB.clear()
+        st = prov.get_status(self._tmdb_only_series_ident(999), title="Nope", year=2020)
+        assert st.record_exists is False
+        assert prov._svc.lookup_calls == 0

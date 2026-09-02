@@ -8,7 +8,7 @@ import subprocess
 from pathlib import Path
 
 # Add project root to path
-sys.path.insert(0, "/workspace/media/watchlist")
+sys.path.insert(0, "/workspace/projects/rkm-cinema")
 
 from config.settings import get_config
 from core.logging import setup_logging
@@ -80,8 +80,8 @@ def run_enrichment(probe: bool = False, dry_run: bool = False) -> dict:
         # Rebuild dashboard
         try:
             rebuild_result = subprocess.run(
-                ["python3", "/workspace/media/watchlist/scripts/rebuild_dashboard.py"],
-                capture_output=True, text=True, timeout=120, cwd="/workspace/media/watchlist"
+                ["python3", "/workspace/projects/rkm-cinema/scripts/rebuild_dashboard.py"],
+                capture_output=True, text=True, timeout=120, cwd="/workspace/projects/rkm-cinema"
             )
             if rebuild_result.returncode != 0:
                 logger.error("Dashboard rebuild failed: %s", rebuild_result.stderr)

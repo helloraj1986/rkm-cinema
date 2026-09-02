@@ -81,6 +81,13 @@ def request_media_endpoint(media_id: str):
     """
     result = request_media(media_id)
 
+    # A successful acquisition write changes *arr state but not watchlist.json,
+    # so the mtime key won't invalidate the reconcile cache — clear it so the
+    # next poll reflects the newly-requested record.
+    if result.success:
+        from services.reconciliation.reconciler import _clear_reconcile_cache
+        _clear_reconcile_cache()
+
     # Idempotent good outcomes (AVAILABLE / ALREADY_REQUESTED / REQUESTED).
     if result.success:
         return RequestMediaResponse(

@@ -17,6 +17,8 @@ mockable and LAN-free in tests.
 from __future__ import annotations
 
 import logging
+import os
+import time
 from dataclasses import dataclass
 from typing import Optional
 
@@ -46,6 +48,24 @@ from services.watchlist import WatchlistService
 logger = logging.getLogger("rkm.reconciliation")
 
 __all__ = ["Reconciler", "ReconcileResult", "snapshot_to_status_result"]
+
+# Process-level cache shared by the /api/status and /api/watchlist routes. The
+# reconciler builds fresh services (and empties their TTL caches) on EVERY
+# request, so without this each poll re-scans Plex and re-runs *arr lookups —
+# the 155 tmdb-only TV entries alone cost ~56s when Sonarr's indexers are down.
+# Keyed on the watchlist file mtime so a write auto-invalidates; a short TTL
+# bounds staleness after a pure acquisition write (Radarr/Sonarr add) that
+# doesn't change the file.
+_RECONCILE_CACHE: dict = {"mtime": -1, "expiry": 0.0, "result": None}
+# Longer than the 60s frontend poll so consecutive polls hit the warm cache
+# (only ~1-in-5 triggers a full reconcile); a write auto-invalidates sooner.
+RECONCILE_CACHE_TTL = 300.0  # seconds (5 min)
+
+
+def _clear_reconcile_cache() -> None:
+    _RECONCILE_CACHE["mtime"] = -1
+    _RECONCILE_CACHE["expiry"] = 0.0
+    _RECONCILE_CACHE["result"] = None
 
 
 @dataclass
@@ -125,7 +145,10 @@ class Reconciler:
         subsequent :meth:`get_snapshot`/:meth:`compute` re-reads the real state
         instead of serving stale cached scans (spec §29 invalidation on writes).
         Provider ``invalidate()`` hooks are the canonical choke-point (§43).
+        Also clears the process-level reconcile cache so a subsequent poll
+        reflects the write instead of serving a stale cached result.
         """
+        _clear_reconcile_cache()
         if self._library is not None:
             try:
                 self._library.invalidate()
@@ -182,6 +205,33 @@ class Reconciler:
                 key = f"title:{getattr(entry, 'title', '') or ''}"
             snapshots[key] = snap
         return ReconcileResult(snapshots=snapshots, indexer_issue=indexer_issue)
+
+    def compute_cached(self) -> ReconcileResult:
+        """``compute()`` wrapped in a process-level TTL cache.
+
+        ``/api/status`` and ``/api/watchlist`` (the frontend's poll targets) use
+        this so repeated 60s polls hit a warm result instead of re-reconciling
+        every title. Explicit refresh calls still use ``compute()`` directly.
+        """
+        now = time.time()
+        mtime = self._watchlist_mtime()
+        c = _RECONCILE_CACHE
+        if c["result"] is not None and c["mtime"] == mtime and now < c["expiry"]:
+            return c["result"]
+        result = self.compute()
+        c["result"] = result
+        c["mtime"] = mtime
+        c["expiry"] = now + RECONCILE_CACHE_TTL
+        return result
+
+    def _watchlist_mtime(self) -> float:
+        path = getattr(self._watchlist, "path", None)
+        if not path:
+            return 0.0
+        try:
+            return os.path.getmtime(path)
+        except Exception:
+            return 0.0
 
     # ------------------------------------------------------------- internals
     def _watchlist_entry_for(self, identity: MediaIdentity):

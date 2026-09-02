@@ -51,7 +51,12 @@ class PlexMovie:
         plex_lower = self.title.lower()
         if search_lower not in plex_lower and plex_lower not in search_lower:
             return False
-        if year is not None and self.year != year:
+        # Reject on year mismatch ONLY when the Plex item's year is known
+        # (self.year != 0). A year of 0 means Plex didn't expose it; blocking a
+        # title match on an unknown year would miss genuinely-owned titles whose
+        # Plex record lacks a release year (e.g. "Batman: The Dark Knight",
+        # year=0, vs candidate "The Dark Knight" 2008).
+        if year is not None and self.year and self.year != year:
             return False
         return True
 
@@ -97,7 +102,7 @@ class PlexShow:
         plex_lower = self.title.lower()
         if search_lower not in plex_lower and plex_lower not in search_lower:
             return False
-        if year is not None and self.year != year:
+        if year is not None and self.year and self.year != year:
             return False
         return True
 

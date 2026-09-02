@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from config.settings import get_config
 from core.logging import setup_logging
 
-from api.routes import health, config, status, download, search, library, quality, plex_thumb
+from api.routes import health, config, status, download, search, library, quality, plex_thumb, suggest
 from api.routes import media as media_routes
 from api.routes import watchlist as watchlist_routes
 from api.routes import reconcile as reconcile_routes
@@ -42,6 +42,7 @@ def create_app() -> FastAPI:
     app.include_router(library.router, prefix="/api")
     app.include_router(quality.router, prefix="/api")
     app.include_router(plex_thumb.router, prefix="/api")
+    app.include_router(suggest.router, prefix="/api")
     # Phase 10 — resource API (spec §17).
     app.include_router(media_routes.router, prefix="/api")
     app.include_router(watchlist_routes.router, prefix="/api")

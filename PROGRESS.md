@@ -1,10 +1,38 @@
 # RKM Watchlist — Session Handoff & Project Progress
 
-> Last updated: 2026-08-26 (**PRODUCTION REFACTOR in progress — Phases 1–18 done, next: Phase 19; phases 10+11 deployed. NEW: auto-add watchlist cron `1965aeb4af2e` live, weekly Mon 09:00 AEST**)
+> Last updated: 2026-08-28 (**PRODUCTION REFACTOR in progress — Phases 1–18 done, next: Phase 19; phases 10+11 deployed. NEW: auto-add watchlist cron `1965aeb4af2e` live, daily 06:00 AEST; multi-strategy TMDB discover + IMDb scores + Plex-dedup fix landed 2026-08-28**)
 > Live URL: **http://rkm-hp.tail8d5e8.ts.net:8123/** (Tailscale MagicDNS, tailnet-only — NEVER `tailscale funnel` it; page proxies /api → FastAPI which holds secrets server-side)
-> Deploy path (Windows, RKM-HP): `cd D:\hermes_agent\hermes-workspace\media\watchlist; .\setup-watchlist.ps1` — the sandbox's `/workspace` maps to `D:\hermes_agent\hermes-workspace` (9p mount, confirmed via mountinfo 2026-08-18; NOT `D:\media`). The `web`+`api` containers are on RKM-HP (Docker daemon unreachable from sandbox).
+> Deploy path (Windows, RKM-HP): `cd D:\hermes_agent\hermes-workspace\projects\rkm-cinema; .\setup-watchlist.ps1` — the sandbox's `/workspace` maps to `D:\hermes_agent\hermes-workspace` (9p mount, confirmed via mountinfo 2026-08-18; NOT `D:\media`). The `web`+`api` containers are on RKM-HP (Docker daemon unreachable from sandbox).
 > Repo: **private `rkm-watchlist` on GitHub** (github.com/helloraj1986/rkm-watchlist)
 > **Status:** ✅ **Phases 1–18 committed; 1–11 deployed.** Running site is the Phase 10+11 image (resource API + capability-driven frontend). Post-deploy user-testing bugs fixed (Dockerfile missing dirs; tmdb-only request). Backend 208 green + frontend 16 green.
+
+## ⭐ LATEST SESSION (2026-08-28) — auto-add revived + IMDb scores + Plex dedup fix ✅
+
+Three changes landed to get the watchlist unstuck (was frozen at 33 pending) and surface richer data:
+
+### 1. Multi-strategy TMDB discover (un-stuck the 33-title plateau)
+- **Symptom:** cron kept returning "0 added — all candidates already in Plex" because the generator ONLY ever queried `discover/movie` + `discover/tv` with `sort_by=popularity.desc` → always the same trending titles, which you already own.
+- **Fix** (`services/recommendation/generator.py`): new `_DISCOVER_STRATEGIES` rotation — **popular** → **top-rated** → **hidden-gems** → **recent** — picked time-based (`int(time.time()) % 4`), so consecutive runs pull from different slices of the catalog. `_discover_tmdb` applies each strategy's `sort_by` + vote filters; strategy is logged.
+- **Thresholds lowered** (`config/recommendations.yaml`): movies TMDB 7.5→**7.0**, IMDb 7.5→**7.0**, RT 80→**75**; series TMDB 7.5→**7.0**, IMDb 8.0→**7.5**, RT 85→**80**.
+- **Result:** 33 → 47 pending (14 added in first run, tv-heavy because of rotation + ownership overlap; NOT a movies-are-blocked bug). **212 tests green.**
+
+### 2. IMDb score for every title (was TMDB-only)
+- Live entries had `imdb: 0.0` because TMDB discover carries no IMDb rating.
+- **Fix:**
+  - `services/tmdb.py` — detail calls now `append_to_response="...,external_ids"`, so `get_movie_details`/`get_show_details` return the IMDb id. New **`get_imdb_rating(imdb_id)`** (cached, OMDb free tier via `www.omdbapi.com`).
+  - `services/recommendations.py` `enrich_metadata` — when TMDB yields an IMDb id, fetch + set `entry.imdb` (optional enrichment; gracefully skips failures/Mocks).
+- **Result:** batch-enriched all 47 pending → **46 have IMDb scores** (1 missing: 2026 Avatar, no IMDb page yet). **212 tests green (incl. a Mock-guard update in `test_e2e_recommendation.py`).**
+
+### 3. Plex dedup gap — owned titles could still be auto-added (fixed)
+- **Symptom:** user flagged "The Dark Knight is already in my movies" after an auto-add — it (and 2 others) slipped through the Plex gate.
+- **Root cause, two bugs in the matcher:**
+  1. `services/library/plex.py` — the fuzzy subtitle fallback was **gated to title-only candidates** (`if not (identity.imdb_id or identity.tmdb_id)`). An id-bearing candidate whose Plex item exposes **no provider ids** AND has a title variant (`Batman: The Dark Knight` vs `The Dark Knight`) was treated as absent.
+  2. `services/plex.py` `matches()` — strict year check (`if year is not None and self.year != year`) rejected a title match when the Plex item's year is **unknown (`0`)** (Dark Knight's Plex record has year=0 → failed vs candidate 2008).
+- **Fix:** fuzzy substring fallback now runs for **any** candidate still having a title after the O(1) id + exact-title lookups miss (genuine last resort); `matches()` only rejects on year when the Plex item's year is actually **known** (`self.year != 0`). Applied to both `PlexMovie` and `PlexShow`.
+- **Result:** The Dark Knight now correctly resolves to Plex `Batman: The Dark Knight`. Removed the 3 wrongly-added owned titles (**The Dark Knight, Avatar Aang 2026, Disclosure Day 2026**). Swept all pending — remaining 52 are legitimately new. **212 tests green.**
+
+### Note — cron wrapper count
+The auto-add job `1965aeb4af2e` is **`no_agent`** → it runs the shell wrapper `~/.hermes/scripts/rkm_watchlist_auto_add.sh` (NOT the Hermes prompt). The wrapper hardcodes `--count 20`; the strategy/threshold/dedup changes take effect there automatically (they're in the .py/.yaml it imports), but **`--count 30` would need a wrapper edit**. Cron schedule shown as `0 6 * * *` (daily 06:00 AEST).
 
 ## ▶ AUTO-ADD WATCHLIST CRON (2026-08-25) ✅ live
 
@@ -22,7 +50,7 @@
 - **Manual live run occurred 2026-08-25** (during wrapper testing — NOT a pre-approved live run): added **15 titles** to the real watchlist as pending (7 films incl. recent 2026 release like Avatar Aang/Toy Story 5/Odyssey; 8 series incl. Rick & Morty, Grey's Anatomy, Simpsons, NCIS, CSI). Watchlist now **32 pending** (17 prior + 15 new). Plex gate skipped 10 owned. **Reversible** — remove pending tmdb ids if unwanted.
 
 ### Operations
-- **Dry-run preview (no writes):** `cd /workspace/media/watchlist && python3 scripts/add_watchlist_cron.py --dry-run`
+- **Dry-run preview (no writes):** `cd /workspace/projects/rkm-cinema && python3 scripts/add_watchlist_cron.py --dry-run`
 - **Live write:** `python3 scripts/add_watchlist_cron.py --count 20` (adds pending + rebuilds dashboard; runs against `/workspace/media/watchlist.json`)
 - **Cron:** Hermes job `1965aeb4af2e` (weekly Mon 09:00 AEST). Pause/remove via cron. Wrapper at `~/.hermes/scripts/rkm_watchlist_auto_add.sh`.
 
@@ -159,7 +187,7 @@ Two compounding backend bugs (modular API, both deployed):
 
 **⚠️ DEPLOY REQUIRED on RKM-HP** to ship both fixes into the running image:
 ```powershell
-cd D:\hermes_agent\hermes-workspace\media\watchlist
+cd D:\hermes_agent\hermes-workspace\projects\rkm-cinema
 .\setup-watchlist.ps1
 ```
 Then hard-refresh the page (Ctrl+Shift+R). Verify `/api/status` returns <5s and owned titles show Watch Now instead of Download.
@@ -176,7 +204,7 @@ Then hard-refresh the page (Ctrl+Shift+R). Verify `/api/status` returns <5s and 
 - **New regression tests `tests/test_watch_links.py`** (7) + 2 library-cache tests in `test_plex_ownership.py` → **46 pure-logic tests pass**. Asserts: no app.plex.tv, raw `/library/metadata/`, numeric plexKey, Tailscale default fallback, search fallback, cached-scan reuse.
 - **Live-verified:** available titles now emit `https://rkm-hp.tail8d5e8.ts.net:32400/web/index.html#!/server/7780f…/details?key=/library/metadata/320819` (web UI HTTP 200) + Emby item links.
 
-**⚠️ DEPLOY REQUIRED on RKM-HP** (same as above): `cd D:\hermes_agent\hermes-workspace\media\watchlist; .\setup-watchlist.ps1`, then hard-refresh.
+**⚠️ DEPLOY REQUIRED on RKM-HP** (same as above): `cd D:\hermes_agent\hermes-workspace\projects\rkm-cinema; .\setup-watchlist.ps1`, then hard-refresh.
 **Optional .env addition (not required — defaults work):** `PLEX_BROWSER_URL=https://rkm-hp.tail8d5e8.ts.net:32400` and `EMBY_BROWSER_URL=https://rkm-hp.tail8d5e8.ts.net:8096` if you want them explicit.
 
 ## ⚡ HOW TO PICK UP WORK HERE
@@ -361,7 +389,7 @@ Then hard-refresh the page (Ctrl+Shift+R). Verify `/api/status` returns <5s and 
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-## File inventory (`/workspace/media/watchlist/`)
+## File inventory (`/workspace/projects/rkm-cinema/`)
 
 | File | Purpose |
 |---|---|
@@ -512,14 +540,14 @@ Endpoint shapes NOT yet live-verified from the sandbox (oEmbed blocked; use `scr
 
 ## Operations
 
-- **Rebuild dashboard:** `cd /workspace/media/watchlist && python3 scripts/rebuild_dashboard.py`
+- **Rebuild dashboard:** `cd /workspace/projects/rkm-cinema && python3 scripts/rebuild_dashboard.py`
 - **Rebuild + verify:** `python3 rebuild_verify.py` (legacy, still works)
 - **Repair if corrupted:** `python3 fix_all.py` (legacy)
 - **TVDB enrich:** `python3 scripts/enrich_trailers.py` (probe first: `--probe`)
 - **Auto-complete:** `python3 scripts/auto_complete.py [--dry-run]`
 - **Daily recommendations:** `python3 scripts/daily_recommendations.py [--candidates file.json] [--dry-run]`
-- **Deploy (Windows PowerShell):** `cd D:\hermes_agent\hermes-workspace\media\watchlist; .\setup-watchlist.ps1` — REQUIRED to ship api.py changes (image rebuild); frontend files go live via volume mount immediately.
-- **Run tests:** `cd /workspace/media/watchlist && pytest tests/ -v`
+- **Deploy (Windows PowerShell):** `cd D:\hermes_agent\hermes-workspace\projects\rkm-cinema; .\setup-watchlist.ps1` — REQUIRED to ship api.py changes (image rebuild); frontend files go live via volume mount immediately.
+- **Run tests:** `cd /workspace/projects/rkm-cinema && pytest tests/ -v`
 - **Cron:** job `0cd1d3c2c872` "RKM Watchlist daily rec", `0 18 * * *` AEST, LLM-driven, loads `weekly-media-recommendations` skill. Prompt updated 2026-08-18: Plex-first library check, r.jina.ai score verification, qBittorrent-aware. Approval always the user's — cron never POSTs to *arr.
 
 ---
@@ -539,6 +567,12 @@ Endpoint shapes NOT yet live-verified from the sandbox (oEmbed blocked; use `scr
 
 ## Lessons log
 
+- **2026-08-28 (auto-add + dedup):**
+  - **A single-source TMDB discover plateaus fast.** `discover/*` with only `popularity.desc` always returns your owned trending titles — the op looks "broken" (0 added) when it's really converging. Rotate strategies (popular/top-rated/hidden-gems/recent) so fresh candidates keep flowing.
+  - **Never gate a title-matching fallback on the candidate carrying an id.** `PlexLibraryProvider.find()` skipped its fuzzy-substring fallback for id-bearing candidates, assuming id absence was authoritative — but Plex items often expose **no provider ids** (`provider_ids()={}`), so an owned title with a title variant (`Batman: The Dark Knight` vs `The Dark Knight`) was treated as unowned and re-added. Run the substring fallback as a genuine last resort for ANY candidate still lacking a match.
+  - **Treat Plex `year=0` as "unknown", not a hard mismatch.** `matches()` rejected a title match whenever `self.year != candidate_year` — including year=0 (unknown). Only reject when the Plex year is actually known. Explicitly: `if year is not None and self.year and self.year != year`.
+  - **TMDB discover yields no IMDb rating** — need `external_ids` on the detail call + a lookup (OMDb free tier) to show IMDb scores. Keep it optional/manually-guarded so Mocks/failures don't crash the enrich pipeline.
+  - **`no_agent` cron runs the shell wrapper, not the Hermes prompt** — editing the job prompt changes nothing. To change `--count`, edit `~/.hermes/scripts/rkm_watchlist_auto_add.sh`.
 - **2026-08-17:** `esc()` must `String(s ?? '')` (silent blank-page crash); posters center via `object-position`; atomic writes + publish guard against corruption; sandbox has NO Docker access (PS deploys) + inline mega-commands get blocklisted → write `.py` scripts.
 - **2026-08-18:**
   - **PS 5.1 parse errors = encoding, not syntax.** UTF-8-no-BOM `.ps1` with em-dashes breaks: byte 0x94 reads as a smart quote, terminating strings mid-line ("missing terminator"). Scripts for Windows must be pure ASCII + CRLF.

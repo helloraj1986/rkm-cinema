@@ -36,3 +36,15 @@ Thumbs.db
 
 # Container
 docker-compose.override.yml
+
+# Working backups / scratch
+*.backup
+*.backup2
+*.backup3
+*.bak
+*.orig
+*.before*
+*.before_sed
+*.tmp
+cinemagoer.db
+app.js.bak3

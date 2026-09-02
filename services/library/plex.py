@@ -70,11 +70,16 @@ class PlexLibraryProvider(LibraryProvider):
             if match:
                 return match
 
-        # 3. Fuzzy substring fallback, only when the candidate has no provider id
-        #    (title-only). Id-bearing candidates are authoritatively absent here:
-        #    the index was exhaustive for ids + normalized titles, so we keep the
-        #    common recommendation-path miss O(1) instead of a linear walk.
-        if not (identity.imdb_id or identity.tmdb_id) and title:
+        # 3. Fuzzy substring fallback as a last resort. Runs for ANY candidate
+        #    that still has a title after the O(1) id + exact-title lookups
+        #    both missed. Previously gated to title-only candidates, which was
+        #    WRONG: an id-bearing candidate whose Plex item exposes no provider
+        #    ids (provider_ids={}) is NOT authoritatively absent — the id-index
+        #    simply has no entry for it, yet the exact-title match can also fail
+        #    on a title variant (e.g. candidate "The Dark Knight" vs Plex
+        #    "Batman: The Dark Knight"). Fall back to a substring walk so those
+        #    genuinely-owned titles are not re-added to the watchlist.
+        if title:
             for item in items:
                 if item.matches(title, year):
                     return self._match_from(item, identifier_key)

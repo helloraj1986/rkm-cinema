@@ -9,7 +9,7 @@ from pathlib import Path
 
 # Add project root to path
 import sys
-sys.path.insert(0, "/workspace/media/watchlist")
+sys.path.insert(0, "/workspace/projects/rkm-cinema")
 
 from config.settings import get_config
 from services import WatchlistService, WatchlistEntry
@@ -114,7 +114,7 @@ def build():
         raise SystemExit("REFUSED to publish: 0 cards. Keeping last good dashboard-data.json.")
 
     # Asset guard: never ship a shell that references missing assets
-    BASE = Path("/workspace/media/watchlist")
+    BASE = Path("/workspace/projects/rkm-cinema")
     for asset in ("app.css", "app.js"):
         if not (BASE / asset).exists():
             raise SystemExit(f"REFUSED to publish: missing {asset}. Install it before building.")

@@ -8,7 +8,7 @@ Tailscale command (C).
 Windows: run PowerShell as Administrator once:
 ```powershell
 # one-time service install (runs at logon, survives logoff/reboot)
-schtasks /Create /TN "RKM Watchlist" /TR "powershell -NoProfile -WindowStyle Hidden -Command \"Start-Process python -ArgumentList '-m','http.server','8123','--bind','127.0.0.1','--directory','D:\hermes_agent\hermes-workspace\media\watchlist'\" -WindowStyle Hidden" /SC ONLOGON /RL HIGHEST /F
+schtasks /Create /TN "RKM Watchlist" /TR "powershell -NoProfile -WindowStyle Hidden -Command \"Start-Process python -ArgumentList '-m','http.server','8123','--bind','127.0.0.1','--directory','D:\hermes_agent\hermes-workspace\projects\rkm-cinema'\" -WindowStyle Hidden" /SC ONLOGON /RL HIGHEST /F
 ```
 Note: needs Python on Windows (`python --version`). If missing, use option B.
 
@@ -18,12 +18,12 @@ Note: needs Python on Windows (`python --version`). If missing, use option B.
 services:
   watchlist:
     image: nginx:alpine
-    container_name: rkm-watchlist
+    container_name: rkm-cinema
     restart: unless-stopped
     ports:
       - "127.0.0.1:8123:80"
     volumes:
-      - D:\media\watchlist:/usr/share/nginx/html:ro
+      - D:\hermes_agent\hermes-workspace\projects\rkm-cinema:/usr/share/nginx/html:ro
 ```
 Run once: `docker compose up -d`
 
@@ -47,10 +47,10 @@ Then open on ANY device in your tailnet:
   serve (and localhost) can reach it.
 
 ## Regenerating after URL change
-Edit `D:\media\watchlist\.env`:
+Edit `D:\hermes_agent\hermes-workspace\projects\rkm-cinema\.env`:
 ```
 BROWSER_RADARR_URL=http://<rkm-hp>:7878
 BROWSER_SONARR_URL=http://<rkm-hp>:8989
 ```
-then rerun: `python D:\media\watchlist\build_dashboard.py`
+then rerun: `python D:\hermes_agent\hermes-workspace\projects\rkm-cinema\build_dashboard.py`
 (or just ask me — the daily cron will pick it up next build).

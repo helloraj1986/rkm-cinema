@@ -143,7 +143,7 @@ def test_watchlist_renders_entries(mock_rec, client):
     result = Mock(indexer_issue=None)
     result.snapshots = {"tt0133093": _snap(), "tt1": _snap(media_id="tv:tmdb:2",
                        title="Ozark", year=2017, mt=MediaType.TV, status=MediaStatus.REQUESTED)}
-    mock_rec.return_value.compute.return_value = result
+    mock_rec.return_value.compute_cached.return_value = result
     r = client.get("/api/watchlist")
     assert r.status_code == 200
     body = r.json()

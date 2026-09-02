@@ -125,7 +125,7 @@ class TestRecommendationFlow:
             director="", cast=[], snippet="", poster="")) is True
         assert reco.verify_quality_gate(Candidate(
             title="Series", year=2020, category="Drama", lang="English",
-            imdb=7.5, rt=80, is_series=True, imdb_id="tt3333333", tmdb_id=33333,
+            imdb=7.0, rt=75, is_series=True, imdb_id="tt3333333", tmdb_id=33333,
             director="", cast=[], snippet="", poster="")) is False
 
 

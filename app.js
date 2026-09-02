@@ -381,6 +381,7 @@ function pickHero() {
 /* ---------------- views ---------------- */
 const VIEWS = {
   discover: renderDiscover,
+  suggest: renderSuggest,
   movies: () => renderGrid('movies'),
   tv: () => renderGrid('tv'),
   watchlist: renderWatchlist,
@@ -391,7 +392,7 @@ const VIEWS = {
 function renderHeader() {
   const pillState = SERVICES.radarr ? '' : SERVICES.sonarr ? '' : 'err';
   const updated = DATA?.updated ? `Updated ${timeAgo(DATA.updated)}` : 'No data yet';
-  const nav = [['discover', 'Discover'], ['movies', 'Movies'], ['tv', 'TV Shows'], ['watchlist', 'Watchlist'], ['downloaded', 'Downloaded']];
+  const nav = [['discover', 'Discover'], ['suggest', 'Suggest'], ['movies', 'Movies'], ['tv', 'TV Shows'], ['watchlist', 'Watchlist'], ['downloaded', 'Downloaded']];
   const navHtml = nav.map(([id, label]) =>
     `<button data-nav="${id}" class="${currentView === id ? 'active' : ''}" aria-current="${currentView === id ? 'page' : 'false'}">${label}</button>`).join('');
 
@@ -421,6 +422,7 @@ function renderHeader() {
   // mobile bottom navigation (hidden on desktop via CSS)
   const NAV_ITEMS = [
     ['discover', 'Discover', ICONS.spark],
+    ['suggest', 'Suggest', ICONS.search],
     ['movies', 'Movies', ICONS.film],
     ['tv', 'TV', ICONS.town],
     ['watchlist', 'Watchlist', ICONS.heart],
@@ -528,6 +530,341 @@ function rowMarkup(row) {
     </div>
     <div class="row">${row.items.map((e) => cardMarkup(e)).join('')}</div>
   </div>`;
+}
+
+/* ---------- suggest ---------- */
+const SUGGEST_GENRES = [
+  'Action','Adventure','Animation','Comedy','Crime','Documentary','Drama',
+  'Family','Fantasy','History','Horror','Music','Mystery','Romance','Sci-Fi',
+  'Thriller','War','Western','Kids','Reality','Talk','War & Politics',
+];
+let suggestState = {
+  results: [],
+  loading: false,
+  filters: { media_type: 'all', genres: [], year_from: null, year_to: null, min_rating: 6.0, sort_by: 'popularity.desc', count: 20 },
+};
+
+function renderSuggest() {
+  const f = suggestState.filters;
+  const genreChips = SUGGEST_GENRES.map((g) =>
+    `<button class="chip sg-chip${f.genres.includes(g) ? ' active' : ''}" data-genre="${esc(g)}">${esc(g)}</button>`
+  ).join('');
+
+  const resultsHtml = suggestState.loading
+    ? '<div class="suggest-loading"><div class="spinner"></div>Searching TMDB\u2026</div>'
+    : suggestState.results.length
+      ? `<div class="grid suggest-grid">${suggestState.results.map(suggestCardMarkup).join('')}</div>`
+      : '<div class="suggest-empty">Set your filters and hit <b>Search</b> to discover movies and series.</div>';
+
+  app.innerHTML = `<div class="view shell">
+    <div class="view-head">
+      <div><h1>Suggest</h1><div class="sub">Discover movies & series by your taste</div></div>
+    </div>
+    <div class="suggest-filters">
+      <div class="sg-row">
+        <label class="sg-label">Type</label>
+        <div class="sg-opts">
+          <button class="chip${f.media_type === 'all' ? ' active' : ''}" data-sg-type="all">All</button>
+          <button class="chip${f.media_type === 'movie' ? ' active' : ''}" data-sg-type="movie">Movies</button>
+          <button class="chip${f.media_type === 'tv' ? ' active' : ''}" data-sg-type="tv">TV Shows</button>
+        </div>
+      </div>
+      <div class="sg-row">
+        <label class="sg-label">Genres</label>
+        <div class="sg-chips" id="sgGenres">${genreChips}</div>
+      </div>
+      <div class="sg-row sg-row-inline">
+        <div class="sg-field">
+          <label class="sg-label" for="sgYearFrom">Year from</label>
+          <input class="sg-input" id="sgYearFrom" type="number" min="1900" max="2030" placeholder="e.g. 2020" value="${f.year_from || ''}">
+        </div>
+        <div class="sg-field">
+          <label class="sg-label" for="sgYearTo">Year to</label>
+          <input class="sg-input" id="sgYearTo" type="number" min="1900" max="2030" placeholder="e.g. 2025" value="${f.year_to || ''}">
+        </div>
+        <div class="sg-field">
+          <label class="sg-label" for="sgRating">Min TMDB rating</label>
+          <input class="sg-input" id="sgRating" type="number" min="0" max="10" step="0.5" value="${f.min_rating}">
+        </div>
+        <div class="sg-field">
+          <label class="sg-label" for="sgSort">Sort by</label>
+          <select class="sg-input" id="sgSort">
+            <option value="popularity.desc"${f.sort_by === 'popularity.desc' ? ' selected' : ''}>Popularity</option>
+            <option value="vote_average.desc"${f.sort_by === 'vote_average.desc' ? ' selected' : ''}>Rating</option>
+            <option value="primary_release_date.desc"${f.sort_by === 'primary_release_date.desc' ? ' selected' : ''}>Release Date</option>
+          </select>
+        </div>
+        <div class="sg-field">
+          <label class="sg-label" for="sgCount">Results</label>
+          <input class="sg-input" id="sgCount" type="number" min="5" max="50" value="${f.count}">
+        </div>
+      </div>
+      <div class="sg-row sg-actions">
+        <button class="btn btn-gold" id="sgSearch">${ICONS.search} Search</button>
+        <button class="btn btn-ghost" id="sgClear">Clear filters</button>
+        <span class="sg-count">${suggestState.results.length ? suggestState.results.length + ' results' : ''}</span>
+      </div>
+    </div>
+    <div class="suggest-results" id="sgResults">${resultsHtml}</div>
+  </div>`;
+
+  // Wire events
+  _wireSuggestEvents();
+}
+
+function suggestCardMarkup(item) {
+  const typeLabel = item.media_type === 'tv' ? 'TV' : 'MOVIE';
+  const genres = (item.genres || []).slice(0, 2).join(' \u00b7 ');
+  const badges = [];
+  if (item.tmdb_score) badges.push(`<span class="b tmdb">\u2605 ${item.tmdb_score.toFixed(1)}</span>`);
+  badges.push(`<span class="b ${item.media_type}">${typeLabel}</span>`);
+  if (item.in_watchlist) badges.push('<span class="b" style="color:var(--gold)">On Watchlist</span>');
+  if (item.in_library) badges.push('<span class="b" style="color:var(--green)">In Library</span>');
+
+  const poster = item.poster
+    ? `<img class="poster img-load" src="${esc(item.poster)}" alt="" loading="lazy" onload="this.classList.add('loaded')" referrerpolicy="no-referrer">`
+    : `<div class="poster-ph">\ud83c\udfac</div>`;
+
+  return `<article class="card suggest-card" data-tmdb-id="${item.tmdb_id}" data-type="${esc(item.media_type)}" data-title="${esc(item.title)}" tabindex="0" role="button" aria-label="${esc(item.title)} (${item.year || ''})">
+      <div class="card-inner">
+        <div class="imgbox">${poster}</div>
+        <div class="shade" aria-hidden="true"></div>
+        <div class="badges">${badges.join('')}</div>
+        <div class="card-actions">
+          <button class="btn btn-ghost btn-sm mini-btn" data-sg-add="${item.tmdb_id}" data-sg-type="${esc(item.media_type)}" aria-label="Add ${esc(item.title)} to watchlist">
+            ${item.in_watchlist ? ICONS.check + ' Added' : ICONS.down + ' Add to Watchlist'}
+          </button>
+          <button class="btn btn-gold btn-sm mini-btn" data-sg-download="${item.tmdb_id}" data-sg-type="${esc(item.media_type)}" data-sg-title="${esc(item.title)}" data-sg-year="${item.year || ''}" aria-label="Download ${esc(item.title)}">
+            ${ICONS.down} Download
+          </button>
+        </div>
+      </div>
+      <div class="card-info">
+        <div class="ci-title">${esc(item.title)}</div>
+        <div class="ci-meta">${item.year || ''} · ${genres}</div>
+      </div>
+    </article>`;
+}
+
+function _wireSuggestEvents() {
+  // Genre chips
+  $('#sgGenres')?.addEventListener('click', (e) => {
+    const chip = e.target.closest('.sg-chip');
+    if (!chip) return;
+    const g = chip.dataset.genre;
+    const f = suggestState.filters;
+    if (f.genres.includes(g)) { f.genres = f.genres.filter((x) => x !== g); chip.classList.remove('active'); }
+    else { f.genres.push(g); chip.classList.add('active'); }
+  });
+
+  // Type chips
+  $$('[data-sg-type]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      suggestState.filters.media_type = btn.dataset.sgType;
+      $$('[data-sg-type]').forEach((b) => b.classList.toggle('active', b.dataset.sgType === suggestState.filters.media_type));
+    });
+  });
+
+  // Search button
+  $('#sgSearch')?.addEventListener('click', _runSuggest);
+
+  // Clear button
+  $('#sgClear')?.addEventListener('click', () => {
+    suggestState.filters = { media_type: 'all', genres: [], year_from: null, year_to: null, min_rating: 6.0, sort_by: 'popularity.desc', count: 20 };
+    suggestState.results = [];
+    renderSuggest();
+  });
+
+  // Card results — Add / Download buttons + card-click detail modal
+  $('#sgResults')?.addEventListener('click', (e) => {
+    // Add to Watchlist button
+    const addBtn = e.target.closest('[data-sg-add]');
+    if (addBtn) {
+      e.preventDefault(); e.stopPropagation();
+      const item = suggestState.results.find((r) => r.tmdb_id === +addBtn.dataset.sgAdd);
+      if (!item) return;
+      sgAddToWatchlist(item, addBtn);
+      return;
+    }
+
+    // Download button — adds to watchlist AND triggers download
+    const dlBtn = e.target.closest('[data-sg-download]');
+    if (dlBtn) {
+      e.preventDefault(); e.stopPropagation();
+      const item = suggestState.results.find((r) => r.tmdb_id === +dlBtn.dataset.sgDownload);
+      if (!item) return;
+      sgDownload(item, dlBtn);
+      return;
+    }
+
+    // Click elsewhere on the card → open detail modal (IMDb rating + synopsis)
+    const card = e.target.closest('.suggest-card[data-tmdb-id]');
+    if (card && !e.target.closest('button')) {
+      e.preventDefault();
+      openSuggestDetail(card.dataset.tmdbId, card.dataset.type, card.dataset.title);
+    }
+  });
+}
+
+/* ---------- suggest card actions (shared by card + detail modal) ---------- */
+function sgAddToWatchlist(item, btn) {
+  if (!item || !btn) return Promise.resolve(false);
+  btn.disabled = true;
+  btn.innerHTML = ICONS.check + ' Adding\u2026';
+  return API.postJSON(`/api/suggest/add/${item.tmdb_id}?media_type=${item.media_type}`)
+    .then((resp) => {
+      if (resp.ok) {
+        item.in_watchlist = true;
+        btn.innerHTML = ICONS.check + ' Added';
+        btn.classList.add('done');
+        toast('Added to watchlist', resp.title || item.title || '');
+        return true;
+      }
+      btn.disabled = false;
+      btn.innerHTML = item.in_watchlist ? (ICONS.check + ' Added') : (ICONS.down + ' Add to Watchlist');
+      toast('Add failed', resp.message || 'unknown error', 'err');
+      return false;
+    })
+    .catch((err) => {
+      btn.disabled = false;
+      btn.innerHTML = item.in_watchlist ? (ICONS.check + ' Added') : (ICONS.down + ' Add to Watchlist');
+      toast('Add failed', err.message, 'err');
+      return false;
+    });
+}
+
+// Adds to watchlist first, then triggers the Radarr/Sonarr download.
+function sgDownload(item, btn) {
+  if (!item || !btn) return Promise.resolve(false);
+  btn.disabled = true;
+  btn.innerHTML = ICONS.down + ' Adding\u2026';
+  return API.postJSON(`/api/suggest/add/${item.tmdb_id}?media_type=${item.media_type}`)
+    .then((addResp) => {
+      if (!addResp.ok && !addResp.already) throw new Error(addResp.message || 'Failed to add to watchlist');
+      item.in_watchlist = true;
+      const mediaId = (item.media_type === 'tv' ? 'tv' : 'movie') + ':tmdb:' + item.tmdb_id;
+      return API.requestMedia(mediaId);
+    })
+    .then(() => {
+      btn.innerHTML = ICONS.check + ' Downloading';
+      btn.classList.add('done');
+      toast('Download started', item.title || '');
+      return true;
+    })
+    .catch((err) => {
+      btn.disabled = false;
+      btn.innerHTML = ICONS.down + ' Download';
+      toast('Download failed', err.message, 'err');
+      return false;
+    });
+}
+
+/* ---------- suggest card-click detail modal (issue: IMDb rating + synopsis) ---------- */
+function openSuggestDetail(tmdbId, mediaType, fallbackTitle) {
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay';
+  overlay.tabIndex = -1;
+  overlay.innerHTML = `<div class="modal suggest-detail" role="dialog" aria-modal="true" aria-label="${esc(fallbackTitle || 'Title details')}">
+    <div class="modal-back"><div class="ph">🎬</div><div class="shade" aria-hidden="true"></div>
+      <button class="modal-x" data-role="close" aria-label="Close">${ICONS.x}</button></div>
+    <div class="modal-content"><div class="suggest-detail-loading"><div class="spinner"></div>Fetching details\u2026</div></div>
+  </div>`;
+  document.body.appendChild(overlay);
+  requestAnimationFrame(() => overlay.classList.add('show'));
+  document.body.style.overflow = 'hidden';
+  overlay.focus();
+
+  const closeFn = () => { overlay.remove(); document.body.style.overflow = ''; };
+  const sel = overlay.querySelector('[data-role="close"]');
+  if (sel) sel.addEventListener('click', closeFn);
+  overlay.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeFn(); });
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) closeFn(); });
+
+  // On-demand fetch: full metadata + IMDb rating + synopsis (cached backend).
+  API.suggestDetail(tmdbId, mediaType)
+    .then((d) => {
+      if (!overlay.isConnected) return;
+      if (!d || d.ok === false) {
+        overlay.querySelector('.modal-content').innerHTML =
+          `<div class="suggest-empty">Couldn't load details for ${esc(fallbackTitle || 'this title')}.</div>`;
+        return;
+      }
+      renderSuggestDetailBody(overlay, d, fallbackTitle, closeFn);
+    })
+    .catch((err) => {
+      if (!overlay.isConnected) return;
+      overlay.querySelector('.modal-content').innerHTML =
+        `<div class="suggest-empty">Couldn't load details: ${esc(err.message)}</div>`;
+    });
+}
+
+function renderSuggestDetailBody(overlay, d, fallbackTitle, closeFn) {
+  const title = d.title || fallbackTitle || '';
+  const typeLabel = d.media_type === 'tv' ? 'TV Series' : 'Movie';
+  const meta = [d.year, d.cert, d.runtime ? fmtRuntime(d.runtime) : '', typeLabel].filter(Boolean);
+  const genres = (d.genres || []).slice(0, 4);
+  const scores = [];
+  if (d.imdb_rating > 0) scores.push(`<span class="score imdb">${ICONS.star} ${fmtRating(d.imdb_rating)} IMDb</span>`);
+  else if (d.imdb_id) scores.push('<span class="score missing">IMDb unavailable</span>');
+  if (d.tmdb_score > 0) scores.push(`<span class="score tmdb">${ICONS.star} ${fmtRating(d.tmdb_score)} TMDB</span>`);
+  const facts = [];
+  if (d.director) facts.push(['Director', d.director]);
+  if (d.cast && d.cast.length) facts.push(['Starring', d.cast.slice(0, 5).join(' · ')]);
+  if (d.vote_count) facts.push(['Votes', Number(d.vote_count).toLocaleString()]);
+  const back = d.backdrop || d.poster || '';
+  const bg = back ? `<img src="${esc(back)}" alt="" referrerpolicy="no-referrer">` : '<div class="ph">🎬</div>';
+
+  overlay.innerHTML = `<div class="modal suggest-detail" role="dialog" aria-modal="true" aria-label="${esc(title)} details">
+    <div class="modal-back">${bg}<div class="shade" aria-hidden="true"></div>
+      <button class="modal-x" data-role="close" aria-label="Close">${ICONS.x}</button></div>
+    <div class="modal-content">
+      <h2 class="modal-title">${esc(title)}</h2>
+      <div class="modal-meta">${meta.map((m) => `<span class="chip">${esc(m)}</span>`).join('')}${genres.map((g) => `<span class="chip">${esc(g)}</span>`).join('')}</div>
+      <div class="modal-scores">${scores.join('') || '<span class="score missing">No rating data yet</span>'}</div>
+      <p class="modal-overview">${esc(d.overview || 'No synopsis available yet.')}</p>
+      ${facts.length ? `<div class="modal-facts">${facts.map((f) => `<div class="fact"><div class="k">${esc(f[0])}</div><div class="v">${esc(f[1])}</div></div>`).join('')}</div>` : ''}
+      <div class="modal-actions">
+        <button class="btn btn-ghost" data-sg-detail-add>${ICONS.down} Add to Watchlist</button>
+        <button class="btn btn-gold" data-sg-detail-dl>${ICONS.down} Download</button>
+      </div>
+    </div>
+  </div>`;
+
+  overlay.focus();
+  const csel = overlay.querySelector('[data-role="close"]');
+  if (csel) csel.addEventListener('click', closeFn);
+  const item = { tmdb_id: d.id, media_type: d.media_type, title, in_watchlist: !!d.already_in_watchlist };
+  const addB = overlay.querySelector('[data-sg-detail-add]');
+  const dlB = overlay.querySelector('[data-sg-detail-dl]');
+  if (addB) addB.addEventListener('click', (e) => { e.preventDefault(); sgAddToWatchlist(item, addB); });
+  if (dlB) dlB.addEventListener('click', (e) => { e.preventDefault(); sgDownload(item, dlB); });
+}
+
+async function _runSuggest() {
+  const f = suggestState.filters;
+  // Read current input values
+  f.year_from = +$('#sgYearFrom')?.value || null;
+  f.year_to = +$('#sgYearTo')?.value || null;
+  f.min_rating = +$('#sgRating')?.value || 0;
+  f.sort_by = $('#sgSort')?.value || 'popularity.desc';
+  f.count = +$('#sgCount')?.value || 20;
+
+  suggestState.loading = true;
+  const container = $('#sgResults');
+  if (container) container.innerHTML = '<div class="suggest-loading"><div class="spinner"></div>Searching TMDB\u2026</div>';
+
+  try {
+    const resp = await API.suggest(f);
+    suggestState.results = resp.results || [];
+    suggestState.loading = false;
+    if (container) container.innerHTML = `<div class="grid suggest-grid">${suggestState.results.map(suggestCardMarkup).join('')}</div>`;
+    const countEl = document.querySelector('.sg-count');
+    if (countEl) countEl.textContent = suggestState.results.length + ' results';
+  } catch (err) {
+    suggestState.loading = false;
+    if (container) container.innerHTML = `<div class="suggest-empty">Search failed: ${esc(err.message)}</div>`;
+    toast('Suggest failed', err.message, 'err');
+  }
 }
 
 /* ---------- grid views (movies / tv) ---------- */
@@ -1263,8 +1600,9 @@ function fmtRuntime(min) {
     await refreshStatus(true);
     await loadLibrary();
     route();           // renders header + view (render() wires header controls)
-    // periodic status refresh — 15s keeps download progress feeling live
-    setInterval(() => refreshStatus(true).then(renderMinimal), 15 * 1000);
+    // periodic status refresh — 60s (each poll is a full server-side reconcile;
+    // 15s was saturating the threadpool and blowing the nginx 120s window → 504s)
+    setInterval(() => refreshStatus(true).then(renderMinimal), 60 * 1000);
   } catch (e) {
     app.innerHTML = `<div class="empty" style="margin:80px auto;max-width:500px">
       <div class="ec">🎬</div>

@@ -59,7 +59,7 @@ async function load() {
       + ' setData(d){ DATA = d; }, getData(){ return DATA; },'
       + ' suggestCardMarkup, sgAddToWatchlist, sgDownload,'
       + ' suggestHistoryPush, suggestHistoryLabel,'
-      + ' entryFromSuggestItem, pushSuggestEntryToApp,'
+      + ' entryFromSuggestItem, entryFromWatchlistEntry, pushSuggestEntryToApp,'
       + ' renderSuggestDetailBody'
       + ' };';
   run(appSrc); // init IIFE resolves against stubbed getDashboardData below
@@ -172,16 +172,29 @@ ok('suggestHistoryPush: keeps most-recent-first, dedupes, caps at 10', () => {
 ok('pushSuggestEntryToApp: upserts a TV suggest item into DATA.entries', () => {
   get('setData')({ entries: [{ id: 'movie:tmdb:99', title: 'Old', type: 'movie', tmdbId: 99 }] });
   const tvItem = { tmdb_id: 500, title: 'Succession', year: 2018, media_type: 'tv', genres: ['Drama'], poster: 'p.jpg', tmdb_score: 8.0 };
-  get('pushSuggestEntryToApp')(tvItem);
+  get('pushSuggestEntryToApp')(get('entryFromSuggestItem')(tvItem));
   const entries = get('getData')().entries;
   assert.ok(entries.length >= 2, 'should have added the TV title');
   const added = entries.find((e) => e.tmdbId === 500);
   assert.ok(added && added.type === 'tv', 'TV title must be typed tv (goes to TV Shows tab)');
   assert.ok(added && added.isSeries === true, 'isSeries must be true');
   // same title re-added must not duplicate
-  get('pushSuggestEntryToApp')(tvItem);
+  get('pushSuggestEntryToApp')(get('entryFromSuggestItem')(tvItem));
   const count = get('getData')().entries.filter((e) => e.tmdbId === 500).length;
   assert.strictEqual(count, 1, 'no duplicate');
+});
+
+ok('entryFromWatchlistEntry: builds a FULL card (trailer/director/cast/scores)', () => {
+  const w = { title: 'Succession', year: 2018, isSeries: true, tmdbId: 500, imdbId: 'tt7660850', imdb: 8.9, rt: 94,
+             poster: 'p.jpg', backdrop: 'b.jpg', genres: ['Drama'], overview: 'O', director: 'Jesse Armstrong',
+             cast: ['Brian Cox'], trailerId: 'AbCdEfGh123', tmdb_score: 8.5 };
+  const e = get('entryFromWatchlistEntry')(w);
+  assert.strictEqual(e.type, 'tv');
+  assert.strictEqual(e.trailerId, 'AbCdEfGh123', 'trailer must carry through');
+  assert.strictEqual(e.director, 'Jesse Armstrong');
+  assert.deepStrictEqual(e.cast, ['Brian Cox']);
+  assert.strictEqual(e.imdb, 8.9);
+  assert.strictEqual(e.tmdb_score, 8.5);
 });
 
 console.log('\n' + (failures === 0 ? 'ALL PASS' : failures + ' FAILURES'));

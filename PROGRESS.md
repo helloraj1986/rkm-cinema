@@ -20,7 +20,7 @@
 
 **Suggest UX round — commits `1c8d9b1` (+last 3).** All next-session tasks were taken up this session:
 1. ✅ **Search history — retain last 10.** `app.js` persists the last 10 filter sets to localStorage (`rkm_suggest_history`), rendered as clickable "Recent" chips in the Suggest tab (dedupe, most-recent-first).
-2. ✅ **Add-to-Watchlist now lands TV as a TV Series.** Adds (Add **and** Download buttons) call `pushSuggestEntryToApp()`, which upserts the title into `DATA.entries` with `type:'tv'`/`isSeries:true` so it appears in the **TV Shows** tab (and Movies/Watchlist) immediately — no longer hidden until a dashboard rebuild. From the Suggest UI now **216 pytest + phase11/18/25 node tests green** (2 new node tests: `suggestHistoryPush` dedupe/cap, `pushSuggestEntryToApp` TV upsert + no-dupe).
+2. ✅ **Add-to-Watchlist now lands TV as a TV Series.** Adds (Add **and** Download buttons) call `pushSuggestEntryToApp()`, which upserts the title into `DATA.entries` with `type:'tv'`/`isSeries:true` so it appears in the **TV Shows** tab (and Movies/Watchlist) immediately — no longer hidden until a dashboard rebuild. **Full card (not a stub):** `/api/suggest/add` now returns the enriched `entry` (poster, backdrop, genres, trailer, director, cast, imdb, tmdb_score, runtime) which the frontend maps via `entryFromWatchlistEntry()` — so a freshly-added title renders with poster + Trailer button + scores like every other card. From the Suggest UI now **216 pytest + phase11/18/25 node tests green**.
 
 Three changes landed to get the watchlist unstuck (was frozen at 33 pending) and surface richer data:
 

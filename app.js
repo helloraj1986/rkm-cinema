@@ -589,13 +589,36 @@ function entryFromSuggestItem(item) {
     added: new Date().toISOString().slice(0, 10),
   };
 }
-/* Upsert the added/requested title into the app's data source so it appears in
-   the Movies/TV/Watchlist grids on next render (e.g. navigation). No immediate
-   render() here — that would rebuild the view and close an open detail modal. */
-function pushSuggestEntryToApp(item) {
-  if (!DATA || !Array.isArray(DATA.entries)) return;
-  const id = (item.media_type === 'tv' ? 'tv' : 'movie') + ':tmdb:' + item.tmdb_id;
-  DATA.entries = [entryFromSuggestItem(item), ...DATA.entries.filter((e) => e.id !== id && String(e.tmdbId || '') !== String(item.tmdb_id || ''))];
+/* Map a full enriched WatchlistEntry (the shape /api/suggest/add returns in
+   `entry`, and exactly what's persisted to watchlist.json) onto a card-shaped
+   entry so the grid card looks complete (poster, trailer, director, cast,
+   scores) instead of a thin stub. */
+function entryFromWatchlistEntry(w) {
+  if (!w) return null;
+  const isSeries = !!w.isSeries;
+  return {
+    id: (isSeries ? 'tv' : 'movie') + ':tmdb:' + w.tmdbId,
+    title: w.title, year: w.year,
+    type: isSeries ? 'tv' : 'movie',
+    isSeries,
+    tmdbId: w.tmdbId, imdbId: w.imdbId || '', imdb: w.imdb || 0, rt: w.rt || 0,
+    poster: w.poster || '', backdrop: w.backdrop || '',
+    genres: w.genres || [], overview: w.overview || '',
+    director: w.director || '', cast: w.cast || [],
+    trailerId: w.trailerId || '',
+    tmdb_score: w.tmdb_score || 0,
+    runtime: w.runtime || 0,
+    category: w.category || 'Other',
+    added: w.added || new Date().toISOString().slice(0, 10),
+  };
+}
+/* Upsert a card-shaped entry (from resp.entry or a suggest item) into the app's
+   data source so it appears in Movies/TV/Watchlist grids on next render (e.g.
+   navigation). No render() here — that would rebuild the view / close a modal. */
+function pushSuggestEntryToApp(entry) {
+  if (!DATA || !Array.isArray(DATA.entries) || !entry || !entry.tmdbId) return;
+  const id = entry.id || '';
+  DATA.entries = [entry, ...DATA.entries.filter((e) => e.id !== id && String(e.tmdbId || '') !== String(entry.tmdbId))];
 }
 
 function renderSuggest() {
@@ -791,8 +814,9 @@ function sgAddToWatchlist(item, btn) {
         btn.innerHTML = ICONS.check + ' Added';
         btn.classList.add('done');
         toast('Added to watchlist', resp.title || item.title || '');
-        // Make it show up immediately in Movies/TV/Watchlist grids.
-        pushSuggestEntryToApp(item);
+        // Full card (poster/trailer/director/cast/scores) from the enriched
+        // entry the backend persisted; fall back to the thin suggest stub.
+        pushSuggestEntryToApp(entryFromWatchlistEntry(resp.entry) || entryFromSuggestItem(item));
         return true;
       }
       btn.disabled = false;
@@ -817,8 +841,9 @@ function sgDownload(item, btn) {
     .then((addResp) => {
       if (!addResp.ok && !addResp.already) throw new Error(addResp.message || 'Failed to add to watchlist');
       item.in_watchlist = true;
-      // Ensure the title is/becomes a watchlist entry (downloading also adds it).
-      pushSuggestEntryToApp(item);
+      // Ensure the title is/becomes a watchlist entry (downloading also adds it)
+      // with a FULL card (poster/trailer/…), not a thin stub.
+      pushSuggestEntryToApp(entryFromWatchlistEntry(addResp.entry) || entryFromSuggestItem(item));
       const mediaId = (item.media_type === 'tv' ? 'tv' : 'movie') + ':tmdb:' + item.tmdb_id;
       return API.requestMedia(mediaId);
     })

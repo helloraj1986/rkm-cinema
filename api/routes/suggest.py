@@ -97,7 +97,9 @@ def suggest_add_one(tmdb_id: int, media_type: str = "movie") -> dict:
     data = wl.load()
     for e in (data.pending or []) + (data.recommended or []):
         if e.tmdbId == tmdb_id:
-            return {"ok": True, "message": "Already in watchlist", "already": True}
+            return {"ok": True, "message": "Already in watchlist", "already": True,
+                    "title": getattr(e, "title", ""),
+                    "entry": e.to_dict() if hasattr(e, "to_dict") else None}
 
     # Fetch details from TMDB
     from services.tmdb import TMDBService
@@ -142,7 +144,8 @@ def suggest_add_one(tmdb_id: int, media_type: str = "movie") -> dict:
     try:
         enriched = svc.enrich_metadata(candidate)
         entry = svc.add_to_watchlist(enriched)
-        return {"ok": True, "message": f"Added {title} to watchlist", "title": title}
+        return {"ok": True, "message": f"Added {title} to watchlist", "title": title,
+                "entry": enriched.entry.to_dict()}
     except Exception as e:
         return {"ok": False, "message": f"Failed to add: {e}"}
 

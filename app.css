@@ -782,13 +782,14 @@ img { display: block; max-width: 100%; }
 /* ============================================================
    SUGGEST CARD ACTIONS (fix: skewed / overflowing buttons)
    ============================================================ */
-/* Stack the two actions full-width, always visible, so they are easy to
-   click and never overflow the narrow poster. Overrides the shared hidden-
-   until-hover side-by-side layout (.grid .card .card-actions). */
+/* Stack the two actions full-width so they never overflow the narrow poster,
+   but keep them HIDDEN until hover (like the other cards) so they don't cover
+   the title. On touch (no hover) they stay always-visible so they're reachable. */
 .suggest-grid .card .card-actions {
   top: auto; left: 10px; right: 10px; bottom: 40px;
   flex-direction: column; gap: 8px; padding: 0;
-  opacity: 1; transform: none;
+  opacity: 0; transform: translateY(8px);
+  pointer-events: none; /* don't intercept card/clicks while hidden */
 }
 .suggest-grid .card .card-actions .mini-btn {
   width: 100%; justify-content: center; min-height: 30px;
@@ -799,6 +800,12 @@ img { display: block; max-width: 100%; }
   color: var(--green); border-color: rgba(74, 222, 128, 0.4);
 }
 .suggest-grid .card:hover .card-actions { opacity: 1; transform: translateY(-2px); }
+@media (hover: none) {
+  .suggest-grid .card .card-actions { opacity: 1; transform: none; pointer-events: auto; }
+}
+@media (hover: hover) {
+  .suggest-grid .card:hover .card-actions { pointer-events: auto; }
+}
 
 /* ============================================================
    SUGGEST DETAIL MODAL (card click -> IMDb rating + synopsis)

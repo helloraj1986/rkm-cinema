@@ -54,11 +54,14 @@ async function load() {
 
   run(readFileSync(path.join(root, 'api.js'), 'utf8'));
   const appSrc = readFileSync(path.join(root, 'app.js'), 'utf8')
-    + ';\nglobalThis.__rkm = {'
-    + ' setSg(state){ suggestState = state; },'
-    + ' suggestCardMarkup, sgAddToWatchlist, sgDownload,'
-    + ' renderSuggestDetailBody'
-    + ' };';
+      + '; globalThis.__rkm = {'
+      + ' setSg(state){ suggestState = state; }, getSg(){ return suggestState; },'
+      + ' setData(d){ DATA = d; }, getData(){ return DATA; },'
+      + ' suggestCardMarkup, sgAddToWatchlist, sgDownload,'
+      + ' suggestHistoryPush, suggestHistoryLabel,'
+      + ' entryFromSuggestItem, pushSuggestEntryToApp,'
+      + ' renderSuggestDetailBody'
+      + ' };';
   run(appSrc); // init IIFE resolves against stubbed getDashboardData below
 
   // Stub the network layer the suggest actions / detail modal use.
@@ -149,6 +152,36 @@ ok('renderSuggestDetailBody: shows IMDb + TMDB rating + synopsis', () => {
   assert.ok(/data-sg-detail-dl/.test(rec.innerHTML), 'missing Download action');
   assert.ok(/data-sg-detail-add/.test(rec.innerHTML), 'missing Add action');
   assert.ok(/Christopher Nolan/.test(rec.innerHTML), 'missing director fact');
+});
+
+/* ---- Recent-search history (retain last 10, dedupe) ---- */
+ok('suggestHistoryPush: keeps most-recent-first, dedupes, caps at 10', () => {
+  get('setSg')({ history: [] });
+  const f = (media_type) => ({ media_type, genres: [], year_from: null, year_to: null, min_rating: 6, sort_by: 'popularity.desc', count: 20 });
+  const push = get('suggestHistoryPush');
+  const tv = f('tv');
+  for (let i = 0; i < 15; i++) push(f('all'));   // same filter repeated -> 1 entry
+  push(tv);                                        // +1
+  push(f('movie'));                                // +1
+  push(tv);                                        // duplicate moved to front (no growth)
+  const hist = get('getSg')().history;
+  assert.ok(hist.length <= 3, 'should dedupe, got ' + hist.length);
+  assert.strictEqual(hist[0].media_type, 'tv', 'most recent first');
+});
+
+ok('pushSuggestEntryToApp: upserts a TV suggest item into DATA.entries', () => {
+  get('setData')({ entries: [{ id: 'movie:tmdb:99', title: 'Old', type: 'movie', tmdbId: 99 }] });
+  const tvItem = { tmdb_id: 500, title: 'Succession', year: 2018, media_type: 'tv', genres: ['Drama'], poster: 'p.jpg', tmdb_score: 8.0 };
+  get('pushSuggestEntryToApp')(tvItem);
+  const entries = get('getData')().entries;
+  assert.ok(entries.length >= 2, 'should have added the TV title');
+  const added = entries.find((e) => e.tmdbId === 500);
+  assert.ok(added && added.type === 'tv', 'TV title must be typed tv (goes to TV Shows tab)');
+  assert.ok(added && added.isSeries === true, 'isSeries must be true');
+  // same title re-added must not duplicate
+  get('pushSuggestEntryToApp')(tvItem);
+  const count = get('getData')().entries.filter((e) => e.tmdbId === 500).length;
+  assert.strictEqual(count, 1, 'no duplicate');
 });
 
 console.log('\n' + (failures === 0 ? 'ALL PASS' : failures + ' FAILURES'));

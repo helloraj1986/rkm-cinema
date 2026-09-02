@@ -1,12 +1,26 @@
 # RKM Watchlist — Session Handoff & Project Progress
 
-> Last updated: 2026-08-28 (**PRODUCTION REFACTOR in progress — Phases 1–18 done, next: Phase 19; phases 10+11 deployed. NEW: auto-add watchlist cron `1965aeb4af2e` live, daily 06:00 AEST; multi-strategy TMDB discover + IMDb scores + Plex-dedup fix landed 2026-08-28**)
+> Last updated: 2026-09-02 (**504 / runaway-polling ROOT CAUSE FIXED + Suggest shipped + suggest UX round. Commit `e69e9f7` (perf + suggest) + `1c8d9b1` (hover buttons). NEW: 216 pytest + phase11/18/25 node tests green. DEPLOY PENDING on RKM-HP — run setup-watchlist.ps1 to bake the API changes + suggest route.**)
 > Live URL: **http://rkm-hp.tail8d5e8.ts.net:8123/** (Tailscale MagicDNS, tailnet-only — NEVER `tailscale funnel` it; page proxies /api → FastAPI which holds secrets server-side)
 > Deploy path (Windows, RKM-HP): `cd D:\hermes_agent\hermes-workspace\projects\rkm-cinema; .\setup-watchlist.ps1` — the sandbox's `/workspace` maps to `D:\hermes_agent\hermes-workspace` (9p mount, confirmed via mountinfo 2026-08-18; NOT `D:\media`). The `web`+`api` containers are on RKM-HP (Docker daemon unreachable from sandbox).
 > Repo: **private `rkm-watchlist` on GitHub** (github.com/helloraj1986/rkm-watchlist)
 > **Status:** ✅ **Phases 1–18 committed; 1–11 deployed.** Running site is the Phase 10+11 image (resource API + capability-driven frontend). Post-deploy user-testing bugs fixed (Dockerfile missing dirs; tmdb-only request). Backend 208 green + frontend 16 green.
 
-## ⭐ LATEST SESSION (2026-08-28) — auto-add revived + IMDb scores + Plex dedup fix ✅
+## ⭐ LATEST SESSION (2026-09-02) — 504 root-caused & fixed + Suggest UX round ✅
+(previous latest session: 2026-08-28 below)
+
+**Symptom:** `/api/status` + `/api/watchlist` returned **504 Gateway Timeout**; Suggest-search 404'd; the frontend hammered `/api/watchlist` every 15s.
+**RCA (measured in-sandbox):** both endpoints ran a full `Reconciler().compute()` (all 292 entries) per request — fresh services each time ⇒ empty TTL caches ⇒ Plex re-scan + *arr lookups. All **155 TV entries are tmdb-only**, and each fired a **live Sonarr `/series/lookup?term=tmdb:<id>`** that TIMED OUT (12s × 3 retries) while indexers were down (AU s115a) ⇒ **58–84s per reconcile** against a 120s nginx window; the 15s poll then saturated the uvicorn threadpool ⇒ 504 everywhere. Suggest 404 = `api/routes/suggest.py` was **untracked** → not baked into the API image.
+
+**Fixes — commit `e69e9f7`:**
+- `Reconciler.compute_cached()` — process-level result cache (TTL **300s > 60s poll**, mtime-keyed, cleared on write & on `/media/{id}/request`) now backs `/api/status` + `/api/watchlist`. **Cold 58–84s → ~18s; warm poll 0.02s.**
+- Sonarr tmdb→tvdb now via **TMDB `/tv/{id}/external_ids`** (lightweight, cached on disk at `/workspace/media/tmdb_to_tvdb.json`, 140 pre-resolved) instead of the live Sonarr lookup (the timeout source). Unresolved ids match by title+year against the cached Sonarr series list.
+- Frontend status poll **15s → 60s** (`app.js`).
+- Shipped Suggest (route + app): registered `suggest.router` in `api/main.py`, `POST /api/suggest`, `/api/suggest/add/{tmdb_id}`, `/api/suggest/detail/{tmdb_id}`.
+
+**Suggest UX round — commits `1c8d9b1` (+last 3).** All next-session tasks were taken up this session:
+1. ✅ **Search history — retain last 10.** `app.js` persists the last 10 filter sets to localStorage (`rkm_suggest_history`), rendered as clickable "Recent" chips in the Suggest tab (dedupe, most-recent-first).
+2. ✅ **Add-to-Watchlist now lands TV as a TV Series.** Adds (Add **and** Download buttons) call `pushSuggestEntryToApp()`, which upserts the title into `DATA.entries` with `type:'tv'`/`isSeries:true` so it appears in the **TV Shows** tab (and Movies/Watchlist) immediately — no longer hidden until a dashboard rebuild. From the Suggest UI now **216 pytest + phase11/18/25 node tests green** (2 new node tests: `suggestHistoryPush` dedupe/cap, `pushSuggestEntryToApp` TV upsert + no-dupe).
 
 Three changes landed to get the watchlist unstuck (was frozen at 33 pending) and surface richer data:
 
@@ -554,14 +568,14 @@ Endpoint shapes NOT yet live-verified from the sandbox (oEmbed blocked; use `scr
 
 ## Known issues / next-session checklist
 
-1. **Deploy pending**: New modular architecture NOT yet in running container → run `setup-watchlist.ps1` on RKM-HP (also picks up PLEX_TOKEN + QBITTORRENT_URL).
-2. **Radarr indexers all down** — The Father + 5 others sit at "requested"; nothing downloads until indexers recover. Radarr health check for recovery.
-3. **TVDB_API_KEY not in .env** — user has it; paste → enrich Prisoners/Nightcrawler trailerIds (still missing).
-4. **Plex check is now the ownership gate** — dashboard "Available" state (F1 task 3) will surface Plex-owned titles; currently only the cron/skill uses Plex.
-5. **Validate trailer IDs in a browser** (oEmbed blocked from sandbox).
-6. **Phone acceptance test** of the 15s-polling status UI after deploy; firewall rule for :8123 exists?
+1. **DEPLOY PENDING (urgent — unblocks 504 fix + Suggest):** run `cd D:\hermes_agent\hermes-workspace\projects\rkm-cinema; .\setup-watchlist.ps1` on RKM-HP. Bakes the API-side 504 fixes (`compute_cached`, Sonarr-tmdb→tvdb) **and** the Suggest route (`api/routes/suggest.py` is committed now). Until deployed the running container still has the old slow reconciler + a 404 on `/api/suggest`. Web-side (app.js/app.css: 60s poll, hover buttons, search history, add-to-app) go live via the volume mount without a rebuild.
+2. **Radarr/Sonarr indexers may still be down** — requested titles sit "requested"/"Waiting — search indexers down" until indexers recover (AU s115a). Not an app bug. The 504/status slowness is now decoupled from this, but a still-down indexer means downloads won't start.
+3. **TVDB_API_KEY not in .env** — user has it; optional for TMDB-first tvdb resolution (fallback only).
+4. **Verify post-deploy:** confirm `/api/watchlist` + `/api/status` return fast (<1s on a warm poll, ~18s after a write/expiry), `/api/suggest` returns 200, and TV suggestion-adds appear under **TV Shows**.
+5. **Test Suggest search history persistence** across reloads (localStorage `rkm_suggest_history`) + hover-only card buttons on desktop vs always-visible on touch.
+6. **Monitor the reconcile-cache invalidation on acquisition writes** — after a download request, next poll should reflect it quickly (mtime + route-clear).
 7. **Host path mapping:** sandbox `/workspace` = `D:\hermes_agent\hermes-workspace` (9p mount, NOT `D:\media`). Any doc/skill mentioning `D:\media\...` is stale.
-8. **Legacy cleanup** - Old files (`api.py`, `build_dashboard.py`, `tvdb_enrich.py`, `rebuild_verify.py`, `fix_all.py`, etc.) can be archived after verifying new architecture works.
+8. **Order of next-session work:** (a) push commits to GitHub, (b) deploy, (c) verify the 3 UX items above, (d) legacy-cleanup of old scripts now that suggest + resource API are the path.
 
 ---
 

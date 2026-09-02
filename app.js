@@ -542,13 +542,74 @@ let suggestState = {
   results: [],
   loading: false,
   filters: { media_type: 'all', genres: [], year_from: null, year_to: null, min_rating: 6.0, sort_by: 'popularity.desc', count: 20 },
+  history: suggestHistoryLoad(),
 };
+
+/* ---------- suggest: recent-search history (last 10, persisted) ---------- */
+const SUGGEST_HISTORY_KEY = 'rkm_suggest_history';
+function suggestHistoryLoad() {
+  try { return JSON.parse(localStorage.getItem(SUGGEST_HISTORY_KEY) || '[]'); }
+  catch (e) { return []; }
+}
+function suggestHistorySave() {
+  try { localStorage.setItem(SUGGEST_HISTORY_KEY, JSON.stringify(suggestState.history || [])); }
+  catch (e) { /* storage may be unavailable — non-fatal */ }
+}
+function suggestHistoryPush(filters) {
+  const snap = JSON.stringify(filters);
+  suggestState.history = [filters, ...(suggestState.history || []).filter((h) => JSON.stringify(h) !== snap)].slice(0, 10);
+  suggestHistorySave();
+}
+function suggestHistoryLabel(f) {
+  const parts = [];
+  if (f.media_type === 'movie') parts.push('Movies');
+  else if (f.media_type === 'tv') parts.push('TV');
+  else parts.push('All');
+  if (f.genres && f.genres.length) parts.push(f.genres.slice(0, 2).join(', ') + (f.genres.length > 2 ? ' +' : ''));
+  if (f.year_from || f.year_to) parts.push((f.year_from || '…') + '–' + (f.year_to || '…'));
+  if (f.min_rating) parts.push(f.min_rating + '\u2605');
+  parts.push(f.count ? f.count + ' results' : '');
+  return parts.filter(Boolean).join(' \u00b7 ');
+}
+
+/* Build a display entry (same shape as dashboard-data.json) from a suggest item
+   so a freshly-added title appears immediately in the Movies/TV/Watchlist grids
+   without waiting for the dashboard to be regenerated. */
+function entryFromSuggestItem(item) {
+  return {
+    id: (item.media_type === 'tv' ? 'tv' : 'movie') + ':tmdb:' + item.tmdb_id,
+    title: item.title, year: item.year,
+    type: item.media_type === 'tv' ? 'tv' : 'movie',
+    isSeries: item.media_type === 'tv',
+    tmdbId: item.tmdb_id, imdbId: item.imdb_id || '',
+    poster: item.poster || '', backdrop: item.backdrop || '',
+    genres: item.genres || [], overview: item.overview || '',
+    tmdb_score: item.tmdb_score || 0,
+    category: (item.genres && item.genres[0]) || 'Other',
+    added: new Date().toISOString().slice(0, 10),
+  };
+}
+/* Upsert the added/requested title into the app's data source so it appears in
+   the Movies/TV/Watchlist grids on next render (e.g. navigation). No immediate
+   render() here — that would rebuild the view and close an open detail modal. */
+function pushSuggestEntryToApp(item) {
+  if (!DATA || !Array.isArray(DATA.entries)) return;
+  const id = (item.media_type === 'tv' ? 'tv' : 'movie') + ':tmdb:' + item.tmdb_id;
+  DATA.entries = [entryFromSuggestItem(item), ...DATA.entries.filter((e) => e.id !== id && String(e.tmdbId || '') !== String(item.tmdb_id || ''))];
+}
 
 function renderSuggest() {
   const f = suggestState.filters;
   const genreChips = SUGGEST_GENRES.map((g) =>
     `<button class="chip sg-chip${f.genres.includes(g) ? ' active' : ''}" data-genre="${esc(g)}">${esc(g)}</button>`
   ).join('');
+
+  const histHtml = (suggestState.history && suggestState.history.length)
+    ? `<div class="sg-row sg-history"><span class="sg-label">Recent</span><div class="sg-history-chips">${suggestState.history.map((h, i) => {
+        const active = JSON.stringify(h) === JSON.stringify(f);
+        return `<button class="chip sg-hist-chip${active ? ' active' : ''}" data-hist="${i}" title="Search: ${esc(suggestHistoryLabel(h))}">${esc(suggestHistoryLabel(h))}</button>`;
+      }).join('')}</div></div>`
+    : '';
 
   const resultsHtml = suggestState.loading
     ? '<div class="suggest-loading"><div class="spinner"></div>Searching TMDB\u2026</div>'
@@ -604,6 +665,7 @@ function renderSuggest() {
         <button class="btn btn-ghost" id="sgClear">Clear filters</button>
         <span class="sg-count">${suggestState.results.length ? suggestState.results.length + ' results' : ''}</span>
       </div>
+      ${histHtml}
     </div>
     <div class="suggest-results" id="sgResults">${resultsHtml}</div>
   </div>`;
@@ -668,6 +730,17 @@ function _wireSuggestEvents() {
   // Search button
   $('#sgSearch')?.addEventListener('click', _runSuggest);
 
+  // Recent-search chip -> load that filter set + run
+  $$('.sg-hist-chip').forEach((chip) => {
+    chip.addEventListener('click', () => {
+      const h = suggestState.history && suggestState.history[+chip.dataset.hist];
+      if (!h) return;
+      suggestState.filters = JSON.parse(JSON.stringify(h));
+      renderSuggest();  // repopulate the input fields + active chips from filters
+      _runSuggest();    // reads the (now-populated) inputs
+    });
+  });
+
   // Clear button
   $('#sgClear')?.addEventListener('click', () => {
     suggestState.filters = { media_type: 'all', genres: [], year_from: null, year_to: null, min_rating: 6.0, sort_by: 'popularity.desc', count: 20 };
@@ -718,6 +791,8 @@ function sgAddToWatchlist(item, btn) {
         btn.innerHTML = ICONS.check + ' Added';
         btn.classList.add('done');
         toast('Added to watchlist', resp.title || item.title || '');
+        // Make it show up immediately in Movies/TV/Watchlist grids.
+        pushSuggestEntryToApp(item);
         return true;
       }
       btn.disabled = false;
@@ -742,6 +817,8 @@ function sgDownload(item, btn) {
     .then((addResp) => {
       if (!addResp.ok && !addResp.already) throw new Error(addResp.message || 'Failed to add to watchlist');
       item.in_watchlist = true;
+      // Ensure the title is/becomes a watchlist entry (downloading also adds it).
+      pushSuggestEntryToApp(item);
       const mediaId = (item.media_type === 'tv' ? 'tv' : 'movie') + ':tmdb:' + item.tmdb_id;
       return API.requestMedia(mediaId);
     })
@@ -857,6 +934,7 @@ async function _runSuggest() {
     const resp = await API.suggest(f);
     suggestState.results = resp.results || [];
     suggestState.loading = false;
+    suggestHistoryPush(JSON.parse(JSON.stringify(f)));
     if (container) container.innerHTML = `<div class="grid suggest-grid">${suggestState.results.map(suggestCardMarkup).join('')}</div>`;
     const countEl = document.querySelector('.sg-count');
     if (countEl) countEl.textContent = suggestState.results.length + ' results';

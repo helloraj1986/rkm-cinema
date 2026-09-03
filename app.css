@@ -421,16 +421,18 @@ img { display: block; max-width: 100%; }
   .card .dl-state { display: none; }
 }
 
-/* --- In-Plex tick badge: bright-orange check instead of "Available in Plex" text --- */
+/* --- In-Plex tick badge: small, subtle but legible orange check; replaces the
+       old "Available in Plex" text line. Kept warm (#f39c2d) so it stays visible
+       over dark posters without the loud neon glow. --- */
 .card .plex-check {
   position: absolute; top: 8px; right: 8px; z-index: 6;
-  width: 34px; height: 34px; border-radius: 50%;
+  width: 24px; height: 24px; border-radius: 50%;
   display: grid; place-items: center; padding: 0;
-  color: #1a1003; font-weight: 900; line-height: 1;
-  background: radial-gradient(circle at 32% 28%, #ffc04d, #ff9500 52%, #f57600);
-  box-shadow: 0 4px 16px rgba(255, 140, 0, 0.55), inset 0 0 0 2px rgba(255, 255, 255, 0.28);
+  color: rgba(26, 16, 3, 0.92); font-weight: 900; line-height: 1;
+  background: linear-gradient(150deg, #ffc36a, #f39c2d 55%, #e07f0f);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4), inset 0 0 0 1px rgba(255, 255, 255, 0.3);
 }
-.card .plex-check svg { width: 18px; height: 18px; stroke-width: 3.2; }
+.card .plex-check svg { width: 13px; height: 13px; stroke-width: 3; }
 
 /* --- Stacked hover actions for in-Plex cards (Watch on Plex + Trailer) --- */
 .card .card-actions.stacked { flex-direction: column; align-items: center; gap: 6px; }

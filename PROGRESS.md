@@ -1,10 +1,26 @@
 # RKM Watchlist — Session Handoff & Project Progress
 
-> Last updated: 2026-09-02 (**504 / runaway-polling ROOT CAUSE FIXED + Suggest shipped + suggest UX round. NEW: canonical store migrated JSON→SQLite at `/workspace/media/watchlist.db` — survives rebuilds. Commits `d7c9a10` + pending sqlite/synopsis work. 216 pytest + phase11/18/25 node green.**)
+> Last updated: 2026-09-02 (**UI round: lazy-load grids + smooth card hover/zoom + in-Plex orange tick & hover actions. NEW: canonical store migrated JSON→SQLite at `/workspace/media/watchlist.db` — survives rebuilds. 216 pytest + phase11/18/25 node green.**)
 > Live URL: **http://rkm-hp.tail8d5e8.ts.net:8123/** (Tailscale MagicDNS, tailnet-only — NEVER `tailscale funnel` it; page proxies /api → FastAPI which holds secrets server-side)
 > Deploy path (Windows, RKM-HP): `cd D:\hermes_agent\hermes-workspace\projects\rkm-cinema; .\setup-watchlist.ps1` — the sandbox's `/workspace` maps to `D:\hermes_agent\hermes-workspace` (9p mount, confirmed via mountinfo 2026-08-18; NOT `D:\media`). The `web`+`api` containers are on RKM-HP (Docker daemon unreachable from sandbox).
 > Repo: **private `rkm-cinema` on GitHub** (github.com/helloraj1986/rkm-cinema)
 > **Status:** ✅ **Phases 1–18 committed. SQLite is now the AUTHORITATIVE watchlist store** (`WATCHLIST_STORE=sqlite`, DB on the shared `/workspace/media` volume so it survives every rebuild). `watchlist.json` is now a generated mirror/export, NOT authoritative. **DEPLOY PENDING on RKM-HP** to bake the 504/suggest API fixes + the SQLite store into the running image (`setup-watchlist.ps1`). Frontend-only (app.js synopsis fix) is already live via the volume mount.
+
+## ▶ LATEST SESSION (2026-09-02, UI round) — lazy-load grids + smooth hover + in-Plex tick ✅
+
+Frontend-only round (volume-mounted → **live on hard-refresh, no rebuild needed**). `app.js`/`app.css` only; backend + tests unchanged. 216 pytest + phase11/18/25 node green.
+
+**1. Lazy loading (infinite scroll) for all big grids.** Movies, TV Shows, Watchlist and Downloaded now render the first **36** cards and append the next batch via an `IntersectionObserver` on a `#gridMore` sentinel (`rootMargin 900px`, i.e. prefetch just ahead of the viewport) until exhausted. DOM stays light for 296 titles. Genre filter in Movies/TV now **source-filters + re-renders** (was display-toggling, which couldn't work with lazy rendering). Sort/chips in Watchlist still full re-render. Keyboard arrow-nav delegated to `app` so it works on lazy-appended cards too.
+
+**2. Smooth card hover/zoom.** `.card` + `.card img.poster` transitions switched from the snappy default ease to `cubic-bezier(0.22, 1, 0.36, 1)` (0.34s card, 0.55s poster zoom) + `will-change: transform` — lift and pinch now ease smoothly.
+
+**3. In-Plex cards → bright-orange tick + hover actions.** Cards whose title is already in Plex (`state available|downloaded`) now show a **bright-orange circular tick** (top-right, glowing `#ff9500` radial) instead of the old translucent "✓ Available in Plex" text line. On hover the card-actions reveal **Watch on Plex** (gold) + **Trailer** stacked vertically, and the hover buttons got a solid dark blur backdrop + border + shadow so they read cleanly over bright posters. Emby-only cards get a purple Watch-on-Emby substitute. Reused the existing delegated click handling (`data-act=watch-plex|watch-emby|trailer`) — no new event wiring.
+
+**Files:** `app.js` (`cardMarkup` in-Plex branch, `initLazyGrid/lazyAppend/lazyTeardown`, `renderGrid/renderWatchlist/renderDownloaded` lazy + genre re-render, delegated arrow-keynav), `app.css` (hover easings, `.plex-check`, `.card-actions.stacked`, button contrast, `.grid-more`), and regression tests in `tests/phase18_frontend.test.mjs` (in-Plex tick + Watch-on-Plex/Trailer/no-state-text, and not-added→Download).
+
+**Deploy:** none needed — `app.js`/`app.css` are volume-mounted. Hard-refresh (Ctrl+Shift+R). Ensure the backend image is current too if you've not run `setup-watchlist.ps1` since the SQLite/504 work.
+
+---
 
 ## ▶ LATEST SESSION (2026-09-02, follow-up) — Canonical store → SQLite + Suggest fresh-add card bug ✅
 

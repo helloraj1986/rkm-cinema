@@ -329,7 +329,8 @@ img { display: block; max-width: 100%; }
   overflow: hidden; position: relative;
   background: var(--card); border: 1px solid var(--hairline);
   cursor: pointer; user-select: none;
-  transition: transform 0.22s var(--ease), box-shadow 0.25s, border-color 0.2s;
+  transition: transform 0.34s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.3s ease, border-color 0.25s ease;
+  will-change: transform;
   --card-aspect: 2 / 3;
 }
 .card-inner { aspect-ratio: var(--card-aspect); position: relative; overflow: hidden; }
@@ -339,7 +340,8 @@ img { display: block; max-width: 100%; }
 .card img.poster {
   position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center;
   background: linear-gradient(160deg, #1b202b, #101319);
-  transition: transform 0.45s var(--ease), opacity 0.3s;
+  transition: transform 0.55s cubic-bezier(0.22, 0.61, 0.36, 1), opacity 0.35s ease;
+  will-change: transform;
 }
 .card .poster-ph {
   position: absolute; inset: 0; display: grid; place-items: center;
@@ -414,8 +416,39 @@ img { display: block; max-width: 100%; }
 
 @media (hover: none) {
   .card .card-actions { opacity: 1; transform: none; top: auto; bottom: 14px; }
+  .card .card-actions.stacked { bottom: 10px; top: auto; }
   .card .ci-meta { display: none; }
   .card .dl-state { display: none; }
+}
+
+/* --- In-Plex tick badge: bright-orange check instead of "Available in Plex" text --- */
+.card .plex-check {
+  position: absolute; top: 8px; right: 8px; z-index: 6;
+  width: 34px; height: 34px; border-radius: 50%;
+  display: grid; place-items: center; padding: 0;
+  color: #1a1003; font-weight: 900; line-height: 1;
+  background: radial-gradient(circle at 32% 28%, #ffc04d, #ff9500 52%, #f57600);
+  box-shadow: 0 4px 16px rgba(255, 140, 0, 0.55), inset 0 0 0 2px rgba(255, 255, 255, 0.28);
+}
+.card .plex-check svg { width: 18px; height: 18px; stroke-width: 3.2; }
+
+/* --- Stacked hover actions for in-Plex cards (Watch on Plex + Trailer) --- */
+.card .card-actions.stacked { flex-direction: column; align-items: center; gap: 6px; }
+.card .card-actions.stacked .btn { min-width: 128px; justify-content: center; }
+
+/* Improve hover-button legibility against the poster */
+.card .card-actions .btn {
+  background: rgba(10, 12, 18, 0.82);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+}
+.card .card-actions .btn:hover { background: rgba(24, 28, 40, 0.96); }
+.card .card-actions .btn-gold {
+  color: #1a1003;
+  background: linear-gradient(135deg, #ffd089, var(--gold) 60%, #d99a3c);
+  border-color: transparent;
+  box-shadow: 0 4px 16px rgba(232, 184, 109, 0.55);
 }
 
 /* ============================================================
@@ -445,6 +478,9 @@ img { display: block; max-width: 100%; }
 .grid .card { width: 100%; }
 .grid .card .card-actions { top: 38%; }
 .grid .card .dl-state { bottom: 70px; }
+/* Lazy-load sentinel: invisible row that sits after the last rendered card; the
+   IntersectionObserver appends the next batch when it scrolls into view. */
+.grid-more { grid-column: 1 / -1; width: 100%; height: 1px; }
 
 /* ============================================================
    EMPTY STATE

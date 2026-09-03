@@ -249,19 +249,44 @@ function cardMarkup(entry, opts = {}) {
   if (entry.imdb) badges.push(`<span class="b imdb">★ ${fmtRating(entry.imdb)}</span>`);
   if (entry.rt) badges.push(`<span class="b rt">${entry.rt}%</span>`);
   badges.push(`<span class="b ${entry.type}">${entry.type === 'tv' ? 'TV' : 'MOVIE'}</span>`);
-  if (s.state === 'downloaded') badges.push('<span class="b" style="color:var(--green)">●</span>');
-  const dlBtn = downloadButton(entry, true);
-  const action = `<div class="card-actions">
-    <button class="btn btn-ghost btn-sm mini-btn" data-act="trailer" aria-label="Watch trailer for ${esc(entry.title)}">${ICONS.play} Trailer</button>
-    ${dlBtn}
-  </div>`;
+
+  // "In Plex" = already available to watch → show a bright-orange tick badge
+  // (top-right) instead of the old "Available in Plex" text, and reveal Watch
+  // on Plex + Trailer buttons on hover.
+  const inPlex = (s.state === 'available' || s.state === 'downloaded');
+  const plex = (s.watch && s.watch.plex) ? s.watch.plex : null;
+  const emby = (s.watch && s.watch.emby) ? s.watch.emby : null;
+  const plexAvail = !!(plex && plex.available);
+  const embyAvail = !!(emby && emby.available);
+
+  const plexTick = inPlex
+    ? `<span class="b plex-check" role="img" aria-label="Available in Plex" title="Available in Plex">${ICONS.check}</span>`
+    : '';
+
+  let dlBtn;
+  if (inPlex) {
+    if (plexAvail) {
+      dlBtn = `<a class="btn btn-gold mini-btn" data-act="watch-plex" data-url="${esc(plex.url || '')}" aria-label="Watch on Plex">${ICONS.play} Watch on Plex</a>`;
+    } else if (embyAvail) {
+      dlBtn = `<a class="btn btn-purple mini-btn" data-act="watch-emby" data-url="${esc(emby.url || '')}" aria-label="Watch on Emby">${ICONS.play} Watch on Emby</a>`;
+    } else {
+      dlBtn = `<button class="btn btn-green mini-btn" disabled>${ICONS.check} Available</button>`;
+    }
+  } else {
+    dlBtn = downloadButton(entry, true);
+  }
+
+  const trailerBtn = `<button class="btn btn-ghost mini-btn" data-act="trailer" aria-label="Watch trailer for ${esc(entry.title)}">${ICONS.play} Trailer</button>`;
+  const action = `<div class="card-actions${inPlex ? ' stacked' : ''}">${dlBtn}${trailerBtn}</div>`;
+
   return `<article class="card" tabindex="0" role="button" aria-label="${esc(entry.title)} (${entry.year})" data-id="${esc(entry.tmdbId)}">
     <div class="card-inner">
       <div class="imgbox">${img(entry)}</div>
       <div class="shade" aria-hidden="true"></div>
       <div class="badges">${badges.join('')}</div>
+      ${plexTick}
       ${action}
-      ${dlStateMarkup(entry)}
+      ${inPlex ? '' : dlStateMarkup(entry)}
     </div>
     <div class="card-info">
       <div class="ci-title">${esc(entry.title)}</div>
@@ -979,15 +1004,69 @@ async function _runSuggest() {
   }
 }
 
+/* ---------- lazy grid (infinite scroll) ---------- */
+// Render the first LAZY_PAGE cards immediately and append the rest as the user
+// scrolls to the #gridMore sentinel — keeps the DOM light so big lists
+// (Movies/TV/Watchlist) stay smooth. Re-initialised on every view render.
+const LAZY_PAGE = 36;
+let lazyObs = null;
+let lazyCtx = null;          // { entries, idx, gridEl }
+
+function initLazyGrid(entries) {
+  lazyTeardown();
+  const grid = $('#grid');
+  if (!grid || !Array.isArray(entries)) return;
+  const first = Math.min(LAZY_PAGE, entries.length);
+  lazyCtx = { entries, idx: first, gridEl: grid };
+  if (entries.length <= first) {
+    const sent = $('#gridMore');
+    if (sent) sent.remove();
+    return;
+  }
+  const sentinel = $('#gridMore');
+  if (!sentinel) return;
+  lazyObs = new IntersectionObserver((io) => {
+    if (io[0].isIntersecting) lazyAppend();
+  }, { rootMargin: '900px 0px' });
+  lazyObs.observe(sentinel);
+}
+
+function lazyAppend() {
+  if (!lazyCtx) return;
+  const { entries, gridEl } = lazyCtx;
+  if (lazyCtx.idx >= entries.length) { lazyTeardown(); return; }
+  const batch = entries.slice(lazyCtx.idx, lazyCtx.idx + LAZY_PAGE);
+  lazyCtx.idx += batch.length;
+  const html = batch.map((e) => cardMarkup(e)).join('');
+  const sent = $('#gridMore');
+  if (sent) sent.insertAdjacentHTML('beforebegin', html);
+  else gridEl.insertAdjacentHTML('beforeend', html);
+  if (lazyCtx.idx >= entries.length) {
+    const s = $('#gridMore');
+    if (s) s.remove();
+    lazyTeardown();
+  }
+}
+
+function lazyTeardown() {
+  if (lazyObs) { lazyObs.disconnect(); lazyObs = null; }
+  lazyCtx = null;
+}
+
 /* ---------- grid views (movies / tv) ---------- */
+let gridGenre = {};           // per-kind active genre filter (source-filtered)
+
 function renderGrid(kind) {
-  const entries = DATA.entries.filter((e) => e.type === (kind === 'tv' ? 'tv' : 'movie'));
+  let entries = DATA.entries.filter((e) => e.type === (kind === 'tv' ? 'tv' : 'movie'));
+  const gf = gridGenre[kind] || '';
+  if (gf) entries = entries.filter((e) => (e.genres || []).includes(gf));
   const title = kind === 'tv' ? 'TV Shows' : 'Movies';
   const genres = [...new Set(entries.flatMap((e) => e.genres || []))].sort();
   const gSel = `<label class="sr-only" for="gfilter">Filter by genre</label>
     <select class="select" id="gfilter" aria-label="Filter by genre"><option value="">All genres</option>${genres.map((g) => `<option value="${esc(g)}">${esc(g)}</option>`).join('')}</select>`;
+  const page = entries.slice(0, LAZY_PAGE);
   const inner = entries.length
-    ? `<div class="grid" id="grid">${entries.map((e) => cardMarkup(e)).join('')}</div>`
+    ? `<div class="grid" id="grid">${page.map((e) => cardMarkup(e)).join('')}${entries.length > LAZY_PAGE ? '<div class="grid-more" id="gridMore" aria-hidden="true"></div>' : ''}</div>`
     : emptyState(kind === 'tv' ? 'No TV series yet' : 'No movies yet', `Your ${title.toLowerCase()} will appear here as the recommendation engine adds them.`);
   app.innerHTML = `<div class="view shell">
     <div class="view-head">
@@ -997,14 +1076,11 @@ function renderGrid(kind) {
     ${inner}
   </div>`;
   const sel = $('#gfilter');
-  if (sel) sel.addEventListener('change', () => {
-    const v = sel.value;
-    $$('#grid .card').forEach((c) => {
-      const entry = entryById(c.dataset.id);
-      const show = !v || (entry.genres || []).includes(v);
-      c.style.display = show ? '' : 'none';
-    });
-  });
+  if (sel) {
+    sel.value = gf;
+    sel.addEventListener('change', () => { gridGenre[kind] = sel.value; renderGrid(kind); });
+  }
+  initLazyGrid(entries);
 }
 
 /* ---------- watchlist ---------- */
@@ -1031,8 +1107,9 @@ function renderWatchlist() {
       <option value="release">Sort: Release Date</option>
       <option value="title">Sort: Title</option>
     </select>`;
+  const page = list.slice(0, LAZY_PAGE);
   const inner = list.length
-    ? `<div class="grid" id="grid">${list.map((e) => cardMarkup(e)).join('')}</div>`
+    ? `<div class="grid" id="grid">${page.map((e) => cardMarkup(e)).join('')}${list.length > LAZY_PAGE ? '<div class="grid-more" id="gridMore" aria-hidden="true"></div>' : ''}</div>`
     : emptyState('Nothing here yet', viewFilters.type === 'downloaded' ? 'Downloaded titles will collect here when you grab something from Radarr or Sonarr.' : 'Your watchlist is empty — the daily recommendation engine will bring fresh picks.');
   app.innerHTML = `<div class="view shell">
     <div class="view-head">
@@ -1044,14 +1121,15 @@ function renderWatchlist() {
   </div>`;
   $('#wsort').value = viewFilters.sort;
   $('#wsort').addEventListener('change', (e) => { viewFilters.sort = e.target.value; renderWatchlist(); });
-  $$('#grid .card').forEach((c) => c.addEventListener('keydown', gridKeyNav));
+  initLazyGrid(list);
 }
 
 /* ---------- downloaded ---------- */
 function renderDownloaded() {
   const list = DATA.entries.filter((e) => isDownloaded(e) || isBusy(e));
+  const page = list.slice(0, LAZY_PAGE);
   const inner = list.length
-    ? `<div class="grid" id="grid">${list.map((e) => cardMarkup(e)).join('')}</div>`
+    ? `<div class="grid" id="grid">${page.map((e) => cardMarkup(e)).join('')}${list.length > LAZY_PAGE ? '<div class="grid-more" id="gridMore" aria-hidden="true"></div>' : ''}</div>`
     : emptyState('Nothing downloaded yet', 'Click Download on any title and it will flow in here automatically.');
   app.innerHTML = `<div class="view shell">
     <div class="view-head">
@@ -1059,6 +1137,7 @@ function renderDownloaded() {
     </div>
     ${inner}
   </div>`;
+  initLazyGrid(list);
 }
 
 /* ---------- library view ---------- */
@@ -1497,9 +1576,13 @@ document.addEventListener('click', (e) => {
 
 app.addEventListener('keydown', (e) => {
   const card = e.target.closest('.card');
-  if (card && (e.key === 'Enter' || e.key === ' ')) {
+  if (!card) return;
+  if (e.key === 'Enter' || e.key === ' ') {
     e.preventDefault();
     openModal(entryById(card.dataset.id));
+  } else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+    e.preventDefault();
+    gridKeyNav(e);
   }
 });
 

@@ -60,7 +60,7 @@ function loadPhase11() {
     + '\n; globalThis.__rkm = {'
     + ' setRes(map, flag=true){ RES = map; USES_RESOURCE_API = flag; },'
     + ' setLegacy(map){ LEGACY_STATUS = map; USES_RESOURCE_API = false; RES = {}; },'
-    + ' st, downloadButton, heroDownloadButton, modalDownloadButton,'
+    + ' st, downloadButton, heroDownloadButton, modalDownloadButton, cardMarkup,'
     + ' _applyRequestResult, canWatch, canDownload, mediaIdOf: API.mediaIdOf, _resFor'
     + ' };';
   run(appSrc); // init IIFE catches the failed fetch
@@ -180,6 +180,23 @@ ok('legacy fallback: /api/status available -> can_watch resource', () => {
   assert.strictEqual(s.state, 'available');
   assert.strictEqual(s.capabilities.can_watch, true);
   assert.strictEqual(s.watch.plex.url, 'https://plex/x');
+});
+
+/* card markup features: in-Plex orange tick + hover actions (feature #3) */
+ok('cardMarkup: in-Plex card -> orange tick + Watch on Plex + Trailer, no "Available in Plex" text', () => {
+  t.get('setRes')({ 'movie:tmdb:603': resource({ watch: { plex: { available: true, url: 'https://p' } } }) });
+  const html = t.get('cardMarkup')(entry());
+  assert.ok(/class="b plex-check"/.test(html), 'shows bright in-Plex tick');
+  assert.ok(/Watch on Plex/.test(html), 'hover Watch on Plex button');
+  assert.ok(/card-actions stacked/.test(html), 'stacked action layout for two buttons');
+  assert.ok(/data-act="trailer"/.test(html), 'hover Trailer button present');
+  assert.ok(!/data-role="dlstate"/.test(html), 'no "Available in Plex" state-text line on in-Plex card (replaced by the tick)');
+});
+ok('cardMarkup: not-added card -> Download action, no in-Plex tick', () => {
+  t.get('setRes')({ 'movie:tmdb:603': resource({ status: 'not_added', capabilities: { can_download: true, can_watch: false }, watch: {} }) });
+  const html = t.get('cardMarkup')(entry());
+  assert.ok(!/plex-check/.test(html), 'no in-Plex tick');
+  assert.ok(/data-act="download"/.test(html), 'Download action rendered');
 });
 
 console.log('\n' + (failures === 0 ? 'ALL PASS' : failures + ' FAILURES'));

@@ -1,7 +1,7 @@
 # RKM Cinema - one-command deploy (run from D:\hermes_agent\hermes-workspace\projects\rkm-cinema)
 # PowerShell:
 #   cd D:\hermes_agent\hermes-workspace\projects\rkm-cinema
-#   .\setup-watchlist.ps1
+#   .\run-rkm-cinema.ps1
 # Then open http://rkm-hp.tail8d5e8.ts.net:8123/ from any tailnet device.
 #
 # v2 stack: `api` (FastAPI, holds *arr/TMDB/Plex secrets) + `web` (nginx, serves the

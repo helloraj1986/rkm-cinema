@@ -104,7 +104,7 @@ def main() -> None:
     print(f"Dashboard rebuilt: {n_cards} cards from SQLite.")
 
     print("\nDone. Authoritative store = SQLite at " + db_path)
-    print("Deploy on RKM-HP to switch the container:  .\\setup-watchlist.ps1")
+    print("Deploy on RKM-HP to switch the container:  .\\run-rkm-cinema.ps1")
 
 
 if __name__ == "__main__":

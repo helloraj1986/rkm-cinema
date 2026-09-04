@@ -31,7 +31,7 @@ Access is private over **Tailscale**. Browser → nginx `:8123` → reverse-prox
 
 ## 2. Deployment topology (containers, ports, volumes, secrets)
 
-Deploy is one command on the Windows host (RKM-HP): `.\setup-watchlist.ps1` → `docker compose up -d --build`.
+Deploy is one command on the Windows host (RKM-HP): `.\run-rkm-cinema.ps1` → `docker compose up -d --build`.
 
 ```
  Browser (any Tailnet device)
@@ -130,7 +130,7 @@ It is a **writable DIRECTORY** mount, resolving to `/workspace/media` (compose l
 ├── index.html / api.js / app.js / app.css   # the SPA (volume-mounted, no rebuild on change)
 ├── dashboard-data.json         # generated snapshot the SPA loads
 ├── watchlist.json              # ⚠️ STALE mirror — the live store is SQLite
-├── Dockerfile / docker-compose.yml / nginx/default.conf / setup-watchlist.ps1
+├── Dockerfile / docker-compose.yml / nginx/default.conf / run-rkm-cinema.ps1
 ├── requirements.txt
 ├── ARCHITECTURE.md / README.md / PROGRESS.md  # ⚠️ stale (PROGRESS is huge; README/ARCH predate recent phases)
 └── archive/                    # legacy monolith api_legacy_monolith.py + old throwaway scripts
@@ -371,7 +371,7 @@ node tests/phase25_suggest_frontend.test.mjs   # frontend harnesses (node, no fr
 5. **Persist something?** → go through `WatchlistRepository` (`build_repository()`), **never** touch the DB/file directly.
 6. **Test it** → add a mockable test under `tests/`; run `python -m pytest tests/ -q`.
 7. **Regenerate the dashboard** → `python3 scripts/rebuild_dashboard.py`.
-8. **Deploy** → on RKM-HP: `cd D:\hermes_agent\hermes-workspace\projects\rkm-cinema && .\setup-watchlist.ps1`. Verify `/api/health` and the dashboard.
+8. **Deploy** → on RKM-HP: `cd D:\hermes_agent\hermes-workspace\projects\rkm-cinema && .\run-rkm-cinema.ps1`. Verify `/api/health` and the dashboard.
 
 ---
 
@@ -412,6 +412,6 @@ node tests/phase25_suggest_frontend.test.mjs   # frontend harnesses (node, no fr
 | Frontend API client | `api.js` + `app.js` |
 | Dashboard builder | `scripts/rebuild_dashboard.py` |
 | Daily auto-add (live cron) | `scripts/add_watchlist_cron.py` + host cron `1965aeb4af2e` (`0 6 * * *`) |
-| Deploy | `setup-watchlist.ps1` + `docker-compose.yml` |
+| Deploy | `run-rkm-cinema.ps1` + `docker-compose.yml` |
 
 This reference supersedes the stale `README.md`/`ARCHITECTURE.md` for day-to-day work.

@@ -233,7 +233,7 @@ with fakes — **no test touches the live LAN**.
 
 ## 12. Deployment
 
-- Deploy (RKM-HP / Windows): `.\setup-watchlist.ps1` → `docker compose up -d --build`.
+- Deploy (RKM-HP / Windows): `.\run-rkm-cinema.ps1` → `docker compose up -d --build`.
 - Two containers: `api` (FastAPI modular, holds secrets) + `web` (nginx :8123, static + `/api` proxy).
 - **Plex and Emby are both HTTPS-only** over Tailscale (`:32400` / `:8096`); deep-links must use `https://` and target the browser-reachable `PLEX_BROWSER_URL`/`EMBY_BROWSER_URL` host (see §8).
 
@@ -247,7 +247,7 @@ with fakes — **no test touches the live LAN**.
 4. **UI?** → update `app.js` (+ `api.js` if it's a new API call). Volume-mounted, no rebuild.
 5. **Test it** → add a mockable test under `tests/`; run `python -m pytest tests/ -q`.
 6. If the dashboard needs fresh data, run `scripts/rebuild_dashboard.py`.
-7. Deploy with `.\setup-watchlist.ps1`; verify `/api/health` + the dashboard.
+7. Deploy with `.\run-rkm-cinema.ps1`; verify `/api/health` + the dashboard.
 
 ---
 

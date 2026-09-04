@@ -17,6 +17,52 @@ A self-hosted **media discovery + download dashboard**. Browse your Plex library
 
 ---
 
+## Run the app (one command, Windows)
+
+```powershell
+cd D:\hermes_agent\hermes-workspace\projects\rkm-cinema
+.\run-rkm-cinema.ps1
+```
+
+That one script builds and starts both Docker containers, waits for readiness, and checks the API health:
+- `api` container — FastAPI backend on :8000 (internal, holds all secrets)
+- `web` container — nginx on **:8123**, serves the UI + proxies `/api/*` to the API
+
+Then open **http://rkm-hp.tail8d5e8.ts.net:8123** (or `http://localhost:8123` on that machine).
+
+### Windows prerequisites
+
+- **Windows 10/11 (64-bit)** with **WSL2** enabled.
+- **Docker Desktop** installed, with the **WSL2 backend**, and running (the script's `docker compose` needs it; the script exits with a clear error if Docker isn't up).
+- **PowerShell** — the script targets **Windows PowerShell 5.1**, which ships with Windows. (PowerShell 7 works too.)
+- **Git** (to clone the repo; already present if you set up the workspace).
+- **The media stack reachable on your LAN:** Plex, Radarr, Sonarr, and qBittorrent on `MEDIA_HOST` (default `192.168.65.254`). Optional: Emby, a **TMDB API key** for metadata/artwork.
+- **A configured `.env`** at the repo root — copy `.env.example` → `.env` and fill in the secrets (see [Configuration](#configuration)).
+- **Tailscale** (optional) — only needed for on-the-phone / remote access at the `rkm-hp.tail8d5e8.ts.net` URL. For phone access, also allow inbound TCP 8123 through Windows Firewall (the script prints the exact rule).
+
+If you don't use Tailscale, the dashboard is still available locally at `http://localhost:8123`.
+
+---
+
+## Run it any other way
+
+### Local dev (WSL / sandbox)
+```bash
+cd projects/rkm-cinema
+pip install -r requirements.txt
+python3 scripts/rebuild_dashboard.py   # build dashboard-data.json + index.html
+python3 -m api.main                    # FastAPI on :8000
+```
+Then serve `index.html` (or open it), pointing the UI at the API.
+
+### Docker Compose (any host with Docker)
+```bash
+cd projects/rkm-cinema
+docker compose up -d --build
+```
+
+---
+
 ## Stack
 
 | Layer | Tech |
@@ -35,7 +81,7 @@ A self-hosted **media discovery + download dashboard**. Browse your Plex library
 ├── api/             FastAPI app + routes (health, config, status, suggest, media, jobs, ...)
 ├── domain/          Business layer: state machine, media identity, status rules (single source of truth)
 ├── services/        External integrations + canonical seams: library/ acquisition/ recommendation/ reconciliation/
-├── infrastructure/  Persistence: WatchlistRepository (SQLite/JSON) 
+├── infrastructure/  Persistence: WatchlistRepository (SQLite/JSON)
 ├── jobs/            Scheduler + reconcile / daily-watchlist jobs
 ├── application/     Use-case commands (request_media)
 ├── scripts/         Host-side cron + dashboard builder (rebuild_dashboard.py)
@@ -45,40 +91,6 @@ A self-hosted **media discovery + download dashboard**. Browse your Plex library
 ```
 
 See **`ARCHITECTURE_GUIDE.md`** for the definitive architecture & agent reference.
-
----
-
-## Running the app
-
-### Prerequisites
-- Docker + Docker Compose
-- A machine on the LAN running **Plex**, **Radarr**, **Sonarr**, **qBittorrent** (and optionally **Emby**/TMDB key for metadata).
-- A `.env` file (copy `.env.example`) with the secrets, located at **`/workspace/.env`**.
-
-### Local dev (WSL / sandbox)
-```bash
-cd projects/rkm-cinema
-pip install -r requirements.txt
-python3 scripts/rebuild_dashboard.py   # build dashboard-data.json + index.html
-python3 -m api.main                    # FastAPI on :8000
-```
-Then open `index.html` (or serve it), pointing the UI at the API.
-
-### Production (Docker Compose)
-```bash
-cd projects/rkm-cinema
-docker compose up -d --build
-```
-- `api` container: FastAPI on :8000 (internal, holds all secrets)
-- `web` container: nginx on **:8123**, serves the UI + proxies `/api/*` to the API
-
-Open `http://localhost:8123` (or `http://rkm-hp.tail8d5e8.ts.net:8123` from any Tailnet device).
-
-### Deploy on the Windows host (RKM-HP)
-```powershell
-cd D:\hermes_agent\hermes-workspace\projects\rkm-cinema
-.\setup-watchlist.ps1
-```
 
 ---
 

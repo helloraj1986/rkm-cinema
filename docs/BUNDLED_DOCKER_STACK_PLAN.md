@@ -493,3 +493,79 @@ plumbing + ~1 refactor.
 The architecture already serves every `MEDIA_SERVER` value, so **none of these block the overall
 plan** — only which image the compose `profile` pulls and the §1 refactor scope. Recommend we
 resolve #1 (framing) before Phase A; once that's fixed, everything else flows.
+
+---
+
+## Appendix A — Product vision: a *Plex-style Cinema UI* (separate track from the bundle)
+
+> Captured 2026-09. **Explicitly NOT part of "bundle the stack."** This is the longer-term product
+> direction: turn RKM Cinema from a discovery/watchlist dashboard into a **Plex-inspired media
+> frontend** that plays and tracks media in-app, over the bundled (or existing) media server.
+
+### A.0 Honest verdict
+
+- **"Replicate all of Plex / look identical"** → **not realistic / not wise.** Exact parity is a
+  multi-year product effort and Plex's polish is decades of work; imitating it pixel-for-pixel is
+  risky and pointless.
+- **"A Plex-*style* RKM covering the ~80% people actually use"** → **yes, genuinely achievable** —
+  *because* the backend is API-open Jellyfin, which provides library data, per-user watched state,
+  episode structure, images, and streaming/transcode all over HTTP.
+
+### A.1 Feature tier map (Jellyfin-backed)
+
+| Capability (Plex feature) | Effort | Jellyfin source |
+|---|---|---|
+| Poster/banner library grid + backdrops | **Easy** | `/Items` + image endpoints |
+| **Continue Watching** row (resume %) | **Easy** | `UserData.PlaybackPositionTicks` → % |
+| **Watched badge / progress bar** on cards | **Easy** | `UserData.Played` |
+| **Episode list** + watched ticks + season grouping | **Medium** | per-Episode `UserData` under series |
+| **On Deck / Up Next** | **Medium** | `UserData.IsPlayed=false` filter |
+| **In-app player** (play-in-UI) | **Medium** | proxy `/Videos/…/stream` + free transcode |
+| Detail page: synopsis, cast, trailer, similar | **Medium** | items + `SimilarItems` + existing TMDB service |
+| Quality / audio-track / subtitle picker | **Medium** | `PlaybackInfo` media sources |
+| Skip-intro button | **Medium** | Jellyfin chapter data |
+| Search + filters (existing **Suggest** tab) | **Medium** | already built |
+| Multi-user login + per-user watched | **Hard** | per-user Jellyfin tokens |
+| Live "now playing" across devices | **Hard** | Jellyfin sessions/activity API |
+| **Full Plex parity** (live TV/DVR, music/Plexamp, phone apps, watch-sync, parental PINs, screen share) | **Not worth it** | Jellyfin ecosystems differ; low reuse value here |
+
+### A.2 Two ways to "look like Plex" — and the recommendation
+
+1. **Embed Jellyfin's own web UI in an iframe** — instant Plex-like UI *from Jellyfin*, but it is
+   *not RKM's UI*: no unified watchlist/recommend overlay, clunky cross-origin sessions, and it
+   defeats RKM's identity. Fallback only.
+2. **Build a Plex-style RKM UI on top of the Jellyfin API (recommended)** — the RKM backend proxies
+   + aggregates Jellyfin data (library, `UserData`, stream) while keeping RKM's orchestration
+   (watchlist / request / recommend). The frontend is a bespoke, Plex-aesthetic RKM UI. **This is
+   the only path that makes "RKM looks like Plex" real.**
+
+### A.3 The prerequisite you should accept up front
+
+The current frontend is **vanilla JS** (`app.js` ~90 KB, no build step — deliberate for zero-dependency).
+A media UI at Plex's polish level in hand-rolled vanilla JS becomes unmaintainable. Reaching a
+convincing Plex-like UI realistically requires **re-platforming the frontend to React/Next/TS**
+(what the user already builds professionally), backed by a small new Jellyfin data service in the
+`api` container. This is not optional flavor — it's what makes the aesthetic + state-heavy watching
+UI tractable.
+
+### A.4 Phased roadmap (decoupled from the bundle)
+
+- **Phase 1 — Data & state (foundation):** `JellyfinWatchedService` in `api` (watched, resume tokens,
+  per-episode), media model gains watched fields. (This is the shared base behind the **play-in-UI /
+  watched-status** capability discussed alongside §8 — the same Jellyfin stream/UserData plumbing.)
+- **Phase 2 — UI re-platform:** React/TS SPA, Plex look (dark, posters, hover actions, backdrop-blur
+  detail), replacing the vanilla SPA.
+- **Phase 3 — Player + Continue Watching:** in-app player, resume-position rows, on-deck.
+- **Phase 4 — Plex-parity extras (optional):** skip-intro, subtitle/audio/quality picker, live
+  sessions — appetite allowing.
+
+### A.5 Scope reality
+
+This is essentially **"build a Plex-clone media frontend"** — a real product, **multi-week to months**,
+and it must be **decoupled from the zero-install stack work**. Keep RKM's orchestration
+(watchlist/request/recommend) as the differentiator; Jellyfin supplies the media/state/streaming;
+the UI is a clean, Plex-inspired RKM.
+
+**End-state vision:** *"RKM Cinema = a Plex-style frontend over a bundled Jellyfin stack"* —
+auto-provisioned pipeline (request → download → import → watch/track) with a polished first-party
+UI, none of it requiring copying Plex wholesale.

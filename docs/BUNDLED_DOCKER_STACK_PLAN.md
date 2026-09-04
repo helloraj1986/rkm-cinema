@@ -60,13 +60,71 @@ Plex-primary/Emby-fallback logic becomes "the configured provider(s), in order."
 **single biggest piece of app work** and it's small because the app already isolates library work
 behind `services/library/service.py`.
 
-**Bottom line (viability):**
-- **Jellyfin default** → cleanest "clone & run," real refactor (add ~1 provider).
-- **Plex / Emby** → zero-to-minimal app change, but user pays the account/claim/licence cost and
-  it's not truly "install nothing."
+**Bottom line (viability):** all three are *viable*; they optimise for different goals. This is
+not "which is the best media server" but **"which best serves RKM Cinema as a distributable,
+zero-assembly product."** Because the app's hard-won complexity (Plex-as-source-of-truth, deep
+links, trailer routing) is backend-*specific* reuse value, "less app change" and "less user
+friction" directly trade off against each other — see the weighted scorecard below. **Decision is
+not locked yet; this section is the full weighing.**
 
-This table is the decision the doc funnels to; it's worth ~10 min of discussion before building
-(see §11).
+### 1.1 Deep dive — the three backends, judged specifically for THIS product
+
+Three different "best" answers exist depending on which goal you weight:
+
+| Goal RKM cares about | Plex | Emby | Jellyfin |
+|---|---|---|---|
+| **Fewest app-code changes** (reuse existing service) | ✅★ (0 changes; it's primary) | ✅★ (0; fallback exists) | ⚠️ (add 1 provider) |
+| **Fewest hoops for the *user*** (distribution prize) | ✗✗ (account + claim, phones home) | ✅ (no account) | ✅★ (no account, offline) |
+| **HW transcode free everywhere** | ✗ (Plex Pass paid) | ✗ (Premiere paid) | ✅★ (free, all accel) |
+| **Plays nice in a shared Compose bridge** | ✗ (wants `network_mode: host`) | ✅ | ✅★ |
+| **Client/app ecosystem for who watches** | ✅★ (best: TV/console/mobile apps) | ✅ (good) | ⚠️ (good, improving) |
+| **Availability "source of truth" inner loop** | ✅★ (already the logic) | ✅ | ⚠️ (needs provider) |
+| **Offline / no telemetry** | ✗ | ✅ | ✅★ |
+
+**Weights — what matters *for a bundled product*:** this stack's #1 claim is "clone, run, no
+assembly." So *user-friction* and *Docker-bridge cleanliness* and *hardware transcode* (the thing
+that stops a fresh 4K user immediately) outrank *app-code reuse* — because the reuse gap is a
+**one-time, small refactor on our side**, while Plex's account/claim/host-net and paid-HW-transcode
+are a **per-user, forever penalty**. On that weighting Jellyfin wins decisively; the only reason to
+prefer Plex is if the product is specifically "a Plex dashboard for people who already have Plex" —
+which is the *current* app's identity, not the bundled distribution's.
+
+**The real deciding question for us:** is this branch
+(a) **"a self-contained box you hand someone"** → Jellyfin, hands-down, or
+(b) **"a dashboard for the user's existing Plex server"** → keep Plex and *don't* bundle a media
+server at all (that's today's app, and Plex then isn't a per-user hoop because they already run it)?
+
+Note they are **opposite goals**. The proposal doc assumes (a). If the intent is actually (b), the
+"bundle a media server" premise itself should be re-examined — two Plex installs on one box is
+awkward, and your production stack already *is* the Plex server, so a fresh bundled Plex would
+duplicate it. **This framing is worth resolving before Phase A**, alongside:
+- **Hardware transcode cost/quality:** Jellyfin's free HW transcode is a decisive, cumulative win
+  for any serious library (Plex/Emby charge $120 for the identical FFmpeg pipeline + device
+  passthrough). If your users may watch 4K/HDR remotely, this matters a lot.
+- **Ecosystem for the *watching* client:** Plex's TV/console/mobile apps are polished; Jellyfin's
+  are good and free but rougher, and remote/relay access is manual (Tailscale/reverse-proxy — which
+  RKM already embraces). If the consumer of this stack is non-technical family, Plex's apps pull
+  ahead despite the account hoop.
+- **Watch-link / deep-link UX in the dashboard:** Plex and Emby deep links are already shipped and
+  user-corrected; Jellyfin's form `…/web/index.html#!/details?id=<itemId>` is trivial to add, so
+  this is not a differentiator.
+- **Frankenstein risk of re-pointing "source of truth":** switching availability authority from
+  Plex to Jellyfin touches the app's most carefully-tuned code (cached library scan, per-title
+  status). This is *contained* behind `services/library/service.py` (the reason it's only ~1 small
+  provider) but it is the one place a regression hurts the product feel.
+
+**Decision logic to present to the user:**
+1. If this is **"a self-contained box"** (goal (a)) → **Jellyfin default**, and treat Plex/Emby as
+   optional `MEDIA_SERVER` values for users who bring their own. **Most likely correct for the
+   "clone and run" brief.**
+2. If it's really **"a nicer dashboard for the user's existing Plex"** (goal (b)) → keep Plex, and
+   *drop* the "bundle a media server" premise (your production stack is already the Plex instance).
+3. If genuinely **"best app ecosystem + zero friction simultaneously"** is required → that combo
+   doesn't exist today (Plex has the apps but not the friction-freedom); pick one priority.
+
+The architecture below supports every value of `MEDIA_SERVER`, so **this decision only changes
+which image the compose `profile` pulls and how much of §1's refactor we do — not the plan
+itself.**
 
 ---
 
@@ -183,6 +241,8 @@ downloads_path = "downloads" # → ./data/downloads
 
 # ---- Media server backend (the §1 decision) ----
 [media_server]
+# DECISION PENDING — see §1.1. Default will be jellyfin (a "self-contained box", goal (a))
+# unless we decide this is really "a dashboard for an existing Plex" (goal (b)).
 backend = "jellyfin"        # jellyfin | plex | emby
 # jellyfin only:
 jellyfin_admin_user = "admin"
@@ -206,8 +266,12 @@ import_mode = "hardlink"    # hardlink | copy | move (hardlink preserves seeding
 [qbit]
 webui_port = 8080           # host + internal
 torrent_port = 6881
+# AUTH DECISION (2026-09): no-auth, matching today's app, for a bundled LAN-only stack.
+# The app's qbittorrent.py expects no-auth (on :1701 today; bundle runs qbit on :8080). If we
+# ever expose qbit externally, flip auth=true + set password AND add app-side cred support.
+auth = false
 username = "admin"
-password = "CHANGE_ME"      # if blank → provisioner generates a random one + prints it
+password = ""               # only used if auth = true
 # If you use a VPN container (AU s115a!), set this and the stack routes qbit through gluetun:
 # vpn = true
 # vpn_container = "gluetun"
@@ -226,7 +290,10 @@ prefer_synced_indexers = true   # Radarr/Sonarr use Prowlarr as a single "All" i
 # ---- Recommendation / AI-auto-add job (the question §6) ----
 [recommend]
 # The "AI agent cron job" = in-container scheduler (no host cron needed in the bundle).
-auto_add_enabled = true
+# DECISION (2026-09): default OFF — a fresh install is Suggest-tab-only (manual discovery) until
+# the user opts into automation. auto_add_enabled=false = no scheduler-driven auto-add; only the
+# periodic reconcile (reconcile_interval_min) runs to keep status/facts fresh.
+auto_add_enabled = false
 auto_add_hour = 18          # daily job time (24h)
 reconcile_interval_min = 10
 # If false, the Suggest tab (manual) is the only discovery path — no automation runs.
@@ -314,9 +381,9 @@ Today `config/settings.py` reads `.env` URLs pointing at a `MEDIA_HOST` LAN IP a
    seam that lets the provisioner "install" the app's own credentials.
 3. **Pluggable library provider** (§1) — `MEDIA_SERVER` selects `JellyfinProvider` (new) vs
    `PlexProvider`/`EmbyProvider` (existing) for availability + deep-links.
-4. **qBittorrent auth** — today `services/qbittorrent.py` assumes **no auth** (port 1701). Bundled
-   qbit should have a password. Add optional `QBITTORRENT_USERNAME/PASSWORD` support (two small
-   changes) so the stack is secure by default.
+4. **qBittorrent auth** — today `services/qbittorrent.py` assumes **no auth** (port 1701).
+   Decided: the bundled qbit stays **no-auth** (LAN-only, simple) to match the app with **zero code
+   change**. If we ever expose it externally, add optional `QBITTORRENT_USERNAME/PASSWORD` later.
 
 These four are the *only* app-code deltas. The rest of RKM (domain state machine, recommend
 criteria, request flow, trailer routing, dashboard) is untouched.
@@ -389,11 +456,13 @@ plumbing + ~1 refactor.
 - Verify with the live in-bundle stack (smoke test: add a movie end-to-end in Docker).
 
 **Phase C — app provider + config deltas**
-- `LibraryProvider` refactor, `services/library/jellyfin.py`, `MEDIA_SERVER` config, runtime-loader,
-  qBittorrent auth support. Keep all 216 existing tests green; add provider/loader tests.
+- `LibraryProvider` refactor, `services/library/jellyfin.py` (if backend=jellyfin), `MEDIA_SERVER`
+  config, runtime-loader. (No qBittorrent auth work needed — no-auth is the chosen default.) Keep
+  all 216 existing tests green; add provider/loader tests.
 
 **Phase D — recommend/auto-add wiring + polish**
-- In-container scheduler on by default (`auto_add_enabled`), reconcile always on; Suggest unchanged.
+- In-container scheduler: **auto-add OFF by default** (Suggest-first), reconcile always on;
+  `auto_add_enabled=true` turns the daily job on. Suggest unchanged.
 - Smoke test the full loop headless: TMDB discover → auto-add → Radarr/Sonarr grab → qbit → import →
   Jellyfin indexes → status flips to `available` → Watch link renders.
 
@@ -401,15 +470,26 @@ plumbing + ~1 refactor.
 
 ---
 
-## 13. Open decisions to settle before Phase A (this is what we should discuss)
+## 13. Open decisions to settle (as of 2026-09)
 
-1. **Media backend default: Jellyfin (recommended) vs Plex vs keep-always-Plex.** This is the
-   single decision that changes the refactor scope most.
-2. **qBittorrent security: password by default (recommended) vs match today's no-auth.**
-3. **AI auto-add: default ON (recommended, since you framed it "if user chooses") vs default OFF.**
-4. **Indexers:** ship a curated *public* list + let users add private keys, or default empty and
-   require the user to supply indexers? (Empty is the honest default but a worse first-run.)
-5. Any **app-name/branding** defaults you want baked into the TOML `[app]` section.
+**Settled** (your choices):
+- **AI auto-add: default OFF** — fresh install is Suggest-tab-only; reconcile stays on; user opts
+  into the daily job via `[recommend] auto_add_enabled`.
+- **qBittorrent: no-auth** (LAN-only) — matches the app, zero code change; authentication deferred.
+- **Indexers: ship a curated public list** (YTS/1337x/etc) in the config, all optional, plus slots
+  for the user's private-tracker keys.
 
-Decisions 1–4 are config that radically change the *out-of-box experience*; the architecture itself
-handles every value. Recommend we lock #1 = **Jellyfin default** and go.
+**Still open — the backend decision (see full weighing in §1.1):**
+1. **Resolve the framing:** this is a "self-contained box you hand someone" (→ Jellyfin default,
+   small provider refactor) **vs** "a dashboard for the user's existing Plex" (→ keep Plex, and
+   *drop* the bundle-a-media-server premise, since the production stack already *is* the Plex
+   server). These are opposite goals; the plan currently assumes the former.
+2. **HW-transcode priority:** free on Jellyfin, $120 on Plex/Emby — matters if users watch
+   4K/HDR remotely.
+3. **Watching-client ecosystem:** Plex apps are the most polished for non-technical family viewers;
+   Jellyfin's are good/free but rougher (remote access manual → Tailscale, which RKM already uses).
+4. **App-name/branding** defaults for the `[app]` section (so it's rebrandable on the branch).
+
+The architecture already serves every `MEDIA_SERVER` value, so **none of these block the overall
+plan** — only which image the compose `profile` pulls and the §1 refactor scope. Recommend we
+resolve #1 (framing) before Phase A; once that's fixed, everything else flows.

@@ -53,16 +53,24 @@ services:
       retries: 3
       start_period: 15s
 
-  # --- Static web UI (nginx) + reverse proxy /api -> api:8000 on one origin ---
+  # --- Web UI (nginx) + reverse proxy /api -> api:8000 on one origin ---
+  # Phase 4: multi-stage build compiles the React shell (web/Dockerfile: node ->
+  # nginx, dist baked in). The repo root is mounted separately so the LEGACY app
+  # stays reachable at /legacy/ (dashboard-data.json stays live too). API keys
+  # never reach the client — /api proxies to the api container.
   web:
-    image: nginx:alpine
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+      args:
+        VITE_ENABLE_REACT: "1"
+    image: rkm-bundled-web:latest
     container_name: rkm-bundled-web
     restart: unless-stopped
     ports:
       - "${RKM_DASHBOARD_PORT:-8124}:80"
     volumes:
-      - ./:/usr/share/nginx/html:ro
-      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./:/legacy-source:ro
     depends_on:
       - api
     networks:

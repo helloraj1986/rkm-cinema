@@ -1,11 +1,9 @@
-# build context
-node_modules
-__pycache__
-*.pyc
+# Docker build context (repo root) hygiene — keep images lean and correct.
 .git
-.venv
-venv
-rkm_shots
+**/node_modules
+web/dist
+web/node_modules
+**/__pycache__
+*.pyc
+.pytest_cache
 *.log
-*.tmp
-.DS_Store

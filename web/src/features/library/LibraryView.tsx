@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useLibraryItems, useContinueWatching, useScanLibrary } from "./api";
+import { useLibraryItems, useContinueWatching, useRecentlyWatched, useScanLibrary, useMutateItemState } from "./api";
 import { isSeries } from "./lib";
 import { MediaCard } from "./MediaCard";
 import { ContinueWatchingRow } from "./ContinueWatchingRow";
@@ -17,13 +17,19 @@ interface PlayState {
 export function LibraryView() {
   const items = useLibraryItems();
   const continueWatching = useContinueWatching();
+  const recentlyWatched = useRecentlyWatched();
   const scan = useScanLibrary();
+  const mutateState = useMutateItemState();
   const [playing, setPlaying] = useState<PlayState | null>(null);
   const [picking, setPicking] = useState<{ seriesId: string; title: string } | null>(null);
 
   const all = items.data?.items ?? [];
   const movies = all.filter((i) => !isSeries(i)).length;
   const shows = all.length - movies;
+
+  function handleToggleWatched(item: MediaItem) {
+    mutateState.mutate({ itemId: item.item_id, watched: !item.played });
+  }
 
   function handlePlay(item: MediaItem) {
     if (isSeries(item)) {
@@ -63,7 +69,30 @@ export function LibraryView() {
       </div>
       {scan.isError && <p className="text-xs text-red-400">Scan failed — check the backend.</p>}
 
-      <ContinueWatchingRow items={continueWatching.data?.items ?? []} onPlay={handlePlay} />
+      <ContinueWatchingRow
+        items={continueWatching.data?.items ?? []}
+        onPlay={handlePlay}
+        onToggleWatched={handleToggleWatched}
+      />
+
+      {recentlyWatched.data && recentlyWatched.data.items.length > 0 && (
+        <section>
+          <h2 className="mb-3 text-base font-semibold text-white">
+            <span className="mr-2 inline-block h-3 w-1.5 rounded bg-emerald-400 align-middle" />
+            Recently Watched
+          </h2>
+          <div className="flex flex-wrap gap-3">
+            {recentlyWatched.data.items.map((item) => (
+              <MediaCard
+                key={item.item_id}
+                item={item}
+                onPlay={handlePlay}
+                onToggleWatched={handleToggleWatched}
+              />
+            ))}
+          </div>
+        </section>
+      )}
 
       <section>
         <h2 className="mb-3 text-base font-semibold text-white">
@@ -77,7 +106,7 @@ export function LibraryView() {
         ) : (
           <div className="flex flex-wrap gap-3">
             {all.map((item) => (
-              <MediaCard key={item.item_id} item={item} onPlay={handlePlay} />
+              <MediaCard key={item.item_id} item={item} onPlay={handlePlay} onToggleWatched={handleToggleWatched} />
             ))}
           </div>
         )}

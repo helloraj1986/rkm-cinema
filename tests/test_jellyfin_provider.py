@@ -358,6 +358,90 @@ def test_refresh_library_invalidates_cache(monkeypatch):
     assert seen["url"].endswith("/Library/Refresh?api_key=jkey")
 
 
+def test_recently_watched_filters_played_and_sorts_by_last_played():
+    """roadmap item 2: only played titles, most-recently-played first."""
+    from services.library.jellyfin import JellyfinLibraryProvider
+
+    prov = JellyfinLibraryProvider(config=_cfg())
+    prov._user_id = lambda: "u1"
+    movies = [
+        {"Name": "Old", "Id": "a", "Type": "Movie", "ProductionYear": 2001,
+         "UserData": {"Played": True, "PlayCount": 3, "LastPlayedDate": "2026-01-01T00:00:00.0000000Z"},
+         "RunTimeTicks": 1},
+        {"Name": "Newer", "Id": "b", "Type": "Movie", "ProductionYear": 2002,
+         "UserData": {"Played": True, "PlayCount": 1, "LastPlayedDate": "2026-03-01T00:00:00.0000000Z"},
+         "RunTimeTicks": 1},
+        {"Name": "Unwatched", "Id": "c", "Type": "Movie", "ProductionYear": 2003,
+         "UserData": {"Played": False}, "RunTimeTicks": 1},
+    ]
+    prov._fetch_raw = lambda url: movies if "IncludeItemTypes=Movie" in url else []
+
+    out = prov.recently_watched(limit=10)
+    assert [x["title"] for x in out] == ["Newer", "Old"], [x["title"] for x in out]
+    assert all(x["play_count"] > 0 for x in out), out  # play_count surfaced
+    assert all(x["last_played"] for x in out), out
+
+
+def test_mark_state_posts_played_unplayed_and_returns_fresh_state():
+    """roadmap item 2: mark watched/unwatched drives Jellyfin UserData."""
+    import json as _json
+    import urllib.request as _urllib
+    from unittest.mock import patch as _patch
+    from services.library.jellyfin import JellyfinLibraryProvider
+
+    class _Resp:
+        status = 200
+
+        def __init__(self, status, body=b""):
+            self.status = status
+            self.body = body
+
+        def read(self):
+            return self.body
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def make_fake(played_delta):
+        calls = []
+
+        def fake_urlopen(url_or_req, timeout=None):
+            if isinstance(url_or_req, _urllib.Request):
+                full = url_or_req.full_url
+                method = url_or_req.get_method()
+            else:
+                full = url_or_req
+                method = "GET"
+            calls.append((method, full))
+            if method == "POST" and ("/PlayedItems/" in full or "/UnplayedItems/" in full):
+                return _Resp(204, b"")
+            if "IncludeItemTypes" not in full:  # single-item UserData GET
+                ud = {"Played": played_delta,
+                      "PlayCount": 5 if played_delta else 0}
+                return _Resp(200, _json.dumps({"UserData": ud}).encode())
+            return _Resp(200, _json.dumps({"Items": []}).encode())
+
+        return calls, fake_urlopen
+
+    prov = JellyfinLibraryProvider(config=_cfg())
+    prov._user_id = lambda: "u1"
+
+    calls, fake = make_fake(True)
+    with _patch("services.library.jellyfin.urllib.request.urlopen", fake):
+        state = prov.mark_state("i1", True)
+    assert any(m == "POST" and "/PlayedItems/i1" in u for m, u in calls), calls
+    assert state == {"played": True, "play_count": 5}
+
+    calls, fake = make_fake(False)
+    with _patch("services.library.jellyfin.urllib.request.urlopen", fake):
+        st2 = prov.mark_state("i1", False)
+    assert any(m == "POST" and "/UnplayedItems/i1" in u for m, u in calls), calls
+    assert st2 == {"played": False, "play_count": 0}
+
+
 def test_library_service_capability_collapses_to_first_provider_with_meaningful_result():
     """Phase 1: LibraryService.all_items() skips a provider that returns the ABC
     default ([]), so Plex/Emby can't shadow a Jellyfin that actually implements it."""

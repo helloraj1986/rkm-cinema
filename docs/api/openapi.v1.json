@@ -235,6 +235,71 @@
         }
       }
     },
+    "/api/library/recently-watched": {
+      "get": {
+        "summary": "Get Recently Watched",
+        "description": "Recently *finished* titles (roadmap item 2) \u2014 via the provider capability.",
+        "operationId": "get_recently_watched_api_library_recently_watched_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/library/{item_id}/state": {
+      "post": {
+        "summary": "Set Item State",
+        "description": "Mark an item watched/unwatched (roadmap item 2). Additive endpoint.",
+        "operationId": "set_item_state_api_library__item_id__state_post",
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Item Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ItemStateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/library/scan": {
       "get": {
         "summary": "Scan Library",
@@ -1047,6 +1112,17 @@
           "titleCount"
         ],
         "title": "HealthResponse"
+      },
+      "ItemStateRequest": {
+        "properties": {
+          "watched": {
+            "type": "boolean",
+            "title": "Watched",
+            "default": true
+          }
+        },
+        "type": "object",
+        "title": "ItemStateRequest"
       },
       "JellyfinProgressRequest": {
         "properties": {

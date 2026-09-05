@@ -30,7 +30,8 @@ class JellyfinItem:
                  is_series: bool = False, provider_ids: Optional[dict] = None,
                  user_data: Optional[dict] = None,
                  played: bool = False, position_ticks: int = 0,
-                 runtime_ticks: int = 0):
+                 runtime_ticks: int = 0, play_count: int = 0,
+                 last_played: str = ""):
         self.name = name
         self.year = year
         self.id = id
@@ -42,6 +43,9 @@ class JellyfinItem:
         self.played = played
         self.position_ticks = position_ticks
         self.runtime_ticks = runtime_ticks
+        # Extra watch-state facts (roadmap item 2) — play count + last-played date.
+        self.play_count = play_count
+        self.last_played = last_played
 
     def matches(self, name: str, year: Optional[int] = None) -> bool:
         search_lower = name.lower()
@@ -244,6 +248,8 @@ class JellyfinLibraryProvider(LibraryProvider):
             "played": bool(item.played),
             "playback_position": self._ticks_to_sec(item.position_ticks),
             "runtime": self._ticks_to_sec(item.runtime_ticks),
+            "play_count": int(item.play_count or 0),
+            "last_played": item.last_played or None,
         }
 
     def _fetch_raw(self, url: str) -> list[dict]:
@@ -279,7 +285,65 @@ class JellyfinLibraryProvider(LibraryProvider):
             played=bool((it.get("UserData") or {}).get("Played")),
             position_ticks=int((it.get("UserData") or {}).get("PlaybackPositionTicks") or 0),
             runtime_ticks=int(it.get("RunTimeTicks") or 0),
+            play_count=int((it.get("UserData") or {}).get("PlayCount") or 0),
+            last_played=str((it.get("UserData") or {}).get("LastPlayedDate") or ""),
         )
+
+    def recently_watched(self, limit: int = 12) -> list[dict]:
+        """Recently *finished* titles, most-recently-played first.
+
+        Filters the already-fetched library scan for played items and sorts by
+        ``UserData.LastPlayedDate`` (items with no recorded date sort last).
+        """
+        played = [i for i in (self._get_items("Movie") + self._get_items("Series")) if i.played]
+        played.sort(key=lambda i: i.last_played or "", reverse=True)
+        return [self._item_public(i) for i in played[:limit]]
+
+    def mark_state(self, item_id: str, watched: bool) -> dict:
+        """Mark an item watched (``watched=True``) or unwatched via Jellyfin's
+        ``/Users/{uid}/PlayedItems|UnplayedItems`` endpoints.
+
+        Returns the fresh ``{"played": bool, "play_count": int}`` state. Drops the
+        scan cache so the next library read reflects the change immediately.
+        """
+        if not self._configured() or not item_id:
+            return {"played": False, "play_count": 0}
+        uid = self._user_id()
+        if not uid:
+            return {"played": False, "play_count": 0}
+        action = "PlayedItems" if watched else "UnplayedItems"
+        url = (f"{self.config.JELLYFIN_URL}/Users/{uid}/{action}/{item_id}"
+               f"?api_key={self.config.JELLYFIN_API_KEY}")
+        try:
+            req = urllib.request.Request(url, method="POST", data=b"",
+                                         headers={"Content-Type": "application/json"})
+            with urllib.request.urlopen(req, timeout=10):
+                pass
+            self.invalidate()  # next library read reflects the change
+            return self._user_state(item_id)
+        except Exception as e:
+            logger.warning("Jellyfin mark_state(%s, %s) failed: %s", item_id, watched, e)
+            return {"played": False, "play_count": 0}
+
+    def _user_state(self, item_id: str) -> dict:
+        """Fresh ``{played, play_count}`` for one item, for the state mutation."""
+        uid = self._user_id()
+        if not uid:
+            return {"played": False, "play_count": 0}
+        url = (f"{self.config.JELLYFIN_URL}/Users/{uid}/Items/{item_id}"
+               f"?api_key={self.config.JELLYFIN_API_KEY}&Fields=UserData")
+        try:
+            import json
+            with urllib.request.urlopen(url, timeout=10) as r:
+                it = json.load(r)
+            ud = it.get("UserData") or {}
+            return {
+                "played": bool(ud.get("Played")),
+                "play_count": int(ud.get("PlayCount") or 0),
+            }
+        except Exception as e:
+            logger.warning("Jellyfin _user_state(%s) failed: %s", item_id, e)
+            return {"played": False, "play_count": 0}
 
     def get_poster(self, item_id: str, max_width: int = 500) -> Optional[dict]:
         """Proxy a Jellyfin item's primary image (keeps the token server-side).

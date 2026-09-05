@@ -5,9 +5,11 @@ import { MediaCard } from "./MediaCard";
 export function ContinueWatchingRow({
   items,
   onPlay,
+  onToggleWatched,
 }: {
   items: MediaItem[];
   onPlay: (item: MediaItem) => void;
+  onToggleWatched?: (item: MediaItem) => void;
 }) {
   const watch = items.filter(isContinueWatching);
   if (watch.length === 0) return null;
@@ -19,7 +21,7 @@ export function ContinueWatchingRow({
       </h2>
       <div className="flex gap-3 overflow-x-auto pb-2">
         {watch.map((item) => (
-          <MediaCard key={item.item_id} item={item} onPlay={onPlay} />
+          <MediaCard key={item.item_id} item={item} onPlay={onPlay} onToggleWatched={onToggleWatched} />
         ))}
       </div>
     </section>

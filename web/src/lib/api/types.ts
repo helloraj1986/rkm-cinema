@@ -187,6 +187,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/library/recently-watched": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Recently Watched
+         * @description Recently *finished* titles (roadmap item 2) — via the provider capability.
+         */
+        get: operations["get_recently_watched_api_library_recently_watched_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/library/{item_id}/state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set Item State
+         * @description Mark an item watched/unwatched (roadmap item 2). Additive endpoint.
+         */
+        post: operations["set_item_state_api_library__item_id__state_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/library/scan": {
         parameters: {
             query?: never;
@@ -636,6 +676,14 @@ export interface components {
                     [key: string]: unknown;
                 };
             };
+        };
+        /** ItemStateRequest */
+        ItemStateRequest: {
+            /**
+             * Watched
+             * @default true
+             */
+            watched: boolean;
         };
         /**
          * JellyfinProgressRequest
@@ -1325,6 +1373,61 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_recently_watched_api_library_recently_watched_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    set_item_state_api_library__item_id__state_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ItemStateRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

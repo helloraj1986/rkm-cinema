@@ -54,6 +54,8 @@ export interface MediaItem {
   played?: boolean;
   playback_position?: number; // seconds
   runtime?: number; // seconds
+  play_count?: number;
+  last_played?: string | null;
 }
 
 export interface LibraryItemsShape {
@@ -83,6 +85,12 @@ export interface ScanResult {
   scanned?: number;
   status?: string;
   [key: string]: unknown;
+}
+
+/** Result of POST /api/library/{id}/state (mark watched/unwatched). */
+export interface ItemStateResult {
+  played: boolean;
+  play_count: number;
 }
 
 export class ApiError extends Error {
@@ -136,6 +144,9 @@ export const api = {
   getContinueWatching: () => getJson<LibraryItemsShape>("/library/continue-watching"),
   getEpisodes: (seriesId: string) => getJson<EpisodesShape>(`/library/series/${encodeURIComponent(seriesId)}/episodes`),
   scanLibrary: () => getJson<ScanResult>("/library/scan"),
+  getRecentlyWatched: () => getJson<LibraryItemsShape>("/library/recently-watched"),
+  mutateItemState: (itemId: string, watched: boolean) =>
+    postJson<ItemStateResult>(`/library/${encodeURIComponent(itemId)}/state`, { watched }),
   /** Fire-and-forget playback position report (soft no when backend absent). */
   reportProgress: (payload: ProgressPayload) => postJson<unknown>("/jellyfin/progress", payload),
   /** Same-origin direct-play stream URL for an item (token stays server-side). */

@@ -37,9 +37,11 @@ function Marker({ marker }: { marker: Marker }) {
 export function MediaCard({
   item,
   onPlay,
+  onToggleWatched,
 }: {
   item: MediaItem;
   onPlay: (item: MediaItem) => void;
+  onToggleWatched?: (item: MediaItem) => void;
 }) {
   const src = posterUrl(item);
   const marker = playbackMarker(item);
@@ -84,7 +86,22 @@ export function MediaCard({
       </div>
       <div className="p-2">
         <div className="truncate text-sm font-medium text-zinc-100">{item.title}</div>
-        <div className="text-xs text-zinc-500">{item.year || ""}</div>
+        <div className="flex items-center justify-between text-xs text-zinc-500">
+          <span>{item.year || ""}</span>
+          {item.play_count ? <span>{item.play_count}× plays</span> : null}
+        </div>
+        {onToggleWatched && (
+          <button
+            onClick={() => onToggleWatched(item)}
+            className={`mt-1.5 w-full rounded-md px-2 py-1 text-xs font-medium ring-1 ${
+              item.played
+                ? "bg-emerald-900/40 text-emerald-300 ring-emerald-700 hover:bg-emerald-800/50"
+                : "bg-zinc-800 text-zinc-300 ring-zinc-700 hover:bg-zinc-700"
+            }`}
+          >
+            {item.played ? "✓ Marked watched" : "Mark watched"}
+          </button>
+        )}
       </div>
     </div>
   );

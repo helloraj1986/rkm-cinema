@@ -104,6 +104,15 @@ class LibraryProvider(ABC):
         """Fetch an item's primary image (``{"content": bytes, "content_type": str}``). Default ``None``."""
         return None
 
+    def recently_watched(self, limit: int = 12) -> list[dict]:
+        """Recently *finished* titles (most-recently-played first). Default ``[]``."""
+        return []
+
+    def mark_state(self, item_id: str, watched: bool) -> Optional[dict]:
+        """Mutate watched/unwatched state; return ``{"played": bool, "play_count": int}``
+        or ``None`` when the backend doesn't support marking."""
+        return None
+
 
 class LibraryService:
     """Unified library facade.
@@ -348,6 +357,30 @@ class LibraryService:
             if result:
                 return result
         return None
+
+    def recently_watched(self, limit: int = 12) -> dict:
+        """Recently-finished row: ``{"provider": str|None, "items": [...]}``."""
+        for p in self._providers:
+            try:
+                items = p.recently_watched(limit=limit) or []
+            except Exception as e:
+                logger.warning("recently_watched failed for %s: %s", p.name, e)
+                continue
+            if items:
+                return {"provider": p.name, "items": items}
+        return {"provider": None, "items": []}
+
+    def mark_state(self, item_id: str, watched: bool) -> dict:
+        """Mark watched/unwatched via the first provider that supports it."""
+        for p in self._providers:
+            try:
+                result = p.mark_state(item_id, watched)
+            except Exception as e:
+                logger.warning("mark_state failed for %s: %s", p.name, e)
+                continue
+            if result:
+                return result
+        return {"played": False, "play_count": 0}
 
     def invalidate(self) -> None:
         """Drop every provider's library caches (force a fresh scan next read).

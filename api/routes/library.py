@@ -9,6 +9,7 @@ through to the next; if ALL fail the endpoint returns a partial 200
 providers, not duplicated.
 """
 from fastapi import APIRouter
+from pydantic import BaseModel
 
 from api.models import LibraryResponse
 from config.settings import get_config
@@ -121,6 +122,36 @@ def get_series_episodes(series_id: str):
         return service.episodes(series_id) or {"provider": None, "episodes": []}
     except Exception:
         return {"provider": None, "episodes": []}
+
+
+class ItemStateRequest(BaseModel):
+    watched: bool = True
+
+
+@router.get("/library/recently-watched")
+def get_recently_watched():
+    """Recently *finished* titles (roadmap item 2) — via the provider capability."""
+    cfg = get_config()
+    service = build_library_service(cfg)
+    if service is None:
+        return {"provider": None, "items": []}
+    try:
+        return service.recently_watched() or {"provider": None, "items": []}
+    except Exception:
+        return {"provider": None, "items": []}
+
+
+@router.post("/library/{item_id}/state")
+def set_item_state(item_id: str, body: ItemStateRequest):
+    """Mark an item watched/unwatched (roadmap item 2). Additive endpoint."""
+    cfg = get_config()
+    service = build_library_service(cfg)
+    if service is None:
+        return {"played": False, "play_count": 0}
+    try:
+        return service.mark_state(item_id, body.watched)
+    except Exception:
+        return {"played": False, "play_count": 0}
 
 
 @router.get("/library/scan")

@@ -255,6 +255,29 @@ def test_series_episodes_route(monkeypatch):
     assert body["episodes"][0]["playback_position"] == 2000
 
 
+def test_recently_watched_route(monkeypatch):
+    """GET /api/library/recently-watched collates the provider's finished titles."""
+    _patch_config(monkeypatch)
+    fake_svc = SimpleNamespace(recently_watched=lambda limit=12: {
+        "provider": "jellyfin",
+        "items": [{"title": "A", "item_id": "a1", "played": True, "play_count": 3}]})
+    with patch("api.routes.library.build_library_service", return_value=fake_svc):
+        r = client.get("/api/library/recently-watched")
+    assert r.status_code == 200
+    assert r.json()["items"][0]["item_id"] == "a1"
+
+
+def test_set_item_state_route(monkeypatch):
+    """POST /api/library/{id}/state marks watched/unwatched via the service."""
+    _patch_config(monkeypatch)
+    fake_svc = SimpleNamespace(mark_state=lambda iid, watched: {"played": watched, "play_count": 5})
+    with patch("api.routes.library.build_library_service", return_value=fake_svc):
+        r = client.post("/api/library/i1/state", json={"watched": True})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["played"] is True and body["play_count"] == 5
+
+
 def test_jobs_library_scan_endpoint(monkeypatch):
     """POST /api/jobs/library_scan/run triggers the library-scan job."""
     from jobs.library_scan import LibraryScanJob

@@ -26,6 +26,7 @@ def get_status():
     for imdb, snap in result.snapshots.items():
         plex = (snap.watch_links or {}).get("plex") or {}
         emby = (snap.watch_links or {}).get("emby") or {}
+        jellyfin = (snap.watch_links or {}).get("jellyfin") or {}
         statuses[imdb] = StatusEntry(
             state=snap.status.value,
             service=snap.service,
@@ -38,6 +39,7 @@ def get_status():
             plexKey=snap.plexKey,
             plexUrl=plex.get("url") or "",
             embyUrl=emby.get("url") or "",
+            jellyfinUrl=jellyfin.get("url") or "",
         )
 
     return StatusResponse(statuses=statuses, indexerIssue=result.indexer_issue)

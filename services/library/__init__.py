@@ -13,6 +13,8 @@ from services.library.service import (
 from services.library.watch_links import WatchLink, WatchLinkResolver
 from services.library.plex import PlexLibraryProvider
 from services.library.emby import EmbyLibraryProvider
+from services.library.jellyfin import JellyfinLibraryProvider
+from services.library.factory import build_library_service
 
 __all__ = [
     "LibraryProvider",
@@ -23,4 +25,6 @@ __all__ = [
     "WatchLinkResolver",
     "PlexLibraryProvider",
     "EmbyLibraryProvider",
+    "JellyfinLibraryProvider",
+    "build_library_service",
 ]

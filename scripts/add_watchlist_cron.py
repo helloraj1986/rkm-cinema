@@ -54,14 +54,14 @@ def main() -> int:
 
     cfg = get_config()
 
-    # Plex is the authority for ownership. Wire it into the manager explicitly
-    # so already-owned titles are excluded BEFORE any write (the manager's
-    # default has no library gate).
-    library = LibraryService()
-    if cfg.PLEX_URL and cfg.PLEX_TOKEN:
-        library.add_provider(PlexLibraryProvider(config=cfg))
-    else:
-        print("ERROR: Plex not configured (required as ownership source of truth)")
+    # The configured library backend is the authority for ownership. Wire it
+    # into the manager explicitly so already-owned titles are excluded BEFORE
+    # any write (the manager's default has no library gate). Uses the factory
+    # so a "jellyfin" MEDIA_SERVER works exactly like Plex here.
+    from services.library import build_library_service
+    library = build_library_service(cfg)
+    if library is None:
+        print("ERROR: library backend not configured (set MEDIA_SERVER + its URL/key)")
         return 1
 
     manager = RecommendationManager(config=cfg, library=library)

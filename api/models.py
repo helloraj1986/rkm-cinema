@@ -49,6 +49,7 @@ class StatusEntry(BaseModel):
     plexKey: Optional[str] = None
     plexUrl: Optional[str] = None
     embyUrl: Optional[str] = None
+    jellyfinUrl: Optional[str] = None
 
 
 class StatusResponse(BaseModel):

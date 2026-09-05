@@ -76,11 +76,8 @@ class RecommendationService:
         # the library abstraction — no parallel PlexService branch (§43).
         self.library = library
         if self.library is None:
-            providers = []
-            if plex is not None:
-                providers.append(PlexLibraryProvider(config=self.config, plex=plex))
-            if providers:
-                self.library = LibraryService(providers=providers)
+            from services.library import build_library_service
+            self.library = build_library_service(self.config, plex=plex)
         self._plex = plex  # kept only for BC-inspection; ownership uses `library`
         self.trailers = trailers if trailers is not None else TrailerService(config=self.config, http=self.http)
         self.tmdb = tmdb if tmdb is not None else TMDBService(config=self.config, http=self.http)

@@ -76,14 +76,8 @@ class RequestMediaCommand:
 
         self._library = library
         if self._library is None:
-            providers = []
-            if plex is not None:
-                providers.append(PlexLibraryProvider(config=self.config, plex=plex))
-            elif self.config.PLEX_URL and self.config.PLEX_TOKEN:
-                providers.append(PlexLibraryProvider(config=self.config))
-            if self.config.EMBY_URL and self.config.EMBY_API_KEY:
-                providers.append(EmbyLibraryProvider(config=self.config))
-            self._library = LibraryService(providers=providers) if providers else None
+            from services.library import build_library_service
+            self._library = build_library_service(self.config, plex=plex)
 
         self._acquisition = acquisition
         if self._acquisition is None:

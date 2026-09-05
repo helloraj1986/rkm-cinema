@@ -68,13 +68,8 @@ class HealthChecker:
     def _lib(self):
         if self._library is not None:
             return self._library
-        from services.library import EmbyLibraryProvider, LibraryService, PlexLibraryProvider
-        providers = []
-        if self.config.PLEX_URL and self.config.PLEX_TOKEN:
-            providers.append(PlexLibraryProvider(config=self.config))
-        if self.config.has_emby():
-            providers.append(EmbyLibraryProvider(config=self.config))
-        self._library = LibraryService(providers=providers)
+        from services.library import build_library_service
+        self._library = build_library_service(self.config)
         return self._library
 
     def _qbit_svc(self):

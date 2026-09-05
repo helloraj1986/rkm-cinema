@@ -113,14 +113,12 @@ class Reconciler:
         # through LibraryService — no parallel PlexService branch (§43).
         self._library = library
         if self._library is None:
-            providers = []
-            if plex is not None:
-                providers.append(PlexLibraryProvider(config=self.config, plex=plex))
-            elif self.config.PLEX_URL and self.config.PLEX_TOKEN:
-                providers.append(PlexLibraryProvider(config=self.config))
-            if self.config.EMBY_URL and self.config.EMBY_API_KEY:
-                providers.append(EmbyLibraryProvider(config=self.config))
-            self._library = LibraryService(providers=providers) if providers else None
+            # Aggregate LibraryService for the configured backend(s) (Plex+Emby
+            # default, or a single Jellyfin/Emby in the bundled stack). Legacy
+            # ``plex=`` (a PlexService) is wrapped inside the factory so every
+            # path goes through LibraryService (§43).
+            from services.library import build_library_service
+            self._library = build_library_service(self.config, plex=plex)
         # Canonical acquisition source. Legacy ``radarr=``/``sonarr=`` (the
         # low-level HTTP services) are wrapped in providers; everything funnels
         # through the single AcquisitionService router (§43, spec §14).

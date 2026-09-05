@@ -266,7 +266,7 @@ def _library_fake_svc(plex, emby):
     return svc
 
 
-@patch("api.routes.library._build_service")
+@patch("api.routes.library.build_library_service")
 def test_library_plex_primary_success(mock_build, client, monkeypatch):
     """§31 Provider failure -> partial response. Plex healthy -> full Plex view."""
     import api.routes.library as lib
@@ -274,8 +274,6 @@ def test_library_plex_primary_success(mock_build, client, monkeypatch):
         _FakePlexProvider(counts={"movie": 787, "show": 100},
                           recent=[{"title": "M", "year": 1999}]),
         _FakeEmbyProvider())
-    monkeypatch.setattr(lib, "PlexLibraryProvider", _FakePlexProvider)
-    monkeypatch.setattr(lib, "EmbyLibraryProvider", _FakeEmbyProvider)
     monkeypatch.setattr(lib, "get_config", lambda: _library_httpx_cfg())
 
     r = client.get("/api/library")
@@ -288,7 +286,7 @@ def test_library_plex_primary_success(mock_build, client, monkeypatch):
     assert body["urls"]["plex"].startswith("https://rkm-hp.tail8d5e8.ts.net:32400")
 
 
-@patch("api.routes.library._build_service")
+@patch("api.routes.library.build_library_service")
 def test_library_plex_fail_falls_back_to_emby(mock_build, client, monkeypatch):
     """§31 Provider failure -> partial response. Plex down -> Emby fallback, 200."""
     import api.routes.library as lib
@@ -296,8 +294,6 @@ def test_library_plex_fail_falls_back_to_emby(mock_build, client, monkeypatch):
         _FakePlexProvider(counts=None),   # get_library_counts RAISES -> route catches
         _FakeEmbyProvider(items=lambda t: [1, 2] if t == "Movie" else [1],
                           recent=[{"title": "E", "year": 2020}]))
-    monkeypatch.setattr(lib, "PlexLibraryProvider", _FakePlexProvider)
-    monkeypatch.setattr(lib, "EmbyLibraryProvider", _FakeEmbyProvider)
     monkeypatch.setattr(lib, "get_config", lambda: _library_httpx_cfg())
 
     r = client.get("/api/library")
@@ -309,7 +305,7 @@ def test_library_plex_fail_falls_back_to_emby(mock_build, client, monkeypatch):
     assert body["urls"]["emby"].startswith("https://rkm-hp.tail8d5e8.ts.net:8096")
 
 
-@patch("api.routes.library._build_service")
+@patch("api.routes.library.build_library_service")
 def test_library_both_providers_fail_is_partial_not_error(mock_build, client, monkeypatch):
     """§31 provider failure -> partial response: BOTH fail -> 200 with available=False.
 
@@ -319,8 +315,6 @@ def test_library_both_providers_fail_is_partial_not_error(mock_build, client, mo
     mock_build.return_value = _library_fake_svc(
         _FakePlexProvider(counts=None),
         _FakeEmbyProvider(items=None, recent=None))
-    monkeypatch.setattr(lib, "PlexLibraryProvider", _FakePlexProvider)
-    monkeypatch.setattr(lib, "EmbyLibraryProvider", _FakeEmbyProvider)
     monkeypatch.setattr(lib, "get_config", lambda: _library_httpx_cfg())
 
     r = client.get("/api/library")

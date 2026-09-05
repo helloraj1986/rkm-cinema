@@ -16,6 +16,10 @@ class Config:
     SONARR_API_KEY: str
     PLEX_URL: str
     PLEX_TOKEN: str
+    # Primary library backend. Default "plex" (Plex-primary + Emby fallback = the
+    # historical behaviour). "jellyfin" or "emby" make that single backend the
+    # only provider — used by the bundled self-contained stack (experiment branch).
+    MEDIA_SERVER: str = "plex"
 
     # --- Optional ---
     TMDB_API_KEY: Optional[str]
@@ -32,6 +36,7 @@ class Config:
     # cloud links fail to auto-open; these point at the local server's own web UI.
     PLEX_BROWSER_URL: Optional[str]
     EMBY_BROWSER_URL: Optional[str]
+    JELLYFIN_BROWSER_URL: Optional[str]
 
     # --- Quality profile overrides (optional) ---
     RADARR_QUALITY_PROFILE_ID: Optional[int]
@@ -73,6 +78,23 @@ class Config:
                         env[k.strip()] = v.strip()
                 break
 
+        # 1.5 Provisioner-written runtime config (bundled stack). The one-shot
+        # provisioner writes /shared/runtime.json with the freshly-created
+        # Jellyfin/Emby/Prowlarr URLs + API keys it set up (chicken-and-egg:
+        # these don't exist until the service containers are up). This layer
+        # overrides .env but stays below real env vars.
+        try:
+            runtime_path = os.environ.get("RKM_RUNTIME_PATH", "/shared/runtime.json")
+            if os.path.exists(runtime_path):
+                import json as _json
+                with open(runtime_path, encoding="utf-8") as _f:
+                    runtime = _json.load(_f)
+                for k, v in (runtime or {}).items():
+                    if k in self._get_all_keys() and v not in (None, ""):
+                        env[k] = str(v)
+        except Exception:  # never let a bad runtime file break boot
+            pass
+
         # 2. Real environment variables override .env
         for key in os.environ:
             if key in self._get_all_keys():
@@ -86,6 +108,9 @@ class Config:
         self.SONARR_API_KEY = env.get("SONARR_API_KEY", "")
         self.PLEX_URL = self._normalize_url(env.get("PLEX_URL", f"http://{self.MEDIA_HOST}:32400"))
         self.PLEX_TOKEN = env.get("PLEX_TOKEN", "")
+        self.MEDIA_SERVER = (env.get("MEDIA_SERVER") or "plex").strip().lower()
+        if self.MEDIA_SERVER not in ("plex", "emby", "jellyfin"):
+            self.MEDIA_SERVER = "plex"
 
         self.TMDB_API_KEY = env.get("TMDB_API_KEY") or None
         self.TVDB_API_KEY = env.get("TVDB_API_KEY") or None
@@ -104,6 +129,7 @@ class Config:
             self.PLEX_SCAN_TTL = 3600
         self.JELLYFIN_URL = self._normalize_url(env["JELLYFIN_URL"]) if env.get("JELLYFIN_URL") else None
         self.JELLYFIN_API_KEY = env.get("JELLYFIN_API_KEY") or None
+        self.JELLYFIN_BROWSER_URL = self._normalize_url(env.get("JELLYFIN_BROWSER_URL") or "") or None
         self.PROWLARR_URL = self._normalize_url(env["PROWLARR_URL"]) if env.get("PROWLARR_URL") else None
         self.PROWLARR_API_KEY = env.get("PROWLARR_API_KEY") or None
         self.EMBY_URL = env.get("EMBY_URL") or None
@@ -143,8 +169,8 @@ class Config:
     def _get_all_keys(self) -> set:
         return {
             "MEDIA_HOST", "RADARR_URL", "RADARR_API_KEY", "SONARR_URL", "SONARR_API_KEY",
-            "PLEX_URL", "PLEX_TOKEN", "TMDB_API_KEY", "TVDB_API_KEY", "JELLYFIN_URL",
-            "JELLYFIN_API_KEY", "PROWLARR_URL", "PROWLARR_API_KEY", "QBITTORRENT_URL",
+            "PLEX_URL", "PLEX_TOKEN", "MEDIA_SERVER", "TMDB_API_KEY", "TVDB_API_KEY", "JELLYFIN_URL",
+            "JELLYFIN_API_KEY", "JELLYFIN_BROWSER_URL", "PROWLARR_URL", "PROWLARR_API_KEY", "QBITTORRENT_URL",
             "RADARR_QUALITY_PROFILE_ID", "SONARR_QUALITY_PROFILE_ID",
             "PLEX_BROWSER_URL", "EMBY_BROWSER_URL",
             "WATCHLIST_STORE", "WATCHLIST_DB_PATH",
@@ -174,6 +200,9 @@ class Config:
 
     def has_emby(self) -> bool:
         return bool(self.EMBY_URL and self.EMBY_API_KEY)
+
+    def has_jellyfin(self) -> bool:
+        return bool(self.JELLYFIN_URL and self.JELLYFIN_API_KEY)
 
     def has_youtube(self) -> bool:
         return bool(self.YOUTUBE_API_KEY)

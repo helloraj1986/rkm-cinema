@@ -2,6 +2,7 @@ import { createBrowserRouter, Navigate } from "react-router-dom";
 import { AppShell } from "./layout/AppShell";
 import { ConfigHealthView } from "../features/settings/ConfigHealthView";
 import { PortedPlaceholder } from "../components/PortedPlaceholder";
+import { LibraryView } from "../features/library/LibraryView";
 import { ENABLE_REACT } from "../lib/flags";
 
 /**
@@ -16,7 +17,7 @@ export const router = createBrowserRouter([
     children: [
       { index: true, element: <Navigate to="/settings" replace /> },
       { path: "settings", element: <ConfigHealthView /> },
-      { path: "library", element: <PortedPlaceholder label="Library" /> },
+      { path: "library", element: <LibraryView /> },
       { path: "playback", element: <PortedPlaceholder label="Playback" /> },
       { path: "discover", element: <PortedPlaceholder label="Discover" /> },
       { path: "watchlist", element: <PortedPlaceholder label="Watchlist" /> },

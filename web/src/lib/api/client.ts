@@ -45,13 +45,15 @@ export interface HealthShape {
 }
 
 export interface MediaItem {
-  item_id: string;
   title: string;
-  type?: string;
+  year?: number | null;
+  type?: string; // "tv" | "movie" | "show"
+  thumb?: string | null;
+  item_id: string;
+  jellyfin_url?: string;
   played?: boolean;
-  playback_position?: number;
-  runtime?: number;
-  thumbnail?: string | null;
+  playback_position?: number; // seconds
+  runtime?: number; // seconds
 }
 
 export interface LibraryItemsShape {
@@ -73,6 +75,14 @@ export interface EpisodeShape {
 export interface EpisodesShape {
   provider: string | null;
   episodes: EpisodeShape[];
+}
+
+export interface ScanResult {
+  ok?: boolean;
+  jellyfin?: boolean;
+  scanned?: number;
+  status?: string;
+  [key: string]: unknown;
 }
 
 export class ApiError extends Error {
@@ -104,4 +114,5 @@ export const api = {
   getLibraryItems: () => getJson<LibraryItemsShape>("/library/items"),
   getContinueWatching: () => getJson<LibraryItemsShape>("/library/continue-watching"),
   getEpisodes: (seriesId: string) => getJson<EpisodesShape>(`/library/series/${encodeURIComponent(seriesId)}/episodes`),
+  scanLibrary: () => getJson<ScanResult>("/library/scan"),
 };

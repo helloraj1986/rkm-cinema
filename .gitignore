@@ -38,6 +38,10 @@ Thumbs.db
 # Container
 docker-compose.override.yml
 
+# CI workflow — authored but NOT pushed yet (token lacks 'workflow' scope).
+# Kept on disk for later bring-up; un-ignore + commit when ready.
+.github/workflows/ci.yml
+
 # Bundled-stack experiment (rkm.config.toml holds secrets; ./data is runtime media)
 rkm.config.toml
 .rkm_state.json

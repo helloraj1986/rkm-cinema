@@ -3,15 +3,23 @@ import { useLibraryItems, useContinueWatching, useScanLibrary } from "./api";
 import { isSeries } from "./lib";
 import { MediaCard } from "./MediaCard";
 import { ContinueWatchingRow } from "./ContinueWatchingRow";
-import { Player } from "./Player";
-import type { MediaItem } from "../../lib/api/client";
+import { Player, type PlayTarget } from "../playback/Player";
+import { EpisodePicker } from "../playback/EpisodePicker";
+import { startPosition, type QueueEntry } from "../playback/lib";
+import type { MediaItem, EpisodeShape } from "../../lib/api/client";
+
+interface PlayState {
+  item: PlayTarget;
+  resume: number;
+  queue: QueueEntry[];
+}
 
 export function LibraryView() {
   const items = useLibraryItems();
   const continueWatching = useContinueWatching();
   const scan = useScanLibrary();
-  const [playing, setPlaying] = useState<MediaItem | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [playing, setPlaying] = useState<PlayState | null>(null);
+  const [picking, setPicking] = useState<{ seriesId: string; title: string } | null>(null);
 
   const all = items.data?.items ?? [];
   const movies = all.filter((i) => !isSeries(i)).length;
@@ -19,41 +27,41 @@ export function LibraryView() {
 
   function handlePlay(item: MediaItem) {
     if (isSeries(item)) {
-      // Episode picker is part of the playback slice (Phase 3b), not this pass.
-      setNotice(`"${item.title}" is a series — the episode picker lands with the playback slice (Phase 3b).`);
+      setPicking({ seriesId: item.item_id, title: item.title });
       return;
     }
-    setNotice(null);
-    setPlaying(item);
+    setPlaying({ item: { item_id: item.item_id, title: item.title }, resume: item.playback_position || 0, queue: [] });
+  }
+
+  function handlePlayEpisode(ep: EpisodeShape, queue: QueueEntry[]) {
+    setPicking(null);
+    setPlaying({ item: { item_id: ep.id, title: ep.name }, resume: startPosition(ep), queue });
+  }
+
+  function handleSwitch(entry: QueueEntry) {
+    setPlaying({ item: { item_id: entry.id, title: entry.name }, resume: entry.position, queue: playing?.queue ?? [] });
   }
 
   return (
     <div className="flex flex-col gap-8">
-      <div className="flex flex-col gap-1">
-        <div className="flex items-start justify-between">
-          <div>
-            <h2 className="text-lg font-semibold text-white">My Library</h2>
-            <p className="text-xs text-zinc-500">
-              {items.data?.provider
-                ? `${items.data.provider} · ${all.length} titles (${movies} films · ${shows} shows)`
-                : "No library backend connected."}
-            </p>
-          </div>
-          <button
-            onClick={() => scan.mutate()}
-            disabled={scan.isPending}
-            className="rounded-lg bg-amber-400 px-3 py-1.5 text-sm font-semibold text-black hover:bg-amber-300 disabled:opacity-50"
-          >
-            {scan.isPending ? "Scanning…" : "Scan"}
-          </button>
+      <div className="flex items-start justify-between">
+        <div>
+          <h2 className="text-lg font-semibold text-white">My Library</h2>
+          <p className="text-xs text-zinc-500">
+            {items.data?.provider
+              ? `${items.data.provider} · ${all.length} titles (${movies} films · ${shows} shows)`
+              : "No library backend connected."}
+          </p>
         </div>
-        {scan.isError && (
-          <p className="mt-1 text-xs text-red-400">Scan failed — check the backend.</p>
-        )}
-        {notice && (
-          <p className="mt-1 rounded bg-zinc-800/70 px-2 py-1 text-xs text-zinc-300">{notice}</p>
-        )}
+        <button
+          onClick={() => scan.mutate()}
+          disabled={scan.isPending}
+          className="rounded-lg bg-amber-400 px-3 py-1.5 text-sm font-semibold text-black hover:bg-amber-300 disabled:opacity-50"
+        >
+          {scan.isPending ? "Scanning…" : "Scan"}
+        </button>
       </div>
+      {scan.isError && <p className="text-xs text-red-400">Scan failed — check the backend.</p>}
 
       <ContinueWatchingRow items={continueWatching.data?.items ?? []} onPlay={handlePlay} />
 
@@ -75,7 +83,24 @@ export function LibraryView() {
         )}
       </section>
 
-      {playing && <Player item={playing} onClose={() => setPlaying(null)} />}
+      {picking && (
+        <EpisodePicker
+          seriesId={picking.seriesId}
+          title={picking.title}
+          onPlay={handlePlayEpisode}
+          onClose={() => setPicking(null)}
+        />
+      )}
+      {playing && (
+        <Player
+          key={playing.item.item_id}
+          item={playing.item}
+          resume={playing.resume}
+          queue={playing.queue}
+          onSwitch={handleSwitch}
+          onClose={() => setPlaying(null)}
+        />
+      )}
     </div>
   );
 }

@@ -108,6 +108,27 @@ async function getJson<T>(path: string): Promise<T> {
   return (await res.json()) as T;
 }
 
+async function postJson<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(20_000),
+  });
+  if (!res.ok) {
+    throw new ApiError(res.status, `POST ${path} -> ${res.status}`);
+  }
+  return (await res.json()) as T;
+}
+
+/** Playback-progress payload for /api/jellyfin/progress (mirrors legacy reportProgress). */
+export interface ProgressPayload {
+  item_id: string;
+  position_ticks: number;
+  is_paused: boolean;
+  event: "start" | "timeupdate" | "stopped";
+}
+
 export const api = {
   getConfig: () => getJson<ConfigShape>("/config"),
   getHealth: () => getJson<HealthShape>("/health"),
@@ -115,4 +136,8 @@ export const api = {
   getContinueWatching: () => getJson<LibraryItemsShape>("/library/continue-watching"),
   getEpisodes: (seriesId: string) => getJson<EpisodesShape>(`/library/series/${encodeURIComponent(seriesId)}/episodes`),
   scanLibrary: () => getJson<ScanResult>("/library/scan"),
+  /** Fire-and-forget playback position report (soft no when backend absent). */
+  reportProgress: (payload: ProgressPayload) => postJson<unknown>("/jellyfin/progress", payload),
+  /** Same-origin direct-play stream URL for an item (token stays server-side). */
+  streamUrl: (itemId: string) => `${BASE}/jellyfin/stream/${encodeURIComponent(itemId)}`,
 };

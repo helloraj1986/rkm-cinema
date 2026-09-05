@@ -55,6 +55,12 @@ def _request(method, path, *, token=None, body=None, q=None, timeout=15):
     req = urllib.request.Request(url, data=data, method=method)
     req.add_header("Content-Type", "application/json")
     req.add_header("Accept", "application/json")
+    # Jellyfin rejects interactive authentication (AuthenticateByName) without a
+    # client-identifier header -> HTTP 400 "Error processing request". Include it
+    # on every call (harmless; API-key auth via ?api_key= ignores it).
+    req.add_header("X-Emby-Authorization",
+                   'MediaBrowser Client="RKM Provisioner", Device="rkm-bundled", '
+                   f'DeviceId="{uuid.uuid4().hex}", Version="1.0", Token=""')
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
             raw = r.read()

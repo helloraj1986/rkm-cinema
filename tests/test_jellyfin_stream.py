@@ -10,6 +10,7 @@ All mocked at the network/config boundary — no real LAN, no API keys.
 """
 from types import SimpleNamespace
 from unittest.mock import patch
+import json
 
 from fastapi.testclient import TestClient
 import api.main
@@ -140,3 +141,72 @@ def test_resource_watch_carries_jellyfin_item_id(monkeypatch):
     body = r.json()
     assert body["watch"]["jellyfin"]["item_id"] == "53756c83d38f47afbb1fd721dd089711"
     assert body["watch"]["jellyfin"]["available"] is True
+
+
+def test_resource_watch_carries_playback_facts(monkeypatch):
+    """watch.jellyfin carries played/playback_position/runtime for progress UI."""
+    _patch_config(monkeypatch)
+    snap = MediaSnapshot(
+        media_id="movie:tmdb:603", media_type=MediaType.MOVIE,
+        title="The Matrix", year=1999, status=MediaStatus.AVAILABLE,
+        capabilities=Capabilities.from_status(MediaStatus.AVAILABLE),
+        watch_links={"jellyfin": {
+            "available": True, "url": "http://jellyfin/web/index.html#/details?id=abc",
+            "error": None, "item_id": "abc",
+            "played": False, "playback_position": 2718, "runtime": 9000,
+        }},
+        service="jellyfin",
+    )
+    with patch("api.routes.media.Reconciler") as m:
+        m.return_value.get_snapshot.return_value = snap
+        r = client.get("/api/media/movie:tmdb:603")
+
+    assert r.status_code == 200
+    jf = r.json()["watch"]["jellyfin"]
+    assert jf["played"] is False
+    assert jf["playback_position"] == 2718
+    assert jf["runtime"] == 9000
+
+
+def test_progress_forwards_to_jellyfin_sessions(monkeypatch):
+    """POST /api/jellyfin/progress maps events to the right Sessions endpoint."""
+    _patch_config(monkeypatch)
+    calls = {}
+
+    def fake_urlopen(req, timeout=None):
+        calls["url"] = req.full_url
+        calls["data"] = json.loads(req.data)
+        return _FakeStreamResponse(status=204, headers={})
+
+    with patch("api.routes.jellyfin_stream.urllib.request.urlopen", fake_urlopen):
+        r = client.post("/api/jellyfin/progress", json={
+            "item_id": "m1", "position_ticks": 1200000000,
+            "is_paused": False, "event": "timeupdate",
+        })
+
+    assert r.status_code == 204
+    assert "/Sessions/Playing/Progress" in calls["url"]
+    assert "api_key=sekret" in calls["url"]
+    assert calls["data"]["ItemId"] == "m1"
+    assert calls["data"]["PositionTicks"] == 1200000000
+    assert calls["data"]["EventName"] == "timeupdate"
+
+
+def test_progress_uses_playing_for_start_event(monkeypatch):
+    """event=start hits /Sessions/Playing (starts the session with a position)."""
+    _patch_config(monkeypatch)
+    calls = {}
+
+    def fake_urlopen(req, timeout=None):
+        calls["url"] = req.full_url
+        calls["data"] = json.loads(req.data)
+        return _FakeStreamResponse(status=204, headers={})
+
+    with patch("api.routes.jellyfin_stream.urllib.request.urlopen", fake_urlopen):
+        r = client.post("/api/jellyfin/progress", json={
+            "item_id": "m1", "position_ticks": 0, "is_paused": False, "event": "start",
+        })
+
+    assert r.status_code == 204
+    assert "/Sessions/Playing" in calls["url"]
+    assert "/Sessions/Playing/Progress" not in calls["url"]

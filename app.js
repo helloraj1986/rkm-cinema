@@ -267,6 +267,8 @@ function cardMarkup(entry, opts = {}) {
   const plexTick = inPlex
     ? `<span class="b plex-check" role="img" aria-label="Available in Plex" title="Available in Plex">${ICONS.check}</span>`
     : '';
+  // Watched / resume marker from the Jellyfin watch entry (when carried).
+  const jfPlay = playbackMarkup(s.watch && s.watch.jellyfin);
 
   let dlBtn;
   if (inPlex) {
@@ -298,6 +300,7 @@ function cardMarkup(entry, opts = {}) {
       <div class="shade" aria-hidden="true"></div>
       <div class="badges">${badges.join('')}</div>
       ${plexTick}
+      ${jfPlay}
       ${action}
       ${inPlex ? '' : dlStateMarkup(entry)}
     </div>
@@ -1202,6 +1205,7 @@ function libraryCard(r) {
       <div class="imgbox">${thumb || '<div class="poster-ph">🎬</div>'}</div>
       <div class="shade"></div>
       <div class="badges"><span class="b ${r.type}">${r.type === 'tv' ? 'TV' : 'MOVIE'}</span></div>
+      ${playbackMarkup(r)}
       <div class="watchnow" style="position:absolute; left:50%; bottom:12px; transform:translateX(-50%); z-index:5; display:flex; gap:8px;">
         ${r.item_id ? `<button class="btn btn-gold btn-sm mini-btn" data-act="play" data-jf-item="${esc(r.item_id)}" data-title="${esc(r.title)}">${ICONS.play} Play in RKM</button>` : ''}
         ${plexUrl ? `<button class="btn btn-purple btn-sm mini-btn" data-act="watch-plex" data-url="${esc(plexUrl)}">${ICONS.play} Plex</button>` : ''}
@@ -1327,6 +1331,24 @@ function playInRkmMarkup(jf, entry) {
   return `<button class="btn btn-gold" data-role="play-jellyfin" data-jf-item="${esc(jf.item_id)}" aria-label="Play ${esc(title)} in RKM">${ICONS.play} Play in RKM</button>`;
 }
 
+/* Watched / progress marker from an object carrying played/playback_position/
+   runtime (seconds). Fully played -> a watched tick; partially watched (pos>0)
+   -> an amber resume bar with %; otherwise '' . */
+function playbackMarkup(info) {
+  if (!info) return '';
+  const played = !!info.played;
+  const pos = info.playback_position || 0;
+  const runtime = info.runtime || 0;
+  if (played) {
+    return `<span class="b watched-tick" role="img" aria-label="Watched" title="Watched">${ICONS.check}</span>`;
+  }
+  if (runtime > 0 && pos > 0) {
+    const pct = Math.min(100, Math.round((pos / runtime) * 100));
+    return `<span class="resume-bar" role="img" aria-label="${pct}% watched" title="${pct}% watched"><span class="resume-fill" style="width:${pct}%"></span><span class="resume-pct">${pct}%</span></span>`;
+  }
+  return '';
+}
+
 function modalDownloadButton(entry, s) {
   const caps = s.capabilities || { can_download: false, can_watch: false };
   const svc = entry.type === 'tv' ? 'Sonarr' : 'Radarr';
@@ -1385,6 +1407,8 @@ function loadTrailer() {
    proxy (credential stays server-side). Direct play → Range/seeking intact. */
 function openPlayer(itemId, title) {
   closePlayer();
+  _playerItemId = itemId || '';
+  _playerLastReport = 0;
   const ov = document.createElement('div');
   ov.className = 'overlay player-overlay';
   ov.innerHTML = `<div class="modal player-modal" role="dialog" aria-modal="true" aria-label="${esc(title || '')} player">
@@ -1407,10 +1431,37 @@ function openPlayer(itemId, title) {
   const v = ov.querySelector('video');
   if (v) {
     v.focus();
-    v.addEventListener('error', () => { if (modalPlayerErr(ov)) showPlayerErr(ov); });
+    v.addEventListener('error', () => {
+      if (modalPlayerErr(ov)) { reportProgress(_playerItemId, v.currentTime || 0, 'stopped'); showPlayerErr(ov); }
+    });
+    // Report playback back to Jellyfin so Watched/resume UI actually moves.
+    v.addEventListener('play', () => reportProgress(_playerItemId, v.currentTime || 0, 'start'));
+    v.addEventListener('timeupdate', () => {
+      const now = Date.now();
+      if (now - _playerLastReport < 5000) return;
+      _playerLastReport = now;
+      reportProgress(_playerItemId, v.currentTime || 0, 'timeupdate');
+    });
+    v.addEventListener('pause', () => reportProgress(_playerItemId, v.currentTime || 0, 'stopped'));
+    v.addEventListener('ended', () => reportProgress(_playerItemId, v.currentTime || 0, 'stopped'));
   }
 }
+let _playerItemId = '';
+let _playerLastReport = 0;
 let _playerErrShown = false;
+/* POST playback position to the /api/jellyfin/progress proxy (token stays
+   server-side). Fire-and-forget; a missing/not-Jellyfin backend is a soft no. */
+function reportProgress(itemId, seconds, event) {
+  if (!itemId) return;
+  const ticks = Math.round((seconds || 0) * 1e7);
+  try {
+    fetch('/api/jellyfin/progress', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ item_id: itemId, position_ticks: ticks, is_paused: false, event }),
+    }).catch(() => {});
+  } catch (e) { /* ignore */ }
+}
 function modalPlayerErr(ov) {
   const v = ov.querySelector('video');
   if (!v || _playerErrShown) return false;

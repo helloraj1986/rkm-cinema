@@ -1,10 +1,21 @@
 # RKM Watchlist — Session Handoff & Project Progress
 
-> Last updated: 2026-09-05 (**IN-APP JELLYFIN PLAYBACK built + VERIFIED on branch `experiment/bundled-docker-stack` — native `<video>` over a same-origin `/api/jellyfin/stream/{itemId}` direct-play proxy; watch links now carry `item_id`. 227 pytest + all node frontend suites green. Backend needs a rebuild to go live on RKM-HP.**)
+> Last updated: 2026-09-05 (**WATCHED / PROGRESS added on branch `experiment/bundled-docker-stack` — Jellyfin UserData (resume % bar + watched tick) surfaced on Library + grid cards, AND in-app playback now reports position back to Jellyfin (`/api/jellyfin/progress` → Sessions API) so the markers actually move. Verified live: one progress call moved (500) Days to 21% on the server. 232 pytest + all node frontend suites green. Rebuild via `.\bootstrap.ps1` to go live.**)
 > Live URL: **http://rkm-hp.tail8d5e8.ts.net:8123/** (Tailscale MagicDNS, tailnet-only — NEVER `tailscale funnel` it; page proxies /api → FastAPI which holds secrets server-side)
 > Deploy path (Windows, RKM-HP): `cd D:\hermes_agent\hermes-workspace\projects\rkm-cinema; .\run-rkm-cinema.ps1` (prod api+web nginx `:8123`; Plex/Emby backend) — or `.\bootstrap.ps1` for the **bundled api+web+Jellyfin** stack (`:8098`/`:8124`; this is where in-app Jellyfin playback lives). NOTE: there is **no `setup-watchlist.ps1` anymore — it was renamed.** The sandbox's `/workspace` maps to `D:\hermes_agent\hermes-workspace` (9p mount, confirmed via mountinfo 2026-08-18; NOT `D:\media`). The `web`+`api` containers are on RKM-HP (Docker daemon unreachable from sandbox).
 > Repo: **private `rkm-cinema` on GitHub** (github.com/helloraj1986/rkm-cinema)
 > **Status:** ✅ **Phases 1–18 committed. SQLite is now the AUTHORITATIVE watchlist store** (`WATCHLIST_STORE=sqlite`, DB on the shared `/workspace/media` volume so it survives every rebuild). `watchlist.json` is now a generated mirror/export, NOT authoritative. **DEPLOY PENDING on RKM-HP** to bake the 504/suggest API fixes + the SQLite store into the running image (`setup-watchlist.ps1`). Frontend-only (app.js synopsis fix) is already live via the volume mount.
+
+## ▶ LATEST SESSION (2026-09-05, round 3) — Watched / progress (Jellyfin UserData) built + verified ✅
+
+**Resume % bar + watched tick** driven by Jellyfin `UserData`, AND in-app playback now reports back so the markers actually move.
+
+- **Backend data source:** `JellyfinItem` now captures `UserData.Played`, `UserData.PlaybackPositionTicks`, and item `RunTimeTicks`. `_match_from` → metadata gains `played` / `playback_position` / `runtime` (10ms ticks → seconds via `_ticks_to_sec()`); `recently_added()` emits the same three keys (so **`/api/library` recent** carries them → Library cards). `WatchLink` gains `played`/`playback_position`/`runtime` filled from `match.metadata` and emitted in `to_dict()` → `WatchEntryModel` (grid/modal via resource API).
+- **Backend progress reporting:** `POST /api/jellyfin/progress` (in `jellyfin_stream.py`) takes `{item_id, position_ticks, is_paused, event}` and forwards to Jellyfin **Sessions** via the server-side key — `start`→`/Sessions/Playing`, `timeupdate`→`/Sessions/Playing/Progress`, `stopped`→`/Sessions/Playing/Stopped`. **Verified live:** these endpoints return `204` with `?api_key=…` + JSON body, and one progress call moved (500) Days to **1200s/5705s (21%)** in the server's UserData.
+- **Critical finding:** a plain `<video>` (in-app playback) does NOT report to Jellyfin, so `UserData` stayed at 0 even after playing. Without this reporting the resume/watch markers would never move — that's why the player now reports.
+- **Frontend (`app.js`/`app.css`):** `playbackMarkup(info)` renders a **watched tick** (green circle) when `played`, else an amber **resume % bar** (bottom of poster, `width:%`) when `position>0 && runtime>0`. Wired into `libraryCard` (Library view) + `cardMarkup` (grid, from `s.watch.jellyfin`). `openPlayer()` now sends `start` on play, throttled `timeupdate` every 5s, and `stopped` on pause/ended/error via `reportProgress()` → `/api/jellyfin/progress`.
+- **Tests:** backend `test_resource_watch_carries_playback_facts`, `test_recently_added_carries_playback_facts`, `test_watch_link_emits_playback_facts`, `test_progress_forwards_to_jellyfin_sessions`, `test_progress_uses_playing_for_start_event` (5 new); frontend `playbackMarkup`×3, `libraryCard` resume+watched, `cardMarkup` resume, `reportProgress` capture (6 new). **232 pytest + phase11/18/25/26 node all green.**
+- **To go live:** rebuild the bundled stack `.\bootstrap.ps1`, then hard-refresh — watch a movie a couple of minutes, close it, and its card shows a resume bar.
 
 ## ▶ LATEST SESSION (2026-09-05, round 2) — In-app Jellyfin playback built + verified ✅
 
@@ -28,9 +39,9 @@
 
 ### ▶ NEXT SESSION — prioritized next steps (recommended order, all incremental on current vanilla-JS UI)
 1. ✅ **In-app Jellyfin playback** — DONE (round 2 above). Deploy via **`.\bootstrap.ps1`** (bundled api+web+Jellyfin), then hard-refresh `http://rkm-hp.tail8d5e8.ts.net:8124/` and the Jellyfin cards show **▶ Play in RKM**.
-2. **Watched / progress** — Jellyfin already tracks `UserData`; resume `%` bar + "watched" tick on cards (easy, high value). The watch `item_id` plumbing added here is exactly what the progress call needs.
-3. **Full library grid + Continue Watching** — `/api/library/items` returns everything w/ posters (proxy exists); Library tab becomes a poster wall; "Continue Watching" row on Discover.
-Then only if the direction proves out: **Appendix A Plex-style UI re-platform (React/TS)** — large, do NOT start before 2–3.
+2. ✅ **Watched / progress** — DONE (round 3 above). Jellyfin UserData drives a resume % bar + watched tick on Library + grid cards, and in-app playback reports position back to Jellyfin (`/api/jellyfin/progress`) so the bar actually advances. Ships with the same `bootstrap.ps1` rebuild.
+3. **Full library grid + Continue Watching** — `/api/library/items` returns everything w/ posters (proxy exists); Library tab becomes a poster wall; "Continue Watching" row on Discover (reuses the playback facts now flowing). Recommended next.
+Then only if the direction proves out: **Appendix A Plex-style UI re-platform (React/TS)** — large, do NOT start before 3.
 
 ## ▶ LATEST SESSION (2026-09-02, UI round) — lazy-load grids + smooth hover + in-Plex tick ✅
 

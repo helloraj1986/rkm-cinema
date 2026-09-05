@@ -49,9 +49,14 @@ class WatchLink:
     #: playback through the same-origin /api stream proxy. Optional; absent for
     #: providers whose playback is deep-link-only (Plex/Emby).
     item_id: Optional[str] = None
+    #: Playback facts (watched flag + resume position in seconds) so the UI can
+    #: paint a resume bar / watched tick. Seconds, derived from Jellyfin ticks.
+    played: bool = False
+    playback_position: Optional[int] = None
+    runtime: Optional[int] = None
 
     def to_dict(self) -> dict:
-        """Serialise in the exact spec §10 shape (plus optional ``item_id``)."""
+        """Serialise in the exact spec §10 shape (plus optional playback extras)."""
         d = {
             "available": self.available,
             "url": self.url,
@@ -59,6 +64,10 @@ class WatchLink:
         }
         if self.item_id:
             d["item_id"] = self.item_id
+        if self.played or self.playback_position:
+            d["played"] = bool(self.played)
+            d["playback_position"] = self.playback_position
+            d["runtime"] = self.runtime
         return d
 
 
@@ -103,8 +112,14 @@ class WatchLinkResolver:
             url = self._pick_url(built)
             if url:
                 logger.info("watch link available on %s", provider.name)
-                item_id = (match.metadata or {}).get("item_id") or None
-                return WatchLink(provider=provider.name, available=True, url=url, item_id=item_id)
+                md = match.metadata or {}
+                item_id = md.get("item_id") or None
+                return WatchLink(
+                    provider=provider.name, available=True, url=url, item_id=item_id,
+                    played=bool(md.get("played")),
+                    playback_position=md.get("playback_position"),
+                    runtime=md.get("runtime"),
+                )
             # Builder returned but no usable URL — a soft no, not an exception.
             return WatchLink(provider=provider.name, available=False, url=None)
         # No provider matched this match's name (should not happen) — soft no.

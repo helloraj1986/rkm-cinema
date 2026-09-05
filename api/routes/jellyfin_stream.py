@@ -14,12 +14,14 @@ unchanged (verified live: ``GET /Videos/{id}/stream?Static=true`` returns
 from __future__ import annotations
 
 import logging
+import json
 import urllib.error
 import urllib.request
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
+from api.models import JellyfinProgressRequest
 from config.settings import get_config
 
 router = APIRouter()
@@ -81,3 +83,58 @@ def jellyfin_stream(item_id: str, request: Request):
     status = int(getattr(resp, "status", 200))
     out_headers = {h: resp.headers.get(h) for h in _PASSTHROUGH if resp.headers.get(h)}
     return StreamingResponse(_iter_chunks(resp), status_code=status, headers=out_headers)
+
+
+# Event -> Jellyfin Sessions endpoint. In-app playback won't move Jellyfin's
+# UserData (played/resume %) unless the player reports back; these map 1:1.
+_SESSION_PATHS = {
+    "start": "/Sessions/Playing",
+    "timeupdate": "/Sessions/Playing/Progress",
+    "stopped": "/Sessions/Playing/Stopped",
+}
+
+
+@router.post("/jellyfin/progress")
+def jellyfin_progress(payload: JellyfinProgressRequest):
+    """Report playback position back to Jellyfin so Watched/resume UI updates.
+
+    Keeps the Jellyfin credential server-side; the browser only POSTs JSON here.
+    """
+    cfg = get_config()
+    if not (cfg.JELLYFIN_URL and cfg.JELLYFIN_API_KEY):
+        raise HTTPException(status_code=503, detail="Jellyfin not configured")
+    if not payload.item_id:
+        raise HTTPException(status_code=400, detail="Missing item_id")
+
+    path = _SESSION_PATHS.get(payload.event)
+    if not path:
+        raise HTTPException(status_code=400, detail=f"Unknown event: {payload.event}")
+
+    body: dict = {
+        "ItemId": payload.item_id,
+        "MediaSourceId": payload.item_id,
+        "PositionTicks": int(payload.position_ticks),
+        "CanSeek": True,
+        "PlayMethod": "DirectPlay",
+        "IsPaused": bool(payload.is_paused),
+        "PlaybackRate": 1.0,
+    }
+    if payload.event == "timeupdate":
+        body["EventName"] = "timeupdate"
+    if payload.event == "start":
+        body["PlaySessionId"] = f"rkm-{payload.item_id}"
+
+    url = f"{cfg.JELLYFIN_URL}{path}?api_key={cfg.JELLYFIN_API_KEY}"
+    req = urllib.request.Request(
+        url, data=json.dumps(body).encode("utf-8"),
+        headers={"Content-Type": "application/json"}, method="POST",
+    )
+    try:
+        urllib.request.urlopen(req, timeout=8).close()
+    except urllib.error.HTTPError as e:
+        logger.warning("jellyfin progress(%s/%s) -> %s", payload.event, payload.item_id, e.code)
+        raise HTTPException(status_code=e.code, detail=e.reason or "Jellyfin progress error")
+    except Exception as e:  # noqa: BLE001 - transport failure is a soft no
+        logger.warning("jellyfin progress(%s/%s) failed: %s", payload.event, payload.item_id, e)
+        raise HTTPException(status_code=502, detail="Jellyfin progress unavailable")
+    return JSONResponse(status_code=204, content=None)

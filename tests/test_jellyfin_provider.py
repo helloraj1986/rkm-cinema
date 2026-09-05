@@ -129,3 +129,53 @@ def test_runtime_loader_merges_runtime_json(monkeypatch, tmp_path):
     cfg = Config()
     assert cfg.JELLYFIN_API_KEY == "rt-key"
     assert cfg.MEDIA_SERVER == "jellyfin"
+
+def test_recently_added_carries_playback_facts():
+    """recently_added() exposes UserData playback facts (seconds) for the UI."""
+    from services.library.jellyfin import JellyfinItem, JellyfinLibraryProvider
+    prov = JellyfinLibraryProvider(config=_cfg())
+
+    # Seed a partially-watched movie and a fully-watched one.
+    prov._get_items = lambda itype: {
+        "Movie": [
+            JellyfinItem(name="Half Seen", year=2001, id="m1",
+                         played=False, position_ticks=30_000_000_000,  # 3000s
+                         runtime_ticks=100_000_000_000),              # 10000s
+            JellyfinItem(name="Done Film", year=2002, id="m2",
+                         played=True, position_ticks=0,
+                         runtime_ticks=90_000_000_000),
+        ],
+        "Series": [],
+    }[itype]
+    prov._item_web = lambda iid: "http://jf/x#/details?id=" + iid
+
+    recent = prov.recently_added(limit=8)
+    by_title = {x["title"]: x for x in recent}
+    assert by_title["Half Seen"]["playback_position"] == 3000   # ticks/1e7
+    assert by_title["Half Seen"]["runtime"] == 10000
+    assert by_title["Half Seen"]["played"] is False
+    assert by_title["Done Film"]["played"] is True
+
+
+def test_watch_link_emits_playback_facts():
+    """A Jellyfin match's playback facts flow into WatchLink.to_dict()."""
+    from services.library.jellyfin import JellyfinItem, JellyfinLibraryProvider
+    from services.library.service import LibraryService
+    from services.library.watch_links import WatchLinkResolver
+
+    prov = JellyfinLibraryProvider(config=_cfg())
+    prov._server_id = lambda: "srv"
+    prov._browser_base = lambda: "http://localhost:8098/web/index.html"
+
+    item = JellyfinItem(name="Half Seen", year=2001, id="m1",
+                        played=False, position_ticks=30_000_000_000,
+                        runtime_ticks=100_000_000_000)
+    match = prov._match_from(item)
+    svc = LibraryService(providers=[prov])
+    watch = WatchLinkResolver(svc).resolve(match)
+    jf = watch["jellyfin"]
+    assert jf["available"] is True
+    assert jf["item_id"] == "m1"
+    assert jf["played"] is False
+    assert jf["playback_position"] == 3000
+    assert jf["runtime"] == 10000

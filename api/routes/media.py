@@ -41,6 +41,9 @@ def _snapshot_to_media(snap: MediaSnapshot) -> MediaResponse:
             url=info.get("url"),
             error=info.get("error"),
             item_id=info.get("item_id"),
+            played=info.get("played"),
+            playback_position=info.get("playback_position"),
+            runtime=info.get("runtime"),
         )
     acquisition = None
     if snap.service:

@@ -55,10 +55,10 @@ function load() {
   const appSrc = readFileSync(path.join(root, 'app.js'), 'utf8')
     + '\n; globalThis.__rkm = {'
     + ' setRes(map, flag=true){ RES = map; USES_RESOURCE_API = flag; },'
-    + ' st, cardMarkup, modalDownloadButton, playInRkmMarkup, canWatch, libraryCard'
+    + ' st, cardMarkup, modalDownloadButton, playInRkmMarkup, playbackMarkup, canWatch, libraryCard, reportProgress'
     + ' };';
   run(appSrc);
-  return { api: run('window.API'), get: (k) => run('globalThis.__rkm.' + k) };
+  return { api: run('window.API'), get: (k) => run('globalThis.__rkm.' + k), run };
 }
 
 const t = load();
@@ -137,6 +137,64 @@ ok('libraryCard (Library view): Play in RKM + Jellyfin deep-link when item_id pr
 ok('libraryCard: no item_id -> no Play in RKM', () => {
   const html = t.get('libraryCard')({ title: 'X', year: 2000, type: 'movie' });
   assert.ok(!/data-act="play"/.test(html));
+});
+
+/* ---- Watched / progress markers ---- */
+ok('playbackMarkup: fully played -> watched tick', () => {
+  const html = t.get('playbackMarkup')({ played: true, playback_position: 0, runtime: 9000 });
+  assert.ok(/watched-tick/.test(html));
+  assert.ok(!/resume-bar/.test(html));
+});
+ok('playbackMarkup: partially watched -> resume bar with %', () => {
+  const html = t.get('playbackMarkup')({ played: false, playback_position: 4500, runtime: 9000 });
+  assert.ok(/resume-bar/.test(html));
+  assert.ok(/resume-fill/.test(html));
+  assert.ok(/width:50%/.test(html));   // 4500/9000
+  assert.ok(/50%/.test(html));
+});
+ok('playbackMarkup: no progress -> empty', () => {
+  assert.strictEqual(t.get('playbackMarkup')({ played: false, playback_position: 0, runtime: 0 }), '');
+  assert.strictEqual(t.get('playbackMarkup')(null), '');
+});
+ok('libraryCard: partial watch renders resume bar', () => {
+  const html = t.get('libraryCard')({
+    title: 'Half Seen', year: 2001, type: 'movie', item_id: 'm1',
+    played: false, playback_position: 3000, runtime: 6000,
+  });
+  assert.ok(/resume-bar/.test(html));
+  assert.ok(/width:50%/.test(html));
+});
+ok('libraryCard: watched renders watched tick', () => {
+  const html = t.get('libraryCard')({
+    title: 'Done', year: 2002, type: 'movie', item_id: 'm2', played: true,
+  });
+  assert.ok(/watched-tick/.test(html));
+});
+ok('cardMarkup: jellyfin watch with position -> resume bar', () => {
+  t.get('setRes')({ 'movie:tmdb:603': {
+    ...jfResource(),
+    watch: { jellyfin: { available: true, item_id: JF_ID, url: 'http://jf/x',
+                         played: false, playback_position: 3000, runtime: 6000 } },
+  } });
+  const html = t.get('cardMarkup')(entry());
+  assert.ok(/resume-bar/.test(html));
+  assert.ok(/width:50%/.test(html));
+});
+
+/* ---- playback progress reporting (so Jellyfin UserData moves) ---- */
+ok('reportProgress: POSTs ticks to /api/jellyfin/progress', () => {
+  t.run('window.__fetchLog = []; window.fetch = (url, opts) => { window.__fetchLog.push({ url, opts }); return Promise.resolve({ ok: true }); };');
+  t.get('reportProgress')('m1', 120, 'timeupdate');
+  // reportProgress is fire-and-forget; the capture is synchronous at assignment.
+  const hit = t.run('JSON.stringify(window.__fetchLog)');
+  const log = JSON.parse(hit);
+  assert.strictEqual(log.length, 1);
+  assert.strictEqual(log[0].url, '/api/jellyfin/progress');
+  assert.strictEqual(log[0].opts.method, 'POST');
+  const body = JSON.parse(log[0].opts.body);
+  assert.strictEqual(body.item_id, 'm1');
+  assert.strictEqual(body.event, 'timeupdate');
+  assert.strictEqual(body.position_ticks, 1200000000); // 120s * 1e7
 });
 
 process.exit(failures ? 1 : 0);

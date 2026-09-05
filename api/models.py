@@ -37,6 +37,20 @@ class ConfigResponse(BaseModel):
     services: Dict[str, bool]
 
 
+class JellyfinProgressRequest(BaseModel):
+    """Playback progress reported by the in-app player (Jellyfin Sessions API).
+
+    ``event`` maps to a Jellyfin session endpoint: ``start`` -> /Sessions/Playing,
+    ``timeupdate`` -> /Sessions/Playing/Progress, ``stopped`` -> /Sessions/Playing/Stopped.
+    ``position_ticks`` is in Jellyfin 10ms ticks (seconds * 1e7).
+    """
+
+    item_id: str = ""
+    position_ticks: int = 0
+    is_paused: bool = False
+    event: str = "timeupdate"
+
+
 class StatusEntry(BaseModel):
     state: str
     service: str
@@ -159,6 +173,10 @@ class WatchEntryModel(BaseModel):
     error: Optional[str] = None
     #: Provider-native item id for in-app playback via /api/jellyfin/stream.
     item_id: Optional[str] = None
+    #: Playback facts: watched flag + resume position/runtime (seconds).
+    played: Optional[bool] = None
+    playback_position: Optional[int] = None
+    runtime: Optional[int] = None
 
 
 class AcquisitionModel(BaseModel):

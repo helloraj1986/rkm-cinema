@@ -28,7 +28,9 @@ class JellyfinItem:
 
     def __init__(self, name: str, year: int, id: str, thumb: str = "",
                  is_series: bool = False, provider_ids: Optional[dict] = None,
-                 user_data: Optional[dict] = None):
+                 user_data: Optional[dict] = None,
+                 played: bool = False, position_ticks: int = 0,
+                 runtime_ticks: int = 0):
         self.name = name
         self.year = year
         self.id = id
@@ -36,6 +38,10 @@ class JellyfinItem:
         self.is_series = is_series
         self.provider_ids = provider_ids or {}
         self.user_data = user_data or {}
+        # Playback facts (UserData + RunTimeTicks) — drives watched/progress UI.
+        self.played = played
+        self.position_ticks = position_ticks
+        self.runtime_ticks = runtime_ticks
 
     def matches(self, name: str, year: Optional[int] = None) -> bool:
         search_lower = name.lower()
@@ -110,8 +116,20 @@ class JellyfinLibraryProvider(LibraryProvider):
                 "thumb": item.thumb,
                 "provider_ids": dict(getattr(item, "provider_ids", {}) or {}),
                 "user_data": dict(getattr(item, "user_data", {}) or {}),
+                # Playback facts (seconds) for watched/progress UI.
+                "played": bool(getattr(item, "played", False)),
+                "playback_position": self._ticks_to_sec(getattr(item, "position_ticks", 0)),
+                "runtime": self._ticks_to_sec(getattr(item, "runtime_ticks", 0)),
             },
         )
+
+    @staticmethod
+    def _ticks_to_sec(ticks) -> int:
+        """Jellyfin time values are in 10ms ticks; seconds = ticks / 1e7."""
+        try:
+            return max(0, int(int(ticks) // 10_000_000))
+        except (TypeError, ValueError):
+            return 0
 
     def recently_added(self, limit: int = 8) -> list[dict]:
         out = []
@@ -124,6 +142,9 @@ class JellyfinLibraryProvider(LibraryProvider):
                     "thumb": item.thumb,
                     "item_id": item.id,
                     "jellyfin_url": self._item_web(item.id),
+                    "played": bool(item.played),
+                    "playback_position": self._ticks_to_sec(item.position_ticks),
+                    "runtime": self._ticks_to_sec(item.runtime_ticks),
                 })
         return out
 
@@ -249,6 +270,9 @@ class JellyfinLibraryProvider(LibraryProvider):
                     is_series=(item_type == "Series"),
                     provider_ids=pids,
                     user_data=it.get("UserData") or {},
+                    played=bool((it.get("UserData") or {}).get("Played")),
+                    position_ticks=int((it.get("UserData") or {}).get("PlaybackPositionTicks") or 0),
+                    runtime_ticks=int(it.get("RunTimeTicks") or 0),
                 ))
             if self._item_cache is None:
                 self._item_cache = {}

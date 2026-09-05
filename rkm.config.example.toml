@@ -1,0 +1,79 @@
+# ============================================================================
+# RKM Cinema — bundled self-contained stack config (EXPERIMENT branch)
+# ============================================================================
+# Copy to `rkm.config.toml` and fill in. This is the ONE place you configure
+# the stack; `render_config.py` turns it into the compose `.env`/`.rkm.env`.
+# Do NOT commit rkm.config.toml (it holds secrets). Only this example is committed.
+#
+# First-run:  cp rkm.config.example.toml rkm.config.toml   (edit it)
+# Then:       ./bootstrap.sh   (and/or)   .\bootstrap.ps1
+# ============================================================================
+
+# ---- Identity / branding -------------------------------------------------
+[app]
+name = "RKM Cinema"
+timezone = "Australia/Melbourne"
+# Dashboard port on the host (prod RKM uses 8123 — use 8124 for the experiment).
+dashboard_port = 8124
+
+# ---- Storage --------------------------------------------------------------
+# Single data root. One host dir mounted at the SAME container path (/data) in
+# every service so hardlinks + imports + Jellyfin scanning all see identical
+# paths. Create it fresh for the experiment so your prod media is untouched.
+#   data/media/_movie , data/media/_tv  <- Jellyfin library roots
+#   data/downloads                       <- qBittorrent
+#   data/rkm/                            <- app watchlist DB
+[storage]
+runtime_app_media_path = "./data"        # absolute or project-relative; created on render
+
+# ---- Media server backend (the §1 decision) ------------------------------
+[media_server]
+backend = "jellyfin"        # jellyfin | plex | emby  (bundled default = jellyfin)
+# admin creds the provisioner uses to (re)provision the Jellyfin server headlessly
+jellyfin_admin_user = "admin"
+jellyfin_admin_password = "CHANGE_ME"
+# Browser-reachable URL for deep "Watch on Jellyfin" links (no trailing slash).
+# For the experiment, localhost:8098 works from the host. Use your tailnet/www FQDN to access from other devices.
+jellyfin_browser_url = "http://localhost:8098"
+
+# ---- Download automation (fullstack profile only) -------------------------
+[arr]
+quality = "1080p"
+radarr_quality_profile_id = 0
+sonarr_quality_profile_id = 0
+root_tv = "_tv"
+root_movie = "_movie"
+import_mode = "hardlink"
+
+[qbit]
+webui_port = 8080            # app expects no-auth (LAN-only) — leave auth false
+torrent_port = 6881
+auth = false
+username = "admin"
+password = ""
+
+# ---- Indexers (one external dependency; only needed for the full pipeline) -
+[indexers]
+entries = [
+  # { name = "yts",     definition = "YTS",     key = "" },
+  # { name = "1337x",   definition = "1337x",   key = "" },
+  # { name = "mytracker", definition = "TorrentLeech", key = "PRIVATE_KEY" },
+]
+
+# ---- Metadata -------------------------------------------------------------
+[tmdb]
+api_key = "REPLACE_ME"      # required for artwork/metadata/Suggest
+
+[tvdb]
+api_key = ""                # optional
+
+# ---- Recommendation / AI-auto-add job -------------------------------------
+# Decision (2026-09): default OFF — Suggest tab only until the user opts in.
+[recommend]
+auto_add_enabled = false
+auto_add_hour = 18
+reconcile_interval_min = 10
+
+# ---- Hardware transcoding --------------------------------------------------
+[transcode]
+backend = "auto"            # auto|none|vaapi|qsv|nvdec (Jellyfin HW transcode is free)

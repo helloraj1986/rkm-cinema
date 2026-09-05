@@ -46,6 +46,31 @@ If you don't use Tailscale, the dashboard is still available locally at `http://
 
 ## Run it any other way
 
+### Bundled self-contained stack (experiment branch: `experiment/bundled-docker-stack`)
+The **bundled** build runs its **own** Jellyfin (media server) + the RKM app in one
+isolated Compose project (`rkm-bundled`) — a "Jellyfin client" that needs no
+pre-existing Plex/*arr. Fully isolated from your prod stack (own network
+`rkm-exp`, own `./data`, non-colliding ports), fully reversible with
+`docker compose -p rkm-bundled down`.
+
+```powershell
+# Windows
+cp rkm.config.example.toml rkm.config.toml   # set [tmdb] api_key + [media_server] jellyfin_admin_password
+.\bootstrap.ps1                               # renders config, starts stack, provisions Jellyfin, wires the API
+```
+```bash
+# Linux/macOS
+cp rkm.config.example.toml rkm.config.toml
+./bootstrap.sh
+```
+
+Then open **http://localhost:8124/** (dashboard) and **http://localhost:8098/web**
+(Jellyfin). Auto-add is **off** by default (Suggest-first); flip `[recommend]
+auto_add_enabled = true` in the TOML to turn on the daily job. See
+`docs/BUNDLED_DOCKER_STACK_PLAN.md` for the full design & weighing.
+
+---
+
 ### Local dev (WSL / sandbox)
 ```bash
 cd projects/rkm-cinema

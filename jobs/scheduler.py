@@ -77,8 +77,12 @@ class JobScheduler:
                 self._safe(lambda: self._run_reconcile())
                 last_reconcile = now
 
-            # Daily recommendation job once/day at the configured hour.
-            if now_dt.hour == self.config.DAILY_JOB_HOUR and last_daily != now_dt.date().toordinal():
+            # Daily recommendation job once/day at the configured hour — only if
+            # the user has opted into autonomous auto-add (AUTO_ADD_ENABLED).
+            # Reconcile above always runs to keep status/facts fresh.
+            if (self.config.AUTO_ADD_ENABLED
+                    and now_dt.hour == self.config.DAILY_JOB_HOUR
+                    and last_daily != now_dt.date().toordinal()):
                 logger.info("scheduler: running daily watchlist job")
                 self._safe(lambda: self._run_daily())
                 last_daily = now_dt.date().toordinal()

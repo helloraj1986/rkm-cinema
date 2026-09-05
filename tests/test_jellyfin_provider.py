@@ -1,0 +1,130 @@
+"""Tests for the Jellyfin library provider + the MEDIA_SERVER factory.
+
+Mocks at the provider boundary (urllib.urlopen via patch) — no live server.
+Verifies: stable provider-id matching, title fallback, watch-link/detail URL
+shape, per-backend selection in build_library_service, and the runtime-config
+loader (chicken-and-egg: provisioner writes /shared/runtime.json).
+"""
+import json
+import os
+from types import SimpleNamespace
+from unittest.mock import patch, MagicMock
+
+from domain.identity import MediaIdentity
+from domain.enums import MediaType
+from config.settings import Config
+
+
+def _cfg(**over):
+    vals = dict(
+        JELLYFIN_URL="http://jellyfin:8096",
+        JELLYFIN_API_KEY="jkey",
+        JELLYFIN_BROWSER_URL="http://localhost:8098",
+        MEDIA_SERVER="jellyfin",
+        PLEX_URL="", PLEX_TOKEN="", EMBY_URL="", EMBY_API_KEY="",
+    )
+    vals.update(over)
+    cfg = SimpleNamespace(**vals)
+    cfg.has_jellyfin = lambda: bool(cfg.JELLYFIN_URL and cfg.JELLYFIN_API_KEY)
+    cfg.has_emby = lambda: bool(cfg.EMBY_URL and cfg.EMBY_API_KEY)
+    return cfg
+
+
+class _FakeJson:
+    def __init__(self, payload):
+        self._p = payload
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def read(self):
+        return json.dumps(self._p).encode()
+
+
+def _mock_users_and_items(items):
+    """urlopen -> /Users first (user list), then /Users/{id}/Items (items)."""
+    def side_effect(url, *args, **kwargs):
+        u = url if isinstance(url, str) else getattr(url, "full_url", "")
+        if "/System/Info/Public" in u:
+            return _FakeJson({"Id": "srv-abc", "ServerName": "rkm-jf", "Version": "10.10"})
+        if u.endswith("/Users?api_key=jkey"):
+            return _FakeJson([{"Id": "user-1", "Name": "admin"}])
+        return _FakeJson({"Items": items})
+    return side_effect
+
+
+def _make_provider(side_effect=None):
+    from services.library.jellyfin import JellyfinLibraryProvider
+    with patch("urllib.request.urlopen", side_effect=side_effect or _mock_users_and_items([])):
+        return JellyfinLibraryProvider(config=_cfg())
+
+
+def test_jellyfin_match_by_imdb_id_and_watch_link():
+    from services.library.jellyfin import JellyfinLibraryProvider
+    items = [{
+        "Id": "itm-1", "Name": "Prisoners", "ProductionYear": 2013,
+        "ProviderIds": {"Imdb": "tt1392214", "Tmdb": 146233},
+        "Thumb": "http://x/thumb.jpg",
+    }]
+    side = _mock_users_and_items(items)
+    with patch("urllib.request.urlopen", side_effect=side):
+        p = JellyfinLibraryProvider(config=_cfg())
+        ident = MediaIdentity(media_type=MediaType.MOVIE, imdb_id="tt1392214")
+        m = p.find(ident, title="Prisoners", year=2013)
+    assert m is not None
+    assert m.provider == "jellyfin"
+    assert m.provider_item_id == "itm-1"
+    assert m.metadata["server_id"] == "srv-abc"
+    link = p.build_watch_link(m)
+    assert link["jellyfin_url"].startswith("http://localhost:8098/web/index.html#!/details?id=itm-1")
+    assert "serverId=srv-abc" in link["jellyfin_url"]
+
+
+def test_jellyfin_absent_returns_none():
+    from services.library.jellyfin import JellyfinLibraryProvider
+    side = _mock_users_and_items([])  # empty library
+    with patch("urllib.request.urlopen", side_effect=side):
+        p = JellyfinLibraryProvider(config=_cfg())
+        ident = MediaIdentity(media_type=MediaType.MOVIE, imdb_id="tt9999999")
+        assert p.find(ident, title="Nobody", year=2021) is None
+
+
+def test_jellyfin_not_configured_is_absent():
+    from services.library.jellyfin import JellyfinLibraryProvider
+    p = JellyfinLibraryProvider(config=_cfg(JELLYFIN_API_KEY=""))
+    ident = MediaIdentity(media_type=MediaType.MOVIE, imdb_id="tt1")
+    assert p.find(ident, title="X", year=1999) is None
+
+
+def test_factory_selects_jellyfin_when_configured():
+    from services.library.factory import build_library_service
+    svc = build_library_service(_cfg(MEDIA_SERVER="jellyfin", JELLYFIN_API_KEY="jkey"))
+    assert svc is not None and len(svc.providers) == 1
+    assert svc.providers[0].name == "jellyfin"
+
+
+def test_factory_jellyfin_not_configured_returns_none():
+    from services.library.factory import build_library_service
+    assert build_library_service(_cfg(MEDIA_SERVER="jellyfin", JELLYFIN_API_KEY="")) is None
+
+
+def test_factory_default_is_plex_emby_when_no_media_server():
+    from services.library.factory import build_library_service
+    cfg = SimpleNamespace(MEDIA_SERVER="", PLEX_URL="http://p:32400", PLEX_TOKEN="pt",
+                          EMBY_URL="http://e:8096", EMBY_API_KEY="ek")
+    svc = build_library_service(cfg)
+    assert [p.name for p in svc.providers] == ["plex", "emby"]
+
+
+def test_runtime_loader_merges_runtime_json(monkeypatch, tmp_path):
+    """The provisioner-written runtime.json supplies JELLYFIN_API_KEY post-boot."""
+    runtime = {"JELLYFIN_API_KEY": "rt-key", "MEDIA_SERVER": "jellyfin"}
+    rt = tmp_path / "runtime.json"
+    rt.write_text(json.dumps(runtime), encoding="utf-8")
+    monkeypatch.setenv("RKM_RUNTIME_PATH", str(rt))
+    cfg = Config()
+    assert cfg.JELLYFIN_API_KEY == "rt-key"
+    assert cfg.MEDIA_SERVER == "jellyfin"

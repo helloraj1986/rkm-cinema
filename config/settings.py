@@ -48,6 +48,7 @@ class Config:
 
     # --- Scheduling (Phase 13/14) ---
     WATCHLIST_SCHEDULER: bool       # run the in-process background job loop (spec §26)
+    AUTO_ADD_ENABLED: bool          # gate the autonomous daily recommendation auto-add
     RECONCILE_INTERVAL_MIN: int     # frequent reconcile cadence (default 10 min)
     DAILY_JOB_HOUR: int             # daily recommendation job hour (24h, default 18)
 
@@ -153,6 +154,10 @@ class Config:
 
         # Scheduling (Phase 13/14). Off by default; enable via WATCHLIST_SCHEDULER=true.
         self.WATCHLIST_SCHEDULER = (env.get("WATCHLIST_SCHEDULER") or "").strip().lower() in ("1", "true", "yes", "on")
+        # Autonomous daily auto-add gate. Default TRUE (historical behaviour); the
+        # bundled stack sets AUTO_ADD_ENABLED=false so a fresh install is
+        # Suggest-only until the user opts into automation (decision 2026-09).
+        self.AUTO_ADD_ENABLED = (env.get("AUTO_ADD_ENABLED") or "true").strip().lower() not in ("0", "false", "no", "off")
         try:
             self.RECONCILE_INTERVAL_MIN = int(env.get("RECONCILE_INTERVAL_MIN") or 10)
         except ValueError:
@@ -174,7 +179,7 @@ class Config:
             "RADARR_QUALITY_PROFILE_ID", "SONARR_QUALITY_PROFILE_ID",
             "PLEX_BROWSER_URL", "EMBY_BROWSER_URL",
             "WATCHLIST_STORE", "WATCHLIST_DB_PATH",
-            "WATCHLIST_SCHEDULER", "RECONCILE_INTERVAL_MIN", "DAILY_JOB_HOUR",
+            "WATCHLIST_SCHEDULER", "AUTO_ADD_ENABLED", "RECONCILE_INTERVAL_MIN", "DAILY_JOB_HOUR",
             "TMDB_CACHE_TTL", "PLEX_SCAN_TTL",
         }
 

@@ -189,6 +189,7 @@ function st(entry) {
       watch: r.watch || {},
       plexUrl: ((r.watch && r.watch.plex) || {}).url || '',
       embyUrl: ((r.watch && r.watch.emby) || {}).url || '',
+      jellyfinUrl: ((r.watch && r.watch.jellyfin) || {}).url || '',
       acquisition: r.acquisition || null,
     };
   }
@@ -256,8 +257,10 @@ function cardMarkup(entry, opts = {}) {
   const inPlex = (s.state === 'available' || s.state === 'downloaded');
   const plex = (s.watch && s.watch.plex) ? s.watch.plex : null;
   const emby = (s.watch && s.watch.emby) ? s.watch.emby : null;
+  const jellyfin = (s.watch && s.watch.jellyfin) ? s.watch.jellyfin : null;
   const plexAvail = !!(plex && plex.available);
   const embyAvail = !!(emby && emby.available);
+  const jfAvail = !!(jellyfin && jellyfin.available);
 
   const plexTick = inPlex
     ? `<span class="b plex-check" role="img" aria-label="Available in Plex" title="Available in Plex">${ICONS.check}</span>`
@@ -269,6 +272,8 @@ function cardMarkup(entry, opts = {}) {
       dlBtn = `<a class="btn btn-gold mini-btn" data-act="watch-plex" data-url="${esc(plex.url || '')}" aria-label="Watch on Plex">${ICONS.play} Watch on Plex</a>`;
     } else if (embyAvail) {
       dlBtn = `<a class="btn btn-purple mini-btn" data-act="watch-emby" data-url="${esc(emby.url || '')}" aria-label="Watch on Emby">${ICONS.play} Watch on Emby</a>`;
+    } else if (jfAvail) {
+      dlBtn = `<a class="btn btn-blue mini-btn" data-act="watch-jellyfin" data-url="${esc(jellyfin.url || '')}" aria-label="Watch on Jellyfin">${ICONS.play} Watch on Jellyfin</a>`;
     } else {
       dlBtn = `<button class="btn btn-green mini-btn" disabled>${ICONS.check} Available</button>`;
     }
@@ -302,16 +307,21 @@ function cardMarkup(entry, opts = {}) {
 function _watchButtons(entry, s, svc, mini) {
   const plex = (s.watch && s.watch.plex && s.watch.plex.available) ? s.watch.plex : null;
   const emby = (s.watch && s.watch.emby && s.watch.emby.available) ? s.watch.emby : null;
+  const jf = (s.watch && s.watch.jellyfin && s.watch.jellyfin.available) ? s.watch.jellyfin : null;
   const sm = mini ? 'btn-sm mini-btn' : '';
-  if (!plex && !emby) return null;
-  if (plex && emby) {
-    // Both available — show the Watch Now dropdown trigger.
-    return `<button class="btn btn-purple ${sm}" data-act="watchnow" data-plex-url="${esc(plex.url || '')}" data-emby-url="${esc(emby.url || '')}" aria-label="Watch ${esc(entry.title)}">${ICONS.play} Watch Now ▼</button>`;
+  const avail = [plex, emby, jf].filter(Boolean);
+  if (!avail.length) return null;
+  if (avail.length === 1) {
+    if (plex) {
+      return `<button class="btn btn-purple ${sm}" data-act="watch-plex" data-url="${esc(plex.url || '')}" aria-label="Watch ${esc(entry.title)} on Plex">${ICONS.play} Watch on Plex</button>`;
+    }
+    if (emby) {
+      return `<button class="btn btn-purple ${sm}" data-act="watch-emby" data-url="${esc(emby.url || '')}" aria-label="Watch ${esc(entry.title)} on Emby">${ICONS.play} Watch on Emby</button>`;
+    }
+    return `<button class="btn btn-purple ${sm}" data-act="watch-jellyfin" data-url="${esc(jf.url || '')}" aria-label="Watch ${esc(entry.title)} on Jellyfin">${ICONS.play} Watch on Jellyfin</button>`;
   }
-  if (plex) {
-    return `<button class="btn btn-purple ${sm}" data-act="watch-plex" data-url="${esc(plex.url || '')}" aria-label="Watch ${esc(entry.title)} on Plex">${ICONS.play} Watch on Plex</button>`;
-  }
-  return `<button class="btn btn-purple ${sm}" data-act="watch-emby" data-url="${esc(emby.url || '')}" aria-label="Watch ${esc(entry.title)} on Emby">${ICONS.play} Watch on Emby</button>`;
+  // Multiple providers available — show the Watch Now dropdown trigger.
+  return `<button class="btn btn-purple ${sm}" data-act="watchnow" data-plex-url="${esc(plex ? plex.url : '')}" data-emby-url="${esc(emby ? emby.url : '')}" data-jellyfin-url="${esc(jf ? jf.url : '')}" aria-label="Watch ${esc(entry.title)}">${ICONS.play} Watch Now ▼</button>`;
 }
 
 function downloadButton(entry, mini = false) {
@@ -417,7 +427,7 @@ const VIEWS = {
 function renderHeader() {
   const pillState = SERVICES.radarr ? '' : SERVICES.sonarr ? '' : 'err';
   const updated = DATA?.updated ? `Updated ${timeAgo(DATA.updated)}` : 'No data yet';
-  const nav = [['discover', 'Discover'], ['suggest', 'Suggest'], ['movies', 'Movies'], ['tv', 'TV Shows'], ['watchlist', 'Watchlist'], ['downloaded', 'Downloaded']];
+  const nav = [['discover', 'Discover'], ['movies', 'Movies'], ['tv', 'TV Shows'], ['watchlist', 'Watchlist'], ['downloaded', 'Downloaded'], ['suggest', 'Suggest']];
   const navHtml = nav.map(([id, label]) =>
     `<button data-nav="${id}" class="${currentView === id ? 'active' : ''}" aria-current="${currentView === id ? 'page' : 'false'}">${label}</button>`).join('');
 
@@ -447,11 +457,11 @@ function renderHeader() {
   // mobile bottom navigation (hidden on desktop via CSS)
   const NAV_ITEMS = [
     ['discover', 'Discover', ICONS.spark],
-    ['suggest', 'Suggest', ICONS.search],
     ['movies', 'Movies', ICONS.film],
     ['tv', 'TV', ICONS.town],
     ['watchlist', 'Watchlist', ICONS.heart],
     ['downloaded', 'Saved', ICONS.check],
+    ['suggest', 'Suggest', ICONS.search],
   ];
   document.querySelector('.bottom-nav')?.remove();
   const bn = document.createElement('nav');
@@ -1166,6 +1176,10 @@ function libraryCard(r) {
   if (!embyUrl && LIB?.urls?.emby) {
     embyUrl = `${LIB.urls.emby.replace(/\/web\/index\.html$/, '')}/web/index.html#!/search/${encodeURIComponent(r.title || '')}`;
   }
+  let jfUrl = r.jellyfinUrl || '';
+  if (!jfUrl && LIB?.urls?.jellyfin) {
+    jfUrl = `${LIB.urls.jellyfin.replace(/\/web\/index\.html$/, '')}/web/index.html#!/search/${encodeURIComponent(r.title || '')}`;
+  }
   return `<div class="card" tabindex="0" role="button" aria-label="${esc(r.title)}">
     <div class="card-inner" style="--card-aspect: 2/3">
       <div class="imgbox">${thumb || '<div class="poster-ph">🎬</div>'}</div>
@@ -1174,6 +1188,7 @@ function libraryCard(r) {
       <div class="watchnow" style="position:absolute; left:50%; bottom:12px; transform:translateX(-50%); z-index:5; display:flex; gap:8px;">
         ${plexUrl ? `<button class="btn btn-purple btn-sm mini-btn" data-act="watch-plex" data-url="${esc(plexUrl)}">${ICONS.play} Plex</button>` : ''}
         ${embyUrl ? `<button class="btn btn-gold btn-sm mini-btn" data-act="watch-emby" data-url="${esc(embyUrl)}">${ICONS.play} Emby</button>` : ''}
+        ${jfUrl ? `<button class="btn btn-blue btn-sm mini-btn" data-act="watch-jellyfin" data-url="${esc(jfUrl)}">${ICONS.play} Jellyfin</button>` : ''}
       </div>
     </div>
     <div class="card-info"><div class="ci-title">${esc(r.title)}</div><div class="ci-meta">${r.year || ''}</div></div>
@@ -1188,7 +1203,7 @@ function libraryStripMarkup() {
   </div>
   <div class="row"><div class="empty" style="margin:0; padding:46px 20px; border-style:dashed">
     <div class="ec">📚</div><h3>Library preview</h3>
-    <p>Connect Plex or Emby in .env (PLEX_URL, PLEX_TOKEN or EMBY_URL, EMBY_API_KEY) and your library counts and recent additions appear here.</p>
+    <p>Connect a library backend (PLEX_URL/PLEX_TOKEN, EMBY_URL/EMBY_API_KEY, or JELLYFIN_URL/JELLYFIN_API_KEY) and your library counts and recent additions appear here.</p>
   </div></div>`;
 }
 
@@ -1282,15 +1297,24 @@ function modalDownloadButton(entry, s) {
   if (caps.can_watch) {
     const plex = (s.watch && s.watch.plex && s.watch.plex.available) ? s.watch.plex : null;
     const emby = (s.watch && s.watch.emby && s.watch.emby.available) ? s.watch.emby : null;
+    const jf = (s.watch && s.watch.jellyfin && s.watch.jellyfin.available) ? s.watch.jellyfin : null;
     if (plex && emby) {
       return `<div class="modal-watch-group">
         <a class="btn btn-purple" target="_blank" rel="noopener" data-role="watchplex" href="${esc(plex.url || '')}">${ICONS.play} Watch on Plex</a>
         <a class="btn btn-purple" target="_blank" rel="noopener" data-role="watchemby" href="${esc(emby.url || '')}">${ICONS.play} Watch on Emby</a>
       </div>`;
+    } else if (jf && (plex || emby)) {
+      return `<div class="modal-watch-group">
+        ${plex ? `<a class="btn btn-purple" target="_blank" rel="noopener" data-role="watchplex" href="${esc(plex.url || '')}">${ICONS.play} Watch on Plex</a>` : ''}
+        ${emby ? `<a class="btn btn-purple" target="_blank" rel="noopener" data-role="watchemby" href="${esc(emby.url || '')}">${ICONS.play} Watch on Emby</a>` : ''}
+        <a class="btn btn-purple" target="_blank" rel="noopener" data-role="watchjellyfin" href="${esc(jf.url || '')}">${ICONS.play} Watch on Jellyfin</a>
+      </div>`;
     } else if (plex) {
       return `<a class="btn btn-purple" data-role="watchplex" target="_blank" rel="noopener" href="${esc(plex.url || '')}">${ICONS.play} Watch on Plex</a>`;
     } else if (emby) {
       return `<a class="btn btn-purple" data-role="watchemby" target="_blank" rel="noopener" href="${esc(emby.url || '')}">${ICONS.play} Watch on Emby</a>`;
+    } else if (jf) {
+      return `<a class="btn btn-purple" data-role="watchjellyfin" target="_blank" rel="noopener" href="${esc(jf.url || '')}">${ICONS.play} Watch on Jellyfin</a>`;
     }
     return `<button class="btn btn-green" data-role="download" disabled>${ICONS.check} Available</button>`;
   }
@@ -1532,21 +1556,28 @@ app.addEventListener('click', (e) => {
            window.open(actBtn.dataset.url, '_blank');
          }
        } else if (actBtn.dataset.act === 'watch-emby') {
-         if (actBtn.dataset.url) {
-           window.open(actBtn.dataset.url, '_blank');
-         }
-       } else if (actBtn.dataset.act === 'watchnow') {
+               if (actBtn.dataset.url) {
+                 window.open(actBtn.dataset.url, '_blank');
+               }
+             } else if (actBtn.dataset.act === 'watch-jellyfin') {
+               if (actBtn.dataset.url) {
+                 window.open(actBtn.dataset.url, '_blank');
+               }
+             } else if (actBtn.dataset.act === 'watchnow') {
          // Handle Watch Now dropdown - for simplicity, we'll open Plex first if both available
          // In a full implementation, this would show a dropdown menu
          if (entry) {
-           const plexUrl = actBtn.dataset.plexUrl;
-           const embyUrl = actBtn.dataset.embyUrl;
-           if (plexUrl) {
-             window.open(plexUrl, '_blank');
-           } else if (embyUrl) {
-             window.open(embyUrl, '_blank');
-           }
-         }
+                   const plexUrl = actBtn.dataset.plexUrl;
+                   const embyUrl = actBtn.dataset.embyUrl;
+                   const jfUrl = actBtn.dataset.jellyfinUrl;
+                   if (plexUrl) {
+                     window.open(plexUrl, '_blank');
+                   } else if (embyUrl) {
+                     window.open(embyUrl, '_blank');
+                   } else if (jfUrl) {
+                     window.open(jfUrl, '_blank');
+                   }
+                 }
        }
        return;
      }

@@ -23,6 +23,7 @@ dist/
 watchlist.json
 dashboard-data.json
 index.html
+!index.html
 dashboard.html
 *.log
 *.tmp
@@ -36,6 +37,12 @@ Thumbs.db
 
 # Container
 docker-compose.override.yml
+
+# Bundled-stack experiment (rkm.config.toml holds secrets; ./data is runtime media)
+rkm.config.toml
+.rkm_state.json
+data/
+provisioner/__pycache__/
 
 # Working backups / scratch
 *.backup

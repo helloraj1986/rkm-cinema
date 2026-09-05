@@ -36,7 +36,7 @@ done
 [ -n "$ready" ] || echo "API not healthy after 120s - check: docker compose -p rkm-bundled logs api"
 
 echo "Running provisioner (Jellyfin setup) ..."
-docker compose -p rkm-bundled --profile provision run --rm provisioner || \
+docker compose -p rkm-bundled --profile provision run --rm --build provisioner || \
     echo "Provisioner had issues; Jellyfin may need one manual setup at http://localhost:8098/web"
 
 echo "Restarting api to load runtime config ..."

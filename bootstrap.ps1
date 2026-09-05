@@ -52,7 +52,7 @@ if (!$ready) { Write-Host "API not healthy after 120s - check: docker compose -p
 
 # --- Run the Jellyfin provisioner (creates admin + API key + libraries) ---
 Write-Host "Running provisioner (Jellyfin setup) ..." -ForegroundColor Cyan
-docker compose -p rkm-bundled --profile provision run --rm provisioner
+docker compose -p rkm-bundled --profile provision run --rm --build provisioner
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Provisioner had issues (see above). Jellyfin may need one manual setup at http://localhost:8098/web" -ForegroundColor Yellow
 }

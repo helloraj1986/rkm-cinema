@@ -80,32 +80,21 @@ def get_library():
         counts={"movie": 0, "show": 0}, recent=[], server=None, urls=urls)
 
 
-def _first_provider_with(service, attr):
-    """Return the first provider exposing ``attr`` (or None). Failure-safe."""
-    if service is None or not getattr(service, "providers", None):
-        return None
-    for p in service.providers:
-        if hasattr(p, attr):
-            return p
-    return None
-
-
 @router.get("/library/items")
 def get_library_items():
     """Full library as a poster wall — every Movie + Series with playback facts.
 
-    Newer providers (Jellyfin) expose ``all_items()``; older ones (Plex/Emby)
-    fall back to an empty list rather than failing the request.
+    Phase 1: routed through :class:`LibraryService` ``all_items()`` (first
+    provider with a meaningful result wins); no provider feature-detection.
     """
     cfg = get_config()
     service = build_library_service(cfg)
-    p = _first_provider_with(service, "all_items")
-    if p is None:
+    if service is None:
         return {"provider": None, "items": []}
     try:
-        return {"provider": p.name, "items": p.all_items() or []}
+        return service.all_items() or {"provider": None, "items": []}
     except Exception:
-        return {"provider": p.name, "items": []}
+        return {"provider": None, "items": []}
 
 
 @router.get("/library/continue-watching")
@@ -113,13 +102,12 @@ def get_continue_watching():
     """In-progress titles for the Discover \"Continue Watching\" row."""
     cfg = get_config()
     service = build_library_service(cfg)
-    p = _first_provider_with(service, "continue_watching")
-    if p is None:
+    if service is None:
         return {"provider": None, "items": []}
     try:
-        return {"provider": p.name, "items": p.continue_watching(limit=12) or []}
+        return service.continue_watching() or {"provider": None, "items": []}
     except Exception:
-        return {"provider": p.name, "items": []}
+        return {"provider": None, "items": []}
 
 
 @router.get("/library/series/{series_id}/episodes")
@@ -127,13 +115,12 @@ def get_series_episodes(series_id: str):
     """Every episode of one series, with per-episode playback facts (for TV)."""
     cfg = get_config()
     service = build_library_service(cfg)
-    p = _first_provider_with(service, "episodes")
-    if p is None:
+    if service is None:
         return {"provider": None, "episodes": []}
     try:
-        return {"provider": p.name, "episodes": p.episodes(series_id) or []}
+        return service.episodes(series_id) or {"provider": None, "episodes": []}
     except Exception:
-        return {"provider": p.name, "episodes": []}
+        return {"provider": None, "episodes": []}
 
 
 @router.get("/library/scan")

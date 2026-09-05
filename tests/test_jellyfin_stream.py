@@ -213,13 +213,12 @@ def test_progress_uses_playing_for_start_event(monkeypatch):
 
 
 def test_library_items_route_returns_all(monkeypatch):
-    """GET /api/library/items proxies all_items() from the provider."""
+    """GET /api/library/items collates the library via the LibraryService capability."""
     _patch_config(monkeypatch)
-    fake_prov = SimpleNamespace(
-        name="jellyfin",
-        all_items=lambda: [{"title": "A", "item_id": "a1", "type": "movie",
-                            "played": False, "playback_position": 0, "runtime": 6000}])
-    fake_svc = SimpleNamespace(providers=[fake_prov])
+    fake_svc = SimpleNamespace(all_items=lambda: {
+        "provider": "jellyfin",
+        "items": [{"title": "A", "item_id": "a1", "type": "movie",
+                   "played": False, "playback_position": 0, "runtime": 6000}]})
     with patch("api.routes.library.build_library_service", return_value=fake_svc):
         r = client.get("/api/library/items")
     assert r.status_code == 200
@@ -229,13 +228,12 @@ def test_library_items_route_returns_all(monkeypatch):
 
 
 def test_library_continue_watching_route(monkeypatch):
-    """GET /api/library/continue-watching proxies the provider's resume list."""
+    """GET /api/library/continue-watching collates the resume list via the capability."""
     _patch_config(monkeypatch)
-    fake_prov = SimpleNamespace(
-        name="jellyfin",
-        continue_watching=lambda limit=12: [{"title": "Half", "item_id": "m1", "type": "movie",
-                                             "played": False, "playback_position": 3000, "runtime": 6000}])
-    fake_svc = SimpleNamespace(providers=[fake_prov])
+    fake_svc = SimpleNamespace(continue_watching=lambda limit=12: {
+        "provider": "jellyfin",
+        "items": [{"title": "Half", "item_id": "m1", "type": "movie",
+                   "played": False, "playback_position": 3000, "runtime": 6000}]})
     with patch("api.routes.library.build_library_service", return_value=fake_svc):
         r = client.get("/api/library/continue-watching")
     assert r.status_code == 200
@@ -243,18 +241,18 @@ def test_library_continue_watching_route(monkeypatch):
 
 
 def test_series_episodes_route(monkeypatch):
-    """GET /api/library/series/{id}/episodes proxies the provider's episodes()."""
+    """GET /api/library/series/{id}/episodes collates episodes via the capability."""
     _patch_config(monkeypatch)
-    fake_prov = SimpleNamespace(
-        name="jellyfin",
-        episodes=lambda series_id: [{"id": "e1", "name": "Pilot", "season": 1, "episode": 1,
-                                     "played": False, "playback_position": 2000, "runtime": 4000}])
-    fake_svc = SimpleNamespace(providers=[fake_prov])
+    fake_svc = SimpleNamespace(episodes=lambda series_id: {
+        "provider": "jellyfin",
+        "episodes": [{"id": "e1", "name": "Pilot", "season": 1, "episode": 1,
+                      "played": False, "playback_position": 2000, "runtime": 4000}]})
     with patch("api.routes.library.build_library_service", return_value=fake_svc):
         r = client.get("/api/library/series/s1/episodes")
     assert r.status_code == 200
-    assert r.json()["episodes"][0]["name"] == "Pilot"
-    assert r.json()["episodes"][0]["playback_position"] == 2000
+    body = r.json()
+    assert body["episodes"][0]["name"] == "Pilot"
+    assert body["episodes"][0]["playback_position"] == 2000
 
 
 def test_jobs_library_scan_endpoint(monkeypatch):

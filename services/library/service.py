@@ -80,6 +80,30 @@ class LibraryProvider(ABC):
     def build_watch_link(self, match: LibraryMatch) -> dict:
         """Build the watch links (e.g. ``plex``/``emby`` browser URLs) for a match."""
 
+    # ----------------------------------------------- capability surface (Phase 1)
+    # Newer providers (Jellyfin) implement richer views; others inherit the
+    # harmless default so ROUTES call the ABC uniformly (never ``getattr``/
+    # ``hasattr``). See docs/modular-scalable-architecture.md Phase 1.
+    def all_items(self, limit: Optional[int] = None) -> list[dict]:
+        """Full library (Movies+Series) with playback facts. Default ``[]``."""
+        return []
+
+    def continue_watching(self, limit: int = 12) -> list[dict]:
+        """Started-and-unfinished titles. Default ``[]``."""
+        return []
+
+    def episodes(self, series_id: str, limit: int = 1000) -> list[dict]:
+        """Episodes of one series with per-episode playback facts. Default ``[]``."""
+        return []
+
+    def refresh_library(self) -> bool:
+        """Trigger a backend library rescan. Default ``False`` (not supported)."""
+        return False
+
+    def get_poster(self, item_id: str, max_width: int = 500) -> Optional[dict]:
+        """Fetch an item's primary image (``{"content": bytes, "content_type": str}``). Default ``None``."""
+        return None
+
 
 class LibraryService:
     """Unified library facade.
@@ -259,6 +283,71 @@ class LibraryService:
             except Exception as e:
                 logger.warning("recently_added failed for %s: %s", p.name, e)
         return []
+
+    # ----------------------------------------------- capability aggregate (Phase 1)
+    # Collapse the provider capability surface into "first provider with a
+    # meaningful result", so routes call the service, not ``getattr`` instances.
+    # A provider that exposes the method but returns the ABC default ``[]``/``False``
+    # (e.g. Plex/Emby for the Jellyfin-only views) is skipped in favour of the
+    # backend that actually implements it — preserving the old "first provider
+    # WITH the method" semantics without feature-detection.
+    def all_items(self, limit: Optional[int] = None) -> dict:
+        """Poster-wall library: ``{"provider": str|None, "items": [...]}``."""
+        for p in self._providers:
+            try:
+                items = p.all_items(limit=limit) or []
+            except Exception as e:
+                logger.warning("all_items failed for %s: %s", p.name, e)
+                continue
+            if items:
+                return {"provider": p.name, "items": items}
+        return {"provider": None, "items": []}
+
+    def continue_watching(self, limit: int = 12) -> dict:
+        """Continue Watching row: ``{"provider": str|None, "items": [...]}``."""
+        for p in self._providers:
+            try:
+                items = p.continue_watching(limit=limit) or []
+            except Exception as e:
+                logger.warning("continue_watching failed for %s: %s", p.name, e)
+                continue
+            if items:
+                return {"provider": p.name, "items": items}
+        return {"provider": None, "items": []}
+
+    def episodes(self, series_id: str, limit: int = 1000) -> dict:
+        """Episodes of one series: ``{"provider": str|None, "episodes": [...]}``."""
+        for p in self._providers:
+            try:
+                eps = p.episodes(series_id, limit=limit) or []
+            except Exception as e:
+                logger.warning("episodes failed for %s: %s", p.name, e)
+                continue
+            if eps:
+                return {"provider": p.name, "episodes": eps}
+        return {"provider": None, "episodes": []}
+
+    def refresh_library(self) -> bool:
+        """Trigger a rescan; ``True`` if any provider refreshed successfully."""
+        for p in self._providers:
+            try:
+                if p.refresh_library():
+                    return True
+            except Exception as e:
+                logger.warning("refresh_library failed for %s: %s", p.name, e)
+        return False
+
+    def get_poster(self, item_id: str, max_width: int = 500) -> Optional[dict]:
+        """Fetch an item image from the first provider able to serve it."""
+        for p in self._providers:
+            try:
+                result = p.get_poster(item_id, max_width=max_width)
+            except Exception as e:
+                logger.warning("get_poster failed for %s: %s", p.name, e)
+                continue
+            if result:
+                return result
+        return None
 
     def invalidate(self) -> None:
         """Drop every provider's library caches (force a fresh scan next read).

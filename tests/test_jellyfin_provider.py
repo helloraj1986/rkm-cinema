@@ -356,3 +356,22 @@ def test_refresh_library_invalidates_cache(monkeypatch):
         assert prov.refresh_library() is True
     assert prov._item_cache is None, "cache was invalidated after the scan"
     assert seen["url"].endswith("/Library/Refresh?api_key=jkey")
+
+
+def test_library_service_capability_collapses_to_first_provider_with_meaningful_result():
+    """Phase 1: LibraryService.all_items() skips a provider that returns the ABC
+    default ([]), so Plex/Emby can't shadow a Jellyfin that actually implements it."""
+    from services.library.service import LibraryService
+
+    plex = SimpleNamespace(name="plex", all_items=lambda limit=None: [])   # ABC default
+    item = {"title": "A", "item_id": "a1", "type": "movie",
+            "played": False, "playback_position": 0, "runtime": 6000}
+    jellyfin = SimpleNamespace(name="jellyfin", all_items=lambda limit=None: [item])
+
+    svc = LibraryService(providers=[plex, jellyfin])
+    out = svc.all_items()
+    assert out["provider"] == "jellyfin", out
+    assert out["items"][0]["item_id"] == "a1"
+    # No provider with a result -> graceful empty
+    empty = LibraryService(providers=[plex]).all_items()
+    assert empty == {"provider": None, "items": []}

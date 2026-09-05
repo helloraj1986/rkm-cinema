@@ -4,7 +4,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Query
 from fastapi.responses import Response
 from config.settings import get_config
-from services.library import JellyfinLibraryProvider
+from services.library.factory import build_library_service
 
 router = APIRouter()
 
@@ -14,13 +14,15 @@ def jellyfin_poster(id: str = Query(default=""), width: int = Query(default=500,
     """Proxy a Jellyfin item's primary image so the browser can render it.
 
     Keeps the Jellyfin token/credential server-side: the browser only ever hits
-    this same-origin /api route.
+    this same-origin /api route. Phase 1: routed through the ``LibraryService``
+    ``get_poster`` capability (first provider able to serve it wins).
     """
     cfg = get_config()
     if not id:
         return Response(status_code=404)
+    service = build_library_service(cfg)
     try:
-        result = JellyfinLibraryProvider(config=cfg).get_poster(id, width)
+        result = service.get_poster(id, width) if service is not None else None
     except Exception:
         result = None
     if not result:

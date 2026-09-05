@@ -289,7 +289,7 @@ function cardMarkup(entry, opts = {}) {
     } else if (jfAvail && jellyfin.item_id) {
       // In-app playback is the primary action; keep the Jellyfin deep-link beside it.
       dlBtn = `<span class="jf-qrow">
-        <button class="btn btn-gold mini-btn" data-act="play" data-jf-item="${esc(jellyfin.item_id)}" data-resume="${esc(jellyfin.playback_position || 0)}" aria-label="Play ${esc(entry.title)} in RKM">${ICONS.play} Play in RKM</button>
+        ${cardPrimaryPlay(jellyfin.item_id, jellyfin.playback_position, entry.type === 'tv', entry.title)}
         <a class="btn btn-ghost mini-btn" data-act="watch-jellyfin" data-url="${esc(jellyfin.url || '')}" aria-label="Open in Jellyfin">${ICONS.play} Jellyfin</a>
       </span>`;
     } else if (jfAvail) {
@@ -1219,7 +1219,7 @@ function libraryCard(r) {
       <div class="badges"><span class="b ${r.type}">${r.type === 'tv' ? 'TV' : 'MOVIE'}</span></div>
       ${playbackMarkup(r)}
       <div class="watchnow" style="position:absolute; left:50%; bottom:12px; transform:translateX(-50%); z-index:5; display:flex; gap:8px;">
-        ${r.item_id ? `<button class="btn btn-gold btn-sm mini-btn" data-act="play" data-jf-item="${esc(r.item_id)}" data-resume="${esc(r.playback_position || 0)}" data-title="${esc(r.title)}">${ICONS.play} Play in RKM</button>` : ''}
+        ${r.item_id ? cardPrimaryPlay(r.item_id, r.playback_position, r.type === 'tv', r.title) : ''}
         ${plexUrl ? `<button class="btn btn-purple btn-sm mini-btn" data-act="watch-plex" data-url="${esc(plexUrl)}">${ICONS.play} Plex</button>` : ''}
         ${embyUrl ? `<button class="btn btn-gold btn-sm mini-btn" data-act="watch-emby" data-url="${esc(embyUrl)}">${ICONS.play} Emby</button>` : ''}
         ${jfUrl ? `<button class="btn btn-blue btn-sm mini-btn" data-act="watch-jellyfin" data-url="${esc(jfUrl)}">${ICONS.play} Jellyfin</button>` : ''}
@@ -1319,9 +1319,11 @@ function openModal(entry) {
     const trailerBtn = e.target.closest('[data-role="trailer"]');
     const dlBtn = e.target.closest('[data-role="download"]');
     const playBtn = e.target.closest('[data-role="play-jellyfin"]');
+    const epBtn = e.target.closest('[data-role="episodes-jellyfin"]');
     if (trailerBtn) { e.preventDefault(); loadTrailer(); return; }
     if (dlBtn) { e.preventDefault(); if (modalEntry) doDownload(modalEntry, { in: 'modal' }); return; }
     if (playBtn) { e.preventDefault(); openPlayer(playBtn.dataset.jfItem, modalEntry ? modalEntry.title : '', Number(playBtn.dataset.resume || 0)); return; }
+    if (epBtn) { e.preventDefault(); openEpisodes(epBtn.dataset.jfItem, modalEntry ? modalEntry.title : ''); return; }
   });
   overlay.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') closeModal();
@@ -1352,8 +1354,18 @@ function trailerButton(entry) {
    native item id. Returns '' otherwise so callers can prepend it freely. */
 function playInRkmMarkup(jf, entry) {
   if (!jf || !jf.item_id) return '';
+  const isTv = !!(entry && entry.type === 'tv');
   const title = (entry && entry.title) || '';
-  return `<button class="btn btn-gold" data-role="play-jellyfin" data-jf-item="${esc(jf.item_id)}" data-resume="${esc(jf.playback_position || 0)}" aria-label="Play ${esc(title)} in RKM">${ICONS.play} Play in RKM</button>`;
+  const role = isTv ? 'episodes-jellyfin' : 'play-jellyfin';
+  const label = isTv ? 'Episodes' : 'Play in RKM';
+  return `<button class="btn btn-gold" data-role="${role}" data-jf-item="${esc(jf.item_id)}" data-resume="${esc(jf.playback_position || 0)}" data-title="${esc(title)}" aria-label="${label} for ${esc(title)}">${ICONS.play} ${label}</button>`;
+}
+
+/* Card/TV primary action: movies -> Play in RKM; TV -> open the episode picker. */
+function cardPrimaryPlay(itemId, position, isTv, title) {
+  const act = isTv ? 'series' : 'play';
+  const label = isTv ? 'Episodes' : 'Play in RKM';
+  return `<button class="btn btn-gold btn-sm mini-btn" data-act="${act}" data-jf-item="${esc(itemId)}" data-resume="${esc(position || 0)}" data-title="${esc(title)}">${ICONS.play} ${label}</button>`;
 }
 
 /* Watched / progress marker from an object carrying played/playback_position/
@@ -1477,7 +1489,23 @@ function openPlayer(itemId, title, resume) {
       _reportPos(v, 'timeupdate');
     });
     v.addEventListener('pause', () => _reportPos(v, 'stopped'));
-    v.addEventListener('ended', () => _reportPos(v, 'stopped'));
+    v.addEventListener('ended', () => {
+      _reportPos(v, 'stopped');
+      // Up Next — if this was an episode in a loaded series queue.
+      const nxt = nextEpisode(_playerItemId);
+      if (nxt) {
+        const stage = ov.querySelector('.player-stage');
+        if (stage) {
+          const el = document.createElement('div');
+          el.className = 'upnext';
+          el.innerHTML = `<div class="upnext-label">Up Next</div>
+            <div class="upnext-name">${esc(nxt.name)}</div>
+            <button class="btn btn-gold" data-role="play-next">${ICONS.play} Play next</button>`;
+          stage.appendChild(el);
+          el.querySelector('[data-role="play-next"]').addEventListener('click', () => openPlayer(nxt.id, nxt.name, nxt.position || 0));
+        }
+      }
+    });
   }
 }
 let _playerItemId = '';
@@ -1525,6 +1553,84 @@ function showPlayerErr(ov) {
   const stage = ov.querySelector('.player-stage');
   if (!stage) return;
   stage.innerHTML = `<div class="player-error">⚠️ Couldn't play this file in the browser — the codec may not be supported.<br><span class="player-err-sub">Open it in Jellyfin directly instead.</span></div>`;
+}
+
+/* ---------------- TV episode picker -----------------*/
+let _episodeQueue = [];   // ordered [{id,name,position}] when a series is open (for Up Next)
+
+async function openEpisodes(seriesId, seriesTitle) {
+  closePlayer();
+  const ov = document.createElement('div');
+  ov.className = 'overlay';
+  ov.innerHTML = `<div class="modal episodes-modal">
+    <div class="modal-back" style="height:120px"><div class="shade"></div>
+      <button class="modal-x" data-role="close-episodes" aria-label="Close">${ICONS.x}</button>
+    </div>
+    <div class="modal-content">
+      <h2 class="modal-title">${esc(seriesTitle || 'Episodes')}</h2>
+      <div class="episodes-body" id="episodesBody"><div class="empty">Loading episodes…</div></div>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+  requestAnimationFrame(() => ov.classList.add('show'));
+  document.body.style.overflow = 'hidden';
+  ov.addEventListener('click', (e) => {
+    if (e.target === ov || e.target.closest('[data-role="close-episodes"]')) { closeEpisodes(); return; }
+  });
+  ov.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeEpisodes(); });
+  const body = ov.querySelector('#episodesBody');
+  let eps = [];
+  try {
+    const d = await API.getSeriesEpisodes(seriesId);
+    eps = (d && d.episodes) || [];
+  } catch (e) { /* leave empty */ }
+  _episodeQueue = eps.map((x) => ({ id: x.id, name: x.name, position: x.playback_position || 0 }));
+  body.innerHTML = eps.length ? renderEpisodes(eps) : `<div class="empty">No episodes found for this show.</div>`;
+}
+
+function closeEpisodes() {
+  const ov = document.querySelector('.overlay.episodes-modal');
+  if (ov && ov.parentNode) { ov.classList.remove('show'); setTimeout(() => ov.remove(), 220); }
+  _episodeQueue = [];
+}
+
+function renderEpisodes(eps) {
+  const groups = {};
+  eps.forEach((e) => { const s = e.season || 0; (groups[s] = groups[s] || []).push(e); });
+  const seasons = Object.keys(groups).sort((a, b) => +a - +b);
+  return seasons.map((s) => `
+    <div class="ep-season">
+      <div class="ep-season-title">${s === '0' ? 'Specials' : 'Season ' + s}</div>
+      <div class="ep-list">${groups[s].map((e) => epRow(e)).join('')}</div>
+    </div>`).join('');
+}
+
+function epRow(e) {
+  const num = e.episode != null && e.episode > 0 ? `S${e.season || 0}·E${e.episode}` : '';
+  let state = '';
+  let bar = '';
+  if (e.played) {
+    state = `<span class="ep-state watched">${ICONS.check} Watched</span>`;
+  } else if (e.runtime > 0 && e.playback_position > 0) {
+    const pct = Math.min(100, Math.round((e.playback_position / e.runtime) * 100));
+    state = `<span class="ep-state">${pct}% watched</span>`;
+    bar = `<span class="ep-bar"><span class="ep-bar-fill" style="width:${pct}%"></span></span>`;
+  }
+  return `<div class="ep-row">
+    <div class="ep-thumb"><img src="${esc('/api/jellyfin/poster?id=' + encodeURIComponent(e.id) + '&width=140')}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.display='none'"><div class="ep-thumb-ph">📺</div></div>
+    <div class="ep-main">
+      <div class="ep-top"><span class="ep-num">${num || ''}</span><span class="ep-name">${esc(e.name)}</span></div>
+      <div class="ep-foot">${state || ''}<span class="ep-runtime">${e.runtime ? fmtRuntime(e.runtime) : ''}</span></div>
+      ${bar}
+    </div>
+    <button class="btn btn-gold btn-sm mini-btn" data-act="play" data-jf-item="${esc(e.id)}" data-resume="${esc(e.playback_position || 0)}" data-title="${esc(e.name)}">${ICONS.play} ${e.played ? 'Replay' : (e.playback_position > 0 ? 'Resume' : 'Play')}</button>
+  </div>`;
+}
+
+/* Next episode in the loaded queue, if any (for Up Next). */
+function nextEpisode(curId) {
+  const i = _episodeQueue.findIndex((x) => x.id === curId);
+  return (i >= 0 && i + 1 < _episodeQueue.length) ? _episodeQueue[i + 1] : null;
 }
 
 /* ---------------- interactions ---------------- */
@@ -1742,6 +1848,13 @@ app.addEventListener('click', (e) => {
          const jfid = actBtn.dataset.jfItem;
          const title = (entry && entry.title) || actBtn.dataset.title || '';
          if (jfid) openPlayer(jfid, title, Number(actBtn.dataset.resume || 0));
+         return;
+       } else if (actBtn.dataset.act === 'series') {
+         // TV: open the episode picker instead of playing a non-playable Series id.
+         e.preventDefault();
+         const sid = actBtn.dataset.jfItem;
+         const stitle = (entry && entry.title) || actBtn.dataset.title || '';
+         if (sid) openEpisodes(sid, stitle);
          return;
        } else if (actBtn.dataset.act === 'download') {
          if (entry) doDownload(entry, { in: heroBtn ? 'hero' : (modalEntry ? 'modal' : 'card') });

@@ -222,3 +222,43 @@ def test_continue_watching_filters_in_progress():
     items = prov.continue_watching(limit=12)
     assert [x["item_id"] for x in items] == ["m1"], [x["item_id"] for x in items]
     assert items[0]["playback_position"] == 3000
+
+
+def test_episodes_lists_and_sorts_per_season():
+    """episodes() lists a series' episodes ordered by (season, episode) w/ playback facts."""
+    from services.library.jellyfin import JellyfinLibraryProvider
+    prov = JellyfinLibraryProvider(config=_cfg())
+    seen = {}
+
+    def fake_user_id():
+        return "u1"
+
+    def fake_configured():
+        return True
+
+    def fake_fetch(url):
+        seen["url"] = url
+        return [
+            {"Name": "S1E2", "Id": "e2", "ParentIndexNumber": 1, "IndexNumber": 2,
+             "UserData": {"Played": False, "PlaybackPositionTicks": 0},
+             "RunTimeTicks": 30_000_000_000},
+            {"Name": "S1E1", "Id": "e1", "ParentIndexNumber": 1, "IndexNumber": 1,
+             "UserData": {"Played": False, "PlaybackPositionTicks": 20_000_000_000},
+             "RunTimeTicks": 40_000_000_000},
+            {"Name": "S2E1", "Id": "e3", "ParentIndexNumber": 2, "IndexNumber": 1,
+             "UserData": {"Played": True, "PlaybackPositionTicks": 0},
+             "RunTimeTicks": 30_000_000_000},
+        ]
+
+    prov._user_id = fake_user_id
+    prov._configured = fake_configured
+    prov._fetch_raw = fake_fetch
+
+    eps = prov.episodes("series1")
+    assert [e["id"] for e in eps] == ["e1", "e2", "e3"], eps  # season then episode
+    assert "ParentId=series1" in seen["url"]
+    assert "IncludeItemTypes=Episode" in seen["url"]
+    assert eps[0]["season"] == 1 and eps[0]["episode"] == 1
+    assert eps[0]["playback_position"] == 2000   # 20s
+    assert eps[0]["runtime"] == 4000
+    assert eps[2]["played"] is True               # S2E1 watched

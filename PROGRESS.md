@@ -1,10 +1,20 @@
 # RKM Watchlist — Session Handoff & Project Progress
 
-> Last updated: 2026-09-05 (**ITEM 3 DONE on branch `experiment/bundled-docker-stack` — full library poster-wall grid (`/api/library/items` → Library view) + "Continue Watching" row on Discover (`continue_watching()` filters the library scan by started-not-finished, NOT Jellyfin's finicky `/Items/Resume`). Also verified live: Jellyfin Sessions playback positions persist (600s stuck after start+timeupdate). Branch PUSHED to GitHub. 236 pytest + all node frontend suites green. Rebuild via `.\bootstrap.ps1` to go live.**)
+> Last updated: 2026-09-05 (**ITEM 1 DONE: TV shows on branch `experiment/bundled-docker-stack`. TV cards now open an episode picker (grouped by season) instead of playing a non-playable Series id; each episode plays in-app with its own resume + watched tick; Up Next offers the next episode when one ends. Backend `/api/library/series/{id}/episodes`. 238 pytest + all node suites green. Needs a `.\bootstrap.ps1` rebuild to go live. Next session = item 2 (watch-state).**)
 > Live URL: **http://rkm-hp.tail8d5e8.ts.net:8123/** (Tailscale MagicDNS, tailnet-only — NEVER `tailscale funnel` it; page proxies /api → FastAPI which holds secrets server-side)
 > Deploy path (Windows, RKM-HP): `cd D:\hermes_agent\hermes-workspace\projects\rkm-cinema; .\run-rkm-cinema.ps1` (prod api+web nginx `:8123`; Plex/Emby backend) — or `.\bootstrap.ps1` for the **bundled api+web+Jellyfin** stack (`:8098`/`:8124`; this is where in-app Jellyfin playback lives). NOTE: there is **no `setup-watchlist.ps1` anymore — it was renamed.** The sandbox's `/workspace` maps to `D:\hermes_agent\hermes-workspace` (9p mount, confirmed via mountinfo 2026-08-18; NOT `D:\media`). The `web`+`api` containers are on RKM-HP (Docker daemon unreachable from sandbox).
 > Repo: **private `rkm-cinema` on GitHub** (github.com/helloraj1986/rkm-cinema)
 > **Status:** ✅ **Phases 1–18 committed. SQLite is now the AUTHORITATIVE watchlist store** (`WATCHLIST_STORE=sqlite`, DB on the shared `/workspace/media` volume so it survives every rebuild). `watchlist.json` is now a generated mirror/export, NOT authoritative. **DEPLOY PENDING on RKM-HP** to bake the 504/suggest API fixes + the SQLite store into the running image (`setup-watchlist.ps1`). Frontend-only (app.js synopsis fix) is already live via the volume mount.
+
+## ▶ LATEST SESSION (2026-09-05, round 5) — TV shows: episodes + per-episode resume + Up Next ✅
+
+**Item 1 of the Plex-like roadmap.** TV cards no longer "play" a non-playable Series id — they open an episode picker.
+
+- **Backend (`services/library/jellyfin.py`):** `episodes(series_id)` lists every episode via `/Users/{uid}/Items?ParentId={seriesId}&IncludeItemTypes=Episode&SortBy=IndexNumber,ParentIndexNumber&Fields=…UserData…`, each with `{id,name,season,episode,thumb,played,playback_position,runtime}` (per-episode UserData → per-episode resume/watched). Route `GET /api/library/series/{id}/episodes` in `api/routes/library.py` (`_first_provider_with`).
+- **Frontend (`app.js`/`app.css`/`api.js`):** `cardPrimaryPlay(itemId, position, isTv, title)` — movies → `data-act="play"` ("Play in RKM"), **TV → `data-act="series"` ("Episodes")**. Global handler `data-act="series"` + modal `data-role="episodes-jellyfin"` → `openEpisodes(seriesId,title)` modal: groups by season, each row has a thumb (`/api/jellyfin/poster`), watched/reume state, a per-episode **Play/Resume/Replay** button (`data-act="play"` + `data-resume`) → `openPlayer` reuses everything. `Up Next`: `_episodeQueue` (ordered episodes) + `nextEpisode(id)`; on `ended` the player shows an "Up Next" overlay with a Play-next button. Episode Stream proxy works per-episode-id (no new streaming code).
+- **Note on TV testing:** the bundled library has **0 shows**, so this is unit-tested (grouping/sort/watched/resume/next) and the Jellyfin episodes endpoint was confirmed live (returns 200/400-shape, needs a real `ParentId`). Real TV can only be exercised once a show is added to the library.
+- **Tests:** backend `test_episodes_lists_and_sorts_per_season` + `test_series_episodes_route`; frontend `cardPrimaryPlay` movie/TV, `playInRkmMarkup` TV role, `renderEpisodes` grouping/order/watched/resume, `nextEpisode` (phase26 now 25). **238 pytest + phase11/18/25/26 node green.**
+- **To go live:** rebuild `.\bootstrap.ps1` (new backend route) + hard-refresh. Then a TV card's "Episodes" → pick a season/episode → plays in-app, resumes where you left it, and offers Up Next at the end.
 
 ## ▶ LATEST SESSION (2026-09-05, round 4) — Full library grid + Continue Watching ✅
 
@@ -51,11 +61,14 @@
 ### ▶ NEXT SESSION — prioritized next steps (recommended order, all incremental on current vanilla-JS UI)
 1. ✅ **In-app Jellyfin playback** — DONE (round 2).
 2. ✅ **Watched / progress** — DONE (round 3).
-3. ✅ **Full library grid + Continue Watching** — DONE (round 4). Library tab is a poster wall (all titles w/ Play-in-RKM + resume/watched markers); Discover has a Continue Watching row for started-not-finished titles.
-- **All three execution items are done.** Remaining options, recommended order:
-  a. Deploy + field-test the whole thing (`.\bootstrap.ps1` → hard-refresh): poster wall, Continue Watching after playing a bit, library grid growing as more is added.
-  b. **Appendix A Plex-style re-platform (React/TS)** — the direction has now proven out across playback/progress/library; this is the productization step. Large.
-  c. Minor UX polish (e.g. a "Watched" filter, sort by library-newest, progress bar inside the player).
+3. ✅ **Full library grid + Continue Watching** — DONE (round 4).
+4. ✅ **TV shows (episodes + per-episode resume + Up Next)** — DONE (round 5, item 1 of Plex roadmap).
+- **Plex-like roadmap (one item per session):**
+  - ✅ **item 1 TV shows** — DONE (round 5).
+  - ▶ **item 2 Watch-state polish** — mark watched/unwatched buttons (cards + player), Recently Watched row, play count. NEXT.
+  - **item 3 Player features** — subtitle/audio-track/speed selectors, quality/transcode picker, player backdrops, autoplay-next.
+  - **item 4 Library & discovery** — in-library search, filters/sort (unwatched/newest/type/genre), "Because you watched"/similar.
+  - **item 5 Transcode/playback robustness** — Jellyfin transcode fallback + quality picker + auto-open Jellyfin player when direct-play fails.
 
 ## ▶ LATEST SESSION (2026-09-02, UI round) — lazy-load grids + smooth hover + in-Plex tick ✅
 

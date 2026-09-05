@@ -240,3 +240,18 @@ def test_library_continue_watching_route(monkeypatch):
         r = client.get("/api/library/continue-watching")
     assert r.status_code == 200
     assert r.json()["items"][0]["title"] == "Half"
+
+
+def test_series_episodes_route(monkeypatch):
+    """GET /api/library/series/{id}/episodes proxies the provider's episodes()."""
+    _patch_config(monkeypatch)
+    fake_prov = SimpleNamespace(
+        name="jellyfin",
+        episodes=lambda series_id: [{"id": "e1", "name": "Pilot", "season": 1, "episode": 1,
+                                     "played": False, "playback_position": 2000, "runtime": 4000}])
+    fake_svc = SimpleNamespace(providers=[fake_prov])
+    with patch("api.routes.library.build_library_service", return_value=fake_svc):
+        r = client.get("/api/library/series/s1/episodes")
+    assert r.status_code == 200
+    assert r.json()["episodes"][0]["name"] == "Pilot"
+    assert r.json()["episodes"][0]["playback_position"] == 2000

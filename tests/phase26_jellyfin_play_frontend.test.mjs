@@ -56,7 +56,7 @@ function load() {
     + '\n; globalThis.__rkm = {'
     + ` setRes(map, flag=true){ RES = map; USES_RESOURCE_API = flag; },`
     + ` setLib(all, watch){ LIBALL = all || []; LIBWATCH = watch || []; LIB = { available: true, counts: { movie: (all||[]).length, show: 0 }, recent: (all||[]).slice(0,2), server: 'Jellyfin', urls: { jellyfin: 'http://jellyfin/web/index.html' } }; },`
-    + ' st, cardMarkup, modalDownloadButton, playInRkmMarkup, playbackMarkup, canWatch, libraryCard, reportProgress, continueWatchingRowMarkup, fullLibraryGridMarkup'
+    + ' st, cardMarkup, modalDownloadButton, playInRkmMarkup, playbackMarkup, canWatch, libraryCard, reportProgress, continueWatchingRowMarkup, fullLibraryGridMarkup, cardPrimaryPlay, renderEpisodes, nextEpisode'
     + ' };';
   run(appSrc);
   return { api: run('window.API'), get: (k) => run('globalThis.__rkm.' + k), run };
@@ -257,6 +257,47 @@ ok('resume reporting: _reportPos never clobbers the saved spot with 0', () => {
   const log = JSON.parse(t.run('JSON.stringify(window.__fetchLog)'));
   assert.strictEqual(log.length, 1, 'pre-seek start AND stopped are both suppressed; only the post-resume report fires');
   assert.strictEqual(JSON.parse(log[0].body).position_ticks, 30000000000); // 3000s * 1e7
+});
+
+/* ---- TV show support (item 1) ---- */
+ok('cardPrimaryPlay: movie -> Play in RKM (data-act=play)', () => {
+  const b = t.get('cardPrimaryPlay')('movie1', 0, false, 'M');
+  assert.ok(/data-act="play"/.test(b));
+  assert.ok(/Play in RKM/.test(b));
+  assert.ok(/data-jf-item="movie1"/.test(b));
+});
+ok('cardPrimaryPlay: tv -> Episodes (data-act=series)', () => {
+  const b = t.get('cardPrimaryPlay')('series1', 123, true, 'S');
+  assert.ok(/data-act="series"/.test(b));
+  assert.ok(/Episodes/.test(b));
+  assert.ok(/data-resume="123"/.test(b));
+});
+ok('playInRkmMarkup: tv -> data-role=episodes-jellyfin', () => {
+  const b = t.get('playInRkmMarkup')({ available: true, item_id: 's1', playback_position: 5 }, entry({ type: 'tv' }));
+  assert.ok(/data-role="episodes-jellyfin"/.test(b));
+  assert.ok(!/data-role="play-jellyfin"/.test(b));
+  assert.ok(/Episodes/.test(b));
+});
+ok('renderEpisodes: groups by season, marks watched + resume, per-episode Play', () => {
+  const eps = [
+    { id: 'e1', name: 'Pilot', season: 1, episode: 1, played: true, playback_position: 0, runtime: 3600 },
+    { id: 'e2', name: 'Two', season: 1, episode: 2, played: false, playback_position: 1800, runtime: 3600 },
+    { id: 'e3', name: 'One', season: 2, episode: 1, played: false, playback_position: 0, runtime: 3600 },
+  ];
+  const html = t.get('renderEpisodes')(eps);
+  assert.ok(/Season 1/.test(html) && /Season 2/.test(html), 'seasons grouped');
+  const i1 = html.indexOf('Pilot'), i2 = html.indexOf('Two'), i3 = html.indexOf('One');
+  assert.ok(i1 < i2 && i2 < i3, 'ordered by season then episode');
+  assert.ok(/Watched/.test(html), 'watched episode flagged');
+  // e2 -> Resume button with data-resume
+  assert.ok(/data-resume="1800"/.test(html));
+  assert.ok(new RegExp('data-jf-item="e2"').test(html));
+});
+ok('nextEpisode: returns the following episode or null at the end', () => {
+  t.run('_episodeQueue = [{ id: "a", name: "A", position: 0 }, { id: "b", name: "B", position: 0 }];');
+  const nxt = t.get('nextEpisode')('a');
+  assert.strictEqual(nxt.id, 'b');
+  assert.strictEqual(t.get('nextEpisode')('b'), null);
 });
 
 process.exit(failures ? 1 : 0);

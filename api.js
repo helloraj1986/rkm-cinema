@@ -113,6 +113,7 @@
     async getLibrary()       { return getJSON('/api/library'); },
     async getLibraryItems()       { return getJSON('/api/library/items'); },
     async getContinueWatching()   { return getJSON('/api/library/continue-watching'); },
+    async getSeriesEpisodes(id) { return getJSON('/api/library/series/' + encodeURIComponent(id) + '/episodes'); },
     async getHealth()        { return getJSON('/api/health'); },
     async getQuality()       { return getJSON('/api/quality'); },
     async search(q)          { return getJSON('/api/search?q=' + encodeURIComponent(q || '')); },

@@ -165,6 +165,53 @@ class JellyfinLibraryProvider(LibraryProvider):
                     return out
         return out
 
+    def episodes(self, series_id: str, limit: int = 1000) -> list[dict]:
+        """Every episode of a series, with per-episode playback facts.
+
+        Episodes carry their own ``UserData`` (Played / PlaybackPositionTicks),
+        so resume + watched work per-episode. Ordered by (season, episode).
+        """
+        if not self._configured() or not series_id:
+            return []
+        user_id = self._user_id()
+        if not user_id:
+            return []
+        url = (f"{self.config.JELLYFIN_URL}/Users/{user_id}/Items"
+               f"?api_key={self.config.JELLYFIN_API_KEY}&ParentId={series_id}"
+               f"&IncludeItemTypes=Episode&Recursive=true"
+               f"&SortBy=IndexNumber,ParentIndexNumber&Limit={limit}"
+               f"&Fields=PrimaryImageAspectRatio,ProductionYear,ProviderIds,UserData,IndexNumber,ParentIndexNumber")
+        try:
+            raw = self._fetch_raw(url)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("Jellyfin episodes(%s) failed: %s", series_id, e)
+            return []
+        out = []
+        for it in raw:
+            eid = str(it.get("Id", ""))
+            if not eid:
+                continue
+            item = self._parse_item(it, "Series")  # reuses user_data/runtime/thumb parsing
+            out.append({
+                "id": eid,
+                "name": it.get("Name", ""),
+                "season": self._int(it.get("ParentIndexNumber")),
+                "episode": self._int(it.get("IndexNumber")),
+                "thumb": item.thumb,
+                "played": bool(item.played),
+                "playback_position": self._ticks_to_sec(item.position_ticks),
+                "runtime": self._ticks_to_sec(item.runtime_ticks),
+            })
+        out.sort(key=lambda e: (e["season"], e["episode"]))
+        return out
+
+    @staticmethod
+    def _int(v) -> int:
+        try:
+            return int(v)
+        except (TypeError, ValueError):
+            return 0
+
     def _item_public(self, item: JellyfinItem) -> dict:
         """Player-ready dict shared by recently_added/all_items/continue_watching."""
         return {

@@ -120,3 +120,17 @@ def get_continue_watching():
         return {"provider": p.name, "items": p.continue_watching(limit=12) or []}
     except Exception:
         return {"provider": p.name, "items": []}
+
+
+@router.get("/library/series/{series_id}/episodes")
+def get_series_episodes(series_id: str):
+    """Every episode of one series, with per-episode playback facts (for TV)."""
+    cfg = get_config()
+    service = build_library_service(cfg)
+    p = _first_provider_with(service, "episodes")
+    if p is None:
+        return {"provider": None, "episodes": []}
+    try:
+        return {"provider": p.name, "episodes": p.episodes(series_id) or []}
+    except Exception:
+        return {"provider": p.name, "episodes": []}

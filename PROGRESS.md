@@ -1,10 +1,23 @@
 # RKM Watchlist — Session Handoff & Project Progress
 
-> Last updated: 2026-09-06 (**modular re-platform: Phases 0 + 1a DONE — committed `dc6c72a` + `ba32448`; 248 pytest + ruff green.** CI (GH Actions: ruff F + pytest) + `/api` contract frozen (`docs/api/openapi.v1.json`, ADR-0001) + ADR-0002/0003 + docs reset. Jellyfin-only capabilities promoted onto the `LibraryProvider` ABC + `LibraryService` aggregate collapse; routes call the service, `_first_provider_with` feature-detection deleted. **Push BLOCKED**: sandbox `GITHUB_TOKEN` lacks `workflow` scope → GitHub rejects the new `.github/workflows/ci.yml` (add `workflow` to the PAT in `/workspace/.env`). Phase 1b = facade "consolidation" is mostly **relocation of canonical clients, not dedup** (§43 already holds) — see top block. NEXT: unblock token → push; decide Phase 1b; Phase 2 (`web/` shell).**)
+> Last updated: 2026-09-06 (**re-platform Phases 0, 1a, 2 DONE — committed `dc6c72a`/`ba32448`/`05bcc71`; backend 248 pytest + ruff green, `web/` typecheck+build+vitest green.** CI + `/api` frozen (`openapi.v1.json`) + ADRs; `LibraryProvider` ABC capability surface + `LibraryService` aggregate collapse (routes via service, no `getattr`); `web/` React/TS/Vite/Tailwind shell with openapi-typescript typed client + `VITE_ENABLE_REACT` flag + ConfigHealthView; legacy `app.js` untouched and still default in prod. **Un-pushed** — token lacks `workflow` scope (deferred to LAST per user). NEXT: Phase 3 — port `library` (poster wall + Continue Watching + scan) then `playback` (item 2 watch-state) as feature slices.**)
 > Live URL: **http://rkm-hp.tail8d5e8.ts.net:8123/** (Tailscale MagicDNS, tailnet-only — NEVER `tailscale funnel` it; page proxies /api → FastAPI which holds secrets server-side)
 > Deploy path (Windows, RKM-HP): `cd D:\hermes_agent\hermes-workspace\projects\rkm-cinema; .\run-rkm-cinema.ps1` (prod api+web nginx `:8123`; Plex/Emby backend) — or `.\bootstrap.ps1` for the **bundled api+web+Jellyfin** stack (`:8098`/`:8124`; this is where in-app Jellyfin playback lives). NOTE: there is **no `setup-watchlist.ps1` anymore — it was renamed.** The sandbox's `/workspace` maps to `D:\hermes_agent\hermes-workspace` (9p mount, confirmed via mountinfo 2026-08-18; NOT `D:\media`). The `web`+`api` containers are on RKM-HP (Docker daemon unreachable from sandbox).
 > Repo: **private `rkm-cinema` on GitHub** (github.com/helloraj1986/rkm-cinema)
 > **Status:** ✅ **Phases 1–18 committed. SQLite is now the AUTHORITATIVE watchlist store** (`WATCHLIST_STORE=sqlite`, DB on the shared `/workspace/media` volume so it survives every rebuild). `watchlist.json` is now a generated mirror/export, NOT authoritative. **DEPLOY PENDING on RKM-HP** to bake the 504/suggest API fixes + the SQLite store into the running image (`setup-watchlist.ps1`). Frontend-only (app.js synopsis fix) is already live via the volume mount.
+
+## ▶ LATEST SESSION (2026-09-06) — Phase 2: `web/` React/TS shell + typed client + flag ✅
+
+**`web/` builds and serves a working shell showing `/api/config` health behind a flag.** Legacy `app.js` untouched, still the prod default.
+
+- **Shell** (`web/`, React 18 + TS + Vite 5 + Tailwind 3): `main.tsx` → `RouterProvider` (react-router-dom) → `AppShell` (Sidebar/Header/Outlet) with routes `settings` (real) + `library`/`playback`/`discover`/`watchlist`/`search`/`suggest` (PortedPlaceholder stubs for Phase 3).
+- **Typed client** — `src/lib/api/types.ts` **machine-generated from the frozen contract** (`npm run generate:types`, openapi-typescript over `docs/api/openapi.v1.json`, 1,817 lines = source of truth); `src/lib/api/client.ts` hand-tunes the narrow stable surface (config/health/library/episodes) keyed to the `@/` alias; same-origin `/api/*` (nginx→FastAPI, secrets stay server-side).
+- **Feature flag** — `lib/flags.ts` (`VITE_ENABLE_REACT`): `npm run dev` shows the shell; a prod build without the env keeps the legacy app serving (LegacyPlaceholder) until Phase-4 cutover.
+- **ConfigHealthView** — TanStack Query hooks (`features/settings/api.ts`) read `/api/config` + `/api/health`; per-service configured/ok badges + degraded banner. TanStack Query already the server-state layer.
+- **CI** — added the **frontend job** to `.github/workflows/ci.yml`: `npm ci` → `typecheck` → `vitest` → `build` → **contract-drift guard** (`npm run generate:types && git diff --exit-code types.ts`).
+- **Verify:** `tsc --noEmit` clean · `vite build` 90 modules, dist 0.44kB html + 252kB js / 9.5kB css · `vitest` **2/2** · `vite preview` serves `/`, js, css all **200**. (7 npm audit vulns = dev-deps; not force-fixed to avoid breakage.)
+
+**Caveat (dev-proxy):** `vite.config.ts` proxies `/api → http://127.0.0.1:8000` for dev; point `VITE_API_PROXY` at a running backend (e.g. the bundled Jellyfin stack) to see live config health in `npm run dev`.
 
 ## ▶ LATEST SESSION (2026-09-06) — Phases 0 + 1a executed (CI + contract freeze + ABC capability surface) ✅
 

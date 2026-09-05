@@ -15,11 +15,12 @@
 # production RKM/Plex/*arr containers.
 # ============================================================================
 
-x-media: &media
-  # The single data root, mounted at the SAME container path /data in every
-  # service that touches media => Jellyfin, Sonarr, Radarr + qBittorrent all
-  # see identical paths (hardlinks + imports + scanning just work).
-  - "${RKM_MEDIA_PATH:-./data}:/data"
+# The single data root, a scalar volume string mounted at the SAME container
+# path /data in every service that touches media => Jellyfin, Sonarr, Radarr +
+# qBittorrent all see identical paths (hardlinks + imports + scanning just work).
+# (Must be a STRING anchor — `- *media` inside a volumes LIST cannot splice a
+# nested list; Compose requires each volume item to be a string.)
+x-media: &media "${RKM_MEDIA_PATH:-./data}:/data"
 
 x-lsio: &lsio
   # Common linuxserver env for *arr containers (host user map).

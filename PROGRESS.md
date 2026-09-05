@@ -1,10 +1,22 @@
 # RKM Watchlist — Session Handoff & Project Progress
 
-> Last updated: 2026-09-06 (**re-platform Phases 0, 1a, 2, 3a DONE — `dc6c72a`/`ba32448`/`05bcc71`/`8cec4b3`; backend 248 pytest + ruff, `web/` tsc+build+vitest 12/12 green.** CI + `/api` frozen; `LibraryProvider` ABC capability surface; `web/` React shell + typed client + `VITE_ENABLE_REACT` flag; **library slice** ported (poster wall + Continue Watching + scan + minimal player) at legacy parity. Legacy `app.js` untouched. Un-pushed (token `workflow` scope deferred to last). NEXT: Phase 3b — **playback slice** (resume reporting, mark-watched, up-next, episode picker = roadmap item 2 lands here).**)
+> Last updated: 2026-09-06 (**re-platform Phases 0, 1a, 2, 3a, 3b DONE — `dc6c72a`/`ba32448`/`05bcc71`/`8cec4b3`/`14070cd`; backend 248 pytest + ruff, `web/` tsc+build+vitest 18/18 green.** CI + `/api` frozen; `LibraryProvider` ABC capability surface; `web/` React shell + typed client + flag; **library + playback slices** ported (poster wall / Continue Watching / scan / real in-app player with resume+progress-reporting+Up Next / episode picker) at legacy parity, frontend-only (no contract change). Legacy `app.js` untouched. Un-pushed (tokens `workflow` scope deferred to last). NEXT: item-2 watch-state (mark watched / Recently Watched / play count — needs an additive backend endpoint + regen) OR Phase 3c `discover`.**)
 > Live URL: **http://rkm-hp.tail8d5e8.ts.net:8123/** (Tailscale MagicDNS, tailnet-only — NEVER `tailscale funnel` it; page proxies /api → FastAPI which holds secrets server-side)
 > Deploy path (Windows, RKM-HP): `cd D:\hermes_agent\hermes-workspace\projects\rkm-cinema; .\run-rkm-cinema.ps1` (prod api+web nginx `:8123`; Plex/Emby backend) — or `.\bootstrap.ps1` for the **bundled api+web+Jellyfin** stack (`:8098`/`:8124`; this is where in-app Jellyfin playback lives). NOTE: there is **no `setup-watchlist.ps1` anymore — it was renamed.** The sandbox's `/workspace` maps to `D:\hermes_agent\hermes-workspace` (9p mount, confirmed via mountinfo 2026-08-18; NOT `D:\media`). The `web`+`api` containers are on RKM-HP (Docker daemon unreachable from sandbox).
 > Repo: **private `rkm-cinema` on GitHub** (github.com/helloraj1986/rkm-cinema)
 > **Status:** ✅ **Phases 1–18 committed. SQLite is now the AUTHORITATIVE watchlist store** (`WATCHLIST_STORE=sqlite`, DB on the shared `/workspace/media` volume so it survives every rebuild). `watchlist.json` is now a generated mirror/export, NOT authoritative. **DEPLOY PENDING on RKM-HP** to bake the 504/suggest API fixes + the SQLite store into the running image (`setup-watchlist.ps1`). Frontend-only (app.js synopsis fix) is already live via the volume mount.
+
+## ▶ LATEST SESSION (2026-09-06) — Phase 3b: `playback` slice — real in-app player + episode picker ✅
+
+**Player core ported, frontend-only (no contract change — `reportProgress`/`streamUrl` hit the existing frozen `/api`).** Movies play in-app with resume + progress reporting; series get the episode picker with per-episode resume + Up Next.
+
+- **`features/playback/Player.tsx`** — same-origin `/api/jellyfin/stream/{id}`; seeks saved resume on `loadedmetadata`; reports `/api/jellyfin/progress` (`start` / 5s-throttled `timeupdate` / pause·ended·error → `stopped`) via `postJson`, with the **resume-guard** that never POSTs 0 while a fresh stream sits at the start (mirrors legacy `_reportPos`); codec-failure fallback note; **Up Next** overlay from the series queue (Play next → switch).
+- **`features/playback/EpisodePicker.tsx`** — season-grouped rows, per-episode thumb, ✓ watched tick, **Play/Resume/Replay** (start-position-aware), Escape/backdrop close.
+- **`features/playback/lib.ts`** — pure `groupBySeason`/`nextEpisode`/`episodeQueue`/`playLabel`/`startPosition`/`episodeThumbUrl` exactly mirroring legacy; **+6 unit tests** (18 total).
+- **`client.ts`** — added `postJson`, `ProgressPayload`, `reportProgress`, `streamUrl`. Endpoint already in the frozen contract → **no `types.ts` regen, no drift**.
+- **`LibraryView`** — movie → Player; series → EpisodePicker → Player (Up-Next queue); Player keyed by item so an episode switch remounts cleanly.
+- **Verify:** `tsc` clean · `vite build` 99 modules · `vitest` **18/18**.
+- **Deferred (item 2 watch-state):** mark watched/unwatched, Recently Watched row, play count — needs an **additive backend endpoint** (`POST /api/library/{id}/state`) + contract regen; its own pass.
 
 ## ▶ LATEST SESSION (2026-09-06) — Phase 3a: `library` feature slice ported to React ✅
 

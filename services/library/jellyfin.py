@@ -66,7 +66,7 @@ class JellyfinLibraryProvider(LibraryProvider):
         self.config = config if config is not None else get_config()
         self.http = http
         self._item_cache: Optional[dict] = None      # {"Movie": [...], "Series": [...]}
-        self._item_cache_expiry: float = 0
+        self._item_cache_expiry: dict = {}           # per-type expiry (item_type -> epoch)
         self._server_id_value: str = ""
         self._user_id_value: str = ""
 
@@ -217,7 +217,10 @@ class JellyfinLibraryProvider(LibraryProvider):
         try:
             req = urllib.request.Request(url, data=b"", method="POST")
             with urllib.request.urlopen(req, timeout=20) as r:
-                return 200 <= int(getattr(r, "status", 0)) < 300
+                ok = 200 <= int(getattr(r, "status", 0)) < 300
+            if ok:
+                self.invalidate()  # drop the item cache so the scan is seen immediately
+            return ok
         except Exception as e:
             logger.warning("Jellyfin library refresh failed: %s", e)
             return False
@@ -306,7 +309,7 @@ class JellyfinLibraryProvider(LibraryProvider):
 
     def invalidate(self) -> None:
         self._item_cache = None
-        self._item_cache_expiry = 0
+        self._item_cache_expiry = {}
         self._server_id_value = ""
         self._user_id_value = ""
 
@@ -357,7 +360,9 @@ class JellyfinLibraryProvider(LibraryProvider):
     def _get_items(self, item_type: str) -> list[JellyfinItem]:
         import time
         now = time.time()
-        if self._item_cache and now < self._item_cache_expiry:
+        # Per-type cache so a busy Movie path can't keep a stale-empty Series
+        # cache alive via a shared expiry (the bug that hid newly-added shows).
+        if self._item_cache and now < self._item_cache_expiry.get(item_type, 0):
             return self._item_cache.get(item_type, [])
 
         if not self._configured():
@@ -377,7 +382,7 @@ class JellyfinLibraryProvider(LibraryProvider):
             if self._item_cache is None:
                 self._item_cache = {}
             self._item_cache[item_type] = items
-            self._item_cache_expiry = now + self.JELLYFIN_SCAN_TTL
+            self._item_cache_expiry[item_type] = now + self.JELLYFIN_SCAN_TTL
             return items
         except Exception as e:
             logger.warning("Jellyfin _get_items(%s) failed: %s", item_type, e)

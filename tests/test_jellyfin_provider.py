@@ -292,3 +292,67 @@ def test_refresh_library_false_when_not_configured():
     from services.library.jellyfin import JellyfinLibraryProvider
     prov = JellyfinLibraryProvider(config=_cfg(JELLYFIN_URL="", JELLYFIN_API_KEY=""))
     assert prov.refresh_library() is False
+
+
+def test_per_type_cache_does_not_hide_series(monkeypatch):
+    """A busy Movie path must not keep a stale-empty Series cache alive (regression).
+
+    Previously a single shared expiry meant every Movie fetch renewed the deadline
+    for BOTH types, so a Series cache populated empty at boot never refreshed —
+    hiding newly-added shows until a rebuild. Per-type expiry fixes it.
+    """
+    import time
+    from services.library.jellyfin import JellyfinLibraryProvider
+    prov = JellyfinLibraryProvider(config=_cfg())
+    captured = {}
+
+    def fake_fetch(url):
+        captured["url"] = url
+        if "IncludeItemTypes=Movie" in url:
+            return [{"Name": "M1", "Id": "m1", "Type": "Movie", "ProductionYear": 2001,
+                     "UserData": {}, "RunTimeTicks": 60_000_000_000}]
+        return [{"Name": "S1", "Id": "s1", "Type": "Series", "ProductionYear": 2024,
+                 "UserData": {}, "RunTimeTicks": 1}]
+
+    prov._fetch_raw = fake_fetch
+    prov._item_web = lambda iid: "http://jf/x"
+    prov._user_id = lambda: "u1"  # avoid a real /Users call
+
+    # Simulate the bug state: Movie cached (fresh), Series cached EMPTY and expired.
+    prov._item_cache = {
+        "Movie": [prov._parse_item({"Name": "M1", "Id": "m1", "Type": "Movie",
+                                    "ProductionYear": 2001, "UserData": {}, "RunTimeTicks": 60_000_000_000}, "Movie")],
+        "Series": [],
+    }
+    now = time.time()
+    prov._item_cache_expiry = {"Movie": now + 90, "Series": now - 1}  # Series expired -> must refetch
+    captured.clear()
+
+    items = prov.all_items()
+    ids = [x["item_id"] for x in items]
+    assert "m1" in ids and "s1" in ids, ids       # Series must NOT be hidden
+    assert "IncludeItemTypes=Series" in captured["url"], "Series list was actually re-queried"
+
+
+def test_refresh_library_invalidates_cache(monkeypatch):
+    """After a successful scan, the provider drops its item cache so results refresh."""
+    from unittest.mock import patch as _patch
+    from services.library.jellyfin import JellyfinLibraryProvider
+    prov = JellyfinLibraryProvider(config=_cfg())
+    prov._item_cache = {"Movie": []}  # pretend something was cached
+    prov._item_cache_expiry = {"Movie": 99999999999}
+    seen = {}
+
+    class _R:
+        status = 204
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+
+    def fake_urlopen(req, timeout=None):
+        seen["url"] = req.full_url
+        return _R()
+
+    with _patch("services.library.jellyfin.urllib.request.urlopen", fake_urlopen):
+        assert prov.refresh_library() is True
+    assert prov._item_cache is None, "cache was invalidated after the scan"
+    assert seen["url"].endswith("/Library/Refresh?api_key=jkey")

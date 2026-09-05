@@ -1,10 +1,32 @@
 # RKM Watchlist — Session Handoff & Project Progress
 
-> Last updated: 2026-09-05 (**ITEM 1 DONE: TV shows on branch `experiment/bundled-docker-stack`. TV cards now open an episode picker (grouped by season) instead of playing a non-playable Series id; each episode plays in-app with its own resume + watched tick; Up Next offers the next episode when one ends. Backend `/api/library/series/{id}/episodes`. 238 pytest + all node suites green. Needs a `.\bootstrap.ps1` rebuild to go live. Next session = item 2 (watch-state).**)
+> Last updated: 2026-09-06 (**MODULAR & SCALABLE RE-PLATFORM PLAN ADOPTED — no code changed yet.** Keep the Python/FastAPI backend (consolidate + formalize only); rewrite the `app.js` single-file frontend monolith to **React 18 + TS + Vite + Tailwind** behind a **frozen `/api` contract**. Full plan: `docs/modular-scalable-architecture.md`. Phases (each commits green + a working demo): **0** CI + `openapi.json` snapshot + docs reset → **1** backend facade consolidation + extend `LibraryProvider` ABC with the capability surface → **2** `web/` shell + typed client + feature flag → **3** port features to slices (library → **playback [roadmap item 2 lands here]** → discover → rest) → **4** cut over + delete legacy → **5** resume roadmap items 2–5 on the new structure + multi-user slots in cleanly. Recommended next session = **Phase 0 + 1** (CI + backend consolidation + contract freeze) — low-risk, immediately validates the modularity thesis, makes the React port far safer.**)
 > Live URL: **http://rkm-hp.tail8d5e8.ts.net:8123/** (Tailscale MagicDNS, tailnet-only — NEVER `tailscale funnel` it; page proxies /api → FastAPI which holds secrets server-side)
 > Deploy path (Windows, RKM-HP): `cd D:\hermes_agent\hermes-workspace\projects\rkm-cinema; .\run-rkm-cinema.ps1` (prod api+web nginx `:8123`; Plex/Emby backend) — or `.\bootstrap.ps1` for the **bundled api+web+Jellyfin** stack (`:8098`/`:8124`; this is where in-app Jellyfin playback lives). NOTE: there is **no `setup-watchlist.ps1` anymore — it was renamed.** The sandbox's `/workspace` maps to `D:\hermes_agent\hermes-workspace` (9p mount, confirmed via mountinfo 2026-08-18; NOT `D:\media`). The `web`+`api` containers are on RKM-HP (Docker daemon unreachable from sandbox).
 > Repo: **private `rkm-cinema` on GitHub** (github.com/helloraj1986/rkm-cinema)
 > **Status:** ✅ **Phases 1–18 committed. SQLite is now the AUTHORITATIVE watchlist store** (`WATCHLIST_STORE=sqlite`, DB on the shared `/workspace/media` volume so it survives every rebuild). `watchlist.json` is now a generated mirror/export, NOT authoritative. **DEPLOY PENDING on RKM-HP** to bake the 504/suggest API fixes + the SQLite store into the running image (`setup-watchlist.ps1`). Frontend-only (app.js synopsis fix) is already live via the volume mount.
+
+## ▶ LATEST SESSION (2026-09-06) — Modular & Scalable re-platform: PLAN adopted (no code) ✅
+
+**Decision:** keep the sound FastAPI/Python backend (consolidate facades + extend the ABC — no rewrite); rewrite the **frontend** to **React 18 + TypeScript + Vite + Tailwind** behind a **frozen `/api` contract**. The contract is the seam that de-risks the re-platform. Full plan committed at **`docs/modular-scalable-architecture.md`** (decisions table, risks, open questions, phases, validation).
+
+**Why now (the constraint):** `app.js` is a **2,191-line single-file monolith** (+ `api.js` 124, `app.css` 967) — global render functions + delegated handlers, global state (`DATA`/`RES`/`LIBALL`/`LIBWATCH`) — not maintainable past a handful of screens. Backend is modular but carries **BC-facade debt** (`services/plex.py`, `emby.py`, `radarr.py`, `sonarr.py`, `recommendations.py`, `media_status.py` coexist with canonical `services/library|acquisition|recommendation|reconciliation/`) and the Jellyfin-only capability methods (`all_items`, `continue_watching`, `episodes`, `refresh_library`, `get_poster`) are **not declared in the `LibraryProvider` ABC** — routes call `getattr(provider, …)`. No CI, no typed API contract, stale root docs.
+
+**Phases (each ends committed + a working demo):**
+0. **CI + contract freeze + docs reset** — GH Actions (ruff/mypy + `pytest`; frontend `tsc`+`vitest`+build once `web/` exists); snapshot `openapi.json` → `docs/api/openapi.v1.json` (v1 immutable, additive-only); rewrite `README.md`/`ARCHITECTURE.md` + ADRs.
+1. **Consolidate backend facades + ABC capability surface** — delete BC shims (re-export stubs w/ `DeprecationWarning` → remove); add `all_items`/`continue_watching`/`episodes`/`refresh_library`/`get_poster` to the ABC/mixin (Plex/Emby default `[]`/`False`); routes call the ABC. Target 250+ pytest.
+2. **`web/` shell + typed client + flag** — Vite React/TS app, router, `AppShell`/`Sidebar`/`Header`, Tailwind; `types.ts` generated via `openapi-typescript`; `lib/api/client.ts`; TanStack Query (server state, tied to scan invalidation) + light Zustand; feature-flag routing behind a config toggle. Exit: shell builds + shows `/api/config` health.
+3. **Port features to slices (parity each, behind the flag)** — `library` (poster wall, Continue Watching, scan wiring) → `playback` (player, resume, progress reporting, up-next, mark-watched — **roadmap item 2 lands here**) → `discover` (hero + rows) → `watchlist`/`search`/`suggest`/`settings`. Old app serves not-yet-ported views.
+4. **Cut over + retire legacy** — flip default to React; delete `app.js`/`api.js`/legacy CSS.
+5. **Items 2–5 on the new structure** — built once on the right foundation; multi-user (item 6) slots into `auth`/`playback` slices.
+
+**Decisions (rationale + alternatives in the doc):** React 18+TS+Vite (matches your senior stack) · TanStack Query (cache + auto-invalidation tied to scan/job runs) + light Zustand · **keep Python/FastAPI** (already sound; rewriting is the classic trap) · **frozen `/api` + generated client** · **monorepo** (one repo, `web/` + backend dirs) · remove legacy **only at feature parity behind a flag**.
+
+**Big-rewrite-smell risk + mitigations (highest risk):** (a) freeze `/api` first, (b) backend unchanged, (c) feature-flagged incremental port, (d) parity-check each view before retirement. Contract drift → closed by openapi-typescript + CI typecheck. Facade-deletion breakage → closed by one-release re-export stubs.
+
+**Open questions (answer by Phase 2):** multi-user/auth? runtime = same nginx volume mount serving `web/dist/`? keep `dashboard.html`/`dashboard-data.json` legacy? testing bar (vitest + a few Playwright smoke)?
+
+**Recommended next session: Phase 0 + 1** (CI + backend consolidation + contract freeze) — low-risk, immediately validates the modularity thesis, and makes the React port far safer.
 
 ## ▶ LATEST SESSION (2026-09-05, round 5) — TV shows: episodes + per-episode resume + Up Next ✅
 
@@ -73,9 +95,9 @@
 2. ✅ **Watched / progress** — DONE (round 3).
 3. ✅ **Full library grid + Continue Watching** — DONE (round 4).
 4. ✅ **TV shows (episodes + per-episode resume + Up Next)** — DONE (round 5, item 1 of Plex roadmap).
-- **Plex-like roadmap (one item per session):**
+- **Plex-like roadmap (one item per session):** ⚠ **gated since 2026-09-06** — items 2–5 are now sequenced **after** the modular re-platform (Phase 5), so they get built once on the new structure. See top block; next session = Phase 0 + 1.
   - ✅ **item 1 TV shows** — DONE (round 5).
-  - ▶ **item 2 Watch-state polish** — mark watched/unwatched buttons (cards + player), Recently Watched row, play count. NEXT.
+  - ▶ **item 2 Watch-state polish** — mark watched/unwatched buttons (cards + player), Recently Watched row, play count. **→ lands in the Phase 3 `playback` slice / Phase 5** (post-re-platform).
   - **item 3 Player features** — subtitle/audio-track/speed selectors, quality/transcode picker, player backdrops, autoplay-next.
   - **item 4 Library & discovery** — in-library search, filters/sort (unwatched/newest/type/genre), "Because you watched"/similar.
   - **item 5 Transcode/playback robustness** — Jellyfin transcode fallback + quality picker + auto-open Jellyfin player when direct-play fails.

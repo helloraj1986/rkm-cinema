@@ -1,0 +1,107 @@
+/**
+ * Typed client for the FROZEN /api contract (docs/api/openapi.v1.json, ADR-0001).
+ *
+ * `types.ts` is the machine-generated source of truth (`npm run generate:types`,
+ * openapi-typescript over the snapshot). This file hand-authors the narrow,
+ * stable endpoints the Phase-2 shell needs (config/health) and mirrors the
+ * served shapes; the full typed surface expands in Phase 3 per feature slice.
+ *
+ * Everything hits the same-origin `/api/*` (nginx proxies to FastAPI, which owns
+ * the server-side secrets) — the browser never talks to a backend directly.
+ */
+
+export interface ServiceMap {
+  radarr: boolean;
+  sonarr: boolean;
+  tmdb: boolean;
+  plex: boolean;
+  jellyfin: boolean;
+  emby: boolean;
+}
+
+export interface ConfigShape {
+  updated: string;
+  heroMode: string;
+  rotation: string[];
+  services: ServiceMap;
+}
+
+export interface ServiceDetail {
+  [name: string]: {
+    configured: boolean;
+    ok: boolean;
+    detail?: string;
+    error?: string;
+  };
+}
+
+export interface HealthShape {
+  ok: boolean;
+  updated: string;
+  titleCount: number;
+  services: ServiceMap;
+  degraded: boolean;
+  serviceDetail: ServiceDetail;
+}
+
+export interface MediaItem {
+  item_id: string;
+  title: string;
+  type?: string;
+  played?: boolean;
+  playback_position?: number;
+  runtime?: number;
+  thumbnail?: string | null;
+}
+
+export interface LibraryItemsShape {
+  provider: string | null;
+  items: MediaItem[];
+}
+
+export interface EpisodeShape {
+  id: string;
+  name: string;
+  season: number;
+  episode: number;
+  played: boolean;
+  playback_position: number;
+  runtime: number;
+  thumb?: string | null;
+}
+
+export interface EpisodesShape {
+  provider: string | null;
+  episodes: EpisodeShape[];
+}
+
+export class ApiError extends Error {
+  constructor(
+    public status: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
+const BASE = "/api";
+
+async function getJson<T>(path: string): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, {
+    headers: { Accept: "application/json" },
+    signal: AbortSignal.timeout(20_000),
+  });
+  if (!res.ok) {
+    throw new ApiError(res.status, `GET ${path} -> ${res.status}`);
+  }
+  return (await res.json()) as T;
+}
+
+export const api = {
+  getConfig: () => getJson<ConfigShape>("/config"),
+  getHealth: () => getJson<HealthShape>("/health"),
+  getLibraryItems: () => getJson<LibraryItemsShape>("/library/items"),
+  getContinueWatching: () => getJson<LibraryItemsShape>("/library/continue-watching"),
+  getEpisodes: (seriesId: string) => getJson<EpisodesShape>(`/library/series/${encodeURIComponent(seriesId)}/episodes`),
+};

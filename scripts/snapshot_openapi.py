@@ -9,8 +9,12 @@ additive only; regenerate and commit this file whenever the API shape changes.
 Usage:  python scripts/snapshot_openapi.py   (run from repo root)
 """
 import json
+import os
+import sys
 
-import api.main as m
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import api.main as m  # noqa: E402
 
 
 def main() -> None:

@@ -1,10 +1,50 @@
 # RKM Watchlist — Session Handoff & Project Progress
 
-> Last updated: 2026-09-06 (**MODULAR & SCALABLE RE-PLATFORM PLAN ADOPTED — no code changed yet.** Keep the Python/FastAPI backend (consolidate + formalize only); rewrite the `app.js` single-file frontend monolith to **React 18 + TS + Vite + Tailwind** behind a **frozen `/api` contract**. Full plan: `docs/modular-scalable-architecture.md`. Phases (each commits green + a working demo): **0** CI + `openapi.json` snapshot + docs reset → **1** backend facade consolidation + extend `LibraryProvider` ABC with the capability surface → **2** `web/` shell + typed client + feature flag → **3** port features to slices (library → **playback [roadmap item 2 lands here]** → discover → rest) → **4** cut over + delete legacy → **5** resume roadmap items 2–5 on the new structure + multi-user slots in cleanly. Recommended next session = **Phase 0 + 1** (CI + backend consolidation + contract freeze) — low-risk, immediately validates the modularity thesis, makes the React port far safer.**)
+> Last updated: 2026-09-06 (**modular re-platform: Phases 0 + 1a DONE — committed `dc6c72a` + `ba32448`; 248 pytest + ruff green.** CI (GH Actions: ruff F + pytest) + `/api` contract frozen (`docs/api/openapi.v1.json`, ADR-0001) + ADR-0002/0003 + docs reset. Jellyfin-only capabilities promoted onto the `LibraryProvider` ABC + `LibraryService` aggregate collapse; routes call the service, `_first_provider_with` feature-detection deleted. **Push BLOCKED**: sandbox `GITHUB_TOKEN` lacks `workflow` scope → GitHub rejects the new `.github/workflows/ci.yml` (add `workflow` to the PAT in `/workspace/.env`). Phase 1b = facade "consolidation" is mostly **relocation of canonical clients, not dedup** (§43 already holds) — see top block. NEXT: unblock token → push; decide Phase 1b; Phase 2 (`web/` shell).**)
 > Live URL: **http://rkm-hp.tail8d5e8.ts.net:8123/** (Tailscale MagicDNS, tailnet-only — NEVER `tailscale funnel` it; page proxies /api → FastAPI which holds secrets server-side)
 > Deploy path (Windows, RKM-HP): `cd D:\hermes_agent\hermes-workspace\projects\rkm-cinema; .\run-rkm-cinema.ps1` (prod api+web nginx `:8123`; Plex/Emby backend) — or `.\bootstrap.ps1` for the **bundled api+web+Jellyfin** stack (`:8098`/`:8124`; this is where in-app Jellyfin playback lives). NOTE: there is **no `setup-watchlist.ps1` anymore — it was renamed.** The sandbox's `/workspace` maps to `D:\hermes_agent\hermes-workspace` (9p mount, confirmed via mountinfo 2026-08-18; NOT `D:\media`). The `web`+`api` containers are on RKM-HP (Docker daemon unreachable from sandbox).
 > Repo: **private `rkm-cinema` on GitHub** (github.com/helloraj1986/rkm-cinema)
 > **Status:** ✅ **Phases 1–18 committed. SQLite is now the AUTHORITATIVE watchlist store** (`WATCHLIST_STORE=sqlite`, DB on the shared `/workspace/media` volume so it survives every rebuild). `watchlist.json` is now a generated mirror/export, NOT authoritative. **DEPLOY PENDING on RKM-HP** to bake the 504/suggest API fixes + the SQLite store into the running image (`setup-watchlist.ps1`). Frontend-only (app.js synopsis fix) is already live via the volume mount.
+
+## ▶ LATEST SESSION (2026-09-06) — Phases 0 + 1a executed (CI + contract freeze + ABC capability surface) ✅
+
+**Following `docs/modular-scalable-architecture.md`.** Not just documenting — executed Phase 0 fully and Phase 1's core (ABC capability surface). Both committed + verified green; **push to GitHub blocked on a token scope** (below).
+
+### Phase 0 — CI + contract freeze + docs reset ✅ (`dc6c72a`)
+- **`.github/workflows/ci.yml`** — backend job on every push: `ruff check` (F/pyflakes grade on production packages per `ruff.toml`) + `python -m pytest tests/ -q`. Frontend `tsc`+`vitest`+build job added in Phase 2 when `web/` exists.
+- **Frozen contract** — `docs/api/openapi.v1.json` (25 paths) via new `scripts/snapshot_openapi.py` (idempotent, path-safe); `/api` = immutable v1, additive-only (ADR-0001).
+- **ADRs** — `docs/adr/ADR-0001` (freeze /api) · `0002` (React/TS frontend) · `0003` (keep-Python, consolidate don't rewrite).
+- **Docs reset** — README + ARCHITECTURE status pointers to the plan/contract/ADRs.
+- **6 latent bugs fixed** (ruff F baseline) so the lint gate is genuinely green: `F823`/`UnboundLocalError` `urllib` used before the function-local import in `api/routes/search.py` + `services/plex.py` (real runtime bug); `F811` duplicate `has_jellyfin` in `config/settings.py`; `F402` dataclasses `field` shadowed by a loop var in `services/watchlist.py`; dead `entry`/`in_watchlist` vars in `api/routes/suggest.py`. Plus 55 safe ruff `--fix` cleanups (imports/vars) across prod packages.
+- **Verify:** `ruff check` (prod) clean · **247 pytest passed**.
+
+### Phase 1a — ABC capability surface + route cleanup ✅ (`ba32448`)
+- `LibraryProvider` ABC now declares `all_items`/`continue_watching`/`episodes`/`refresh_library`/`get_poster` with harmless defaults (`[]`/`False`/`None`) — **uniform provider surface**.
+- `LibraryService` gained **aggregate collapse** methods: each capability returns the first provider with a **meaningful** result, so a Plex defaulting to `[]` can't shadow a Jellyfin that implements it.
+- Routes `/api/library/items`, `/library/continue-watching`, `/library/series/{id}/episodes`, and `/api/jellyfin/poster` now call the **service**, not `getattr`/`hasattr`; deleted `_first_provider_with` feature-detection.
+- Tests re-targeted to the service seam (response shapes unchanged) + **1 new regression test** pinning the collapse behavior.
+- **Verify:** ruff clean · **248 pytest passed** (+1).
+
+### Phase 1b — facade "consolidation" finding ⚠ design refinement
+The plan assumed parallel duplicate service modules to delete. **The audit shows they're NOT duplicates**:
+- `services/plex.py` (`PlexService`), `services/radarr.py` (`RadarrService`), `services/sonarr.py` (`SonarrService`) are the **canonical low-level clients**; the canonical packages are thin adapters *over* them — e.g. `RadarrAcquisitionProvider` wraps `RadarrService` (`from services.radarr import RadarrService`); `services/library/plex.py` wraps `PlexService`. §43 "one implementation per rule" **already holds** — no parallel logic.
+- `services/recommendations.py` (`RecommendationService`) + `services/media_status.py` (`MediaStatusService`) are already thin delegates to canonical `services/recommendation/` + `services/reconciliation/`.
+
+**Recommendation:** Phase 1's "consolidation" is really **optional relocation** (move clients into their domain packages + re-export stubs), which buys organization but **not** dedup, and adds churn/risk. **Recommend low priority / defer** — it doesn't block the React port. The genuine Phase 1 value (uniform provider SPI + route-via-service) is DONE.
+
+### ⚠ Push blocker (deployment-action needed)
+Commits `dc6c72a`, `ba32448` are **local only**. `git push` to GitHub is refused because the new `.github/workflows/ci.yml` requires the token to hold the **`workflow`** scope, and the sandbox `GITHUB_TOKEN` (in `/workspace/.env`) lacks it.
+```powershell
+# GitHub → Settings → Developer settings → PAT (classic) → select the token used as
+# GITHUB_TOKEN in /workspace/.env → add the "workflow" checkbox (keep "repo") → Update.
+#   (or: gh auth refresh -s workflow)
+# Then re-run the sandbox push; Phase 0+1a go up and CI actually runs on GitHub.
+```
+
+### NEXT (prioritized)
+1. **Unblock the token** (`workflow` scope) → push Phase 0 + 1a → confirm CI green on GitHub.
+2. Decide **Phase 1b** (defers relocation — recommend skip/defer).
+3. **Phase 2** — `web/` React/TS shell + `openapi-typescript` typed client + feature flag.
 
 ## ▶ LATEST SESSION (2026-09-06) — Modular & Scalable re-platform: PLAN adopted (no code) ✅
 

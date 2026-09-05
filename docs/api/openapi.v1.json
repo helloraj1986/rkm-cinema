@@ -166,7 +166,7 @@
     "/api/library/items": {
       "get": {
         "summary": "Get Library Items",
-        "description": "Full library as a poster wall \u2014 every Movie + Series with playback facts.\n\nNewer providers (Jellyfin) expose ``all_items()``; older ones (Plex/Emby)\nfall back to an empty list rather than failing the request.",
+        "description": "Full library as a poster wall \u2014 every Movie + Series with playback facts.\n\nPhase 1: routed through :class:`LibraryService` ``all_items()`` (first\nprovider with a meaningful result wins); no provider feature-detection.",
         "operationId": "get_library_items_api_library_items_get",
         "responses": {
           "200": {
@@ -325,7 +325,7 @@
     "/api/jellyfin/poster": {
       "get": {
         "summary": "Jellyfin Poster",
-        "description": "Proxy a Jellyfin item's primary image so the browser can render it.\n\nKeeps the Jellyfin token/credential server-side: the browser only ever hits\nthis same-origin /api route.",
+        "description": "Proxy a Jellyfin item's primary image so the browser can render it.\n\nKeeps the Jellyfin token/credential server-side: the browser only ever hits\nthis same-origin /api route. Phase 1: routed through the ``LibraryService``\n``get_poster`` capability (first provider able to serve it wins).",
         "operationId": "jellyfin_poster_api_jellyfin_poster_get",
         "parameters": [
           {

@@ -1203,6 +1203,7 @@ function libraryCard(r) {
       <div class="shade"></div>
       <div class="badges"><span class="b ${r.type}">${r.type === 'tv' ? 'TV' : 'MOVIE'}</span></div>
       <div class="watchnow" style="position:absolute; left:50%; bottom:12px; transform:translateX(-50%); z-index:5; display:flex; gap:8px;">
+        ${r.item_id ? `<button class="btn btn-gold btn-sm mini-btn" data-act="play" data-jf-item="${esc(r.item_id)}" data-title="${esc(r.title)}">${ICONS.play} Play in RKM</button>` : ''}
         ${plexUrl ? `<button class="btn btn-purple btn-sm mini-btn" data-act="watch-plex" data-url="${esc(plexUrl)}">${ICONS.play} Plex</button>` : ''}
         ${embyUrl ? `<button class="btn btn-gold btn-sm mini-btn" data-act="watch-emby" data-url="${esc(embyUrl)}">${ICONS.play} Emby</button>` : ''}
         ${jfUrl ? `<button class="btn btn-blue btn-sm mini-btn" data-act="watch-jellyfin" data-url="${esc(jfUrl)}">${ICONS.play} Jellyfin</button>` : ''}
@@ -1642,9 +1643,11 @@ app.addEventListener('click', (e) => {
          return;
        } else if (actBtn.dataset.act === 'play') {
          // In-app native video over the /api/jellyfin/stream proxy.
+         // Works from grid cards (entry) AND Library cards (data-title).
          e.preventDefault();
          const jfid = actBtn.dataset.jfItem;
-         if (jfid && entry) openPlayer(jfid, entry.title);
+         const title = (entry && entry.title) || actBtn.dataset.title || '';
+         if (jfid) openPlayer(jfid, title);
          return;
        } else if (actBtn.dataset.act === 'download') {
          if (entry) doDownload(entry, { in: heroBtn ? 'hero' : (modalEntry ? 'modal' : 'card') });

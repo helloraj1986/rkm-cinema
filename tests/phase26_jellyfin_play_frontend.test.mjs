@@ -55,7 +55,7 @@ function load() {
   const appSrc = readFileSync(path.join(root, 'app.js'), 'utf8')
     + '\n; globalThis.__rkm = {'
     + ' setRes(map, flag=true){ RES = map; USES_RESOURCE_API = flag; },'
-    + ' st, cardMarkup, modalDownloadButton, playInRkmMarkup, canWatch'
+    + ' st, cardMarkup, modalDownloadButton, playInRkmMarkup, canWatch, libraryCard'
     + ' };';
   run(appSrc);
   return { api: run('window.API'), get: (k) => run('globalThis.__rkm.' + k) };
@@ -120,6 +120,23 @@ ok('modalDownloadButton: jellyfin-only watch -> Play in RKM first', () => {
   assert.ok(new RegExp('data-jf-item="' + JF_ID + '"').test(html));
   // deep-link stays
   assert.ok(/Watch on Jellyfin/.test(html));
+});
+
+ok('libraryCard (Library view): Play in RKM + Jellyfin deep-link when item_id present', () => {
+  const html = t.get('libraryCard')({
+    title: '500 Days of Summer', year: 2009, type: 'movie', item_id: JF_ID,
+    jellyfinUrl: 'http://jf/web/index.html#/details?id=' + JF_ID,
+  });
+  assert.ok(/data-act="play"/.test(html), 'expected Play in RKM on Library cards');
+  assert.ok(new RegExp('data-jf-item="' + JF_ID + '"').test(html));
+  assert.ok(/Play in RKM/.test(html));
+  // deep-link button still present
+  assert.ok(/data-act="watch-jellyfin"/.test(html));
+});
+
+ok('libraryCard: no item_id -> no Play in RKM', () => {
+  const html = t.get('libraryCard')({ title: 'X', year: 2000, type: 'movie' });
+  assert.ok(!/data-act="play"/.test(html));
 });
 
 process.exit(failures ? 1 : 0);

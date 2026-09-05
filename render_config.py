@@ -32,27 +32,41 @@ def canonical_env() -> dict:
     """Secrets already present in the canonical workspace .env (prod config).
 
     Lets the bundled stack reuse existing keys (e.g. TMDB_API_KEY) instead of
-    forcing the user to re-type them. Candidate paths mirror the prod layout:
-    the workspace root (../../.env from the repo dir) and /workspace/.env.
+    forcing the user to re-type them. Searches robustly regardless of Windows
+    vs WSL path layout: walks UP from the repo root collecting the first .env
+    in each ancestor (workspace root, /workspace, drive root), and merges every
+    .env it finds (later wins). Handles `export K=v` lines, whitespace around
+    `=` and quoted values.
     """
-    candidates = [
-        CONFIG_TOML.parents[1] / ".env",   # .../hermes-workspace/.env
-        CONFIG_TOML.parent / ".env",
-        Path("/workspace/.env"),
-    ]
-    for path in candidates:
+    merged: dict = {}
+    # Candidate dirs: the repo itself + every ancestor up to the filesystem root
+    # (covers D:/hermes_agent/hermes-workspace/.env on Windows and /workspace/.env on WSL).
+    dirs = [ROOT]
+    p = ROOT.parent
+    for _ in range(8):
+        dirs.append(p)
+        if p == p.parent:
+            break
+        p = p.parent
+    for d in dirs:
+        env_file = d / ".env"
         try:
-            if path.exists():
-                out = {}
-                for line in path.read_text(encoding="utf-8").splitlines():
-                    line = line.strip()
-                    if line and not line.startswith("#") and "=" in line:
-                        k, _, v = line.partition("=")
-                        out[k.strip()] = v.strip()
-                return out
+            if not env_file.exists():
+                continue
+            parsed: dict = {}
+            for line in env_file.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                k, _, v = line.partition("=")
+                k = k.strip().lstrip("export").strip()
+                v = v.strip().strip('"').strip("'")
+                if k:
+                    parsed[k] = v
+            merged.update(parsed)
         except Exception:
             continue
-    return {}
+    return merged
 
 
 def fail(msg: str) -> None:
@@ -101,12 +115,15 @@ def render(cfg: dict, data: Path) -> None:
     arr = cfg.get("arr", {})
 
     canonical = canonical_env()
-    # TMDB key: from the TOML, else reuse the canonical workspace .env (prod key).
+    # TMDB key: from the TOML, else reuse the canonical workspace .env / env var.
     tmdb_key = str(tmdb.get("api_key", "") or "").strip()
     if not tmdb_key or tmdb_key in ("REPLACE_ME", "CHANGE_ME"):
         tmdb_key = str(canonical.get("TMDB_API_KEY", "") or "").strip()
     if not tmdb_key:
-        fail("[tmdb] api_key is required (set it in rkm.config.toml [tmdb], or add TMDB_API_KEY to your workspace .env).")
+        tmdb_key = os.environ.get("TMDB_API_KEY", "").strip()
+    if not tmdb_key:
+        fail("[tmdb] api_key not found. Set it in rkm.config.toml [tmdb], or add TMDB_API_KEY "
+             "to your workspace .env (searched every ancestor .env of the repo).")
     backend = str(media_cfg.get("backend", "jellyfin")).lower()
     if backend not in ("jellyfin", "plex", "emby"):
         fail(f"media_server.backend must be jellyfin|plex|emby, got: {backend}")

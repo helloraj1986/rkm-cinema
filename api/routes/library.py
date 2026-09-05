@@ -134,3 +134,14 @@ def get_series_episodes(series_id: str):
         return {"provider": p.name, "episodes": p.episodes(series_id) or []}
     except Exception:
         return {"provider": p.name, "episodes": []}
+
+
+@router.get("/library/scan")
+def scan_library():
+    """Browser/address-bar friendly trigger for the Jellyfin library scan (GET).
+
+    Mirrors the canonical ``POST /api/jobs/library_scan/run`` job so a plain GET
+    (e.g. typing the URL) can force a scan. Returns the job result.
+    """
+    from jobs.library_scan import run_library_scan
+    return run_library_scan().to_dict()

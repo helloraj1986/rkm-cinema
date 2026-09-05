@@ -1185,9 +1185,10 @@ function renderLibraryView() {
       ${fullLibraryGridMarkup()}`
     : emptyState('Library unavailable', 'Connect Plex or Emby in your .env and it will appear here automatically.');
   app.innerHTML = `<div class="view shell">
-    <div class="view-head"><div><h1>My Library</h1><div class="sub">Your media server at a glance</div></div></div>
-    ${inner}
-  </div>`;
+      <div class="view-head"><div><h1>My Library</h1><div class="sub">Your media server at a glance</div></div>
+        <div class="view-actions"><button class="btn btn-gold btn-sm" data-act="scan-library" aria-label="Scan library now">${ICONS.refresh} Scan</button></div></div>
+      ${inner}
+    </div>`;
 }
 
 function libraryCard(r) {
@@ -1855,6 +1856,14 @@ app.addEventListener('click', (e) => {
          const sid = actBtn.dataset.jfItem;
          const stitle = (entry && entry.title) || actBtn.dataset.title || '';
          if (sid) openEpisodes(sid, stitle);
+         return;
+       } else if (actBtn.dataset.act === 'scan-library') {
+         // Manual library scan (Jellyfin refresh) from the Library view.
+         e.preventDefault();
+         toast('Scanning library…', 'Triggering a Jellyfin library refresh.', 'ok');
+         API.scanLibrary()
+           .then(() => toast('Library scan started', 'New media will be re-indexed shortly.', 'ok'))
+           .catch(() => toast('Scan failed', 'Could not reach the scan job.', 'err', 6000));
          return;
        } else if (actBtn.dataset.act === 'download') {
          if (entry) doDownload(entry, { in: heroBtn ? 'hero' : (modalEntry ? 'modal' : 'card') });

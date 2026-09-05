@@ -484,6 +484,7 @@ img { display: block; max-width: 100%; }
 .view-head { padding: 30px 0 8px; display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
 .view-head h1 { font-size: clamp(26px, 3.4vw, 38px); font-weight: 800; letter-spacing: -0.02em; }
 .view-head .sub { color: var(--muted); font-size: 13.5px; margin-top: 4px; }
+.view-actions { display: flex; align-items: center; gap: 10px; }
 
 .controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .chip {

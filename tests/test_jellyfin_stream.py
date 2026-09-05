@@ -272,3 +272,20 @@ def test_jobs_library_scan_endpoint(monkeypatch):
     body = r.json()
     assert body["status"] == "success"
     assert body["counts"]["scanned"] == 1
+
+
+def test_library_scan_get_route(monkeypatch):
+    """GET /api/library/scan lets a browser address bar trigger the scan."""
+    from jobs.library_scan import LibraryScanJob
+    from jobs.base import JobResult
+
+    def fake_run(self):
+        return JobResult(name="library_scan", status="success",
+                         items_processed=1, counts={"jellyfin": True, "scanned": 1})
+
+    monkeypatch.setattr(LibraryScanJob, "run", fake_run)
+    r = client.get("/api/library/scan")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["status"] == "success"
+    assert body["counts"]["scanned"] == 1

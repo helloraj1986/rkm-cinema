@@ -139,17 +139,40 @@ def ensure_admin() -> str | None:
 
 
 def ensure_api_key(admin_token):
-    code, data = _request("GET", "/Auth/Keys", token=admin_token)
-    if code == 200 and isinstance(data, dict):
-        for it in (data.get("Items") or []):
-            if str(it.get("App", "")) == "RKM Cinema" and it.get("Key"):
-                print("[jellyfin] reusing existing RKM API key")
-                return str(it["Key"])
-    api_key = uuid.uuid4().hex
-    code, _ = _request("POST", "/Auth/Keys", token=admin_token,
-                       body={"App": "RKM Cinema", "ApiKey": api_key})
-    print(f"[jellyfin] created API key -> {code}")
-    return api_key
+    """Create or reuse an RKM Cinema API key, VERIFIED by reading back /Auth/Keys.
+
+    The POST payload shape differs across Jellyfin versions, so after any POST we
+    re-read the key list and return whatever 'RKM Cinema' key actually exists.
+    """
+    def _find():
+        code, data = _request("GET", "/Auth/Keys", token=admin_token)
+        if code == 200 and isinstance(data, dict):
+            for it in (data.get("Items") or []):
+                if str(it.get("App", "")) == "RKM Cinema" and it.get("Key"):
+                    return str(it["Key"])
+        return None
+
+    existing = _find()
+    if existing:
+        print("[jellyfin] reusing existing RKM Cinema API key")
+        return existing
+
+    new_key = uuid.uuid4().hex
+    # Variant A: client-supplied key; Variant B: server-generated (App only).
+    variants = [
+        {"App": "RKM Cinema", "ApiKey": new_key},
+        {"App": "RKM Cinema"},
+    ]
+    for v in variants:
+        code, body = _request("POST", "/Auth/Keys", token=admin_token, body=v)
+        print(f"[jellyfin] POST /Auth/Keys ({'client-key' if 'ApiKey' in v else 'server-gen'}) -> {code}")
+        if code in (200, 204):
+            k = _find()
+            if k:
+                print("[jellyfin] confirmed API key registered")
+                return k
+    raise SystemExit("ERROR: could not create a registered Jellyfin API key "
+                     "(POST /Auth/Keys failed). See output above.")
 
 
 def ensure_library(admin_token, name, ctype, path):

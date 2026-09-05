@@ -12,8 +12,8 @@ cd "$(dirname "$0")"
 echo "== RKM bundled stack bootstrap =="
 if [ ! -f rkm.config.toml ]; then
     cp rkm.config.example.toml rkm.config.toml
-    echo "Created rkm.config.toml - edit it (set [tmdb] api_key and [media_server] jellyfin_admin_password), then re-run."
-    exit 1
+    echo "Created rkm.config.toml (defaults). TMDB key auto-fills from your workspace .env;"
+    echo "a Jellyfin admin password is generated automatically. Continuing..."
 fi
 
 command -v docker >/dev/null || { echo "Docker is not installed/run."; exit 1; }

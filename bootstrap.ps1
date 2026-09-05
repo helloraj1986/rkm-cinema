@@ -13,10 +13,8 @@ Write-Host "== RKM bundled stack bootstrap ==" -ForegroundColor Cyan
 
 if (!(Test-Path .\rkm.config.toml)) {
     Copy-Item .\rkm.config.example.toml .\rkm.config.toml
-    Write-Host "Created rkm.config.toml" -ForegroundColor Yellow
-    Write-Host "  - edit it: set [tmdb] api_key and [media_server] jellyfin_admin_password"
-    Write-Host "  - then re-run: .\bootstrap.ps1"
-    exit 1
+    Write-Host "Created rkm.config.toml (defaults). TMDB key auto-fills from your workspace .env;" -ForegroundColor Yellow
+    Write-Host "a Jellyfin admin password is generated automatically. Continuing..." -ForegroundColor Yellow
 }
 
 # --- Docker present? ---

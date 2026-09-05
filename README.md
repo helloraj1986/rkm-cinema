@@ -54,13 +54,11 @@ pre-existing Plex/*arr. Fully isolated from your prod stack (own network
 `docker compose -p rkm-bundled down`.
 
 ```powershell
-# Windows
-cp rkm.config.example.toml rkm.config.toml   # set [tmdb] api_key + [media_server] jellyfin_admin_password
-.\bootstrap.ps1                               # renders config, starts stack, provisions Jellyfin, wires the API
+# Windows (zero-edit: TMDB key auto-fills from your workspace .env, Jellyfin password auto-generates)
+.\bootstrap.ps1
 ```
 ```bash
 # Linux/macOS
-cp rkm.config.example.toml rkm.config.toml
 ./bootstrap.sh
 ```
 

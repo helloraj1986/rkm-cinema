@@ -45,14 +45,21 @@ class WatchLink:
     available: bool
     url: Optional[str] = None
     error: Optional[str] = None
+    #: Provider-native item id (e.g. the Jellyfin ``item_id``) used for in-app
+    #: playback through the same-origin /api stream proxy. Optional; absent for
+    #: providers whose playback is deep-link-only (Plex/Emby).
+    item_id: Optional[str] = None
 
     def to_dict(self) -> dict:
-        """Serialise in the exact spec §10 shape."""
-        return {
+        """Serialise in the exact spec §10 shape (plus optional ``item_id``)."""
+        d = {
             "available": self.available,
             "url": self.url,
             "error": self.error,
         }
+        if self.item_id:
+            d["item_id"] = self.item_id
+        return d
 
 
 class WatchLinkResolver:
@@ -96,7 +103,8 @@ class WatchLinkResolver:
             url = self._pick_url(built)
             if url:
                 logger.info("watch link available on %s", provider.name)
-                return WatchLink(provider=provider.name, available=True, url=url)
+                item_id = (match.metadata or {}).get("item_id") or None
+                return WatchLink(provider=provider.name, available=True, url=url, item_id=item_id)
             # Builder returned but no usable URL — a soft no, not an exception.
             return WatchLink(provider=provider.name, available=False, url=None)
         # No provider matched this match's name (should not happen) — soft no.

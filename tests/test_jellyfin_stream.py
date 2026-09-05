@@ -1,0 +1,142 @@
+"""Tests for the in-app Jellyfin playback wiring.
+
+Covers:
+- ``/api/jellyfin/stream/{item_id}`` proxies direct-play bytes, forwards the
+  client ``Range`` header upstream, and passes through a ``206`` + headers.
+- ``watch.<jellyfin>.item_id`` reaches the resource API (the frontend reads
+  ``s.watch.jellyfin.item_id`` to build the in-app Play button).
+
+All mocked at the network/config boundary — no real LAN, no API keys.
+"""
+from types import SimpleNamespace
+from unittest.mock import patch
+
+from fastapi.testclient import TestClient
+import api.main
+
+from domain.enums import MediaStatus, MediaType
+from domain.status import Capabilities, MediaSnapshot
+
+client = TestClient(api.main.app)
+
+
+class _FakeHeaders:
+    def __init__(self, d):
+        self._d = d
+
+    def get(self, name, default=None):
+        return self._d.get(name, default)
+
+
+class _FakeStreamResponse:
+    """Mimic urllib's HTTPResponse for the stream proxy: seeded bytes + status."""
+
+    def __init__(self, body=b"0123456789", status=206, headers=None):
+        self._body = body
+        self._pos = 0
+        self.status = status
+        self.headers = _FakeHeaders(headers or {"Content-Type": "video/mp4"})
+
+    def read(self, n=-1):
+        if self._pos >= len(self._body):
+            return b""
+        chunk = self._body[self._pos:self._pos + (n if n and n > 0 else len(self._body))]
+        self._pos += len(chunk)
+        return chunk
+
+    def close(self):
+        pass
+
+
+def _cfg(**over):
+    defaults = {
+        "JELLYFIN_URL": "http://jellyfin:8096",
+        "JELLYFIN_API_KEY": "sekret",
+        "JELLYFIN_BROWSER_URL": "",
+    }
+    defaults.update(over)
+    return SimpleNamespace(**defaults)
+
+
+def _patch_config(monkeypatch, **over):
+    # The stream route does `from config.settings import get_config` at module
+    # load, so we must patch the route's own binding, not the source module.
+    fake = _cfg(**over)
+    import api.routes.jellyfin_stream as route_mod
+    monkeypatch.setattr(route_mod, "get_config", lambda: fake)
+    return fake
+
+
+# ------------------------------------------------------------- stream proxy
+def test_stream_returns_206_and_forwards_range(monkeypatch):
+    """A Range request is passed upstream and the 206 + headers come back."""
+    _patch_config(monkeypatch)
+    captured = {}
+
+    def fake_urlopen(req, timeout=None):
+        captured["url"] = req.full_url
+        captured["range"] = req.get_header("Range")
+        return _FakeStreamResponse(
+            body=b"0123456789", status=206,
+            headers={"Content-Type": "video/mp4", "Accept-Ranges": "bytes",
+                     "Content-Range": "bytes 0-9/1882377499"})
+
+    with patch("api.routes.jellyfin_stream.urllib.request.urlopen", fake_urlopen):
+        r = client.get("/api/jellyfin/stream/abc123", headers={"Range": "bytes=0-9"})
+
+    assert r.status_code == 206
+    assert r.headers["Content-Range"] == "bytes 0-9/1882377499"
+    assert r.headers["Accept-Ranges"] == "bytes"
+    assert r.headers["Content-Type"] == "video/mp4"
+    assert r.content == b"0123456789"
+    # Upstream request carried the api key + the forwarded Range.
+    assert "api_key=sekret" in captured["url"]
+    assert "Static=true" in captured["url"]
+    assert captured["range"] == "bytes=0-9"
+
+
+def test_stream_returns_200_for_full_request(monkeypatch):
+    """Without a Range header the upstream's 200 body streams through."""
+    _patch_config(monkeypatch)
+
+    def fake_urlopen(req, timeout=None):
+        return _FakeStreamResponse(body=b"FULLBODY", status=200,
+                                   headers={"Content-Type": "video/mp4"})
+
+    with patch("api.routes.jellyfin_stream.urllib.request.urlopen", fake_urlopen):
+        r = client.get("/api/jellyfin/stream/abc123")
+
+    assert r.status_code == 200
+    assert r.content == b"FULLBODY"
+
+
+def test_stream_503_when_not_configured(monkeypatch):
+    """No JELLYFIN_URL/API_KEY -> 503 before any network call."""
+    _patch_config(monkeypatch, JELLYFIN_URL="", JELLYFIN_API_KEY="")
+    with patch("api.routes.jellyfin_stream.urllib.request.urlopen") as m:
+        r = client.get("/api/jellyfin/stream/abc123")
+    m.assert_not_called()
+    assert r.status_code == 503
+
+
+# ------------------------------------------------- item_id -> resource API
+def test_resource_watch_carries_jellyfin_item_id(monkeypatch):
+    """watch.jellyfin.item_id is present in the §18 resource (frontend reads it)."""
+    _patch_config(monkeypatch)
+    snap = MediaSnapshot(
+        media_id="movie:tmdb:603", media_type=MediaType.MOVIE,
+        title="500 Days of Summer", year=2009, status=MediaStatus.AVAILABLE,
+        capabilities=Capabilities.from_status(MediaStatus.AVAILABLE),
+        watch_links={"jellyfin": {"available": True,
+                                  "url": "http://jellyfin/web/index.html#/details?id=abc",
+                                  "error": None, "item_id": "53756c83d38f47afbb1fd721dd089711"}},
+        service="jellyfin",
+    )
+    with patch("api.routes.media.Reconciler") as m:
+        m.return_value.get_snapshot.return_value = snap
+        r = client.get("/api/media/movie:tmdb:603")
+
+    assert r.status_code == 200
+    body = r.json()
+    assert body["watch"]["jellyfin"]["item_id"] == "53756c83d38f47afbb1fd721dd089711"
+    assert body["watch"]["jellyfin"]["available"] is True

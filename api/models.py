@@ -50,6 +50,8 @@ class StatusEntry(BaseModel):
     plexUrl: Optional[str] = None
     embyUrl: Optional[str] = None
     jellyfinUrl: Optional[str] = None
+    #: Jellyfin native item id for in-app playback (via /api/jellyfin/stream).
+    jellyfinItemId: Optional[str] = None
 
 
 class StatusResponse(BaseModel):
@@ -155,6 +157,8 @@ class WatchEntryModel(BaseModel):
     available: bool = False
     url: Optional[str] = None
     error: Optional[str] = None
+    #: Provider-native item id for in-app playback via /api/jellyfin/stream.
+    item_id: Optional[str] = None
 
 
 class AcquisitionModel(BaseModel):

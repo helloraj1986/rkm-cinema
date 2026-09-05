@@ -40,6 +40,7 @@ def _snapshot_to_media(snap: MediaSnapshot) -> MediaResponse:
             available=bool(info.get("available")),
             url=info.get("url"),
             error=info.get("error"),
+            item_id=info.get("item_id"),
         )
     acquisition = None
     if snap.service:

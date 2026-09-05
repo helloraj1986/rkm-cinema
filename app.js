@@ -190,6 +190,8 @@ function st(entry) {
       plexUrl: ((r.watch && r.watch.plex) || {}).url || '',
       embyUrl: ((r.watch && r.watch.emby) || {}).url || '',
       jellyfinUrl: ((r.watch && r.watch.jellyfin) || {}).url || '',
+      // Native item id for in-app playback via /api/jellyfin/stream.
+      jellyfinItemId: ((r.watch && r.watch.jellyfin) || {}).item_id || '',
       acquisition: r.acquisition || null,
     };
   }
@@ -272,6 +274,12 @@ function cardMarkup(entry, opts = {}) {
       dlBtn = `<a class="btn btn-gold mini-btn" data-act="watch-plex" data-url="${esc(plex.url || '')}" aria-label="Watch on Plex">${ICONS.play} Watch on Plex</a>`;
     } else if (embyAvail) {
       dlBtn = `<a class="btn btn-purple mini-btn" data-act="watch-emby" data-url="${esc(emby.url || '')}" aria-label="Watch on Emby">${ICONS.play} Watch on Emby</a>`;
+    } else if (jfAvail && jellyfin.item_id) {
+      // In-app playback is the primary action; keep the Jellyfin deep-link beside it.
+      dlBtn = `<span class="jf-qrow">
+        <button class="btn btn-gold mini-btn" data-act="play" data-jf-item="${esc(jellyfin.item_id)}" aria-label="Play ${esc(entry.title)} in RKM">${ICONS.play} Play in RKM</button>
+        <a class="btn btn-ghost mini-btn" data-act="watch-jellyfin" data-url="${esc(jellyfin.url || '')}" aria-label="Open in Jellyfin">${ICONS.play} Jellyfin</a>
+      </span>`;
     } else if (jfAvail) {
       dlBtn = `<a class="btn btn-blue mini-btn" data-act="watch-jellyfin" data-url="${esc(jellyfin.url || '')}" aria-label="Watch on Jellyfin">${ICONS.play} Watch on Jellyfin</a>`;
     } else {
@@ -1280,8 +1288,10 @@ function openModal(entry) {
     if (e.target === overlay) { closeModal(); return; }
     const trailerBtn = e.target.closest('[data-role="trailer"]');
     const dlBtn = e.target.closest('[data-role="download"]');
+    const playBtn = e.target.closest('[data-role="play-jellyfin"]');
     if (trailerBtn) { e.preventDefault(); loadTrailer(); return; }
     if (dlBtn) { e.preventDefault(); if (modalEntry) doDownload(modalEntry, { in: 'modal' }); return; }
+    if (playBtn) { e.preventDefault(); openPlayer(playBtn.dataset.jfItem, modalEntry ? modalEntry.title : ''); return; }
   });
   overlay.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') closeModal();
@@ -1307,6 +1317,15 @@ function trailerButton(entry) {
   return `<a class="btn btn-ghost" href="${esc(entry.trailerUrl)}" target="_blank" rel="noopener" aria-label="Search YouTube for ${esc(entry.title)} trailer">${ICONS.search} Search YouTube</a>`;
 }
 
+/* In-app "Play in RKM" button — native <video> over the /api/jellyfin/stream
+   proxy. Only rendered when Jellyfin is the available source AND carries a
+   native item id. Returns '' otherwise so callers can prepend it freely. */
+function playInRkmMarkup(jf, entry) {
+  if (!jf || !jf.item_id) return '';
+  const title = (entry && entry.title) || '';
+  return `<button class="btn btn-gold" data-role="play-jellyfin" data-jf-item="${esc(jf.item_id)}" aria-label="Play ${esc(title)} in RKM">${ICONS.play} Play in RKM</button>`;
+}
+
 function modalDownloadButton(entry, s) {
   const caps = s.capabilities || { can_download: false, can_watch: false };
   const svc = entry.type === 'tv' ? 'Sonarr' : 'Radarr';
@@ -1315,23 +1334,25 @@ function modalDownloadButton(entry, s) {
     const plex = (s.watch && s.watch.plex && s.watch.plex.available) ? s.watch.plex : null;
     const emby = (s.watch && s.watch.emby && s.watch.emby.available) ? s.watch.emby : null;
     const jf = (s.watch && s.watch.jellyfin && s.watch.jellyfin.available) ? s.watch.jellyfin : null;
+    // In-app playback first when Jellyfin is available with a native item id.
+    const jwt = playInRkmMarkup(jf, entry);
     if (plex && emby) {
-      return `<div class="modal-watch-group">
+      return `<div class="modal-watch-group">${jwt}
         <a class="btn btn-purple" target="_blank" rel="noopener" data-role="watchplex" href="${esc(plex.url || '')}">${ICONS.play} Watch on Plex</a>
         <a class="btn btn-purple" target="_blank" rel="noopener" data-role="watchemby" href="${esc(emby.url || '')}">${ICONS.play} Watch on Emby</a>
       </div>`;
     } else if (jf && (plex || emby)) {
-      return `<div class="modal-watch-group">
+      return `<div class="modal-watch-group">${jwt}
         ${plex ? `<a class="btn btn-purple" target="_blank" rel="noopener" data-role="watchplex" href="${esc(plex.url || '')}">${ICONS.play} Watch on Plex</a>` : ''}
         ${emby ? `<a class="btn btn-purple" target="_blank" rel="noopener" data-role="watchemby" href="${esc(emby.url || '')}">${ICONS.play} Watch on Emby</a>` : ''}
         <a class="btn btn-purple" target="_blank" rel="noopener" data-role="watchjellyfin" href="${esc(jf.url || '')}">${ICONS.play} Watch on Jellyfin</a>
       </div>`;
     } else if (plex) {
-      return `<a class="btn btn-purple" data-role="watchplex" target="_blank" rel="noopener" href="${esc(plex.url || '')}">${ICONS.play} Watch on Plex</a>`;
+      return `<div class="modal-watch-group">${jwt}<a class="btn btn-purple" data-role="watchplex" target="_blank" rel="noopener" href="${esc(plex.url || '')}">${ICONS.play} Watch on Plex</a></div>`;
     } else if (emby) {
-      return `<a class="btn btn-purple" data-role="watchemby" target="_blank" rel="noopener" href="${esc(emby.url || '')}">${ICONS.play} Watch on Emby</a>`;
+      return `<div class="modal-watch-group">${jwt}<a class="btn btn-purple" data-role="watchemby" target="_blank" rel="noopener" href="${esc(emby.url || '')}">${ICONS.play} Watch on Emby</a></div>`;
     } else if (jf) {
-      return `<a class="btn btn-purple" data-role="watchjellyfin" target="_blank" rel="noopener" href="${esc(jf.url || '')}">${ICONS.play} Watch on Jellyfin</a>`;
+      return `<div class="modal-watch-group">${jwt}<a class="btn btn-purple" data-role="watchjellyfin" target="_blank" rel="noopener" href="${esc(jf.url || '')}">${ICONS.play} Watch on Jellyfin</a></div>`;
     }
     return `<button class="btn btn-green" data-role="download" disabled>${ICONS.check} Available</button>`;
   }
@@ -1356,6 +1377,59 @@ function loadTrailer() {
   wrap.style.display = 'block';
   wrap.innerHTML = `<iframe src="${esc(modalEntry.trailerUrl)}" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen title="Official trailer: ${esc(modalEntry.title)}"></iframe>`;
   note.textContent = modalEntry.trailerTitle ? `Trailer: ${modalEntry.trailerTitle}` : '';
+}
+
+/* ---------------- in-app Jellyfin player ---------------- */
+/* Native <video> overlay streaming through the same-origin /api/jellyfin/stream
+   proxy (credential stays server-side). Direct play → Range/seeking intact. */
+function openPlayer(itemId, title) {
+  closePlayer();
+  const ov = document.createElement('div');
+  ov.className = 'overlay player-overlay';
+  ov.innerHTML = `<div class="modal player-modal" role="dialog" aria-modal="true" aria-label="${esc(title || '')} player">
+    <div class="player-head">
+      <div class="player-title">${esc(title || 'Now playing')}</div>
+      <button class="modal-x" data-role="close-player" aria-label="Close">${ICONS.x}</button>
+    </div>
+    <div class="player-stage">
+      <video id="rkmPlayer" controls autoplay playsinline src="${esc('/api/jellyfin/stream/' + encodeURIComponent(itemId))}"></video>
+    </div>
+    <div class="player-note">Streaming direct from your library — seeking supported.</div>
+  </div>`;
+  document.body.appendChild(ov);
+  requestAnimationFrame(() => ov.classList.add('show'));
+  document.body.style.overflow = 'hidden';
+  ov.addEventListener('click', (e) => {
+    if (e.target === ov || e.target.closest('[data-role="close-player"]')) { closePlayer(); return; }
+  });
+  ov.addEventListener('keydown', (e) => { if (e.key === 'Escape') closePlayer(); });
+  const v = ov.querySelector('video');
+  if (v) {
+    v.focus();
+    v.addEventListener('error', () => { if (modalPlayerErr(ov)) showPlayerErr(ov); });
+  }
+}
+let _playerErrShown = false;
+function modalPlayerErr(ov) {
+  const v = ov.querySelector('video');
+  if (!v || _playerErrShown) return false;
+  _playerErrShown = true;
+  return true;
+}
+function closePlayer() {
+  _playerErrShown = false;
+  const ov = $('.player-overlay');
+  if (!ov) return;
+  const v = ov.querySelector('video');
+  if (v) { v.pause(); v.removeAttribute('src'); v.load(); }
+  ov.classList.remove('show');
+  document.body.style.overflow = '';
+  setTimeout(() => ov.remove(), 220);
+}
+function showPlayerErr(ov) {
+  const stage = ov.querySelector('.player-stage');
+  if (!stage) return;
+  stage.innerHTML = `<div class="player-error">⚠️ Couldn't play this file in the browser — the codec may not be supported.<br><span class="player-err-sub">Open it in Jellyfin directly instead.</span></div>`;
 }
 
 /* ---------------- interactions ---------------- */
@@ -1565,6 +1639,12 @@ app.addEventListener('click', (e) => {
          e.preventDefault();
          if (modalEntry) { loadTrailer(); }
          else if (entry) { openModal(entry); requestAnimationFrame(() => loadTrailer()); }
+         return;
+       } else if (actBtn.dataset.act === 'play') {
+         // In-app native video over the /api/jellyfin/stream proxy.
+         e.preventDefault();
+         const jfid = actBtn.dataset.jfItem;
+         if (jfid && entry) openPlayer(jfid, entry.title);
          return;
        } else if (actBtn.dataset.act === 'download') {
          if (entry) doDownload(entry, { in: heroBtn ? 'hero' : (modalEntry ? 'modal' : 'card') });

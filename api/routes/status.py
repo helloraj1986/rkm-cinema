@@ -40,6 +40,7 @@ def get_status():
             plexUrl=plex.get("url") or "",
             embyUrl=emby.get("url") or "",
             jellyfinUrl=jellyfin.get("url") or "",
+            jellyfinItemId=jellyfin.get("item_id") or "",
         )
 
     return StatusResponse(statuses=statuses, indexerIssue=result.indexer_issue)

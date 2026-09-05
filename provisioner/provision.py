@@ -24,7 +24,6 @@ JELLYFIN_BROWSER_URL, TZ. Verbose stdout for troubleshooting.
 """
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import sys
@@ -96,19 +95,24 @@ def authenticate():
                           body={"Username": ADMIN_USER, "Pw": ADMIN_PASSWORD})
     if code == 200 and isinstance(data, dict):
         return data.get("AccessToken")
+    err = data.get("error") if isinstance(data, dict) else data
+    print(f"[jellyfin] authenticate {ADMIN_USER} -> HTTP {code} {str(err)[:120]}")
     return None
 
 
 def run_startup() -> bool:
-    print("[jellyfin] first-run: running headless Startup wizard to create admin user")
-    sha1 = hashlib.sha1(ADMIN_PASSWORD.encode()).hexdigest().lower()
-    # Arm the startup session + user creation (10.11 returns 404 on the POST
-    # without GET /Startup/User first).
+    print("[jellyfin] first-run: setting first-user admin password via Startup wizard")
+    # POST /Startup/User RENAMES the pre-existing first user + sets its password
+    # via UserManager.ChangePassword, which hashes the value it's given. So the
+    # field is the PLAINTEXT password — NOT a sha1 (sending sha1 double-hashes and
+    # auth then mismatches). GET /Startup/User first is required (it calls
+    # InitializeAsync which materialises the default first user; without it the
+    # POST returns 404).
     for step in ("/Startup/Configuration", "/Startup/User"):
         code, _ = _request("GET", step, timeout=8)
         print(f"[jellyfin] GET {step} -> {code}")
     code, body = _request("POST", "/Startup/User", body={
-        "Name": ADMIN_USER, "Password": sha1, "EnableAutoLogin": True})
+        "Name": ADMIN_USER, "Password": ADMIN_PASSWORD})
     print(f"[jellyfin] POST /Startup/User -> {code} {body if code not in (200, 204) else ''}")
     code2, _ = _request("POST", "/Startup/RemoteAccess",
                         body={"EnableRemoteAccess": True, "EnableAutomaticPortMapping": False})

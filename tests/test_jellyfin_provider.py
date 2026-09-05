@@ -262,3 +262,33 @@ def test_episodes_lists_and_sorts_per_season():
     assert eps[0]["playback_position"] == 2000   # 20s
     assert eps[0]["runtime"] == 4000
     assert eps[2]["played"] is True               # S2E1 watched
+
+
+def test_refresh_library_posts_jellyfin_refresh():
+    """refresh_library() POSTs /Library/Refresh and returns True on 204."""
+    from unittest.mock import patch
+    from services.library.jellyfin import JellyfinLibraryProvider
+    prov = JellyfinLibraryProvider(config=_cfg())
+    seen = {}
+
+    class _R:
+        status = 204
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+
+    def fake_urlopen(req, timeout=None):
+        seen["url"] = req.full_url
+        seen["method"] = req.get_method()
+        return _R()
+
+    with patch("services.library.jellyfin.urllib.request.urlopen", fake_urlopen):
+        assert prov.refresh_library() is True
+    assert "/Library/Refresh" in seen["url"]
+    assert "api_key=jkey" in seen["url"]
+    assert seen["method"] == "POST"
+
+
+def test_refresh_library_false_when_not_configured():
+    from services.library.jellyfin import JellyfinLibraryProvider
+    prov = JellyfinLibraryProvider(config=_cfg(JELLYFIN_URL="", JELLYFIN_API_KEY=""))
+    assert prov.refresh_library() is False

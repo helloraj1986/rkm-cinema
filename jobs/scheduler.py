@@ -31,13 +31,15 @@ _ACTIVE: list[JobScheduler] = []  # holds a ref so the daemon thread isn't GC'd
 class JobScheduler:
     """Background scheduler daemon. Safe to start multiple times (no-op 2nd)."""
 
-    def __init__(self, *, config=None, run_reconcile=None, run_daily=None):
+    def __init__(self, *, config=None, run_reconcile=None, run_daily=None, run_library_scan=None):
         from config.settings import get_config
         self.config = config if config is not None else get_config()
         from jobs.reconcile import run_reconcile as _rr
         from jobs.daily_watchlist import run_daily_watchlist as _rd
+        from jobs.library_scan import run_library_scan as _rls
         self._run_reconcile = run_reconcile or _rr
         self._run_daily = run_daily or _rd
+        self._run_library_scan = run_library_scan or _rls
         self._thread: Optional[threading.Thread] = None
         self._stop = threading.Event()
         self._lock = threading.Lock()
@@ -66,6 +68,7 @@ class JobScheduler:
         reconcile_iv = max(1, int(self.config.RECONCILE_INTERVAL_MIN or 10)) * 60
         last_reconcile = 0.0
         last_daily = -1  # -1 so the daily job can fire on the first matching hour
+        last_scan = -1
 
         while not self._stop.is_set():
             now = time.time()
@@ -86,6 +89,17 @@ class JobScheduler:
                 logger.info("scheduler: running daily watchlist job")
                 self._safe(lambda: self._run_daily())
                 last_daily = now_dt.date().toordinal()
+
+            # Daily library scan (once/day) — Jellyfin-backed stacks refresh so
+            # newly-added media gets scanned+indexed even when idle. Independent
+            # of AUTO_ADD (it's an ingest step, not a recommendation step) but
+            # only meaningful when a Jellyfin backend is configured.
+            if (getattr(self.config, "has_jellyfin", lambda: True)()
+                    and now_dt.hour == self.config.DAILY_JOB_HOUR
+                    and last_scan != now_dt.date().toordinal()):
+                logger.info("scheduler: running daily library scan")
+                self._safe(lambda: self._run_library_scan())
+                last_scan = now_dt.date().toordinal()
 
             self._stop.wait(min(30, reconcile_iv))
 

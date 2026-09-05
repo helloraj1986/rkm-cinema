@@ -205,6 +205,23 @@ class JellyfinLibraryProvider(LibraryProvider):
         out.sort(key=lambda e: (e["season"], e["episode"]))
         return out
 
+    def refresh_library(self) -> bool:
+        """Trigger a full Jellyfin library scan (picks up newly-added media).
+
+        Returns True when Jellyfin accepted the refresh (204). ``POST`` with an
+        empty body via the server-side api key.
+        """
+        if not self._configured():
+            return False
+        url = f"{self.config.JELLYFIN_URL}/Library/Refresh?api_key={self.config.JELLYFIN_API_KEY}"
+        try:
+            req = urllib.request.Request(url, data=b"", method="POST")
+            with urllib.request.urlopen(req, timeout=20) as r:
+                return 200 <= int(getattr(r, "status", 0)) < 300
+        except Exception as e:
+            logger.warning("Jellyfin library refresh failed: %s", e)
+            return False
+
     @staticmethod
     def _int(v) -> int:
         try:

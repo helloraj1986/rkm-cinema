@@ -53,11 +53,13 @@ def run_job_endpoint(name: str):
     from jobs.daily_watchlist import run_daily_watchlist
     from jobs.reconcile import run_reconcile
     from jobs.add_watchlist import run_add_watchlist
+    from jobs.library_scan import run_library_scan
 
     jobs = {
         "daily_watchlist": run_daily_watchlist,
         "reconcile": run_reconcile,
         "add_watchlist": run_add_watchlist,
+        "library_scan": run_library_scan,
     }
     fn = jobs.get(name)
     if fn is None:

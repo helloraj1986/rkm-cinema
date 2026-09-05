@@ -240,3 +240,32 @@ class TestScheduler:
         # Instead assert the loop would dispatch by checking helper wiring.
         assert callable(s._run_reconcile)
         s.stop()
+
+class TestLibraryScanJob:
+    def test_library_scan_not_configured_reports_cleanly(self, monkeypatch):
+        from types import SimpleNamespace
+        from jobs.library_scan import run_library_scan
+        cfg = SimpleNamespace(JELLYFIN_URL="", JELLYFIN_API_KEY="")
+        res = run_library_scan(config=cfg)
+        assert res.status == "success"
+        assert res.counts == {"jellyfin": False, "scanned": 0}
+
+    def test_library_scan_refreshes_when_jellyfin(self, monkeypatch):
+        from types import SimpleNamespace
+        from jobs.library_scan import run_library_scan, LibraryScanJob
+        cfg = SimpleNamespace(JELLYFIN_URL="http://jf:8096", JELLYFIN_API_KEY="k")
+        monkeypatch.setattr(LibraryScanJob, "_scan", lambda self, cfg: True)
+        res = run_library_scan(config=cfg)
+        assert res.status == "success"
+        assert res.counts == {"jellyfin": True, "scanned": 1}
+
+    def test_scheduler_wires_library_scan(self):
+        from unittest.mock import Mock
+        from jobs.scheduler import JobScheduler
+        cfg = Mock()
+        cfg.WATCHLIST_SCHEDULER = True
+        cfg.RECONCILE_INTERVAL_MIN = 1000
+        cfg.DAILY_JOB_HOUR = 99
+        s = JobScheduler(config=cfg, run_reconcile=lambda: None, run_daily=lambda: None)
+        assert callable(s._run_library_scan)
+        s.stop()

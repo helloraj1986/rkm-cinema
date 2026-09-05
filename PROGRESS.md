@@ -16,6 +16,15 @@
 - **Tests:** backend `test_episodes_lists_and_sorts_per_season` + `test_series_episodes_route`; frontend `cardPrimaryPlay` movie/TV, `playInRkmMarkup` TV role, `renderEpisodes` grouping/order/watched/resume, `nextEpisode` (phase26 now 25). **238 pytest + phase11/18/25/26 node green.**
 - **To go live:** rebuild `.\bootstrap.ps1` (new backend route) + hard-refresh. Then a TV card's "Episodes" → pick a season/episode → plays in-app, resumes where you left it, and offers Up Next at the end.
 
+## Automatic library scan (once/day) — small add-on
+
+**Daily Jellyfin library scan inside RKM** so media dropped into the library folders gets scanned+indexed even when the app is idle.
+
+- **Backend:** `JellyfinLibraryProvider.refresh_library()` → `POST {JELLYFIN_URL}/Library/Refresh` (verified 204 live). New `jobs/library_scan.py` (`LibraryScanJob.run` + `run_library_scan()`), records a `job_runs` audit row, returns `JobResult` (counts `{jellyfin, scanned}`). When Jellyfin isn't configured it reports cleanly (`{jellyfin:false, scanned:0}`) instead of erroring.
+- **Scheduling:** added to the in-process scheduler (`jobs/scheduler.py`) as a **once/day** task at `DAILY_JOB_HOUR`, gated on `config.has_jellyfin()` (so Plex/Emby-only stacks skip it; independent of `AUTO_ADD_ENABLED`). Bundled stack already runs the scheduler (`WATCHLIST_SCHEDULER=true` in `render_config.py`). **On-demand** trigger too: `POST /api/jobs/library_scan/run` (registered in `api/routes/jobs.py`).
+- **Tests:** provider refresh (204→True, not-configured→False), job not-configured/reconfigured, scheduler wiring, endpoint (6 new). **244 pytest + all node suites green.**
+- **To go live:** rebuild `.\bootstrap.ps1`. After that it scans automatically every day; you can also hit `POST /api/jobs/library_scan/run` (or the refresh button wiring later) to force a scan. All job runs are visible on `GET /api/jobs`.
+
 ## ▶ LATEST SESSION (2026-09-05, round 4) — Full library grid + Continue Watching ✅
 
 **Poster-wall library + a Discover "Continue Watching" row**, completing the 1→3 roadmap. Branch **pushed to GitHub**.

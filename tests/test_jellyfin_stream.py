@@ -255,3 +255,20 @@ def test_series_episodes_route(monkeypatch):
     assert r.status_code == 200
     assert r.json()["episodes"][0]["name"] == "Pilot"
     assert r.json()["episodes"][0]["playback_position"] == 2000
+
+
+def test_jobs_library_scan_endpoint(monkeypatch):
+    """POST /api/jobs/library_scan/run triggers the library-scan job."""
+    from jobs.library_scan import LibraryScanJob
+    from jobs.base import JobResult
+
+    def fake_run(self):
+        return JobResult(name="library_scan", status="success",
+                         items_processed=1, counts={"jellyfin": True, "scanned": 1})
+
+    monkeypatch.setattr(LibraryScanJob, "run", fake_run)
+    r = client.post("/api/jobs/library_scan/run")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["status"] == "success"
+    assert body["counts"]["scanned"] == 1

@@ -1458,7 +1458,7 @@ function openPlayer(itemId, title, resume) {
   if (v) {
     v.focus();
     v.addEventListener('error', () => {
-      if (modalPlayerErr(ov)) { reportProgress(_playerItemId, v.currentTime || 0, 'stopped'); showPlayerErr(ov); }
+      if (modalPlayerErr(ov)) { _reportPos(v, 'stopped'); showPlayerErr(ov); }
     });
     // Resume: seek the Range-backed stream to the saved position once duration is known.
     v.addEventListener('loadedmetadata', () => {
@@ -1467,7 +1467,8 @@ function openPlayer(itemId, title, resume) {
       }
     });
     // Report back to Jellyfin, but never clobber the resume point: skip
-    // play/timeupdate until the position reflects a resume (or real progress).
+    // play/timeupdate/stopped until the position reflects a resume (or real
+    // progress) — otherwise closing before the seek lands would POST 0 and wipe.
     v.addEventListener('play',    () => _reportPos(v, 'start'));
     v.addEventListener('timeupdate', () => {
       const now = Date.now();
@@ -1475,8 +1476,8 @@ function openPlayer(itemId, title, resume) {
       _playerLastReport = now;
       _reportPos(v, 'timeupdate');
     });
-    v.addEventListener('pause', () => reportProgress(_playerItemId, v.currentTime || 0, 'stopped'));
-    v.addEventListener('ended', () => reportProgress(_playerItemId, v.currentTime || 0, 'stopped'));
+    v.addEventListener('pause', () => _reportPos(v, 'stopped'));
+    v.addEventListener('ended', () => _reportPos(v, 'stopped'));
   }
 }
 let _playerItemId = '';

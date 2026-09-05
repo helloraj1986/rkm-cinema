@@ -250,10 +250,12 @@ ok('resume reporting: _reportPos never clobbers the saved spot with 0', () => {
       + ' _playerItemId = "m1"; _playerResume = 3000;');
   // Pre-seek (client still at 0) -> report suppressed (would reset Jellyfin to 0).
   t.run('_reportPos({ currentTime: 0 }, "start")');
+  // Close-before-seek (paused at 0 with a resume pending) must ALSO not wipe.
+  t.run('_reportPos({ currentTime: 0 }, "stopped")');
   // After the seek lands at the resume position -> report the real spot.
   t.run('_reportPos({ currentTime: 3000 }, "timeupdate")');
   const log = JSON.parse(t.run('JSON.stringify(window.__fetchLog)'));
-  assert.strictEqual(log.length, 1, 'only the post-resume report fires');
+  assert.strictEqual(log.length, 1, 'pre-seek start AND stopped are both suppressed; only the post-resume report fires');
   assert.strictEqual(JSON.parse(log[0].body).position_ticks, 30000000000); // 3000s * 1e7
 });
 

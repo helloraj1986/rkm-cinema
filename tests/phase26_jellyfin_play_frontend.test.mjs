@@ -233,4 +233,28 @@ ok('fullLibraryGridMarkup: renders the full poster wall grid', () => {
   assert.ok(/watched-tick/.test(html), 'watched B shows a tick');
 });
 
+ok('Play buttons carry data-resume so openPlayer can seek', () => {
+  // Library card with a saved position -> data-resume present.
+  const lib = t.get('libraryCard')({ title: 'Half', year: 2001, type: 'movie', item_id: 'm1',
+                                     played: false, playback_position: 3000, runtime: 6000 });
+  assert.ok(/data-resume="3000"/.test(lib), 'Library card resume position');
+  // Fresh (no position) -> data-resume="0".
+  assert.ok(/data-resume="0"/.test(t.get('libraryCard')({ title: 'Fresh', year: 2002, type: 'movie', item_id: 'm2' })));
+  // playInRkmMarkup (modal) from a jellyfin watch entry.
+  const mk = t.get('playInRkmMarkup')({ available: true, item_id: JF_ID, playback_position: 2718 }, entry());
+  assert.ok(new RegExp('data-resume="2718"').test(mk));
+});
+
+ok('resume reporting: _reportPos never clobbers the saved spot with 0', () => {
+  t.run('window.__fetchLog = []; window.fetch = (url, opts) => { window.__fetchLog.push(opts); return Promise.resolve({ ok: true }); };'
+      + ' _playerItemId = "m1"; _playerResume = 3000;');
+  // Pre-seek (client still at 0) -> report suppressed (would reset Jellyfin to 0).
+  t.run('_reportPos({ currentTime: 0 }, "start")');
+  // After the seek lands at the resume position -> report the real spot.
+  t.run('_reportPos({ currentTime: 3000 }, "timeupdate")');
+  const log = JSON.parse(t.run('JSON.stringify(window.__fetchLog)'));
+  assert.strictEqual(log.length, 1, 'only the post-resume report fires');
+  assert.strictEqual(JSON.parse(log[0].body).position_ticks, 30000000000); // 3000s * 1e7
+});
+
 process.exit(failures ? 1 : 0);

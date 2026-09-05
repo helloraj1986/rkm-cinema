@@ -289,7 +289,7 @@ function cardMarkup(entry, opts = {}) {
     } else if (jfAvail && jellyfin.item_id) {
       // In-app playback is the primary action; keep the Jellyfin deep-link beside it.
       dlBtn = `<span class="jf-qrow">
-        <button class="btn btn-gold mini-btn" data-act="play" data-jf-item="${esc(jellyfin.item_id)}" aria-label="Play ${esc(entry.title)} in RKM">${ICONS.play} Play in RKM</button>
+        <button class="btn btn-gold mini-btn" data-act="play" data-jf-item="${esc(jellyfin.item_id)}" data-resume="${esc(jellyfin.playback_position || 0)}" aria-label="Play ${esc(entry.title)} in RKM">${ICONS.play} Play in RKM</button>
         <a class="btn btn-ghost mini-btn" data-act="watch-jellyfin" data-url="${esc(jellyfin.url || '')}" aria-label="Open in Jellyfin">${ICONS.play} Jellyfin</a>
       </span>`;
     } else if (jfAvail) {
@@ -1219,7 +1219,7 @@ function libraryCard(r) {
       <div class="badges"><span class="b ${r.type}">${r.type === 'tv' ? 'TV' : 'MOVIE'}</span></div>
       ${playbackMarkup(r)}
       <div class="watchnow" style="position:absolute; left:50%; bottom:12px; transform:translateX(-50%); z-index:5; display:flex; gap:8px;">
-        ${r.item_id ? `<button class="btn btn-gold btn-sm mini-btn" data-act="play" data-jf-item="${esc(r.item_id)}" data-title="${esc(r.title)}">${ICONS.play} Play in RKM</button>` : ''}
+        ${r.item_id ? `<button class="btn btn-gold btn-sm mini-btn" data-act="play" data-jf-item="${esc(r.item_id)}" data-resume="${esc(r.playback_position || 0)}" data-title="${esc(r.title)}">${ICONS.play} Play in RKM</button>` : ''}
         ${plexUrl ? `<button class="btn btn-purple btn-sm mini-btn" data-act="watch-plex" data-url="${esc(plexUrl)}">${ICONS.play} Plex</button>` : ''}
         ${embyUrl ? `<button class="btn btn-gold btn-sm mini-btn" data-act="watch-emby" data-url="${esc(embyUrl)}">${ICONS.play} Emby</button>` : ''}
         ${jfUrl ? `<button class="btn btn-blue btn-sm mini-btn" data-act="watch-jellyfin" data-url="${esc(jfUrl)}">${ICONS.play} Jellyfin</button>` : ''}
@@ -1321,7 +1321,7 @@ function openModal(entry) {
     const playBtn = e.target.closest('[data-role="play-jellyfin"]');
     if (trailerBtn) { e.preventDefault(); loadTrailer(); return; }
     if (dlBtn) { e.preventDefault(); if (modalEntry) doDownload(modalEntry, { in: 'modal' }); return; }
-    if (playBtn) { e.preventDefault(); openPlayer(playBtn.dataset.jfItem, modalEntry ? modalEntry.title : ''); return; }
+    if (playBtn) { e.preventDefault(); openPlayer(playBtn.dataset.jfItem, modalEntry ? modalEntry.title : '', Number(playBtn.dataset.resume || 0)); return; }
   });
   overlay.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') closeModal();
@@ -1353,7 +1353,7 @@ function trailerButton(entry) {
 function playInRkmMarkup(jf, entry) {
   if (!jf || !jf.item_id) return '';
   const title = (entry && entry.title) || '';
-  return `<button class="btn btn-gold" data-role="play-jellyfin" data-jf-item="${esc(jf.item_id)}" aria-label="Play ${esc(title)} in RKM">${ICONS.play} Play in RKM</button>`;
+  return `<button class="btn btn-gold" data-role="play-jellyfin" data-jf-item="${esc(jf.item_id)}" data-resume="${esc(jf.playback_position || 0)}" aria-label="Play ${esc(title)} in RKM">${ICONS.play} Play in RKM</button>`;
 }
 
 /* Watched / progress marker from an object carrying played/playback_position/
@@ -1430,9 +1430,10 @@ function loadTrailer() {
 /* ---------------- in-app Jellyfin player ---------------- */
 /* Native <video> overlay streaming through the same-origin /api/jellyfin/stream
    proxy (credential stays server-side). Direct play → Range/seeking intact. */
-function openPlayer(itemId, title) {
+function openPlayer(itemId, title, resume) {
   closePlayer();
   _playerItemId = itemId || '';
+  _playerResume = Math.max(0, Number(resume) || 0);
   _playerLastReport = 0;
   const ov = document.createElement('div');
   ov.className = 'overlay player-overlay';
@@ -1459,21 +1460,37 @@ function openPlayer(itemId, title) {
     v.addEventListener('error', () => {
       if (modalPlayerErr(ov)) { reportProgress(_playerItemId, v.currentTime || 0, 'stopped'); showPlayerErr(ov); }
     });
-    // Report playback back to Jellyfin so Watched/resume UI actually moves.
-    v.addEventListener('play', () => reportProgress(_playerItemId, v.currentTime || 0, 'start'));
+    // Resume: seek the Range-backed stream to the saved position once duration is known.
+    v.addEventListener('loadedmetadata', () => {
+      if (_playerResume > 0 && v.duration && _playerResume < v.duration) {
+        try { v.currentTime = _playerResume; } catch (e) { /* ignore seek failure */ }
+      }
+    });
+    // Report back to Jellyfin, but never clobber the resume point: skip
+    // play/timeupdate until the position reflects a resume (or real progress).
+    v.addEventListener('play',    () => _reportPos(v, 'start'));
     v.addEventListener('timeupdate', () => {
       const now = Date.now();
       if (now - _playerLastReport < 5000) return;
       _playerLastReport = now;
-      reportProgress(_playerItemId, v.currentTime || 0, 'timeupdate');
+      _reportPos(v, 'timeupdate');
     });
     v.addEventListener('pause', () => reportProgress(_playerItemId, v.currentTime || 0, 'stopped'));
     v.addEventListener('ended', () => reportProgress(_playerItemId, v.currentTime || 0, 'stopped'));
   }
 }
 let _playerItemId = '';
+let _playerResume = 0;
 let _playerLastReport = 0;
 let _playerErrShown = false;
+/* Only report play/timeupdate once the position reflects a resume (if one is
+   expected) — otherwise a fresh stream sitting at 0s would reset Jellyfin's
+   saved spot. Pause/ended/error (stopped) always report so the position holds. */
+function _reportPos(v, event) {
+  const pos = (v && v.currentTime) || 0;
+  if (_playerResume > 0 && pos < _playerResume - 1) return; // seek not applied yet
+  reportProgress(_playerItemId, pos, event);
+}
 /* POST playback position to the /api/jellyfin/progress proxy (token stays
    server-side). Fire-and-forget; a missing/not-Jellyfin backend is a soft no. */
 function reportProgress(itemId, seconds, event) {
@@ -1723,7 +1740,7 @@ app.addEventListener('click', (e) => {
          e.preventDefault();
          const jfid = actBtn.dataset.jfItem;
          const title = (entry && entry.title) || actBtn.dataset.title || '';
-         if (jfid) openPlayer(jfid, title);
+         if (jfid) openPlayer(jfid, title, Number(actBtn.dataset.resume || 0));
          return;
        } else if (actBtn.dataset.act === 'download') {
          if (entry) doDownload(entry, { in: heroBtn ? 'hero' : (modalEntry ? 'modal' : 'card') });

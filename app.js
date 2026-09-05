@@ -1196,7 +1196,15 @@ function libraryCard(r) {
 }
 
 function libraryStripMarkup() {
-  if (LIB?.available) return '';
+  const counts = LIB?.counts || { movie: 0, show: 0 };
+  if (LIB?.available) {
+    // Connected: show a live "My Library" row with counts + a door into the
+    // Library view (which lists Jellyfin items with Watch buttons).
+    return `<div class="row-head">
+      <h2><span class="swatch" aria-hidden="true"></span> My Library · ${esc(LIB?.server || '')}</h2>
+      <button class="row-more" data-view="library">Open ${'›'} <span class="libcount">${counts.movie || 0} films · ${counts.show || 0} shows</span></button>
+    </div>`;
+  }
   return `<div class="row-head">
     <h2><span class="swatch" aria-hidden="true"></span> My Library</h2>
     <button class="row-more" data-view="library">Open ${'›'}</button>

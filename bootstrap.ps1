@@ -58,8 +58,10 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 # --- Restart api so it loads the runtime config (the new Jellyfin API key) ---
+# `up -d api` alone does NOT recreate an unchanged container; force-recreate so
+# a fresh process re-reads /shared/runtime.json (Config() is cached per process).
 Write-Host "Restarting api to load runtime config ..." -ForegroundColor Cyan
-docker compose -p rkm-bundled up -d api
+docker compose -p rkm-bundled up -d --force-recreate api
 
 Write-Host ""
 Write-Host "Bundled stack ready:" -ForegroundColor Green

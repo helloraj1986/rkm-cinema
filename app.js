@@ -1168,17 +1168,26 @@ function renderLibraryView() {
 }
 
 function libraryCard(r) {
-  const thumb = r.thumb
-    ? `<img src="${esc('/api/plex/thumb?path=' + encodeURIComponent(r.thumb) + '&width=500')}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.display='none'">`
-    : '';
+  // Poster: Jellyfin items get a proxied primary image via our /api proxy (keeps
+  // the token server-side); fall back to the Plex thumb proxy for Plex items.
+  const thumb = r.item_id
+    ? `<img src="${esc('/api/jellyfin/poster?id=' + encodeURIComponent(r.item_id) + '&width=500')}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.display='none'">`
+    : (r.thumb
+        ? `<img src="${esc('/api/plex/thumb?path=' + encodeURIComponent(r.thumb) + '&width=500')}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.display='none'">`
+        : '');
   const plexUrl = r.plexUrl || (LIB?.urls?.plex ? LIB.urls.plex + '/search' : '');
   let embyUrl = r.embyUrl || '';
   if (!embyUrl && LIB?.urls?.emby) {
     embyUrl = `${LIB.urls.emby.replace(/\/web\/index\.html$/, '')}/web/index.html#!/search/${encodeURIComponent(r.title || '')}`;
   }
+  // Jellyfin: prefer the item's direct details link (from the backend), else build
+  // one from item_id. Jellyfin web uses `#/` hash routes (NOT `#!/` hashbang).
   let jfUrl = r.jellyfinUrl || '';
+  if (!jfUrl && r.item_id && LIB?.urls?.jellyfin) {
+    jfUrl = `${LIB.urls.jellyfin}#/details?id=${encodeURIComponent(r.item_id)}`;
+  }
   if (!jfUrl && LIB?.urls?.jellyfin) {
-    jfUrl = `${LIB.urls.jellyfin.replace(/\/web\/index\.html$/, '')}/web/index.html#!/search/${encodeURIComponent(r.title || '')}`;
+    jfUrl = `${LIB.urls.jellyfin}#/search?query=${encodeURIComponent(r.title || '')}`;
   }
   return `<div class="card" tabindex="0" role="button" aria-label="${esc(r.title)}">
     <div class="card-inner" style="--card-aspect: 2/3">

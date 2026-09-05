@@ -79,7 +79,8 @@ def test_jellyfin_match_by_imdb_id_and_watch_link():
     assert m.provider_item_id == "itm-1"
     assert m.metadata["server_id"] == "srv-abc"
     link = p.build_watch_link(m)
-    assert link["jellyfin_url"].startswith("http://localhost:8098/web/index.html#!/details?id=itm-1")
+    # Jellyfin web 10.10+ uses `#/details` (no `#!/` hashbang).
+    assert link["jellyfin_url"].startswith("http://localhost:8098/web/index.html#/details?id=itm-1")
     assert "serverId=srv-abc" in link["jellyfin_url"]
 
 

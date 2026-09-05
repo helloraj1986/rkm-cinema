@@ -123,8 +123,29 @@ class JellyfinLibraryProvider(LibraryProvider):
                     "type": "tv" if item.is_series else "movie",
                     "thumb": item.thumb,
                     "item_id": item.id,
+                    "jellyfin_url": self._item_web(item.id),
                 })
         return out
+
+    def get_poster(self, item_id: str, max_width: int = 500) -> Optional[dict]:
+        """Proxy a Jellyfin item's primary image (keeps the token server-side).
+
+        Returns ``{"content": bytes, "content_type": str}`` or None.
+        """
+        if not self._configured() or not item_id:
+            return None
+        url = (f"{self.config.JELLYFIN_URL}/Items/{item_id}/Images/Primary"
+               f"?api_key={self.config.JELLYFIN_API_KEY}&maxWidth={max_width}&quality=90&tag=")
+        try:
+            with urllib.request.urlopen(url, timeout=12) as r:
+                data = r.read()
+                content_type = r.headers.get("Content-Type", "image/jpeg")
+            if not data:
+                return None
+            return {"content": data, "content_type": content_type}
+        except Exception as e:
+            logger.warning("Jellyfin get_poster(%s) failed: %s", item_id, e)
+            return None
 
     def get_library_counts(self) -> dict:
         return {
@@ -140,16 +161,21 @@ class JellyfinLibraryProvider(LibraryProvider):
 
     def build_watch_link(self, match: LibraryMatch) -> dict:
         item_id = str(match.metadata.get("item_id", "") or "")
-        sid = str(match.metadata.get("server_id", "") or "")
         base = self._browser_base()
         if item_id:
-            # Jellyfin web is Emby-shaped: #!/details?id=<itemId>(&serverId=)
-            url = f"{base}#!/details?id={item_id}"
-            if sid:
-                url += f"&serverId={sid}"
-            return {"jellyfin_url": url}
+            # Jellyfin web 10.10+ uses `#/` routes (NO `#!/` hashbang — that's
+            # Emby's legacy form and 404s on Jellyfin).
+            return {"jellyfin_url": self._item_web(item_id)}
         q = urllib.parse.quote(str(match.title or ""))
-        return {"jellyfin_url": f"{base}#!/search?query={q}"}
+        return {"jellyfin_url": f"{base}#/search?query={q}"}
+
+    def _item_web(self, item_id: str) -> str:
+        base = self._browser_base()
+        url = f"{base}#/details?id={item_id}"
+        sid = self._server_id()
+        if sid:
+            url += f"&serverId={sid}"
+        return url
 
     # ------------------------------------------------------------------ Jellyfin API
     def _browser_base(self) -> str:

@@ -1,10 +1,33 @@
 # RKM Watchlist — Session Handoff & Project Progress
 
-> Last updated: 2026-09-06 (**re-platform Phases 0, 1a, 2, 3a, 3b, item-2 DONE — backend 252 pytest + ruff green, `web/` tsc+build+vitest 18/18.** CI + `/api` frozen (27 paths, +2 additive); `LibraryProvider` ABC capability surface (now incl. mark_state/recently_watched); `web/` React shell + typed client + flag; **library + playback slices** ported; **roadmap item 2 watch-state** landed (mark watched/unwatched, Recently Watched row, play count — additive `/api/library/{id}/state`). Legacy `app.js` untouched. Un-pushed (token `workflow` scope deferred to last). NEXT: Phase 3c `discover` (hero + rows + Continue Watching) or Phase 4 cutover prep.**)
+> Last updated: 2026-09-06 (**re-platform Phases 0,1a,2,3a,3b,item-2,4 DONE — backend 252 pytest + ruff; `web/` tsc+build+vitest 18/18; React shell validated live against real Jellyfin data.** `/api` frozen (27 paths); ABC capability surface; React shell + typed client; library+playback slices ported; item-2 watch-state; **Phase 4 cutover**: `web/` multi-stage Docker build serves React as the origin at :8124, legacy recoverable at /legacy/. Legacy `app.js` still present (not yet retired — discover/watchlist/search/suggest un-ported, live under /legacy/). Un-pushed (token `workflow` scope deferred to last). **Open:** Jellyfin `thumb` leaks aspect-ratio float (cosmetic; React uses id-proxy posters). NEXT: port discover/watchlist/search/suggest for full parity/retirement, or fix thumb, or push.**)
 > Live URL: **http://rkm-hp.tail8d5e8.ts.net:8123/** (Tailscale MagicDNS, tailnet-only — NEVER `tailscale funnel` it; page proxies /api → FastAPI which holds secrets server-side)
 > Deploy path (Windows, RKM-HP): `cd D:\hermes_agent\hermes-workspace\projects\rkm-cinema; .\run-rkm-cinema.ps1` (prod api+web nginx `:8123`; Plex/Emby backend) — or `.\bootstrap.ps1` for the **bundled api+web+Jellyfin** stack (`:8098`/`:8124`; this is where in-app Jellyfin playback lives). NOTE: there is **no `setup-watchlist.ps1` anymore — it was renamed.** The sandbox's `/workspace` maps to `D:\hermes_agent\hermes-workspace` (9p mount, confirmed via mountinfo 2026-08-18; NOT `D:\media`). The `web`+`api` containers are on RKM-HP (Docker daemon unreachable from sandbox).
 > Repo: **private `rkm-cinema` on GitHub** (github.com/helloraj1986/rkm-cinema)
 > **Status:** ✅ **Phases 1–18 committed. SQLite is now the AUTHORITATIVE watchlist store** (`WATCHLIST_STORE=sqlite`, DB on the shared `/workspace/media` volume so it survives every rebuild). `watchlist.json` is now a generated mirror/export, NOT authoritative. **DEPLOY PENDING on RKM-HP** to bake the 504/suggest API fixes + the SQLite store into the running image (`setup-watchlist.ps1`). Frontend-only (app.js synopsis fix) is already live via the volume mount.
+
+## ▶ LATEST SESSION (2026-09-06) — Phase 4: cutover — React served as origin, legacy recoverable at /legacy/ ✅ + live UI test
+
+**Your one command now serves the React shell.** `bootstrap.ps1` unchanged — `docker compose up -d --build` builds the new multi-stage `web` image.
+
+- **`web/Dockerfile`** — node:20-alpine build stage (`VITE_ENABLE_REACT=1`) → nginx serving `web/dist`; **no Node needed on the host**.
+- **`nginx/default.conf`** — React SPA at `/` (try_files → `index.html`); `/api` proxy unchanged; repo root mounted at `/legacy-source` served under **`/legacy/`** so the old app + live `dashboard-data.json` stay reachable (discover/watchlist/search/suggest are there until ported).
+- **`docker-compose.yml`** — `web` builds from `web/Dockerfile` (`rkm-bundled-web`), mounts `./:/legacy-source:ro`. `bootstrap.ps1`'s `up -d --build` picks it up automatically.
+- **`.dockerignore`** — keeps `node_modules`/`web/dist`/pycache out of the build context.
+- **Sidebar** — added a **Legacy app (/legacy)** link so the old UI is one click away.
+- **Live UI validation (sandbox):** started the FastAPI backend against the **bundled Jellyfin** (freshly-authenticated admin token), served the **built `web/dist`** exactly as nginx would (static + `/api` proxy), and rendered it in headless Chromium: **Full Library + Continue Watching render, 5 cards, 5 posters, real titles/percentages/play-counts, `/legacy` link, 0 console errors.** Provably the same artifact the container serves.
+- **⚠ Docker/nginx runtime not executed here** (daemon unreachable in sandbox) — the container config is authored; it was verified by the equivalent static+proxy server instead. Deploy step on RKM-HP: `.\bootstrap.ps1` (or `docker compose -p rkm-bundled up -d --build web`).
+
+**To run it (RKM-HP):**
+```powershell
+cd D:\hermes_agent\hermes-workspace\projects\rkm-cinema
+.\bootstrap.ps1
+# React UI:  http://localhost:8124  |  Legacy:  http://localhost:8124/legacy/
+```
+Legacy `app.js`/`index.html` are **kept** (not retired) — full retirement waits for discover/watchlist/search/suggest parity (Phase 3 remainder).
+
+### Known open
+- **Jellyfin `thumb` leaks the aspect-ratio float** (`0.666…`) when an item has no `Thumb` (`_parse_item` falls back to `PrimaryImageAspectRatio`, which is a ratio not a path). Cosmetic for the React cards (they use the id-proxy poster) but wrong in the API — one-line fix + regen pending.
 
 ## ▶ LATEST SESSION (2026-09-06) — Roadmap item 2: watch-state — mark watched/unwatched + Recently Watched + play count ✅
 

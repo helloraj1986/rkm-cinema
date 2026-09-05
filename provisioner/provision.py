@@ -38,11 +38,6 @@ ADMIN_PASSWORD = os.environ.get("JELLYFIN_ADMIN_PASSWORD", "")
 BROWSER_URL = os.environ.get("JELLYFIN_BROWSER_URL", "http://localhost:8098")
 RUNTIME_PATH = "/shared/runtime.json"
 
-LIBRARIES = [
-    ("Movies", "movies", "/data/media/_movie"),
-    ("TV Shows", "tvshows", "/data/media/_tv"),
-]
-
 
 def _request(method, path, *, token=None, body=None, q=None, timeout=15):
     url = JELLYFIN_URL + path
@@ -179,23 +174,73 @@ def ensure_api_key(admin_token):
     return admin_token
 
 
-def ensure_library(admin_token, name, ctype, path):
+def _existing_libraries(admin_token):
     code, data = _request("GET", "/Library/VirtualFolders", token=admin_token)
     if code == 200 and isinstance(data, list):
-        for vf in data:
-            for p in ((vf.get("Locations") or []) + (vf.get("Paths") or [])):
-                if p.rstrip("/") == path.rstrip("/"):
-                    print(f"[jellyfin] library '{name}' already has {path} — skipping")
-                    return
-    body = {"LibraryOptions": {"SaveLocalMetadata": False, "EnableInternetProviders": True},
-            "RefreshLibrary": False, "PathInfos": [{"Path": path}]}
-    q = {"name": name, "collectionType": ctype}
-    code, _ = _request("POST", "/Library/VirtualFolders", token=admin_token, body=body, q=q)
-    print(f"[jellyfin] add library '{name}' ({ctype} -> {path}) -> {code}")
-    if code not in (200, 204):
-        code2, _ = _request("POST", "/Library/VirtualFolders", token=admin_token,
-                            q={"name": name, "collectionType": ctype, "paths": path})
-        print(f"[jellyfin]   retry (paths=) -> {code2}")
+        return data
+    return []
+
+
+def _locations_of(vf) -> list:
+    return [p for p in ((vf.get("Locations") or []) + (vf.get("Paths") or [])) if p]
+
+
+def _is_bogus_default(vf) -> bool:
+    """A library pointing at Jellyfin's own internal default path (created by the
+    wizard without a real media folder) — safe to delete."""
+    locs = _locations_of(vf)
+    return not locs or all(p.strip("/").startswith("config/root/default") for p in locs)
+
+
+# Target libraries we want: name -> (collectionType, container path)
+TARGET_LIBRARIES = [
+    ("Movies", "movies", "/data/media/_movie"),
+    ("TV Shows", "tvshows", "/data/media/_tv"),
+]
+
+
+def ensure_libraries(admin_token):
+    """Guarantee exactly the two media libraries exist pointing at /data/media/{_movie,_tv}.
+
+    Cleans bogus wizard defaults (which point at /config/root/default), deletes any
+    target-named library with the WRONG path, re-creates via the `paths=` QUERY form
+    (the body PathInfos form silently 204s without setting a path on 10.11), then
+    verifies each library's Locations and triggers a library scan.
+    """
+    existing = _existing_libraries(admin_token)
+    for vf in existing:
+        name = vf.get("Name")
+        if _is_bogus_default(vf):
+            code, _ = _request("DELETE", "/Library/VirtualFolders",
+                               token=admin_token, q={"name": name, "refreshLibrary": "false"})
+            print(f"[jellyfin] deleted bogus library '{name}' (default path) -> {code}")
+
+    for target_name, ctype, path in TARGET_LIBRARIES:
+        vfs = _existing_libraries(admin_token)
+        match = next((v for v in vfs if v.get("Name") == target_name), None)
+        if match and path in _locations_of(match):
+            print(f"[jellyfin] library '{target_name}' already at {path}")
+            continue
+        if match:
+            code, _ = _request("DELETE", "/Library/VirtualFolders",
+                               token=admin_token, q={"name": target_name, "refreshLibrary": "false"})
+            print(f"[jellyfin] deleted mis-configured '{target_name}' -> {code}")
+        body = {"LibraryOptions": {"SaveLocalMetadata": True, "EnableInternetProviders": True},
+                "RefreshLibrary": False}
+        q = {"name": target_name, "collectionType": ctype, "refreshLibrary": "false", "paths": path}
+        code, _ = _request("POST", "/Library/VirtualFolders", token=admin_token, body=body, q=q)
+        print(f"[jellyfin] create library '{target_name}' ({path}) -> {code}")
+        # Verify the path actually stuck (Locations must contain it).
+        ok = False
+        vfs = _existing_libraries(admin_token)
+        m2 = next((v for v in vfs if v.get("Name") == target_name), None)
+        if m2 and path in _locations_of(m2):
+            ok = True
+        print(f"[jellyfin]   verified '{target_name}' at {path}: {ok}")
+
+    # Scan now so newly-attached folders index automatically (no manual Jellyfin scan).
+    code, _ = _request("POST", "/Library/Refresh", token=admin_token)
+    print(f"[jellyfin] triggered library scan (POST /Library/Refresh) -> {code}")
 
 
 def main():
@@ -212,8 +257,7 @@ def main():
         sys.exit(1)
 
     api_key = ensure_api_key(token)
-    for name, ctype, path in LIBRARIES:
-        ensure_library(token, name, ctype, path)
+    ensure_libraries(token)
 
     server_id = ""
     code, data = _request("GET", "/System/Info/Public")

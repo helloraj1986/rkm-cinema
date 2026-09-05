@@ -1,10 +1,26 @@
 # RKM Watchlist — Session Handoff & Project Progress
 
-> Last updated: 2026-09-02 (**UI round: lazy-load grids + smooth card hover/zoom + in-Plex orange tick & hover actions. NEW: canonical store migrated JSON→SQLite at `/workspace/media/watchlist.db` — survives rebuilds. 216 pytest + phase11/18/25 node green.**)
+> Last updated: 2026-09-05 (**BUNDLED JELLYFIN STACK experiment: one-command self-contained "Jellyfin client" built + VERIFIED on branch `experiment/bundled-docker-stack` — /api/config jellyfin:true, /api/library lists 2 movies, Watch links play in Jellyfin. Next: in-app playback.**)
 > Live URL: **http://rkm-hp.tail8d5e8.ts.net:8123/** (Tailscale MagicDNS, tailnet-only — NEVER `tailscale funnel` it; page proxies /api → FastAPI which holds secrets server-side)
 > Deploy path (Windows, RKM-HP): `cd D:\hermes_agent\hermes-workspace\projects\rkm-cinema; .\setup-watchlist.ps1` — the sandbox's `/workspace` maps to `D:\hermes_agent\hermes-workspace` (9p mount, confirmed via mountinfo 2026-08-18; NOT `D:\media`). The `web`+`api` containers are on RKM-HP (Docker daemon unreachable from sandbox).
 > Repo: **private `rkm-cinema` on GitHub** (github.com/helloraj1986/rkm-cinema)
 > **Status:** ✅ **Phases 1–18 committed. SQLite is now the AUTHORITATIVE watchlist store** (`WATCHLIST_STORE=sqlite`, DB on the shared `/workspace/media` volume so it survives every rebuild). `watchlist.json` is now a generated mirror/export, NOT authoritative. **DEPLOY PENDING on RKM-HP** to bake the 504/suggest API fixes + the SQLite store into the running image (`setup-watchlist.ps1`). Frontend-only (app.js synopsis fix) is already live via the volume mount.
+
+## ▶ LATEST SESSION (2026-09-05) — Bundled Jellyfin stack ("Jellyfin client") built + verified ✅
+
+**Branch `experiment/bundled-docker-stack`.** Self-contained Compose project **`rkm-bundled`** that runs its OWN Jellyfin + the RKM app (api+web) — no pre-existing media stack needed. Fully **isolated from prod** (network `rkm-exp`, own `./data`, non-colliding ports: Jellyfin `:8098`, dashboard `:8124`). Verified live: `/api/config` → `jellyfin: true`, `/api/library` → provider `jellyfin`, counts `{movie:2}`, Watch links open Jellyfin & play.
+
+**Run (Windows, one command):** `cd D:\hermes_agent\hermes-workspace\projects\rkm-cinema; .\bootstrap.ps1` (zero-edit: TMDB auto-fills from canonical workspace `.env`; Jellyfin admin password auto-generates & persists to `rkm.config.toml`). Teardown: `docker compose -p rkm-bundled down` · full wipe: `down -v`.
+
+**Files (on the branch):** `docker-compose.yml` (api+web+jellyfin, `fullstack` profile for radarr/sonarr/prowlarr/qbit), `render_config.py` (TOML→`.env`/`.rkm.env`), `rkm.config.example.toml`, `provisioner/provision.py` + Dockerfile, `bootstrap.ps1`/`.sh`, committed `index.html`. App changes: `JellyfinLibraryProvider` (`services/library/jellyfin.py`) + `build_library_service` factory (`services/library/factory.py`, `MEDIA_SERVER=jellyfin|emby|plex` — prod default Plex+Emby preserved, all call sites wired to the factory); settings `MEDIA_SERVER`/`JELLYFIN_BROWSER_URL` + runtime-config loader (`RKM_RUNTIME_PATH=/shared/runtime.json`); frontend `Watch on Jellyfin` (cards/modal/library) + tab re-order. Backend `api/routes/jellyfin_poster.py` proxies posters; deep links use Jellyfin-web `#/details` (NO `#!/` hashbang). **223 pytest + phase11/18/25 node green.**
+
+**Jellyfin 10.11 provisioning gotchas (all banked in skill `media-server-stack` → `references/jellyfin-bundled-provisioning.md` — DO NOT re-derive):** wizard flag is `System/Info/Public.StartupWizardCompleted`; auth REQUIRES `X-Emby-Authorization` header (else `400 Error processing request`); `POST /Startup/User` sets-not-creates (needs `GET /Startup/User` first) + password is PLAINTEXT; `POST /Auth/Keys` flaky on 10.11 → fall back to **admin AccessToken as `?api_key=`**; libraries must use the `paths=` QUERY form (body PathInfos silently 204s w/o setting path) + verify `Locations`; after provisioning `up -d --force-recreate api` (Config is lru-cached per process). `x-media` compose anchor must be a scalar STRING.
+
+### ▶ NEXT SESSION — prioritized next steps (recommended order, all incremental on current vanilla-JS UI)
+1. **In-app Jellyfin playback** (play INSIDE RKM, not jump to Jellyfin) ← start here. Backend stream proxy `/api/jellyfin/stream/{itemId}` (credential server-side; Jellyfin direct-plays + free-transcodes), frontend reuse the existing **trailer-modal** pattern → native `<video>`. ~half-day.
+2. **Watched / progress** — Jellyfin already tracks `UserData`; resume `%` bar + "watched" tick on cards (easy, high value).
+3. **Full library grid + Continue Watching** — `/api/library/items` returns everything w/ posters (proxy exists); Library tab becomes a poster wall; "Continue Watching" row on Discover.
+Then only if the direction proves out: **Appendix A Plex-style UI re-platform (React/TS)** — large, do NOT start before 1–3.
 
 ## ▶ LATEST SESSION (2026-09-02, UI round) — lazy-load grids + smooth hover + in-Plex tick ✅
 

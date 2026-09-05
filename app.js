@@ -76,6 +76,8 @@ let LEGACY_STATUS = {}; // imdbId -> legacy /api/status entry (fallback only)
 let USES_RESOURCE_API = false; // true once /api/watchlist resolves on this image
 let INDEXER_ISSUE = null; // *arr indexer outage message, if any
 let LIB = null;
+let LIBALL = [];     // full library (poster-wall grid) {title,item_id,type,played,position,runtime,...}
+let LIBWATCH = [];   // "Continue Watching" in-progress items
 let SERVICES = {};     // service -> bool
 let currentView = 'discover';
 let searchSel = -1;
@@ -129,6 +131,14 @@ async function loadServices() {
 
 async function loadLibrary() {
   try { LIB = await API.getLibrary(); } catch (e) { LIB = null; }
+  try {
+    const d = await API.getLibraryItems();
+    LIBALL = (d && d.items) || [];
+  } catch (e) { LIBALL = []; }
+  try {
+    const d = await API.getContinueWatching();
+    LIBWATCH = (d && d.items) || [];
+  } catch (e) { LIBWATCH = []; }
 }
 
 async function postDownload(entry) {
@@ -500,6 +510,7 @@ function renderDiscover() {
   let html = '';
   if (hero) html += heroMarkup(hero);
   html += `<div class="shell">`;
+  html += continueWatchingRowMarkup();
   for (const row of rows) html += rowMarkup(row);
   html += libraryStripMarkup();
   html += `</div>`;
@@ -1170,7 +1181,8 @@ function renderLibraryView() {
         <div class="lib-card hl"><div class="k">TV Shows</div><div class="v">${counts.show || 0} <small>series</small></div></div>
         <div class="lib-card"><div class="k">Server</div><div class="v" style="font-size:18px; padding-top:8px">${esc(LIB.server || '')}</div></div>
       </div>
-      ${LIB.recent && LIB.recent.length ? `<div class="row-head"><h2><span class="swatch" aria-hidden="true"></span> Recently Added to Library</h2></div><div class="row">${LIB.recent.map((r) => libraryCard(r)).join('')}</div>` : ''}`
+      ${LIB.recent && LIB.recent.length ? `<div class="row-head"><h2><span class="swatch" aria-hidden="true"></span> Recently Added to Library</h2></div><div class="row">${LIB.recent.map((r) => libraryCard(r)).join('')}</div>` : ''}
+      ${fullLibraryGridMarkup()}`
     : emptyState('Library unavailable', 'Connect Plex or Emby in your .env and it will appear here automatically.');
   app.innerHTML = `<div class="view shell">
     <div class="view-head"><div><h1>My Library</h1><div class="sub">Your media server at a glance</div></div></div>
@@ -1215,6 +1227,19 @@ function libraryCard(r) {
     </div>
     <div class="card-info"><div class="ci-title">${esc(r.title)}</div><div class="ci-meta">${r.year || ''}</div></div>
   </div>`;
+}
+
+function fullLibraryGridMarkup() {
+  if (!LIBALL || !LIBALL.length) return '';
+  return `<div class="row-head"><h2><span class="swatch" aria-hidden="true"></span> Full Library <span class="libcount">${LIBALL.length} titles</span></h2></div>
+    <div class="grid">${LIBALL.map((r) => libraryCard(r)).join('')}</div>`;
+}
+
+function continueWatchingRowMarkup() {
+  const items = (LIBWATCH || []).filter((r) => r.item_id && (Number(r.playback_position) > 0 || r.played));
+  if (!items.length) return '';
+  return `<div class="row-head"><h2><span class="swatch" aria-hidden="true"></span> Continue Watching</h2></div>
+    <div class="row">${items.map((r) => libraryCard(r)).join('')}</div>`;
 }
 
 function libraryStripMarkup() {

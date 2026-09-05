@@ -1,10 +1,21 @@
 # RKM Watchlist — Session Handoff & Project Progress
 
-> Last updated: 2026-09-05 (**WATCHED / PROGRESS added on branch `experiment/bundled-docker-stack` — Jellyfin UserData (resume % bar + watched tick) surfaced on Library + grid cards, AND in-app playback now reports position back to Jellyfin (`/api/jellyfin/progress` → Sessions API) so the markers actually move. Verified live: one progress call moved (500) Days to 21% on the server. 232 pytest + all node frontend suites green. Rebuild via `.\bootstrap.ps1` to go live.**)
+> Last updated: 2026-09-05 (**ITEM 3 DONE on branch `experiment/bundled-docker-stack` — full library poster-wall grid (`/api/library/items` → Library view) + "Continue Watching" row on Discover (`continue_watching()` filters the library scan by started-not-finished, NOT Jellyfin's finicky `/Items/Resume`). Also verified live: Jellyfin Sessions playback positions persist (600s stuck after start+timeupdate). Branch PUSHED to GitHub. 236 pytest + all node frontend suites green. Rebuild via `.\bootstrap.ps1` to go live.**)
 > Live URL: **http://rkm-hp.tail8d5e8.ts.net:8123/** (Tailscale MagicDNS, tailnet-only — NEVER `tailscale funnel` it; page proxies /api → FastAPI which holds secrets server-side)
 > Deploy path (Windows, RKM-HP): `cd D:\hermes_agent\hermes-workspace\projects\rkm-cinema; .\run-rkm-cinema.ps1` (prod api+web nginx `:8123`; Plex/Emby backend) — or `.\bootstrap.ps1` for the **bundled api+web+Jellyfin** stack (`:8098`/`:8124`; this is where in-app Jellyfin playback lives). NOTE: there is **no `setup-watchlist.ps1` anymore — it was renamed.** The sandbox's `/workspace` maps to `D:\hermes_agent\hermes-workspace` (9p mount, confirmed via mountinfo 2026-08-18; NOT `D:\media`). The `web`+`api` containers are on RKM-HP (Docker daemon unreachable from sandbox).
 > Repo: **private `rkm-cinema` on GitHub** (github.com/helloraj1986/rkm-cinema)
 > **Status:** ✅ **Phases 1–18 committed. SQLite is now the AUTHORITATIVE watchlist store** (`WATCHLIST_STORE=sqlite`, DB on the shared `/workspace/media` volume so it survives every rebuild). `watchlist.json` is now a generated mirror/export, NOT authoritative. **DEPLOY PENDING on RKM-HP** to bake the 504/suggest API fixes + the SQLite store into the running image (`setup-watchlist.ps1`). Frontend-only (app.js synopsis fix) is already live via the volume mount.
+
+## ▶ LATEST SESSION (2026-09-05, round 4) — Full library grid + Continue Watching ✅
+
+**Poster-wall library + a Discover "Continue Watching" row**, completing the 1→3 roadmap. Branch **pushed to GitHub**.
+
+- **Backend (`services/library/jellyfin.py`):** factored a shared serializer `_item_public(item)` (used by `recently_added`), a raw fetcher `_fetch_raw(url)`, and `_parse_item(it, type)` (dedupes the old inline item parsing). New **`all_items(limit=None)`** → every Movie+Series with playback facts (feeds the grid). New **`continue_watching(limit=12)`** → started-and-unfinished titles (**by filtering the already-fetched library scan for `position_ticks>0 and not played` — NOT Jellyfin's `/Items/Resume`, which returned 0 items despite a 21% position**; Jellyfin's resume endpoint is finicky about how it computes in-progress). Plex/Emby lack these methods → routes return `[]` gracefully.
+- **Routes (`api/routes/library.py`):** `GET /api/library/items` and `GET /api/library/continue-watching`, thin — `_first_provider_with(service, attr)` picks the first provider exposing the method; failure-safe.
+- **Frontend (`api.js`/`app.js`/`app.css`):** `API.getLibraryItems()` / `API.getContinueWatching()`; `loadLibrary()` caches `LIBALL` + `LIBWATCH`. `renderDiscover()` inserts a **Continue Watching** row right after the hero (from `LIBWATCH`, filtered, reusing `libraryCard` → resume bar + Play-in-RKM). `renderLibraryView()` adds a **Full Library poster-wall** `<div class="grid">` (from `LIBALL`) below the stats + recently-added strip.
+- **Live-verified Jellyfin persistence:** a controlled `start`+`timeupdate(600s)` sequence stuck at **600s** in UserData and survived a `Stopped` call (the earlier "wiped back to 0" was a transient/library-scan artifact, not the reporting); the resume % bar reads this position.
+- **Tests:** provider `test_all_items_lists_entire_library` + `test_continue_watching_filters_in_progress`; route `test_library_items_route_returns_all` + `test_library_continue_watching_route`; frontend `continueWatchingRowMarkup`×2 + `fullLibraryGridMarkup` (phase26 now 18 assertions). **236 pytest + phase11/18/25/26 node all green.**
+- **To go live:** rebuild `.\bootstrap.ps1`, hard-refresh — Library tab becomes a poster wall; Discover shows a Continue Watching row for partially-watched titles.
 
 ## ▶ LATEST SESSION (2026-09-05, round 3) — Watched / progress (Jellyfin UserData) built + verified ✅
 
@@ -38,10 +49,13 @@
 **Jellyfin 10.11 provisioning gotchas (all banked in skill `media-server-stack` → `references/jellyfin-bundled-provisioning.md` — DO NOT re-derive):** wizard flag is `System/Info/Public.StartupWizardCompleted`; auth REQUIRES `X-Emby-Authorization` header (else `400 Error processing request`); `POST /Startup/User` sets-not-creates (needs `GET /Startup/User` first) + password is PLAINTEXT; `POST /Auth/Keys` flaky on 10.11 → fall back to **admin AccessToken as `?api_key=`**; libraries must use the `paths=` QUERY form (body PathInfos silently 204s w/o setting path) + verify `Locations`; after provisioning `up -d --force-recreate api` (Config is lru-cached per process). `x-media` compose anchor must be a scalar STRING.
 
 ### ▶ NEXT SESSION — prioritized next steps (recommended order, all incremental on current vanilla-JS UI)
-1. ✅ **In-app Jellyfin playback** — DONE (round 2 above). Deploy via **`.\bootstrap.ps1`** (bundled api+web+Jellyfin), then hard-refresh `http://rkm-hp.tail8d5e8.ts.net:8124/` and the Jellyfin cards show **▶ Play in RKM**.
-2. ✅ **Watched / progress** — DONE (round 3 above). Jellyfin UserData drives a resume % bar + watched tick on Library + grid cards, and in-app playback reports position back to Jellyfin (`/api/jellyfin/progress`) so the bar actually advances. Ships with the same `bootstrap.ps1` rebuild.
-3. **Full library grid + Continue Watching** — `/api/library/items` returns everything w/ posters (proxy exists); Library tab becomes a poster wall; "Continue Watching" row on Discover (reuses the playback facts now flowing). Recommended next.
-Then only if the direction proves out: **Appendix A Plex-style UI re-platform (React/TS)** — large, do NOT start before 3.
+1. ✅ **In-app Jellyfin playback** — DONE (round 2).
+2. ✅ **Watched / progress** — DONE (round 3).
+3. ✅ **Full library grid + Continue Watching** — DONE (round 4). Library tab is a poster wall (all titles w/ Play-in-RKM + resume/watched markers); Discover has a Continue Watching row for started-not-finished titles.
+- **All three execution items are done.** Remaining options, recommended order:
+  a. Deploy + field-test the whole thing (`.\bootstrap.ps1` → hard-refresh): poster wall, Continue Watching after playing a bit, library grid growing as more is added.
+  b. **Appendix A Plex-style re-platform (React/TS)** — the direction has now proven out across playback/progress/library; this is the productization step. Large.
+  c. Minor UX polish (e.g. a "Watched" filter, sort by library-newest, progress bar inside the player).
 
 ## ▶ LATEST SESSION (2026-09-02, UI round) — lazy-load grids + smooth hover + in-Plex tick ✅
 

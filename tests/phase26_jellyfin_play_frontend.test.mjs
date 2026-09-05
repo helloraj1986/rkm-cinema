@@ -54,8 +54,9 @@ function load() {
   run(readFileSync(path.join(root, 'api.js'), 'utf8'));
   const appSrc = readFileSync(path.join(root, 'app.js'), 'utf8')
     + '\n; globalThis.__rkm = {'
-    + ' setRes(map, flag=true){ RES = map; USES_RESOURCE_API = flag; },'
-    + ' st, cardMarkup, modalDownloadButton, playInRkmMarkup, playbackMarkup, canWatch, libraryCard, reportProgress'
+    + ` setRes(map, flag=true){ RES = map; USES_RESOURCE_API = flag; },`
+    + ` setLib(all, watch){ LIBALL = all || []; LIBWATCH = watch || []; LIB = { available: true, counts: { movie: (all||[]).length, show: 0 }, recent: (all||[]).slice(0,2), server: 'Jellyfin', urls: { jellyfin: 'http://jellyfin/web/index.html' } }; },`
+    + ' st, cardMarkup, modalDownloadButton, playInRkmMarkup, playbackMarkup, canWatch, libraryCard, reportProgress, continueWatchingRowMarkup, fullLibraryGridMarkup'
     + ' };';
   run(appSrc);
   return { api: run('window.API'), get: (k) => run('globalThis.__rkm.' + k), run };
@@ -195,6 +196,41 @@ ok('reportProgress: POSTs ticks to /api/jellyfin/progress', () => {
   assert.strictEqual(body.item_id, 'm1');
   assert.strictEqual(body.event, 'timeupdate');
   assert.strictEqual(body.position_ticks, 1200000000); // 120s * 1e7
+});
+
+/* ---- Continue Watching + full library grid (item 3) ---- */
+ok('continueWatchingRowMarkup: renders in-progress items as Play-in-RKM cards', () => {
+  t.get('setLib')(
+    // LIBALL/all
+    [ { title: 'Half Seen', year: 2001, type: 'movie', item_id: 'm1', played: false, playback_position: 3000, runtime: 6000 },
+      { title: 'Fresh', year: 2002, type: 'movie', item_id: 'm2', played: false, playback_position: 0, runtime: 7000 } ],
+    // LIBWATCH/watch (only in-progress)
+    [ { title: 'Half Seen', year: 2001, type: 'movie', item_id: 'm1', played: false, playback_position: 3000, runtime: 6000 } ]
+  );
+  const html = t.get('continueWatchingRowMarkup')();
+  assert.ok(/Continue Watching/.test(html), 'heading present');
+  assert.ok(new RegExp('data-jf-item="m1"').test(html), 'Play-in-RKM button for in-progress item');
+  assert.ok(/resume-bar/.test(html), 'resume bar shown');
+  assert.ok(!/data-jf-item="m2"/.test(html), 'not-started item excluded');
+});
+
+ok('continueWatchingRowMarkup: empty when nothing in progress', () => {
+  t.get('setLib')([], []);
+  assert.strictEqual(t.get('continueWatchingRowMarkup')(), '');
+});
+
+ok('fullLibraryGridMarkup: renders the full poster wall grid', () => {
+  t.get('setLib')([
+    { title: 'A', year: 2001, type: 'movie', item_id: 'a1', played: false, playback_position: 0, runtime: 6000 },
+    { title: 'B', year: 2002, type: 'tv', item_id: 'b1', played: true, playback_position: 0, runtime: 0 },
+  ], []);
+  const html = t.get('fullLibraryGridMarkup')();
+  assert.ok(/Full Library/.test(html));
+  assert.ok(/2 titles/.test(html));
+  assert.ok(/class="grid"/.test(html));
+  assert.ok(new RegExp('data-jf-item="a1"').test(html));
+  assert.ok(new RegExp('data-jf-item="b1"').test(html));
+  assert.ok(/watched-tick/.test(html), 'watched B shows a tick');
 });
 
 process.exit(failures ? 1 : 0);

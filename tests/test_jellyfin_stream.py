@@ -210,3 +210,33 @@ def test_progress_uses_playing_for_start_event(monkeypatch):
     assert r.status_code == 204
     assert "/Sessions/Playing" in calls["url"]
     assert "/Sessions/Playing/Progress" not in calls["url"]
+
+
+def test_library_items_route_returns_all(monkeypatch):
+    """GET /api/library/items proxies all_items() from the provider."""
+    _patch_config(monkeypatch)
+    fake_prov = SimpleNamespace(
+        name="jellyfin",
+        all_items=lambda: [{"title": "A", "item_id": "a1", "type": "movie",
+                            "played": False, "playback_position": 0, "runtime": 6000}])
+    fake_svc = SimpleNamespace(providers=[fake_prov])
+    with patch("api.routes.library.build_library_service", return_value=fake_svc):
+        r = client.get("/api/library/items")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["provider"] == "jellyfin"
+    assert body["items"][0]["item_id"] == "a1"
+
+
+def test_library_continue_watching_route(monkeypatch):
+    """GET /api/library/continue-watching proxies the provider's resume list."""
+    _patch_config(monkeypatch)
+    fake_prov = SimpleNamespace(
+        name="jellyfin",
+        continue_watching=lambda limit=12: [{"title": "Half", "item_id": "m1", "type": "movie",
+                                             "played": False, "playback_position": 3000, "runtime": 6000}])
+    fake_svc = SimpleNamespace(providers=[fake_prov])
+    with patch("api.routes.library.build_library_service", return_value=fake_svc):
+        r = client.get("/api/library/continue-watching")
+    assert r.status_code == 200
+    assert r.json()["items"][0]["title"] == "Half"

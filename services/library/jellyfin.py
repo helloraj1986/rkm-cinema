@@ -135,18 +135,84 @@ class JellyfinLibraryProvider(LibraryProvider):
         out = []
         for itype in ("Series", "Movie"):
             for item in self._get_items(itype)[:limit]:
-                out.append({
-                    "title": item.name,
-                    "year": item.year or None,
-                    "type": "tv" if item.is_series else "movie",
-                    "thumb": item.thumb,
-                    "item_id": item.id,
-                    "jellyfin_url": self._item_web(item.id),
-                    "played": bool(item.played),
-                    "playback_position": self._ticks_to_sec(item.position_ticks),
-                    "runtime": self._ticks_to_sec(item.runtime_ticks),
-                })
+                out.append(self._item_public(item))
         return out
+
+    def all_items(self, limit: Optional[int] = None) -> list[dict]:
+        """Every Movie + Series in the library (poster-wall grid)."""
+        out = []
+        for itype in ("Movie", "Series"):
+            for item in self._get_items(itype):
+                out.append(self._item_public(item))
+                if limit and len(out) >= limit:
+                    return out
+        return out
+
+    def continue_watching(self, limit: int = 12) -> list[dict]:
+        """In-progress titles — started but not finished.
+
+        Filters the already-fetched library scan (UserData.PlaybackPositionTicks
+        > 0 and not Played) rather than Jellyfin's finicky ``/Items/Resume``
+        endpoint, so it's deterministic and matches exactly what the UI renders.
+        """
+        out = []
+        for itype in ("Movie", "Series"):
+            for item in self._get_items(itype):
+                if item.played or item.position_ticks <= 0:
+                    continue
+                out.append(self._item_public(item))
+                if len(out) >= limit:
+                    return out
+        return out
+
+    def _item_public(self, item: JellyfinItem) -> dict:
+        """Player-ready dict shared by recently_added/all_items/continue_watching."""
+        return {
+            "title": item.name,
+            "year": item.year or None,
+            "type": "tv" if item.is_series else "movie",
+            "thumb": item.thumb,
+            "item_id": item.id,
+            "jellyfin_url": self._item_web(item.id),
+            "played": bool(item.played),
+            "playback_position": self._ticks_to_sec(item.position_ticks),
+            "runtime": self._ticks_to_sec(item.runtime_ticks),
+        }
+
+    def _fetch_raw(self, url: str) -> list[dict]:
+        import json
+        with urllib.request.urlopen(url, timeout=10) as r:
+            d = json.load(r)
+        return (d or {}).get("Items", []) or []
+
+    @staticmethod
+    def _parse_item(it: dict, item_type: str) -> JellyfinItem:
+        pids = {}
+        p = it.get("ProviderIds") or {}
+        if p.get("Imdb"):
+            pids["imdb"] = str(p["Imdb"])
+        if p.get("Tmdb"):
+            try:
+                pids["tmdb"] = int(p["Tmdb"])
+            except (TypeError, ValueError, KeyError):
+                pass
+        if p.get("Tvdb"):
+            try:
+                pids["tvdb"] = int(p["Tvdb"])
+            except (TypeError, ValueError, KeyError):
+                pass
+        return JellyfinItem(
+            name=it.get("Name", ""),
+            year=it.get("ProductionYear", 0),
+            id=str(it.get("Id", "")),
+            thumb=it.get("Thumb", "") or it.get("PrimaryImageAspectRatio", "") or "",
+            is_series=(item_type == "Series"),
+            provider_ids=pids,
+            user_data=it.get("UserData") or {},
+            played=bool((it.get("UserData") or {}).get("Played")),
+            position_ticks=int((it.get("UserData") or {}).get("PlaybackPositionTicks") or 0),
+            runtime_ticks=int(it.get("RunTimeTicks") or 0),
+        )
 
     def get_poster(self, item_id: str, max_width: int = 500) -> Optional[dict]:
         """Proxy a Jellyfin item's primary image (keeps the token server-side).
@@ -242,38 +308,8 @@ class JellyfinLibraryProvider(LibraryProvider):
                f"&Recursive=true&IncludeItemTypes={item_type}"
                f"&Fields=PrimaryImageAspectRatio,ProductionYear,ProviderIds,UserData")
         try:
-            import json
-            with urllib.request.urlopen(url, timeout=10) as r:
-                d = json.load(r)
-            raw = (d or {}).get("Items", []) or []
-            items = []
-            for it in raw:
-                pids = {}
-                p = it.get("ProviderIds") or {}
-                if p.get("Imdb"):
-                    pids["imdb"] = str(p["Imdb"])
-                if p.get("Tmdb"):
-                    try:
-                        pids["tmdb"] = int(p["Tmdb"])
-                    except (TypeError, ValueError, KeyError):
-                        pass
-                if p.get("Tvdb"):
-                    try:
-                        pids["tvdb"] = int(p["Tvdb"])
-                    except (TypeError, ValueError, KeyError):
-                        pass
-                items.append(JellyfinItem(
-                    name=it.get("Name", ""),
-                    year=it.get("ProductionYear", 0),
-                    id=str(it.get("Id", "")),
-                    thumb=it.get("Thumb", "") or it.get("PrimaryImageAspectRatio", "") or "",
-                    is_series=(item_type == "Series"),
-                    provider_ids=pids,
-                    user_data=it.get("UserData") or {},
-                    played=bool((it.get("UserData") or {}).get("Played")),
-                    position_ticks=int((it.get("UserData") or {}).get("PlaybackPositionTicks") or 0),
-                    runtime_ticks=int(it.get("RunTimeTicks") or 0),
-                ))
+            raw = self._fetch_raw(url)
+            items = [self._parse_item(it, item_type) for it in raw]
             if self._item_cache is None:
                 self._item_cache = {}
             self._item_cache[item_type] = items

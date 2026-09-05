@@ -8,7 +8,7 @@ through to the next; if ALL fail the endpoint returns a partial 200
 (``available=False``) — never an HTTP error. URL bases are owned by the
 providers, not duplicated.
 """
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 
 from api.models import LibraryResponse
 from config.settings import get_config
@@ -78,3 +78,45 @@ def get_library():
     return LibraryResponse(
         provider=None, available=False,
         counts={"movie": 0, "show": 0}, recent=[], server=None, urls=urls)
+
+
+def _first_provider_with(service, attr):
+    """Return the first provider exposing ``attr`` (or None). Failure-safe."""
+    if service is None or not getattr(service, "providers", None):
+        return None
+    for p in service.providers:
+        if hasattr(p, attr):
+            return p
+    return None
+
+
+@router.get("/library/items")
+def get_library_items():
+    """Full library as a poster wall — every Movie + Series with playback facts.
+
+    Newer providers (Jellyfin) expose ``all_items()``; older ones (Plex/Emby)
+    fall back to an empty list rather than failing the request.
+    """
+    cfg = get_config()
+    service = build_library_service(cfg)
+    p = _first_provider_with(service, "all_items")
+    if p is None:
+        return {"provider": None, "items": []}
+    try:
+        return {"provider": p.name, "items": p.all_items() or []}
+    except Exception:
+        return {"provider": p.name, "items": []}
+
+
+@router.get("/library/continue-watching")
+def get_continue_watching():
+    """In-progress titles for the Discover \"Continue Watching\" row."""
+    cfg = get_config()
+    service = build_library_service(cfg)
+    p = _first_provider_with(service, "continue_watching")
+    if p is None:
+        return {"provider": None, "items": []}
+    try:
+        return {"provider": p.name, "items": p.continue_watching(limit=12) or []}
+    except Exception:
+        return {"provider": p.name, "items": []}

@@ -179,3 +179,46 @@ def test_watch_link_emits_playback_facts():
     assert jf["played"] is False
     assert jf["playback_position"] == 3000
     assert jf["runtime"] == 10000
+
+
+def test_all_items_lists_entire_library():
+    """all_items() returns every movie + series with playback facts."""
+    from services.library.jellyfin import JellyfinItem, JellyfinLibraryProvider
+    prov = JellyfinLibraryProvider(config=_cfg())
+    prov._get_items = lambda itype: {
+        "Movie": [JellyfinItem(name="M1", year=2001, id="m1",
+                               played=False, position_ticks=0, runtime_ticks=60_000_000_000)],
+        "Series": [JellyfinItem(name="S1", year=2002, id="s1",
+                                is_series=True, played=True, position_ticks=0, runtime_ticks=0)],
+    }[itype]
+    prov._item_web = lambda iid: "http://jf/x#/details?id=" + iid
+
+    items = prov.all_items()
+    by_id = {x["item_id"]: x for x in items}
+    assert set(by_id) == {"m1", "s1"}
+    assert by_id["m1"]["runtime"] == 6000
+    assert by_id["m1"]["playback_position"] == 0
+    assert by_id["s1"]["played"] is True
+    assert by_id["s1"]["type"] == "tv"
+
+
+def test_continue_watching_filters_in_progress():
+    """continue_watching() returns started-but-unfinished titles (position>0, not played)."""
+    from services.library.jellyfin import JellyfinItem, JellyfinLibraryProvider
+    prov = JellyfinLibraryProvider(config=_cfg())
+    prov._get_items = lambda itype: {
+        "Movie": [
+            JellyfinItem(name="Half", year=2001, id="m1",
+                         played=False, position_ticks=30_000_000_000, runtime_ticks=100_000_000_000),
+            JellyfinItem(name="Done", year=2002, id="m2",
+                         played=True, position_ticks=0, runtime_ticks=90_000_000_000),
+            JellyfinItem(name="Fresh", year=2003, id="m3",
+                         played=False, position_ticks=0, runtime_ticks=80_000_000_000),
+        ],
+        "Series": [],
+    }[itype]
+    prov._item_web = lambda iid: "http://jf/x#/details?id=" + iid
+
+    items = prov.continue_watching(limit=12)
+    assert [x["item_id"] for x in items] == ["m1"], [x["item_id"] for x in items]
+    assert items[0]["playback_position"] == 3000

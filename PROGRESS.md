@@ -2,7 +2,7 @@
 
 > Last updated: 2026-09-05 (**IN-APP JELLYFIN PLAYBACK built + VERIFIED on branch `experiment/bundled-docker-stack` — native `<video>` over a same-origin `/api/jellyfin/stream/{itemId}` direct-play proxy; watch links now carry `item_id`. 227 pytest + all node frontend suites green. Backend needs a rebuild to go live on RKM-HP.**)
 > Live URL: **http://rkm-hp.tail8d5e8.ts.net:8123/** (Tailscale MagicDNS, tailnet-only — NEVER `tailscale funnel` it; page proxies /api → FastAPI which holds secrets server-side)
-> Deploy path (Windows, RKM-HP): `cd D:\hermes_agent\hermes-workspace\projects\rkm-cinema; .\setup-watchlist.ps1` — the sandbox's `/workspace` maps to `D:\hermes_agent\hermes-workspace` (9p mount, confirmed via mountinfo 2026-08-18; NOT `D:\media`). The `web`+`api` containers are on RKM-HP (Docker daemon unreachable from sandbox).
+> Deploy path (Windows, RKM-HP): `cd D:\hermes_agent\hermes-workspace\projects\rkm-cinema; .\run-rkm-cinema.ps1` (prod api+web nginx `:8123`; Plex/Emby backend) — or `.\bootstrap.ps1` for the **bundled api+web+Jellyfin** stack (`:8098`/`:8124`; this is where in-app Jellyfin playback lives). NOTE: there is **no `setup-watchlist.ps1` anymore — it was renamed.** The sandbox's `/workspace` maps to `D:\hermes_agent\hermes-workspace` (9p mount, confirmed via mountinfo 2026-08-18; NOT `D:\media`). The `web`+`api` containers are on RKM-HP (Docker daemon unreachable from sandbox).
 > Repo: **private `rkm-cinema` on GitHub** (github.com/helloraj1986/rkm-cinema)
 > **Status:** ✅ **Phases 1–18 committed. SQLite is now the AUTHORITATIVE watchlist store** (`WATCHLIST_STORE=sqlite`, DB on the shared `/workspace/media` volume so it survives every rebuild). `watchlist.json` is now a generated mirror/export, NOT authoritative. **DEPLOY PENDING on RKM-HP** to bake the 504/suggest API fixes + the SQLite store into the running image (`setup-watchlist.ps1`). Frontend-only (app.js synopsis fix) is already live via the volume mount.
 
@@ -14,7 +14,7 @@
 - **`item_id` plumbing:** `WatchLink` (services/library/watch_links.py) gains `item_id` (filled from `match.metadata["item_id"]`); surfaced through `WatchEntryModel.item_id` + `StatusEntry.jellyfinItemId`; `/_snapshot_to_media` + `/status` emit it. Frontend `st()` exposes `jellyfinItemId`; `/api/watchlist` (→ `_snapshot_to_media`) is what feeds the live grid.
 - **Frontend (`app.js`/`app.css`, volume-mounted → live on hard-refresh):** when Jellyfin is the available source with an `item_id`, the card's primary action becomes **"▶ Play in RKM"** (`data-act="play"` → `openPlayer(itemId)`), with the Jellyfin deep-link kept as a secondary button; the detail modal prepends a `data-role="play-jellyfin"` "Play in RKM" button. `openPlayer()` builds a `.player-overlay` with a native `<video controls autoplay>` hitting `/api/jellyfin/stream/{itemId}`; codec-failure shows a friendly in-overlay error instead of a dead video.
 - **Tests:** `tests/test_jellyfin_stream.py` (4: Range→206 passthrough, 200 full, 503 unconfigured, resource `item_id`) + `tests/phase26_jellyfin_play_frontend.test.mjs` (6: st.jellyfinItemId, card Play-in-RKM, deep-link fallback, playInRkmMarkup, modal play-first). **227 pytest + phase11/18/25/26 node all green.**
-- **To go live:** backend route + item_id need the API container rebuilt on RKM-HP (`.\\setup-watchlist.ps1`) — the frontend buttons render only once the backend emits `item_id`; on the current prod image they'd fall back to the plain "Watch on Jellyfin" deep-link (already existing). Frontend-only files are live immediately.
+- **To go live:** backend route + item_id need the API container rebuilt on RKM-HP via **`.\bootstrap.ps1`** (the bundled api+web+Jellyfin stack — that's where `MEDIA_SERVER=jellyfin` + the Jellyfin key are injected, so `item_id` flows and the Play-in-RKM buttons render). Prod `.\run-rkm-cinema.ps1` uses the Plex/Emby backend, so it won't show Jellyfin playback. Frontend-only files (app.js/app.css) are live immediately via the volume mount.
 
 ## ▶ LATEST SESSION (2026-09-05) — Bundled Jellyfin stack ("Jellyfin client") built + verified ✅
 
@@ -27,7 +27,7 @@
 **Jellyfin 10.11 provisioning gotchas (all banked in skill `media-server-stack` → `references/jellyfin-bundled-provisioning.md` — DO NOT re-derive):** wizard flag is `System/Info/Public.StartupWizardCompleted`; auth REQUIRES `X-Emby-Authorization` header (else `400 Error processing request`); `POST /Startup/User` sets-not-creates (needs `GET /Startup/User` first) + password is PLAINTEXT; `POST /Auth/Keys` flaky on 10.11 → fall back to **admin AccessToken as `?api_key=`**; libraries must use the `paths=` QUERY form (body PathInfos silently 204s w/o setting path) + verify `Locations`; after provisioning `up -d --force-recreate api` (Config is lru-cached per process). `x-media` compose anchor must be a scalar STRING.
 
 ### ▶ NEXT SESSION — prioritized next steps (recommended order, all incremental on current vanilla-JS UI)
-1. ✅ **In-app Jellyfin playback** — DONE (round 2 above). Deploy the rebuild on RKM-HP (`.\\setup-watchlist.ps1`) so the stream route + `item_id` go live, then hard-refresh.
+1. ✅ **In-app Jellyfin playback** — DONE (round 2 above). Deploy via **`.\bootstrap.ps1`** (bundled api+web+Jellyfin), then hard-refresh `http://rkm-hp.tail8d5e8.ts.net:8124/` and the Jellyfin cards show **▶ Play in RKM**.
 2. **Watched / progress** — Jellyfin already tracks `UserData`; resume `%` bar + "watched" tick on cards (easy, high value). The watch `item_id` plumbing added here is exactly what the progress call needs.
 3. **Full library grid + Continue Watching** — `/api/library/items` returns everything w/ posters (proxy exists); Library tab becomes a poster wall; "Continue Watching" row on Discover.
 Then only if the direction proves out: **Appendix A Plex-style UI re-platform (React/TS)** — large, do NOT start before 2–3.
@@ -44,7 +44,7 @@ Frontend-only round (volume-mounted → **live on hard-refresh, no rebuild neede
 
 **Files:** `app.js` (`cardMarkup` in-Plex branch, `initLazyGrid/lazyAppend/lazyTeardown`, `renderGrid/renderWatchlist/renderDownloaded` lazy + genre re-render, delegated arrow-keynav), `app.css` (hover easings, `.plex-check`, `.card-actions.stacked`, button contrast, `.grid-more`), and regression tests in `tests/phase18_frontend.test.mjs` (in-Plex tick + Watch-on-Plex/Trailer/no-state-text, and not-added→Download).
 
-**Deploy:** none needed — `app.js`/`app.css` are volume-mounted. Hard-refresh (Ctrl+Shift+R). Ensure the backend image is current too if you've not run `setup-watchlist.ps1` since the SQLite/504 work.
+**Deploy:** none needed for the UI round — `app.js`/`app.css` are volume-mounted. Hard-refresh (Ctrl+Shift+R). Ensure the backend image is current too if you've not run `run-rkm-cinema.ps1` (prod) / `bootstrap.ps1` (bundled) since the SQLite/504 work.
 
 ---
 

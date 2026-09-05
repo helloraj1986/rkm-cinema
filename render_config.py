@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import secrets
 import sys
 import tomllib
 from pathlib import Path
@@ -20,9 +22,37 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 COMPOSE_ENV = ROOT / ".env"          # compose ${VAR} substitution
 API_ENV = ROOT / ".rkm.env"          # api container env_file
+CONFIG_TOML = ROOT / "rkm.config.toml"
 
 # Jellyfin container host + internal port (service name on the rkm-exp network).
 JELLYFIN_INTERNAL = "http://jellyfin:8096"
+
+
+def canonical_env() -> dict:
+    """Secrets already present in the canonical workspace .env (prod config).
+
+    Lets the bundled stack reuse existing keys (e.g. TMDB_API_KEY) instead of
+    forcing the user to re-type them. Candidate paths mirror the prod layout:
+    the workspace root (../../.env from the repo dir) and /workspace/.env.
+    """
+    candidates = [
+        CONFIG_TOML.parents[1] / ".env",   # .../hermes-workspace/.env
+        CONFIG_TOML.parent / ".env",
+        Path("/workspace/.env"),
+    ]
+    for path in candidates:
+        try:
+            if path.exists():
+                out = {}
+                for line in path.read_text(encoding="utf-8").splitlines():
+                    line = line.strip()
+                    if line and not line.startswith("#") and "=" in line:
+                        k, _, v = line.partition("=")
+                        out[k.strip()] = v.strip()
+                return out
+        except Exception:
+            continue
+    return {}
 
 
 def fail(msg: str) -> None:
@@ -31,11 +61,22 @@ def fail(msg: str) -> None:
 
 
 def load_config() -> dict:
-    cfg_path = ROOT / "rkm.config.toml"
-    if not cfg_path.exists():
+    if not CONFIG_TOML.exists():
         fail("rkm.config.toml not found. Copy rkm.config.example.toml -> rkm.config.toml and fill it in.")
-    with open(cfg_path, "rb") as f:
+    with open(CONFIG_TOML, "rb") as f:
         return tomllib.load(f)
+
+
+def backfill_password(pw: str) -> None:
+    """Persist a generated Jellyfin admin password into rkm.config.toml so it
+    stays stable across re-renders (idempotent provisioning)."""
+    try:
+        text = CONFIG_TOML.read_text(encoding="utf-8")
+        new, n = re.subn(r'(jellyfin_admin_password\s*=\s*)"[^"]*"', rf'\g<1>"{pw}"', text, count=1)
+        if n:
+            CONFIG_TOML.write_text(new, encoding="utf-8")
+    except Exception as e:
+        print(f"(could not persist generated password to {CONFIG_TOML.name}: {e})")
 
 
 def resolve_data_path(cfg: dict) -> Path:
@@ -59,11 +100,26 @@ def render(cfg: dict, data: Path) -> None:
     rec = cfg.get("recommend", {})
     arr = cfg.get("arr", {})
 
-    if not tmdb.get("api_key") or tmdb["api_key"] == "REPLACE_ME":
-        fail("[tmdb] api_key is required (free from TMDB settings). Edit rkm.config.toml.")
+    canonical = canonical_env()
+    # TMDB key: from the TOML, else reuse the canonical workspace .env (prod key).
+    tmdb_key = str(tmdb.get("api_key", "") or "").strip()
+    if not tmdb_key or tmdb_key in ("REPLACE_ME", "CHANGE_ME"):
+        tmdb_key = str(canonical.get("TMDB_API_KEY", "") or "").strip()
+    if not tmdb_key:
+        fail("[tmdb] api_key is required (set it in rkm.config.toml [tmdb], or add TMDB_API_KEY to your workspace .env).")
     backend = str(media_cfg.get("backend", "jellyfin")).lower()
     if backend not in ("jellyfin", "plex", "emby"):
         fail(f"media_server.backend must be jellyfin|plex|emby, got: {backend}")
+
+    # Jellyfin admin password: from the TOML, else auto-generate + persist.
+    admin_pw = str(media_cfg.get("jellyfin_admin_password", "") or "").strip()
+    if not admin_pw or admin_pw in ("CHANGE_ME", "REPLACE_ME"):
+        admin_pw = secrets.token_urlsafe(18)
+        backfill_password(admin_pw)
+        print(f"[jellyfin] generated admin password -> {admin_pw} (saved to {CONFIG_TOML.name})")
+
+    user = str(media_cfg.get("jellyfin_admin_user", "admin") or "admin")
+    browser = str(media_cfg.get("jellyfin_browser_url", "http://localhost:8098")).rstrip("/")
 
     # --- .env for compose ${VAR} substitution ---
     compose_vars = {
@@ -74,9 +130,9 @@ def render(cfg: dict, data: Path) -> None:
         "RKM_PUID": "1000",
         "RKM_PGID": "1000",
         "RKM_PROJECT": "rkm-bundled",
-        "RKM_JELLYFIN_BROWSER": str(media_cfg.get("jellyfin_browser_url", "http://localhost:8098")).rstrip("/"),
-        "RKM_JELLYFIN_ADMIN_USER": str(media_cfg.get("jellyfin_admin_user", "admin")),
-        "RKM_JELLYFIN_ADMIN_PASSWORD": str(media_cfg.get("jellyfin_admin_password", "")),
+        "RKM_JELLYFIN_BROWSER": browser,
+        "RKM_JELLYFIN_ADMIN_USER": user,
+        "RKM_JELLYFIN_ADMIN_PASSWORD": admin_pw,
         "RKM_QBT_TORRENT_PORT": str((cfg.get("qbit") or {}).get("torrent_port", 6881)),
     }
     COMPOSE_ENV.write_text("".join(f"{k}={v}\n" for k, v in compose_vars.items()), encoding="utf-8")
@@ -88,8 +144,8 @@ def render(cfg: dict, data: Path) -> None:
         # Backup: if the provisioner hasn't written runtime.json yet, ask the
         # provisioner container URL; runtime.json overrides this with the real key.
         "JELLYFIN_URL": JELLYFIN_INTERNAL,
-        "JELLYFIN_BROWSER_URL": str(media_cfg.get("jellyfin_browser_url", "http://localhost:8098")).rstrip("/"),
-        "TMDB_API_KEY": str(tmdb.get("api_key", "")),
+        "JELLYFIN_BROWSER_URL": browser,
+        "TMDB_API_KEY": tmdb_key,
         "TVDB_API_KEY": str((cfg.get("tvdb") or {}).get("api_key", "")),
         "WATCHLIST_STORE": "json",
         "WATCHLIST_DB_PATH": str(data / "rkm" / "watchlist.json"),

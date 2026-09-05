@@ -2,9 +2,8 @@
 
 import re
 import requests
-from typing import Set, Tuple, Dict, List
+from typing import Tuple, Dict, List
 from dataclasses import dataclass
-from functools import lru_cache
 import xml.etree.ElementTree as ET
 
 @dataclass
@@ -149,7 +148,6 @@ class PlexCheckService:
 
 # Test the service
 if __name__ == "__main__":
-    import os
     from pathlib import Path
     
     env_path = Path("/workspace/media/.env")

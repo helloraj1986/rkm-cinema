@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 from abc import ABC
-from typing import Any, Optional
+from typing import Optional
 
 from config.settings import Config, get_config
 from core.http_client import HTTPClient, get_http_client, HTTPError, NetworkError

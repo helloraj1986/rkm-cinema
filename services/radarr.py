@@ -3,9 +3,6 @@ import logging
 from typing import Any, Optional
 from dataclasses import dataclass
 
-from config.settings import get_config
-from core.http_client import get_http_client
-from core.exceptions import ServiceUnavailableError, NotFoundError, DuplicateError
 from services.base import BaseService
 
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 from fastapi import APIRouter, Query
-from fastapi.responses import Response, JSONResponse
+from fastapi.responses import Response
 from config.settings import get_config
 from services.library import PlexLibraryProvider
 

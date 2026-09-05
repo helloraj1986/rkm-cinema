@@ -30,12 +30,6 @@ from services.acquisition import (
     RadarrAcquisitionProvider,
     SonarrAcquisitionProvider,
 )
-from services.library import (
-    EmbyLibraryProvider,
-    LibraryService,
-    PlexLibraryProvider,
-    resolve_library_identity,
-)
 from core.logging import log_event
 
 logger = logging.getLogger("rkm.commands.request_media")

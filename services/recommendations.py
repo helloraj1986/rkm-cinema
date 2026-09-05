@@ -1,6 +1,5 @@
 """Recommendation service - category rotation, quality gates, Plex check, metadata enrichment."""
 import logging
-import re
 import urllib.parse
 import urllib.request
 from datetime import datetime
@@ -9,10 +8,9 @@ from dataclasses import dataclass
 
 from config.settings import get_config
 from core.http_client import get_http_client
-from core.exceptions import ValidationError, MetadataError
+from core.exceptions import ValidationError
 from domain.enums import MediaType
 from domain.identity import MediaIdentity
-from services.library import LibraryService, PlexLibraryProvider
 from services.recommendation import CriteriaEngine, RecommendationCandidate
 from services.trailers import TrailerService
 from services.tmdb import TMDBService

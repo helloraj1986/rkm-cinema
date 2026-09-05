@@ -12,7 +12,6 @@ from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
 from config.settings import get_config
-from domain.enums import MediaType
 
 router = APIRouter()
 logger = logging.getLogger("rkm.api.suggest")
@@ -143,7 +142,7 @@ def suggest_add_one(tmdb_id: int, media_type: str = "movie") -> dict:
     # Enrich and add
     try:
         enriched = svc.enrich_metadata(candidate)
-        entry = svc.add_to_watchlist(enriched)
+        svc.add_to_watchlist(enriched)
         return {"ok": True, "message": f"Added {title} to watchlist", "title": title,
                 "entry": enriched.entry.to_dict()}
     except Exception as e:
@@ -259,10 +258,6 @@ def suggest(req: SuggestRequest) -> SuggestResponse:
         media_type = _detect_type(item)
         year = _extract_year(item, media_type)
         genres = _extract_genres(item)
-
-        # Check membership
-        tmdb_key = f"tmdb:{item.get('id')}"
-        in_watchlist = tmdb_key in watchlist_ids
 
         # Check library by title+year
         title_lower = (item.get("title") or item.get("name") or "").lower().strip()

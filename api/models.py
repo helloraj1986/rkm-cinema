@@ -1,7 +1,6 @@
 """Pydantic models for API requests/responses."""
 from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, Field
-from datetime import datetime
 
 
 class DownloadRequest(BaseModel):

@@ -32,7 +32,6 @@ class JobScheduler:
     """Background scheduler daemon. Safe to start multiple times (no-op 2nd)."""
 
     def __init__(self, *, config=None, run_reconcile=None, run_daily=None, run_library_scan=None):
-        from config.settings import get_config
         self.config = config if config is not None else get_config()
         from jobs.reconcile import run_reconcile as _rr
         from jobs.daily_watchlist import run_daily_watchlist as _rd

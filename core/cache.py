@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import threading
 import time
-from typing import Any, Generic, Optional, TypeVar
+from typing import Generic, Optional, TypeVar
 
 T = TypeVar("T")
 

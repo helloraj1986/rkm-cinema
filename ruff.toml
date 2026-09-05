@@ -1,0 +1,13 @@
+# Phase 0 lint gate (docs/modular-scalable-architecture.md).
+# Scope: production packages only — CI runs `ruff check api application config core
+# domain infrastructure jobs services`. Rule set deliberately F (pyflakes): the real-bug
+# class (undefined names, unused imports/vars, shadowing). Style rules (E4/E7/E9) and the
+# legacy scripts/archive/tests/root-utility trees are excluded; widen after Phase 1.
+line-length = 100
+exclude = [
+  "scripts", "archive", "docs", "web", "provisioner", "tests",
+  "__pycache__", "build", "dist", "data",
+]
+
+[lint]
+select = ["F"]

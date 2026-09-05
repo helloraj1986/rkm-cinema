@@ -3,9 +3,6 @@ import logging
 from typing import Any, Optional
 from dataclasses import dataclass
 
-from config.settings import get_config
-from core.http_client import get_http_client
-from core.exceptions import ServiceUnavailableError, NotFoundError
 from services.base import BaseService
 
 
@@ -455,7 +452,7 @@ class SonarrService(BaseService):
     def has_episodes(self, tvdb_id: int) -> bool:
             """Check if Sonarr has episode files for the series."""
             # Get series list without caching to get fresh data
-            print(f"[has_episodes] Calling get_series(use_cache=False)")
+            print("[has_episodes] Calling get_series(use_cache=False)")
             series_list = self.get_series(use_cache=False)
             print(f"[has_episodes] Got series list with {len(series_list)} items")
             for series in series_list:

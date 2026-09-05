@@ -2,7 +2,7 @@
 TMDB service for fetching metadata.
 """
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from config.settings import get_config
 from core.http_client import get_http_client

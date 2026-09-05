@@ -8,7 +8,7 @@ through to the next; if ALL fail the endpoint returns a partial 200
 (``available=False``) — never an HTTP error. URL bases are owned by the
 providers, not duplicated.
 """
-from fastapi import APIRouter, Query
+from fastapi import APIRouter
 
 from api.models import LibraryResponse
 from config.settings import get_config

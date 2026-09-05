@@ -1,11 +1,7 @@
 """Watchlist service - CRUD operations, state machine, atomic persistence."""
-import json
 import logging
-import os
-import time
 from datetime import datetime
-from pathlib import Path
-from typing import Any, Optional, List
+from typing import Optional, List
 from dataclasses import dataclass, asdict, field
 
 from core.exceptions import WatchlistError, DuplicateError, StateTransitionError
@@ -81,18 +77,18 @@ class WatchlistEntry:
     @classmethod
     def from_dict(cls, data: dict) -> "WatchlistEntry":
         # Ensure all required fields present with defaults
-        for field in REQUIRED_FIELDS:
-            if field not in data:
-                if field in ("cast",):
-                    data[field] = []
-                elif field in ("rt", "imdb"):
-                    data[field] = 0
-                elif field in ("isSeries",):
-                    data[field] = False
-                elif field in ("tmdbId",):
-                    data[field] = 0
+        for name in REQUIRED_FIELDS:
+            if name not in data:
+                if name in ("cast",):
+                    data[name] = []
+                elif name in ("rt", "imdb"):
+                    data[name] = 0
+                elif name in ("isSeries",):
+                    data[name] = False
+                elif name in ("tmdbId",):
+                    data[name] = 0
                 else:
-                    data[field] = ""
+                    data[name] = ""
         # Set defaults for new fields if not present
         if "tmdb_overview" not in data:
             data["tmdb_overview"] = ""

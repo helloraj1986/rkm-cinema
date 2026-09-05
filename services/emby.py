@@ -12,7 +12,6 @@ from __future__ import annotations
 import logging
 from typing import Optional, List
 
-from config.settings import get_config
 from services.library.emby import EmbyLibraryProvider, EmbyItem
 
 

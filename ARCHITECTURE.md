@@ -1,5 +1,10 @@
 # RKM Watchlist — Architecture
 
+> ⚠ **2026-09-06:** re-platform in progress (`docs/modular-scalable-architecture.md`).
+> Frontend `app.js` → React/TS (`web/`) behind the **frozen `/api` contract**
+> (`docs/api/openapi.v1.json`, ADR-0001); backend stays Python/FastAPI (ADRs in `docs/adr/`).
+> This doc still describes the current backend; feature-slice map refreshes per-phase in Phase 3.
+
 > **Single codebase.** The monolithic `api.py` has been archived
 > (`archive/api_legacy_monolith.py`) and the production backend is now the
 > modular FastAPI app: **`uvicorn api.main:app`** (see `Dockerfile`). There is

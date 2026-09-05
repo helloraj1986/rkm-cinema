@@ -1,0 +1,2184 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "RKM Cinema API",
+    "version": "2.0",
+    "description": " (FROZEN v1 contract \u2014 see docs/adr/ADR-0001; additive-only)"
+  },
+  "paths": {
+    "/api/health": {
+      "get": {
+        "summary": "Health Check",
+        "description": "Service health (per-service, structured) and watchlist freshness.",
+        "operationId": "health_check_api_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/config": {
+      "get": {
+        "summary": "Get Config Endpoint",
+        "description": "Public-safe config (no secrets).",
+        "operationId": "get_config_endpoint_api_config_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/status": {
+      "get": {
+        "summary": "Get Status",
+        "description": "Per-title download state computed by the reconciler's snapshots.",
+        "operationId": "get_status_api_status_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/download": {
+      "post": {
+        "summary": "Download",
+        "description": "Add movie/series to Radarr or Sonarr via the download service.",
+        "operationId": "download_api_download_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DownloadRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DownloadResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/search": {
+      "get": {
+        "summary": "Search",
+        "description": "Search watchlist and TMDB.",
+        "operationId": "search_api_search_get",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "default": "",
+              "title": "Q"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/library": {
+      "get": {
+        "summary": "Get Library",
+        "description": "First provider to read successfully becomes the view; else partial 200.",
+        "operationId": "get_library_api_library_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/library/items": {
+      "get": {
+        "summary": "Get Library Items",
+        "description": "Full library as a poster wall \u2014 every Movie + Series with playback facts.\n\nNewer providers (Jellyfin) expose ``all_items()``; older ones (Plex/Emby)\nfall back to an empty list rather than failing the request.",
+        "operationId": "get_library_items_api_library_items_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/library/continue-watching": {
+      "get": {
+        "summary": "Get Continue Watching",
+        "description": "In-progress titles for the Discover \"Continue Watching\" row.",
+        "operationId": "get_continue_watching_api_library_continue_watching_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/library/series/{series_id}/episodes": {
+      "get": {
+        "summary": "Get Series Episodes",
+        "description": "Every episode of one series, with per-episode playback facts (for TV).",
+        "operationId": "get_series_episodes_api_library_series__series_id__episodes_get",
+        "parameters": [
+          {
+            "name": "series_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Series Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/library/scan": {
+      "get": {
+        "summary": "Scan Library",
+        "description": "Browser/address-bar friendly trigger for the Jellyfin library scan (GET).\n\nMirrors the canonical ``POST /api/jobs/library_scan/run`` job so a plain GET\n(e.g. typing the URL) can force a scan. Returns the job result.",
+        "operationId": "scan_library_api_library_scan_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/quality": {
+      "get": {
+        "summary": "Get Quality Profiles",
+        "description": "Get quality profiles from Radarr and Sonarr via the acquisition facade.",
+        "operationId": "get_quality_profiles_api_quality_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QualityProfilesResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/plex/thumb": {
+      "get": {
+        "summary": "Plex Thumb",
+        "description": "Proxy a Plex thumbnail so the browser can render it (token stays server-side).",
+        "operationId": "plex_thumb_api_plex_thumb_get",
+        "parameters": [
+          {
+            "name": "path",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Path"
+            }
+          },
+          {
+            "name": "width",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 2000,
+              "minimum": 16,
+              "default": 500,
+              "title": "Width"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/jellyfin/poster": {
+      "get": {
+        "summary": "Jellyfin Poster",
+        "description": "Proxy a Jellyfin item's primary image so the browser can render it.\n\nKeeps the Jellyfin token/credential server-side: the browser only ever hits\nthis same-origin /api route.",
+        "operationId": "jellyfin_poster_api_jellyfin_poster_get",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Id"
+            }
+          },
+          {
+            "name": "width",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 2000,
+              "minimum": 16,
+              "default": 500,
+              "title": "Width"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/jellyfin/stream/{item_id}": {
+      "get": {
+        "summary": "Jellyfin Stream",
+        "description": "Proxy one Jellyfin item's video to the browser for in-app playback.\n\nForwarded headers: the client's ``Range`` (so seeking works). Returned:\nthe upstream status (``206`` for a range, ``200`` for full) plus the\n``Content-Type`` / ``Accept-Ranges`` / ``Content-Range`` pass-throughs.",
+        "operationId": "jellyfin_stream_api_jellyfin_stream__item_id__get",
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Item Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/jellyfin/progress": {
+      "post": {
+        "summary": "Jellyfin Progress",
+        "description": "Report playback position back to Jellyfin so Watched/resume UI updates.\n\nKeeps the Jellyfin credential server-side; the browser only POSTs JSON here.",
+        "operationId": "jellyfin_progress_api_jellyfin_progress_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JellyfinProgressRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/suggest/add": {
+      "post": {
+        "summary": "Suggest Add",
+        "description": "Add a TMDB-discovered title to the watchlist as a pending entry.",
+        "operationId": "suggest_add_api_suggest_add_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SuggestRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Suggest Add Api Suggest Add Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/suggest/add/{tmdb_id}": {
+      "post": {
+        "summary": "Suggest Add One",
+        "description": "Add a single TMDB title to the watchlist as a pending entry.",
+        "operationId": "suggest_add_one_api_suggest_add__tmdb_id__post",
+        "parameters": [
+          {
+            "name": "tmdb_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Tmdb Id"
+            }
+          },
+          {
+            "name": "media_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "movie",
+              "title": "Media Type"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Suggest Add One Api Suggest Add  Tmdb Id  Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/suggest/detail/{tmdb_id}": {
+      "get": {
+        "summary": "Suggest Detail",
+        "description": "Return full TMDB metadata + IMDb rating for one title (on-demand, cached).\n\nPowers the card-click detail modal (IMDb rating + synopsis). Fetches fresh\nfrom TMDB on demand so the grid's /api/suggest stays light (it would\notherwise need one IMDb lookup per result).",
+        "operationId": "suggest_detail_api_suggest_detail__tmdb_id__get",
+        "parameters": [
+          {
+            "name": "tmdb_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Tmdb Id"
+            }
+          },
+          {
+            "name": "media_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "movie",
+              "title": "Media Type"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuggestDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/suggest": {
+      "post": {
+        "summary": "Suggest",
+        "description": "Discover titles matching user-defined filters via TMDB.",
+        "operationId": "suggest_api_suggest_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SuggestRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuggestResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/media/{media_id}": {
+      "get": {
+        "summary": "Get Media",
+        "description": "One complete, backend-derived resource for a canonical media_id.",
+        "operationId": "get_media_api_media__media_id__get",
+        "parameters": [
+          {
+            "name": "media_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Media Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/media/{media_id}/request": {
+      "post": {
+        "summary": "Request Media Endpoint",
+        "description": "Idempotently add a canonical media_id to the right *arr backend.\n\nThe canonical request path is ``request_media`` (application layer). This\nroute only maps result states to typed HTTP responses.",
+        "operationId": "request_media_endpoint_api_media__media_id__request_post",
+        "parameters": [
+          {
+            "name": "media_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Media Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RequestMediaResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/watchlist": {
+      "get": {
+        "summary": "Get Watchlist",
+        "description": "Every watchlist entry as a backend-derived \u00a718 resource.",
+        "operationId": "get_watchlist_api_watchlist_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WatchlistResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/reconcile": {
+      "post": {
+        "summary": "Reconcile Now",
+        "description": "Re-derive every watchlist entry's status/capabilities/watch in one pass.",
+        "operationId": "reconcile_now_api_reconcile_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReconcileResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/jobs": {
+      "get": {
+        "summary": "Get Jobs",
+        "description": "Recent job_runs most-recent-first.",
+        "operationId": "get_jobs_api_jobs_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/jobs/{name}/run": {
+      "post": {
+        "summary": "Run Job Endpoint",
+        "description": "Run a known job command by name and return its recorded result.\n\nSupported names: ``daily_watchlist`` (recommendation generation) and\n``reconcile`` (frequent status reconcile). Returns the JobResult shape.",
+        "operationId": "run_job_endpoint_api_jobs__name__run_post",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AcquisitionModel": {
+        "properties": {
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "title": "AcquisitionModel",
+        "description": "Acquisition backend facts for one item (spec \u00a718 ``acquisition``)."
+      },
+      "CapabilitiesModel": {
+        "properties": {
+          "can_download": {
+            "type": "boolean",
+            "title": "Can Download",
+            "default": false
+          },
+          "can_watch": {
+            "type": "boolean",
+            "title": "Can Watch",
+            "default": false
+          }
+        },
+        "type": "object",
+        "title": "CapabilitiesModel",
+        "description": "Which user actions are available (spec \u00a718 ``capabilities``)."
+      },
+      "ConfigResponse": {
+        "properties": {
+          "updated": {
+            "type": "string",
+            "title": "Updated"
+          },
+          "heroMode": {
+            "type": "string",
+            "title": "Heromode"
+          },
+          "rotation": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Rotation"
+          },
+          "services": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "type": "object",
+            "title": "Services"
+          }
+        },
+        "type": "object",
+        "required": [
+          "updated",
+          "heroMode",
+          "rotation",
+          "services"
+        ],
+        "title": "ConfigResponse"
+      },
+      "DownloadRequest": {
+        "properties": {
+          "imdbId": {
+            "type": "string",
+            "title": "Imdbid",
+            "default": ""
+          },
+          "tmdbId": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tmdbid"
+          },
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "default": ""
+          },
+          "qualityProfileId": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Qualityprofileid"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title",
+            "default": ""
+          },
+          "year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Year"
+          }
+        },
+        "type": "object",
+        "title": "DownloadRequest"
+      },
+      "DownloadResponse": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok"
+          },
+          "state": {
+            "type": "string",
+            "title": "State"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "service": {
+            "type": "string",
+            "title": "Service"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ok",
+          "state",
+          "message",
+          "service"
+        ],
+        "title": "DownloadResponse"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "HealthResponse": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok"
+          },
+          "updated": {
+            "type": "string",
+            "title": "Updated"
+          },
+          "titleCount": {
+            "type": "integer",
+            "title": "Titlecount"
+          },
+          "services": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "type": "object",
+            "title": "Services"
+          },
+          "degraded": {
+            "type": "boolean",
+            "title": "Degraded",
+            "default": false
+          },
+          "serviceDetail": {
+            "additionalProperties": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "object",
+            "title": "Servicedetail"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ok",
+          "updated",
+          "titleCount"
+        ],
+        "title": "HealthResponse"
+      },
+      "JellyfinProgressRequest": {
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "title": "Item Id",
+            "default": ""
+          },
+          "position_ticks": {
+            "type": "integer",
+            "title": "Position Ticks",
+            "default": 0
+          },
+          "is_paused": {
+            "type": "boolean",
+            "title": "Is Paused",
+            "default": false
+          },
+          "event": {
+            "type": "string",
+            "title": "Event",
+            "default": "timeupdate"
+          }
+        },
+        "type": "object",
+        "title": "JellyfinProgressRequest",
+        "description": "Playback progress reported by the in-app player (Jellyfin Sessions API).\n\n``event`` maps to a Jellyfin session endpoint: ``start`` -> /Sessions/Playing,\n``timeupdate`` -> /Sessions/Playing/Progress, ``stopped`` -> /Sessions/Playing/Stopped.\n``position_ticks`` is in Jellyfin 10ms ticks (seconds * 1e7)."
+      },
+      "JobRunResponse": {
+        "properties": {
+          "jobName": {
+            "type": "string",
+            "title": "Jobname"
+          },
+          "startedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Startedat"
+          },
+          "completedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completedat"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": ""
+          },
+          "itemsProcessed": {
+            "type": "integer",
+            "title": "Itemsprocessed",
+            "default": 0
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "jobName"
+        ],
+        "title": "JobRunResponse",
+        "description": "One row from the job_runs table (spec Phase 13/14)."
+      },
+      "JobsResponse": {
+        "properties": {
+          "jobs": {
+            "items": {
+              "$ref": "#/components/schemas/JobRunResponse"
+            },
+            "type": "array",
+            "title": "Jobs"
+          }
+        },
+        "type": "object",
+        "required": [
+          "jobs"
+        ],
+        "title": "JobsResponse",
+        "description": "GET /api/jobs \u2014 recent job_runs most-recent-first."
+      },
+      "LibraryResponse": {
+        "properties": {
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "available": {
+            "type": "boolean",
+            "title": "Available"
+          },
+          "counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Counts"
+          },
+          "recent": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Recent"
+          },
+          "server": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Server"
+          },
+          "urls": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Urls"
+          }
+        },
+        "type": "object",
+        "required": [
+          "provider",
+          "available",
+          "counts",
+          "recent",
+          "server"
+        ],
+        "title": "LibraryResponse"
+      },
+      "MediaResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title",
+            "default": ""
+          },
+          "year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Year"
+          },
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "default": ""
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": ""
+          },
+          "capabilities": {
+            "$ref": "#/components/schemas/CapabilitiesModel"
+          },
+          "watch": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/WatchEntryModel"
+            },
+            "type": "object",
+            "title": "Watch"
+          },
+          "acquisition": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AcquisitionModel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "progress": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Progress"
+          },
+          "speed": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Speed"
+          },
+          "eta": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eta"
+          },
+          "qbitState": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Qbitstate"
+          },
+          "qbitName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Qbitname"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "title": "MediaResponse",
+        "description": "The canonical single-item object the frontend renders from (\u00a718).\n\nThe frontend must NOT reconstruct status/capabilities from scattered\nfields \u2014 this is one complete, backend-derived resource."
+      },
+      "QualityProfileResponse": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "items": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "items"
+        ],
+        "title": "QualityProfileResponse"
+      },
+      "QualityProfilesResponse": {
+        "properties": {
+          "radarr": {
+            "items": {
+              "$ref": "#/components/schemas/QualityProfileResponse"
+            },
+            "type": "array",
+            "title": "Radarr"
+          },
+          "sonarr": {
+            "items": {
+              "$ref": "#/components/schemas/QualityProfileResponse"
+            },
+            "type": "array",
+            "title": "Sonarr"
+          }
+        },
+        "type": "object",
+        "required": [
+          "radarr",
+          "sonarr"
+        ],
+        "title": "QualityProfilesResponse"
+      },
+      "ReconcileResponse": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok"
+          },
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/MediaResponse"
+            },
+            "type": "array",
+            "title": "Entries"
+          },
+          "indexerIssue": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Indexerissue"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ok",
+          "entries"
+        ],
+        "title": "ReconcileResponse",
+        "description": "POST /api/reconcile \u2014 re-derive every entry's snapshot in one pass."
+      },
+      "RequestMediaResponse": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok"
+          },
+          "state": {
+            "type": "string",
+            "title": "State"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "mediaId": {
+            "type": "string",
+            "title": "Mediaid",
+            "default": ""
+          },
+          "service": {
+            "type": "string",
+            "title": "Service",
+            "default": ""
+          },
+          "candidates": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Candidates"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ok",
+          "state",
+          "message"
+        ],
+        "title": "RequestMediaResponse",
+        "description": "Outcome of POST /api/media/{media_id}/request (\u00a715 vocab)."
+      },
+      "SearchResponse": {
+        "properties": {
+          "watchlist": {
+            "items": {
+              "$ref": "#/components/schemas/SearchResult"
+            },
+            "type": "array",
+            "title": "Watchlist"
+          },
+          "tmdb": {
+            "items": {
+              "$ref": "#/components/schemas/SearchResult"
+            },
+            "type": "array",
+            "title": "Tmdb"
+          },
+          "tmdbKey": {
+            "type": "boolean",
+            "title": "Tmdbkey"
+          },
+          "servicesDown": {
+            "type": "boolean",
+            "title": "Servicesdown"
+          }
+        },
+        "type": "object",
+        "required": [
+          "watchlist",
+          "tmdb",
+          "tmdbKey",
+          "servicesDown"
+        ],
+        "title": "SearchResponse"
+      },
+      "SearchResult": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Year"
+          },
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "imdbId": {
+            "type": "string",
+            "title": "Imdbid"
+          },
+          "tmdbId": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tmdbid"
+          },
+          "poster": {
+            "type": "string",
+            "title": "Poster"
+          },
+          "inWatchlist": {
+            "type": "boolean",
+            "title": "Inwatchlist"
+          },
+          "director": {
+            "type": "string",
+            "title": "Director"
+          },
+          "cast": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Cast"
+          },
+          "snippet": {
+            "type": "string",
+            "title": "Snippet"
+          },
+          "voteAverage": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Voteaverage"
+          }
+        },
+        "type": "object",
+        "required": [
+          "title",
+          "year",
+          "type",
+          "imdbId",
+          "tmdbId",
+          "poster",
+          "inWatchlist",
+          "director",
+          "cast",
+          "snippet"
+        ],
+        "title": "SearchResult"
+      },
+      "StatusEntry": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "title": "State"
+          },
+          "service": {
+            "type": "string",
+            "title": "Service"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "progress": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Progress"
+          },
+          "speed": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Speed"
+          },
+          "eta": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eta"
+          },
+          "qbitState": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Qbitstate"
+          },
+          "qbitName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Qbitname"
+          },
+          "plexKey": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plexkey"
+          },
+          "plexUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plexurl"
+          },
+          "embyUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embyurl"
+          },
+          "jellyfinUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Jellyfinurl"
+          },
+          "jellyfinItemId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Jellyfinitemid"
+          }
+        },
+        "type": "object",
+        "required": [
+          "state",
+          "service"
+        ],
+        "title": "StatusEntry"
+      },
+      "StatusResponse": {
+        "properties": {
+          "statuses": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/StatusEntry"
+            },
+            "type": "object",
+            "title": "Statuses"
+          },
+          "indexerIssue": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Indexerissue"
+          }
+        },
+        "type": "object",
+        "required": [
+          "statuses"
+        ],
+        "title": "StatusResponse"
+      },
+      "SuggestDetail": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok",
+            "default": true
+          },
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "media_type": {
+            "type": "string",
+            "title": "Media Type"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title",
+            "default": ""
+          },
+          "year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Year"
+          },
+          "overview": {
+            "type": "string",
+            "title": "Overview",
+            "default": ""
+          },
+          "genres": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Genres"
+          },
+          "runtime": {
+            "type": "integer",
+            "title": "Runtime",
+            "default": 0
+          },
+          "cert": {
+            "type": "string",
+            "title": "Cert",
+            "default": ""
+          },
+          "cast": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Cast"
+          },
+          "director": {
+            "type": "string",
+            "title": "Director",
+            "default": ""
+          },
+          "tmdb_score": {
+            "type": "number",
+            "title": "Tmdb Score",
+            "default": 0.0
+          },
+          "vote_count": {
+            "type": "integer",
+            "title": "Vote Count",
+            "default": 0
+          },
+          "poster": {
+            "type": "string",
+            "title": "Poster",
+            "default": ""
+          },
+          "backdrop": {
+            "type": "string",
+            "title": "Backdrop",
+            "default": ""
+          },
+          "imdb_id": {
+            "type": "string",
+            "title": "Imdb Id",
+            "default": ""
+          },
+          "imdb_rating": {
+            "type": "number",
+            "title": "Imdb Rating",
+            "default": 0.0
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "media_type"
+        ],
+        "title": "SuggestDetail",
+        "description": "Full TMDB detail for one suggested title (card click \u2192 detail modal)."
+      },
+      "SuggestRequest": {
+        "properties": {
+          "media_type": {
+            "type": "string",
+            "title": "Media Type",
+            "default": "all"
+          },
+          "genres": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Genres"
+          },
+          "year_from": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Year From"
+          },
+          "year_to": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Year To"
+          },
+          "min_rating": {
+            "type": "number",
+            "title": "Min Rating",
+            "default": 6.0
+          },
+          "sort_by": {
+            "type": "string",
+            "title": "Sort By",
+            "default": "popularity.desc"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count",
+            "default": 20
+          },
+          "include_owned": {
+            "type": "boolean",
+            "title": "Include Owned",
+            "default": false
+          }
+        },
+        "type": "object",
+        "title": "SuggestRequest",
+        "description": "User-defined filter criteria for suggest."
+      },
+      "SuggestResponse": {
+        "properties": {
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/SuggestResult"
+            },
+            "type": "array",
+            "title": "Results"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "filters": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Filters"
+          },
+          "genres_available": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Genres Available"
+          }
+        },
+        "type": "object",
+        "required": [
+          "results",
+          "total",
+          "filters",
+          "genres_available"
+        ],
+        "title": "SuggestResponse",
+        "description": "POST /api/suggest response."
+      },
+      "SuggestResult": {
+        "properties": {
+          "tmdb_id": {
+            "type": "integer",
+            "title": "Tmdb Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Year"
+          },
+          "media_type": {
+            "type": "string",
+            "title": "Media Type"
+          },
+          "tmdb_score": {
+            "type": "number",
+            "title": "Tmdb Score",
+            "default": 0.0
+          },
+          "vote_count": {
+            "type": "integer",
+            "title": "Vote Count",
+            "default": 0
+          },
+          "genres": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Genres"
+          },
+          "overview": {
+            "type": "string",
+            "title": "Overview",
+            "default": ""
+          },
+          "poster": {
+            "type": "string",
+            "title": "Poster",
+            "default": ""
+          },
+          "backdrop": {
+            "type": "string",
+            "title": "Backdrop",
+            "default": ""
+          },
+          "in_watchlist": {
+            "type": "boolean",
+            "title": "In Watchlist",
+            "default": false
+          },
+          "in_library": {
+            "type": "boolean",
+            "title": "In Library",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "tmdb_id",
+          "title",
+          "media_type"
+        ],
+        "title": "SuggestResult",
+        "description": "One suggested title."
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      },
+      "WatchEntryModel": {
+        "properties": {
+          "available": {
+            "type": "boolean",
+            "title": "Available",
+            "default": false
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "item_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Item Id"
+          },
+          "played": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Played"
+          },
+          "playback_position": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Playback Position"
+          },
+          "runtime": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Runtime"
+          }
+        },
+        "type": "object",
+        "title": "WatchEntryModel",
+        "description": "One provider's watch link (spec \u00a718 ``watch.<provider>``)."
+      },
+      "WatchlistResponse": {
+        "properties": {
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/MediaResponse"
+            },
+            "type": "array",
+            "title": "Entries"
+          },
+          "indexerIssue": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Indexerissue"
+          }
+        },
+        "type": "object",
+        "required": [
+          "entries"
+        ],
+        "title": "WatchlistResponse",
+        "description": "GET /api/watchlist \u2014 every pending + recommended entry as a resource."
+      }
+    }
+  }
+}

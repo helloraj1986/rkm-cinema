@@ -2,12 +2,9 @@
 import logging
 import time
 import urllib.parse
-from typing import Any, Optional
-from xml.etree import ElementTree as ET
+import urllib.request
+from typing import Optional
 
-from config.settings import get_config
-from core.http_client import get_http_client
-from core.exceptions import ServiceUnavailableError, NotFoundError
 from services.base import BaseService
 
 
@@ -420,7 +417,6 @@ class PlexService(BaseService):
                + "&height=" + str(int(width * 1.5))
                + "&url=" + urllib.parse.quote("http://127.0.0.1:32400" + path, safe="")
                + "&X-Plex-Token=" + self.config.PLEX_TOKEN)
-        import urllib.request
         try:
             req = urllib.request.Request(url, headers={"Accept": "image/*"})
             with urllib.request.urlopen(req, timeout=15) as r:

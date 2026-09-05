@@ -9,7 +9,7 @@ import json
 import logging
 import re
 import urllib.request
-from typing import Any, Optional
+from typing import Optional
 
 from config.settings import get_config
 

@@ -4,6 +4,10 @@ A self-hosted **media discovery + download dashboard**. Browse your Plex library
 
 > **Plex is the source of truth** for availability. Metadata comes from **TMDB**; official trailers are found by scraping **youtube.com** (no YouTube API key).
 
+> ## ⚠ Status (2026-09-06) — modular & scalable re-platform in progress
+> Plan: [`docs/modular-scalable-architecture.md`](docs/modular-scalable-architecture.md) · ADRs: [`docs/adr/`](docs/adr/) · **Frozen API contract:** [`docs/api/openapi.v1.json`](docs/api/openapi.v1.json) (ADR-0001).
+> **Phase 0 done** (CI + contract freeze + docs reset). Frontend `app.js` → React/TS (`web/`) behind the frozen `/api`; backend **keep-Python** (consolidate facades only, Phase 1). Session history: `PROGRESS.md`.
+
 ---
 
 ## Features

@@ -5,7 +5,6 @@ Add watchlist job (spec §24: recommendation generation and auto-add).
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 from jobs.base import JobResult
 from core.logging import log_event
@@ -25,7 +24,6 @@ def run_add_watchlist(*, count: int = 20, dry_run: bool = False) -> JobResult:
         JobResult with outcome
     """
     from pathlib import Path
-    import subprocess
     import sys
     import time
     

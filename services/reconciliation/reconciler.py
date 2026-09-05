@@ -37,9 +37,6 @@ from services.acquisition import (
     SonarrAcquisitionProvider,
 )
 from services.library import (
-    EmbyLibraryProvider,
-    LibraryService,
-    PlexLibraryProvider,
     resolve_library_identity,
 )
 from services.qbittorrent import QBittorrentService

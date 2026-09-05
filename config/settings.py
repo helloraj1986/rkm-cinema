@@ -206,9 +206,6 @@ class Config:
     def has_emby(self) -> bool:
         return bool(self.EMBY_URL and self.EMBY_API_KEY)
 
-    def has_jellyfin(self) -> bool:
-        return bool(self.JELLYFIN_URL and self.JELLYFIN_API_KEY)
-
     def has_youtube(self) -> bool:
         return bool(self.YOUTUBE_API_KEY)
 

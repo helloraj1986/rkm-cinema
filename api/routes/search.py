@@ -1,5 +1,6 @@
 """Search endpoint - watchlist + TMDB live search."""
 import urllib.parse
+import urllib.request
 from fastapi import APIRouter, Query
 from api.models import SearchResponse, SearchResult
 from config.settings import get_config
@@ -39,7 +40,7 @@ def search(q: str = Query(default="", min_length=1)):
     if cfg.has_tmdb():
         url = f"https://api.themoviedb.org/3/search/multi?api_key={cfg.TMDB_API_KEY}&query={urllib.parse.quote(query)}&language=en-US&page=1"
         try:
-            import urllib.request, json
+            import json
             with urllib.request.urlopen(url, timeout=10) as r:
                 d = json.load(r)
             for result in (d.get("results") or [])[:8]:

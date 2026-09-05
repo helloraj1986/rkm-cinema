@@ -14,7 +14,6 @@ rows also carry a ``payload`` JSON column so the rich dashboard fields
 """
 from __future__ import annotations
 
-import json
 import sqlite3
 import threading
 from contextlib import contextmanager

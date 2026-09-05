@@ -10,7 +10,6 @@ import logging
 from typing import Optional
 
 from domain.enums import MediaType
-from domain.identity import MediaIdentity
 from services.acquisition.service import (
     AcquisitionProvider,
     AcquisitionRequestResult,

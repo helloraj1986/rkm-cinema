@@ -1,10 +1,21 @@
 # RKM Watchlist — Session Handoff & Project Progress
 
-> Last updated: 2026-09-06 (**re-platform Phases 0, 1a, 2 DONE — committed `dc6c72a`/`ba32448`/`05bcc71`; backend 248 pytest + ruff green, `web/` typecheck+build+vitest green.** CI + `/api` frozen (`openapi.v1.json`) + ADRs; `LibraryProvider` ABC capability surface + `LibraryService` aggregate collapse (routes via service, no `getattr`); `web/` React/TS/Vite/Tailwind shell with openapi-typescript typed client + `VITE_ENABLE_REACT` flag + ConfigHealthView; legacy `app.js` untouched and still default in prod. **Un-pushed** — token lacks `workflow` scope (deferred to LAST per user). NEXT: Phase 3 — port `library` (poster wall + Continue Watching + scan) then `playback` (item 2 watch-state) as feature slices.**)
+> Last updated: 2026-09-06 (**re-platform Phases 0, 1a, 2, 3a DONE — `dc6c72a`/`ba32448`/`05bcc71`/`8cec4b3`; backend 248 pytest + ruff, `web/` tsc+build+vitest 12/12 green.** CI + `/api` frozen; `LibraryProvider` ABC capability surface; `web/` React shell + typed client + `VITE_ENABLE_REACT` flag; **library slice** ported (poster wall + Continue Watching + scan + minimal player) at legacy parity. Legacy `app.js` untouched. Un-pushed (token `workflow` scope deferred to last). NEXT: Phase 3b — **playback slice** (resume reporting, mark-watched, up-next, episode picker = roadmap item 2 lands here).**)
 > Live URL: **http://rkm-hp.tail8d5e8.ts.net:8123/** (Tailscale MagicDNS, tailnet-only — NEVER `tailscale funnel` it; page proxies /api → FastAPI which holds secrets server-side)
 > Deploy path (Windows, RKM-HP): `cd D:\hermes_agent\hermes-workspace\projects\rkm-cinema; .\run-rkm-cinema.ps1` (prod api+web nginx `:8123`; Plex/Emby backend) — or `.\bootstrap.ps1` for the **bundled api+web+Jellyfin** stack (`:8098`/`:8124`; this is where in-app Jellyfin playback lives). NOTE: there is **no `setup-watchlist.ps1` anymore — it was renamed.** The sandbox's `/workspace` maps to `D:\hermes_agent\hermes-workspace` (9p mount, confirmed via mountinfo 2026-08-18; NOT `D:\media`). The `web`+`api` containers are on RKM-HP (Docker daemon unreachable from sandbox).
 > Repo: **private `rkm-cinema` on GitHub** (github.com/helloraj1986/rkm-cinema)
 > **Status:** ✅ **Phases 1–18 committed. SQLite is now the AUTHORITATIVE watchlist store** (`WATCHLIST_STORE=sqlite`, DB on the shared `/workspace/media` volume so it survives every rebuild). `watchlist.json` is now a generated mirror/export, NOT authoritative. **DEPLOY PENDING on RKM-HP** to bake the 504/suggest API fixes + the SQLite store into the running image (`setup-watchlist.ps1`). Frontend-only (app.js synopsis fix) is already live via the volume mount.
+
+## ▶ LATEST SESSION (2026-09-06) — Phase 3a: `library` feature slice ported to React ✅
+
+**`/library` now renders in the React shell at legacy parity** — poster wall + Continue Watching + scan wiring. Legacy `app.js` untouched.
+
+- **`features/library/api.ts`** — `useLibraryItems`/`useContinueWatching` (TanStack Query) + `useScanLibrary` mutation that invalidates library queries on success (drive-the-backend).
+- **`features/library/lib.ts`** — pure helpers mirroring legacy `app.js` exactly: `posterUrl` (Jellyfin poster proxy → Plex thumb proxy fallback), `playbackMarker` (watched tick vs amber resume % vs none — copied logic), `isContinueWatching` filter, `isSeries`. **10 unit tests** pins parity.
+- **`MediaCard.tsx`** — poster, MOVIE/TV badge, watched/resume markers, primary **Play in RKM** (movie) / **Episodes** (series) + Jellyfin deeplink; **`ContinueWatchingRow.tsx`** + **`LibraryView.tsx`** (title counts, Scan button, series-play notice, poster grid).
+- **`Player.tsx`** — minimal same-origin `/api/jellyfin/stream` video so movies actually play; **full playback slice (resume reporting, mark-watched, up-next, episode picker) = Phase 3b** (roadmap item 2 lands there).
+- `client.ts` `MediaItem` aligned to the real item shape; `router.tsx` `/library → LibraryView`.
+- **Verify:** `tsc` clean · `vite build` 96 modules · `vitest` **12/12**.
 
 ## ▶ LATEST SESSION (2026-09-06) — Phase 2: `web/` React/TS shell + typed client + flag ✅
 

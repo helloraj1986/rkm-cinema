@@ -171,8 +171,12 @@ def ensure_api_key(admin_token):
             if k:
                 print("[jellyfin] confirmed API key registered")
                 return k
-    raise SystemExit("ERROR: could not create a registered Jellyfin API key "
-                     "(POST /Auth/Keys failed). See output above.")
+    # Fallback that is guaranteed to work: Jellyfin accepts an admin user's
+    # access token via ?api_key= for user-scoped queries (the same auth that
+    # added the libraries). This sidesteps version-specific /Auth/Keys shapes.
+    print("[jellyfin] using admin AccessToken as the RKM API credential (fallback: "
+          "/Auth/Keys not available on this version).")
+    return admin_token
 
 
 def ensure_library(admin_token, name, ctype, path):

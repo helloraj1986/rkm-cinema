@@ -31,7 +31,8 @@ class JellyfinItem:
                  user_data: Optional[dict] = None,
                  played: bool = False, position_ticks: int = 0,
                  runtime_ticks: int = 0, play_count: int = 0,
-                 last_played: str = ""):
+                 last_played: str = "",
+                 genres: Optional[list] = None, date_added: str = ""):
         self.name = name
         self.year = year
         self.id = id
@@ -46,6 +47,9 @@ class JellyfinItem:
         # Extra watch-state facts (roadmap item 2) — play count + last-played date.
         self.play_count = play_count
         self.last_played = last_played
+        # Discovery facts (roadmap item 4) — genre names + DateCreated (ISO).
+        self.genres = [str(g) for g in (genres or [])]
+        self.date_added = date_added or ""
 
     def matches(self, name: str, year: Optional[int] = None) -> bool:
         search_lower = name.lower()
@@ -260,6 +264,9 @@ class JellyfinLibraryProvider(LibraryProvider):
             "runtime": self._ticks_to_sec(item.runtime_ticks),
             "play_count": int(item.play_count or 0),
             "last_played": item.last_played or None,
+            # Discovery facts (roadmap item 4) — genre names + DateCreated ISO.
+            "genres": list(item.genres or []),
+            "added": item.date_added or None,
         }
 
     def _fetch_raw(self, url: str) -> list[dict]:
@@ -297,6 +304,8 @@ class JellyfinLibraryProvider(LibraryProvider):
             runtime_ticks=int(it.get("RunTimeTicks") or 0),
             play_count=int((it.get("UserData") or {}).get("PlayCount") or 0),
             last_played=str((it.get("UserData") or {}).get("LastPlayedDate") or ""),
+            genres=[str(g) for g in (it.get("Genres") or [])],
+            date_added=str(it.get("DateCreated") or ""),
         )
 
     def recently_watched(self, limit: int = 12) -> list[dict]:
@@ -642,7 +651,7 @@ class JellyfinLibraryProvider(LibraryProvider):
         url = (f"{self.config.JELLYFIN_URL}/Users/{user_id}/Items"
                f"?api_key={self.config.JELLYFIN_API_KEY}"
                f"&Recursive=true&IncludeItemTypes={item_type}"
-               f"&Fields=PrimaryImageAspectRatio,ProductionYear,ProviderIds,UserData")
+               f"&Fields=PrimaryImageAspectRatio,ProductionYear,ProviderIds,UserData,Genres,DateCreated")
         try:
             raw = self._fetch_raw(url)
             items = [self._parse_item(it, item_type) for it in raw]

@@ -118,6 +118,42 @@ def test_parse_item_thumb_never_leaks_aspect_ratio():
     assert not str(no_thumb.thumb).replace(".", "", 1).isdigit(), "thumb must not be a numeric ratio string"
 
 
+def test_parse_item_captures_genres_and_date_added():
+    """_parse_item stores genre names + DateCreated (discovery facts, item 4)."""
+    from services.library.jellyfin import JellyfinLibraryProvider
+    prov = JellyfinLibraryProvider(config=_cfg())
+    item = prov._parse_item(
+        {"Name": "A", "Id": "a1", "Genres": ["Drama", "Sci-Fi"],
+         "DateCreated": "2026-01-05T03:21:12.0000000Z"}, "Movie")
+    assert item.genres == ["Drama", "Sci-Fi"]
+    assert item.date_added == "2026-01-05T03:21:12.0000000Z"
+    # Absent genres/date are never fabricated.
+    bare = prov._parse_item({"Name": "B", "Id": "b1"}, "Movie")
+    assert bare.genres == []
+    assert bare.date_added == ""
+
+
+def test_all_items_emits_genres_and_added():
+    """all_items() surfaces genres + added (DateCreated ISO) on every item."""
+    from services.library.jellyfin import JellyfinItem, JellyfinLibraryProvider
+    prov = JellyfinLibraryProvider(config=_cfg())
+    prov._get_items = lambda itype: {
+        "Movie": [JellyfinItem(name="M1", year=2001, id="m1",
+                               genres=["Crime", "Drama"],
+                               date_added="2026-03-01T00:00:00.0000000Z")],
+        "Series": [JellyfinItem(name="S1", year=2002, id="s1", is_series=True)],
+    }[itype]
+    prov._item_web = lambda iid: "http://jf/x#/details?id=" + iid
+
+    items = prov.all_items()
+    by_id = {x["item_id"]: x for x in items}
+    assert by_id["m1"]["genres"] == ["Crime", "Drama"]
+    assert by_id["m1"]["added"] == "2026-03-01T00:00:00.0000000Z"
+    # Unknown date -> None (never a guess); genres default to [].
+    assert by_id["s1"]["genres"] == []
+    assert by_id["s1"]["added"] is None
+
+
 def test_factory_selects_jellyfin_when_configured():
     from services.library.factory import build_library_service
     svc = build_library_service(_cfg(MEDIA_SERVER="jellyfin", JELLYFIN_API_KEY="jkey"))

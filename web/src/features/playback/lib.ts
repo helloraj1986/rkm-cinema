@@ -172,6 +172,65 @@ export function playMethodForMode(mode: StreamMode): "DirectPlay" | "DirectStrea
   return "Transcode";
 }
 
+/** One parsed subtitle cue (item-time seconds). */
+export interface VttCue {
+  start: number;
+  end: number;
+  text: string;
+}
+
+const VTT_TIME = /^(?:(\d{1,2}):)?(\d{2}):(\d{2})[.,](\d{1,3})$/;
+
+/** Parse a WebVTT/`hh:mm:ss.mmm` (or `mm:ss.mmm`) timestamp to seconds. */
+export function parseVttTime(raw: string): number {
+  const m = String(raw).trim().match(VTT_TIME);
+  if (!m) return 0;
+  const h = Number(m[1] || 0);
+  const min = Number(m[2]);
+  const s = Number(m[3]);
+  const frac = Number(m[4].padEnd(3, "0"));
+  return h * 3600 + min * 60 + s + frac / 1000;
+}
+
+/**
+ * Minimal WebVTT parser — enough for Jellyfin's `format=vtt` subtitle stream:
+ * timing lines (`start --> end [settings]`) plus multi-line text until a blank
+ * line; NOTE/STYLE/REGION blocks and inline tags are skipped/stripped.
+ */
+export function parseVtt(vtt: string): VttCue[] {
+  const cues: VttCue[] = [];
+  const lines = String(vtt || "").split(/\r?\n/);
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i].trim();
+    if (line.includes("-->")) {
+      const [startTok, rest] = line.split("-->", 2);
+      const endTok = String(rest || "").trim().split(/\s+/)[0];
+      const text: string[] = [];
+      i += 1;
+      while (i < lines.length && lines[i].trim() !== "") {
+        text.push(lines[i]);
+        i += 1;
+      }
+      const clean = text.join("\n").replace(/<[^>]*>/g, "").trim();
+      if (clean) {
+        cues.push({ start: parseVttTime(startTok), end: parseVttTime(endTok), text: clean });
+      }
+    } else {
+      i += 1;
+    }
+  }
+  return cues;
+}
+
+/** Text of the cue active at `position` seconds (start ≤ pos < end), or null. */
+export function activeCueText(cues: VttCue[], position: number): string | null {
+  for (const c of cues) {
+    if (position >= c.start && position < c.end) return c.text;
+  }
+  return null;
+}
+
 /** Group episodes by season number, seasons ascending. */
 export function groupBySeason(episodes: EpisodeShape[]): { season: number; episodes: EpisodeShape[] }[] {
   const map = new Map<number, EpisodeShape[]>();

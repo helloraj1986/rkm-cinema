@@ -5,6 +5,7 @@ import {
   PLAYBACK_RATES, QUALITY_OPTIONS, qualityFor, AUTOPLAY_DELAY_MS,
   audioCodecNeedsTranscode, fmtTime, barTotal, isFiniteDuration, clampSeek,
   videoNeedsTranscode, pickStreamMode, streamModeLabel, playMethodForMode,
+  parseVtt, parseVttTime, activeCueText,
 } from "./lib";
 
 const ep = (id: string, season: number, episode: number, played = false, position = 0): EpisodeShape => ({
@@ -157,5 +158,48 @@ describe("stream routing (tier 1 honest modes)", () => {
     expect(playMethodForMode("remux")).toBe("DirectStream");
     expect(playMethodForMode("transcode_audio")).toBe("Transcode");
     expect(playMethodForMode("transcode")).toBe("Transcode");
+  });
+});
+
+describe("subtitle overlay (WebVTT)", () => {
+  it("parseVttTime handles mm:ss.mmm and h:mm:ss.mmm", () => {
+    expect(parseVttTime("00:05.500")).toBeCloseTo(5.5, 3);
+    expect(parseVttTime("1:02:03.004")).toBeCloseTo(3723.004, 3);
+    expect(parseVttTime("12:34,567")).toBeCloseTo(754.567, 3);
+    expect(parseVttTime("garbage")).toBe(0);
+  });
+  it("parseVtt extracts multi-line cues, strips tags and skips settings", () => {
+    const vtt = `WEBVTT
+
+00:00:01.000 --> 00:00:04.000 align:start position:0%
+Hello <i>world</i>
+
+00:00:05.000 --> 00:00:08.000
+First line
+Second line
+
+00:00:10.000 --> 00:00:12.000
+Last`;
+    const cues = parseVtt(vtt);
+    expect(cues).toHaveLength(3);
+    expect(cues[0]).toEqual({ start: 1, end: 4, text: "Hello world" });
+    expect(cues[1].text).toBe("First line\nSecond line");
+    expect(cues[1].start).toBe(5);
+    expect(cues[2].end).toBe(12);
+  });
+  it("parseVtt tolerates NOTE/STYLE headers and CRLF", () => {
+    const vtt = "WEBVTT\r\n\r\nNOTE intro\r\n\r\nSTYLE\r\n::cue { color: #fff }\r\n\r\n00:01:00.000 --> 00:01:02.000\r\nSubs on\r\n";
+    const cues = parseVtt(vtt);
+    expect(cues).toHaveLength(1);
+    expect(cues[0].text).toBe("Subs on");
+  });
+  it("activeCueText matches the current position", () => {
+    const cues = [{ start: 5, end: 8, text: "a" }, { start: 421, end: 423, text: "mid" }];
+    expect(activeCueText(cues, 0)).toBeNull();
+    expect(activeCueText(cues, 5)).toBe("a");
+    expect(activeCueText(cues, 7.9)).toBe("a");
+    expect(activeCueText(cues, 8)).toBeNull();
+    expect(activeCueText(cues, 422)).toBe("mid");
+    expect(activeCueText(cues, 9)).toBeNull();
   });
 });

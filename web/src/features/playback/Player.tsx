@@ -3,7 +3,8 @@ import { api, type PlaybackInfo, type ProgressPayload } from "../../lib/api/clie
 import {
   nextEpisode, qualityFor, AUTOPLAY_DELAY_MS, QUALITY_OPTIONS, PLAYBACK_RATES,
   fmtTime, isFiniteDuration, clampSeek, pickStreamMode, streamModeLabel,
-  playMethodForMode, type QueueEntry, type StreamMode,
+  playMethodForMode, parseVtt, activeCueText, type VttCue, type QueueEntry,
+  type StreamMode,
 } from "./lib";
 
 export interface PlayTarget {
@@ -90,6 +91,16 @@ export function Player({
   const [muted, setMuted] = useState(false);
   const [volume, setVolume] = useState(1);
   const [isFs, setIsFs] = useState(false);
+  // Scrub preview: while dragging, the bar shows the pointer; the actual seek
+  // (a stream RESTART on remux/transcode) only happens once on release.
+  const [scrub, setScrub] = useState<number | null>(null);
+  const scrubbingRef = useRef(false);
+  // Auto-play after the next stream (re)load — preserved through seeks/quality
+  // switches so a pause + seek doesn't unexpectedly start playing.
+  const autoPlayRef = useRef(true);
+  // Subtitle overlay state (item-time cues, works across restart-seeks).
+  const [subText, setSubText] = useState<string | null>(null);
+  const subCuesRef = useRef<VttCue[]>([]);
 
   modeRef.current = mode;
   rateRef.current = rate;
@@ -110,14 +121,12 @@ export function Player({
       })
     : null;
 
-  const msId = info?.media_source_id || item.item_id;
   const bitrate = qualityFor(quality);
   const src = api.streamUrl(item.item_id, {
     ...(mode !== "direct" ? { mode, start_time_ticks: Math.round(startAt * 1e7) } : {}),
     ...(audioIndex > 0 ? { audio_stream_index: audioIndex } : {}),
     ...(bitrate && mode !== "direct" && mode !== "remux" ? { max_bitrate: bitrate } : {}),
   });
-  const subSrc = subIndex != null && info ? api.subtitleUrl(item.item_id, msId, subIndex) : null;
   const backdrop = api.backdropUrl(item.item_id);
   // Display total: the API runtime (scan metadata) is authoritative; fall back
   // to the resolved stream duration (+offset for restart-seek streams).
@@ -133,10 +142,17 @@ export function Player({
     const p = posNow();
     return p > 0 ? p : resumeRef.current;
   };
+  // Paint a display position + the active subtitle cue (item-time based).
+  const paint = (p: number) => {
+    setCur(p);
+    setSubText(activeCueText(subCuesRef.current, p));
+  };
 
   // Apply a mode/position transition (info-driven auto-route, user quality or
   // audio changes, and the error-ladder escalations all land here).
   const transitionTo = (next: StreamMode, atSeconds?: number) => {
+    const v0 = videoRef.current;
+    autoPlayRef.current = v0 ? !v0.paused : autoPlayRef.current;
     const at = atSeconds ?? seekBase();
     pendingSeekRef.current = next === "direct" && at > 0 ? at : null;
     const nextBase = next === "direct" ? 0 : at;
@@ -160,10 +176,10 @@ export function Player({
     const v = videoRef.current;
     if (!v || srcRef.current === src) return;
     srcRef.current = src;
-    setCur(baseRef.current);
+    paint(baseRef.current);
     try {
       v.load();
-      void v.play().catch(() => {});
+      if (autoPlayRef.current) void v.play().catch(() => {});
     } catch {
       /* playback resumes on user gesture if autoplay is blocked */
     }
@@ -194,6 +210,32 @@ export function Player({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [item.item_id]);
+
+  // Fetch + parse the selected subtitle stream as item-time cues. Native
+  // <track> doesn't survive stream restarts / offset timelines reliably, so the
+  // overlay renders from these cues instead (aligned via posNow()).
+  useEffect(() => {
+    let alive = true;
+    subCuesRef.current = [];
+    setSubText(null);
+    if (subIndex == null || !info) return;
+    const source = info.media_source_id || item.item_id;
+    fetch(api.subtitleUrl(item.item_id, source, subIndex))
+      .then((r) => (r.ok ? r.text() : ""))
+      .then((t) => {
+        if (alive) {
+          subCuesRef.current = parseVtt(t);
+          paint(posNow());
+        }
+      })
+      .catch(() => {
+        if (alive) subCuesRef.current = [];
+      });
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [subIndex, item.item_id, info?.media_source_id]);
 
   // Speed: apply playbackRate whenever it changes.
   useEffect(() => {
@@ -230,14 +272,16 @@ export function Player({
       // Static file: HTTP-range seek straight on the media element.
       try {
         v.currentTime = target;
-        setCur(target);
+        paint(target);
       } catch {
-        /* not seekable yet */
+        /* not seekable yet — position stays visible via the bar */
       }
     } else {
-      // Chunked remux/transcode: restart the stream at the target offset.
+      // Chunked remux/transcode: ONE restart at the target offset (scrubbing
+      // commits on release, so a drag never fires a restart per pixel).
       if (Math.abs(posNow() - target) < 2) return;
       transitionTo(modeRef.current, target);
+      paint(target);
     }
   };
 
@@ -301,14 +345,13 @@ export function Player({
         if (pending < d) {
           try {
             v.currentTime = pending;
-            setCur(pending);
           } catch {
             /* ignore seek failure — position stays visible via offset */
           }
         }
         pendingSeekRef.current = null;
       }
-      setCur(baseRef.current);
+      paint(baseRef.current + (v.currentTime || 0));
     };
     const onDur = () => {
       if (isFiniteDuration(v.duration)) setMediaDur(v.duration);
@@ -323,6 +366,10 @@ export function Player({
       report("start");
     };
     const onPlaying = () => setSwitching(false);
+    const onCanPlay = () => {
+      // Autoplay may be blocked/paused: clear the "Preparing stream…" spinner.
+      if (v.paused) setSwitching(false);
+    };
     const onPause = () => {
       setPlaying(false);
       report("stopped");
@@ -336,7 +383,7 @@ export function Player({
       }
     };
     const onTime = () => {
-      setCur(posNow());
+      paint(posNow());
       const now = Date.now();
       if (now - lastReportRef.current < 5000) return;
       lastReportRef.current = now;
@@ -354,6 +401,7 @@ export function Player({
     v.addEventListener("durationchange", onDur);
     v.addEventListener("play", onPlay);
     v.addEventListener("playing", onPlaying);
+    v.addEventListener("canplay", onCanPlay);
     v.addEventListener("waiting", onWaiting);
     v.addEventListener("pause", onPause);
     v.addEventListener("timeupdate", onTime);
@@ -366,6 +414,7 @@ export function Player({
       v.removeEventListener("durationchange", onDur);
       v.removeEventListener("play", onPlay);
       v.removeEventListener("playing", onPlaying);
+      v.removeEventListener("canplay", onCanPlay);
       v.removeEventListener("waiting", onWaiting);
       v.removeEventListener("pause", onPause);
       v.removeEventListener("timeupdate", onTime);
@@ -472,9 +521,7 @@ export function Player({
             src={src}
             onClick={togglePlay}
             className="max-h-full max-w-full cursor-pointer rounded-lg bg-black shadow-2xl"
-          >
-            {subSrc && <track key={subSrc} kind="subtitles" src={subSrc} default />}
-          </video>
+          />
 
           {switching && !error && (
             <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/30">
@@ -525,6 +572,16 @@ export function Player({
             </div>
           )}
 
+          {/* Subtitle overlay — item-time cues parsed from the VTT proxy, aligned
+              via the offset position model (survives restart-seek streams). */}
+          {subText && (
+            <div className="pointer-events-none absolute inset-x-0 bottom-16 z-[5] flex justify-center px-6">
+              <div className="max-w-[85%] whitespace-pre-line rounded bg-black/60 px-3 py-1 text-center text-base text-white [text-shadow:0_1px_3px_rgba(0,0,0,0.95)]">
+                {subText}
+              </div>
+            </div>
+          )}
+
           {/* Custom control bar — total from the API runtime until the stream
               duration resolves, so length + progress are always correct. */}
           <div className="pointer-events-none absolute inset-x-0 bottom-0 rounded-b-lg bg-gradient-to-t from-black/90 via-black/55 to-transparent px-3 pb-2 pt-10">
@@ -533,9 +590,34 @@ export function Player({
               min={0}
               max={total > 0 ? total : 0}
               step={1}
-              value={Math.min(cur, total > 0 ? total : cur)}
+              value={scrub ?? Math.min(cur, total > 0 ? total : cur)}
               disabled={total <= 0}
-              onChange={(e) => seekTo(Number(e.target.value))}
+              onPointerDown={() => {
+                scrubbingRef.current = true;
+              }}
+              onPointerUp={() => {
+                scrubbingRef.current = false;
+                if (scrub != null) {
+                  seekTo(scrub);
+                  setScrub(null);
+                }
+              }}
+              onPointerCancel={() => {
+                scrubbingRef.current = false;
+                setScrub(null);
+              }}
+              onChange={(e) => {
+                const val = Number(e.target.value);
+                if (scrubbingRef.current) {
+                  // Drag: preview only — the seek (a stream restart on
+                  // remux/transcode) fires ONCE on pointer-up.
+                  setScrub(val);
+                } else {
+                  // Keyboard arrows / click without drag: seek directly.
+                  setScrub(null);
+                  seekTo(val);
+                }
+              }}
               aria-label="Seek"
               className="pointer-events-auto h-1.5 w-full cursor-pointer accent-amber-400 disabled:opacity-40"
             />

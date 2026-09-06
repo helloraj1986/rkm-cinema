@@ -10,6 +10,9 @@ export interface QueueEntry {
   id: string;
   name: string;
   position: number;
+  /** Episode runtime in seconds (API metadata) — lets the player show a
+   *  correct total even before the browser resolves stream duration. */
+  runtime?: number;
 }
 
 /** Episode poster thumbnail proxy URL (keeps the token server-side). */
@@ -57,6 +60,38 @@ export function audioCodecNeedsTranscode(codec?: string | null): boolean {
   return !BROWSER_SAFE_AUDIO.has(codec.toLowerCase());
 }
 
+/** Format seconds as m:ss (or h:mm:ss past an hour). Null/NaN/negative → "0:00". */
+export function fmtTime(totalSeconds: number | null | undefined): string {
+  const s = Math.max(0, Math.floor(Number(totalSeconds) || 0));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  const ss = String(sec).padStart(2, "0");
+  if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${ss}`;
+  return `${m}:${ss}`;
+}
+
+/** True only for a finite positive duration (Infinity/NaN = unknown stream). */
+export function isFiniteDuration(d: number | null | undefined): d is number {
+  return typeof d === "number" && Number.isFinite(d) && d > 0;
+}
+
+/**
+ * The player bar's authoritative total (seconds).
+ * Prefer the resolved stream duration once finite; until then fall back to the
+ * API runtime hint (Jellyfin scan metadata) so the bar + total are correct from
+ * the very first frame — even for containers the browser can't index up-front.
+ */
+export function barTotal(streamDuration: number | null | undefined, runtimeHint?: number | null): number {
+  return isFiniteDuration(streamDuration) ? streamDuration : Math.max(0, Math.floor(Number(runtimeHint) || 0));
+}
+
+/** Clamp a seek target into [0, total] (total 0 → step forward only). */
+export function clampSeek(target: number, total: number): number {
+  if (total > 0) return Math.min(Math.max(0, target), total);
+  return Math.max(0, target);
+}
+
 /** Group episodes by season number, seasons ascending. */
 export function groupBySeason(episodes: EpisodeShape[]): { season: number; episodes: EpisodeShape[] }[] {
   const map = new Map<number, EpisodeShape[]>();
@@ -71,9 +106,12 @@ export function groupBySeason(episodes: EpisodeShape[]): { season: number; episo
     .map(([season, list]) => ({ season, episodes: list }));
 }
 
-/** Build the ordered queue (id/name/position) used for "Up Next". */
+/** Build the ordered queue (id/name/position/runtime) used for "Up Next". */
 export function episodeQueue(episodes: EpisodeShape[]): QueueEntry[] {
-  return episodes.map((e) => ({ id: e.id, name: e.name, position: e.playback_position || 0 }));
+  return episodes.map((e) => ({
+    id: e.id, name: e.name, position: e.playback_position || 0,
+    runtime: e.runtime || 0,
+  }));
 }
 
 /** The next episode after *curId*, or ``null`` at the end of the queue (legacy nextEpisode). */

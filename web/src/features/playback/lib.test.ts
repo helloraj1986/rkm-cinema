@@ -3,7 +3,7 @@ import type { EpisodeShape } from "../../lib/api/client";
 import {
   episodeQueue, groupBySeason, nextEpisode, playLabel, startPosition,
   PLAYBACK_RATES, QUALITY_OPTIONS, qualityFor, AUTOPLAY_DELAY_MS,
-  audioCodecNeedsTranscode,
+  audioCodecNeedsTranscode, fmtTime, barTotal, isFiniteDuration, clampSeek,
 } from "./lib";
 
 const ep = (id: string, season: number, episode: number, played = false, position = 0): EpisodeShape => ({
@@ -28,7 +28,8 @@ describe("groupBySeason", () => {
 describe("nextEpisode", () => {
   it("returns the next entry in the queue", () => {
     const queue = episodeQueue([ep("e1", 1, 1), ep("e2", 1, 2, false, 150)]);
-    expect(nextEpisode(queue, "e1")).toEqual({ id: "e2", name: "E2", position: 150 });
+    expect(nextEpisode(queue, "e1")).toMatchObject({ id: "e2", name: "E2", position: 150 });
+    expect(nextEpisode(queue, "e1")?.runtime).toBeGreaterThan(0); // API length travels with the queue
   });
   it("null at the end or for an unknown id", () => {
     const queue = episodeQueue([ep("e1", 1, 1)]);
@@ -81,5 +82,40 @@ describe("item 3 player helpers", () => {
     expect(audioCodecNeedsTranscode(undefined)).toBe(false);
     expect(audioCodecNeedsTranscode(null)).toBe(false);
     expect(audioCodecNeedsTranscode("")).toBe(false);
+  });
+  it("fmtTime formats seconds as m:ss / h:mm:ss", () => {
+    expect(fmtTime(0)).toBe("0:00");
+    expect(fmtTime(59)).toBe("0:59");
+    expect(fmtTime(65)).toBe("1:05");
+    expect(fmtTime(600)).toBe("10:00");
+    expect(fmtTime(3635)).toBe("1:00:35"); // 3 Body Problem S1E1
+    expect(fmtTime(5704)).toBe("1:35:04"); // (500) Days of Summer
+    expect(fmtTime(undefined)).toBe("0:00");
+    expect(fmtTime(-5)).toBe("0:00");
+    expect(fmtTime(Number.NaN)).toBe("0:00");
+  });
+  it("barTotal prefers finite stream duration, else the API runtime hint", () => {
+    expect(barTotal(3635, 3635)).toBe(3635);      // resolved == hint
+    expect(barTotal(Number.POSITIVE_INFINITY, 2648)).toBe(2648); // unknown stream → hint
+    expect(barTotal(Number.NaN, 2648)).toBe(2648);
+    expect(barTotal(0, 2648)).toBe(2648);          // pre-metadata 0 → hint
+    expect(barTotal(null, 2648)).toBe(2648);
+    expect(barTotal(undefined, 0)).toBe(0);        // nothing known
+    expect(barTotal(Number.POSITIVE_INFINITY, undefined)).toBe(0);
+    expect(barTotal(123.9, 100)).toBe(123.9);      // fractional stream duration kept
+  });
+  it("isFiniteDuration rejects Infinity/NaN/zero", () => {
+    expect(isFiniteDuration(100)).toBe(true);
+    expect(isFiniteDuration(0)).toBe(false);
+    expect(isFiniteDuration(Number.POSITIVE_INFINITY)).toBe(false);
+    expect(isFiniteDuration(Number.NaN)).toBe(false);
+    expect(isFiniteDuration(null)).toBe(false);
+    expect(isFiniteDuration(undefined)).toBe(false);
+  });
+  it("clampSeek bounds into [0, total]", () => {
+    expect(clampSeek(-10, 2648)).toBe(0);
+    expect(clampSeek(5000, 2648)).toBe(2648);
+    expect(clampSeek(421, 2648)).toBe(421);
+    expect(clampSeek(30, 0)).toBe(30); // unknown total → allow forward step
   });
 });

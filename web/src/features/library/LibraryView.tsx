@@ -12,6 +12,7 @@ interface PlayState {
   item: PlayTarget;
   resume: number;
   queue: QueueEntry[];
+  runtime: number;
 }
 
 export function LibraryView() {
@@ -36,16 +37,16 @@ export function LibraryView() {
       setPicking({ seriesId: item.item_id, title: item.title });
       return;
     }
-    setPlaying({ item: { item_id: item.item_id, title: item.title }, resume: item.playback_position || 0, queue: [] });
+    setPlaying({ item: { item_id: item.item_id, title: item.title }, resume: item.playback_position || 0, queue: [], runtime: item.runtime || 0 });
   }
 
   function handlePlayEpisode(ep: EpisodeShape, queue: QueueEntry[]) {
     setPicking(null);
-    setPlaying({ item: { item_id: ep.id, title: ep.name }, resume: startPosition(ep), queue });
+    setPlaying({ item: { item_id: ep.id, title: ep.name }, resume: startPosition(ep), queue, runtime: ep.runtime || 0 });
   }
 
   function handleSwitch(entry: QueueEntry) {
-    setPlaying({ item: { item_id: entry.id, title: entry.name }, resume: entry.position, queue: playing?.queue ?? [] });
+    setPlaying({ item: { item_id: entry.id, title: entry.name }, resume: entry.position, queue: playing?.queue ?? [], runtime: entry.runtime ?? playing?.runtime ?? 0 });
   }
 
   return (
@@ -126,6 +127,7 @@ export function LibraryView() {
           item={playing.item}
           resume={playing.resume}
           queue={playing.queue}
+          runtime={playing.runtime}
           onSwitch={handleSwitch}
           onClose={() => setPlaying(null)}
         />

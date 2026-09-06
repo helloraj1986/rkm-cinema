@@ -1,10 +1,11 @@
 # Library & Discovery Plan — search / filters / sort on the new folder views (roadmap item 4)
 
-Status: **EXECUTING 2026-09-07.** Approved as "next" after Plex-style views &
-navigation (Phases 0–2, `34e4dfa`). Scope here is **v1: in-library search,
-genre filter + sort** on the Movies / TV Shows folder views (+ Home), built on
-the shared `useLibraryItems` cache. "Because you watched"/similar needs
-server-side TMDB enrichment and is scoped as **v2 (deferred)**.
+Status: **DONE 2026-09-07 — Phases 0–1 shipped: `05f97d1` (backend) +
+`cfb29fb` (frontend).** Approved as "next" (with legacy parity queued after);
+executed in one session. Remaining within this roadmap item is only the v2
+slice ("Because you watched"/similar — needs server-side TMDB enrichment) and
+Phase 2's user eyeball on RKM-HP after deploying (`.\\bootstrap.ps1` —
+api + web both changed). See `PROGRESS.md` for the session record.
 
 ---
 

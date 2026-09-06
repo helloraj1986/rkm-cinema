@@ -10,6 +10,7 @@ from api.routes import jellyfin_poster as jellyfin_poster_routes
 from api.routes import jellyfin_stream as jellyfin_stream_routes
 from api.routes import jellyfin_hls as jellyfin_hls_routes
 from api.routes import jellyfin_tracks as jellyfin_tracks_routes
+from api.routes import jellyfin_detail as jellyfin_detail_routes
 from api.routes import media as media_routes
 from api.routes import watchlist as watchlist_routes
 from api.routes import reconcile as reconcile_routes
@@ -50,6 +51,7 @@ def create_app() -> FastAPI:
     app.include_router(jellyfin_stream_routes.router, prefix="/api")
     app.include_router(jellyfin_hls_routes.router, prefix="/api")
     app.include_router(jellyfin_tracks_routes.router, prefix="/api")
+    app.include_router(jellyfin_detail_routes.router, prefix="/api")
     app.include_router(suggest.router, prefix="/api")
     # Phase 10 — resource API (spec §17).
     app.include_router(media_routes.router, prefix="/api")

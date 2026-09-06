@@ -74,6 +74,16 @@ class JellyfinLibraryProvider(LibraryProvider):
         self._server_id_value: str = ""
         self._user_id_value: str = ""
 
+    #: Fields the single-item detail fetch requests (Plex-style preplay data).
+    #: Verified live on Jellyfin 10.11.11 — the single-item endpoint embeds
+    #: Overview/Genres/People/Studios/ratings/backdrop tags with these.
+    DETAIL_FIELDS = (
+        "Overview,Genres,People,CommunityRating,CriticRating,OfficialRating,"
+        "Studios,Taglines,ProviderIds,ProductionYear,RunTimeTicks,UserData,"
+        "PrimaryImageAspectRatio,ImageTags,BackdropImageTags,MediaSources,"
+        "SeriesId,SeriesName,SeasonId,SeasonName,IndexNumber,ParentIndexNumber"
+    )
+
     # ------------------------------------------------------------- LibraryProvider
     def health(self) -> bool:
         try:
@@ -446,6 +456,117 @@ class JellyfinLibraryProvider(LibraryProvider):
             "media_source_id": ms_id, "container": container, "video": video,
             "audio": audio, "subtitles": subtitles,
         }
+
+    def item_detail(self, item_id: str) -> Optional[dict]:
+        """Rich single-item metadata for the Plex-style preplay/detail view.
+
+        Fetches ``/Users/{uid}/Items/{item_id}`` with the full detail field
+        list (``DETAIL_FIELDS``) and normalises it into the shape the detail
+        route returns — one additive call unlocks the ~90% of a Plex preplay
+        screen Jellyfin already stores (docs/PLEX_UI_PLAN.md §1): synopsis,
+        genres, community/content ratings, studios, cast/credits (with person
+        ids for headshots), backdrop presence, poster aspect and play state.
+
+        Episode items additionally carry their series context
+        (``SeriesId``/``SeriesName``/``SeasonId`` + season/episode numbers).
+        Returns ``None`` for unknown/non-playable types or on failure.
+        """
+        if not self._configured() or not item_id:
+            return None
+        uid = self._user_id()
+        if not uid:
+            return None
+        url = (f"{self.config.JELLYFIN_URL}/Users/{uid}/Items/{item_id}"
+               f"?api_key={self.config.JELLYFIN_API_KEY}"
+               f"&Fields={self.DETAIL_FIELDS}")
+        try:
+            import json
+            with urllib.request.urlopen(url, timeout=12) as r:
+                it = json.load(r)
+        except Exception as e:
+            logger.warning("Jellyfin item_detail(%s) failed: %s", item_id, e)
+            return None
+        return self._detail_from_item(it)
+
+    @classmethod
+    def _detail_from_item(cls, it: dict) -> Optional[dict]:
+        """Normalise one raw Jellyfin item (single-item fetch) into the detail
+        shape. ``None`` for unknown/non-playable item types."""
+        if not it or not it.get("Id"):
+            return None
+        type_map = {"Movie": "movie", "Series": "tv", "Episode": "episode"}
+        type_name = type_map.get(str(it.get("Type") or ""))
+        if type_name is None:
+            return None
+        ud = it.get("UserData") or {}
+        ticks = cls._int(it.get("RunTimeTicks"))
+        resume_ticks = cls._int(ud.get("PlaybackPositionTicks"))
+        detail = {
+            "type": type_name,
+            "item_id": str(it.get("Id")),
+            "name": str(it.get("Name") or ""),
+            "year": int(it["ProductionYear"]) if it.get("ProductionYear") else None,
+            "runtime": cls._ticks_to_sec(ticks),
+            "runtime_ticks": ticks,
+            "overview": str(it.get("Overview") or ""),
+            "genres": [g for g in (it.get("Genres") or []) if g],
+            "community_rating": cls._float(it.get("CommunityRating")),
+            "official_rating": str(it.get("OfficialRating") or "") or None,
+            "studios": [s.get("Name") for s in (it.get("Studios") or [])
+                        if isinstance(s, dict) and s.get("Name")],
+            "people": cls._detail_people(it.get("People") or []),
+            "has_backdrop": bool(it.get("BackdropImageTags"))
+                or bool((it.get("ImageTags") or {}).get("Backdrop")),
+            "primary_aspect": cls._float(it.get("PrimaryImageAspectRatio")),
+            "play": {
+                "played": bool(ud.get("Played")),
+                "resume_ticks": resume_ticks,
+                "resume": cls._ticks_to_sec(resume_ticks),
+                "play_count": cls._int(ud.get("PlayCount")),
+            },
+        }
+        if type_name == "episode":
+            detail["series"] = {
+                "id": str(it.get("SeriesId") or ""),
+                "name": str(it.get("SeriesName") or ""),
+            }
+            detail["season_id"] = str(it.get("SeasonId") or "")
+            detail["season"] = cls._int(it.get("ParentIndexNumber"))
+            detail["episode"] = cls._int(it.get("IndexNumber"))
+        return detail
+
+    @staticmethod
+    def _detail_people(people: list) -> dict:
+        """Group Jellyfin ``People`` entries into the preplay cast/credits shape.
+
+        Only Actor/Director/Writer surface (Producers and other crew stay out
+        of the v1 preplay view). Each entry keeps its person ``Id`` (feeds the
+        headshot proxy), ``Name``, character/credit ``Role``, and whether
+        Jellyfin reports a ``PrimaryImageTag`` so the UI can skip headshot
+        requests for people who have none (verified live: those 404).
+        """
+        out: dict = {"actors": [], "directors": [], "writers": []}
+        for p in people:
+            t = str(p.get("Type") or "")
+            if t not in ("Actor", "Director", "Writer"):
+                continue
+            out[{"Actor": "actors", "Director": "directors",
+                 "Writer": "writers"}[t]].append({
+                "id": str(p.get("Id") or ""),
+                "name": str(p.get("Name") or ""),
+                "role": str(p.get("Role") or ""),
+                "has_image": bool(p.get("PrimaryImageTag")),
+            })
+        return out
+
+    @staticmethod
+    def _float(v) -> Optional[float]:
+        """Tolerant float (returns None for missing/NaN), never raises."""
+        try:
+            f = float(v)
+        except (TypeError, ValueError):
+            return None
+        return f if f == f else None  # NaN → None
 
     def get_library_counts(self) -> dict:
         return {

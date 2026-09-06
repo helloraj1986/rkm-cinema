@@ -572,3 +572,148 @@ def test_library_service_capability_collapses_to_first_provider_with_meaningful_
     # No provider with a result -> graceful empty
     empty = LibraryService(providers=[plex]).all_items()
     assert empty == {"provider": None, "items": []}
+
+
+# ---------------------------------------------------------------------------
+# Plex-style UI revamp Phase 1 — item detail (docs/PLEX_UI_PLAN.md §3)
+# ---------------------------------------------------------------------------
+
+_RICH_MOVIE = {
+    "Id": "itm-1", "Name": "Prisoners", "Type": "Movie", "ProductionYear": 2013,
+    "Overview": "Keller Dover is facing every parent's worst nightmare.",
+    "Genres": ["Crime", "Drama", "Thriller"],
+    "CommunityRating": 8.1,
+    "OfficialRating": "AU-MA 15+",
+    "Studios": [{"Name": "Warner Bros."}, {"Name": "Alcon"}],
+    "RunTimeTicks": 153000000000,  # 15,300 s
+    "PrimaryImageAspectRatio": 0.6666666666666666,
+    "ImageTags": {"Primary": "tag-1", "Logo": "logo-1"},
+    "BackdropImageTags": ["bkg-1"],
+    "UserData": {"Played": False, "PlaybackPositionTicks": 5000000000,
+                 "PlayCount": 3},  # 500 s resume
+    "People": [
+        {"Id": "p1", "Name": "Hugh Jackman", "Role": "Keller Dover",
+         "Type": "Actor", "PrimaryImageTag": True},
+        {"Id": "p2", "Name": "Jake Gyllenhaal", "Role": "Detective Loki",
+         "Type": "Actor"},
+        {"Id": "p3", "Name": "Denis Villeneuve", "Role": "Director",
+         "Type": "Director", "PrimaryImageTag": True},
+        {"Id": "p4", "Name": "Aaron Guzikowski", "Role": "Writer",
+         "Type": "Writer"},
+        {"Id": "p5", "Name": "A Producer", "Role": "Producer",
+         "Type": "Producer", "PrimaryImageTag": True},
+    ],
+}
+
+
+def _mock_single_item(item):
+    """urlopen -> /Users first (user list), then the single-item detail JSON."""
+    def side_effect(url, *args, **kwargs):
+        u = url if isinstance(url, str) else getattr(url, "full_url", "")
+        if "/System/Info/Public" in u:
+            return _FakeJson({"Id": "srv-abc", "ServerName": "rkm-jf", "Version": "10.10"})
+        if u.endswith("/Users?api_key=jkey"):
+            return _FakeJson([{"Id": "user-1", "Name": "admin"}])
+        return _FakeJson(item)
+    return side_effect
+
+
+def test_item_detail_normalises_movie():
+    """Phase 1: single-item fetch normalises into the Plex-preplay shape."""
+    from services.library.jellyfin import JellyfinLibraryProvider
+    side = _mock_single_item(_RICH_MOVIE)
+    with patch("urllib.request.urlopen", side_effect=side):
+        p = JellyfinLibraryProvider(config=_cfg())
+        d = p.item_detail("itm-1")
+    assert d is not None
+    assert d["type"] == "movie"
+    assert d["item_id"] == "itm-1"
+    assert d["name"] == "Prisoners"
+    assert d["year"] == 2013
+    assert d["runtime"] == 15300
+    assert d["runtime_ticks"] == 153000000000
+    assert "worst nightmare" in d["overview"]
+    assert d["genres"] == ["Crime", "Drama", "Thriller"]
+    assert d["community_rating"] == 8.1
+    assert d["official_rating"] == "AU-MA 15+"
+    assert d["studios"] == ["Warner Bros.", "Alcon"]
+    assert d["has_backdrop"] is True
+    assert abs(d["primary_aspect"] - 0.6666667) < 1e-6
+    assert d["play"] == {"played": False, "resume_ticks": 5000000000,
+                         "resume": 500, "play_count": 3}
+
+
+def test_detail_people_groups_actors_directors_writers_and_skips_crew():
+    """Phase 1: People grouping — actors keep the character role + headshot flag;
+    producers (and other crew) never surface in the preplay shape."""
+    from services.library.jellyfin import JellyfinLibraryProvider
+    people = JellyfinLibraryProvider._detail_people(_RICH_MOVIE["People"])
+    assert [a["name"] for a in people["actors"]] == ["Hugh Jackman", "Jake Gyllenhaal"]
+    assert people["actors"][0] == {"id": "p1", "name": "Hugh Jackman",
+                                   "role": "Keller Dover", "has_image": True}
+    assert people["actors"][1]["has_image"] is False  # no PrimaryImageTag
+    assert [d["name"] for d in people["directors"]] == ["Denis Villeneuve"]
+    assert [w["name"] for w in people["writers"]] == ["Aaron Guzikowski"]
+    # Producer entry is dropped entirely.
+    assert "A Producer" not in str(people)
+
+
+def test_item_detail_episode_carries_series_context():
+    """Phase 1: Episode items carry series/season context for drill-in UIs."""
+    from services.library.jellyfin import JellyfinLibraryProvider
+    d = JellyfinLibraryProvider._detail_from_item({
+        "Id": "ep-9", "Name": "Our Lord", "Type": "Episode",
+        "SeriesId": "srv-show", "SeriesName": "3 Body Problem",
+        "SeasonId": "sea-1", "ParentIndexNumber": 1, "IndexNumber": 4,
+        "RunTimeTicks": 36351680000, "UserData": {"Played": True, "PlayCount": 1},
+        "Genres": ["Sci-Fi"], "Studios": [{"Name": "Netflix"}],
+        "People": [{"Id": "p0", "Name": "Jovan Adepo", "Role": "Saul Durand",
+                    "Type": "Actor", "PrimaryImageTag": True}],
+    })
+    assert d is not None
+    assert d["type"] == "episode"
+    assert d["series"] == {"id": "srv-show", "name": "3 Body Problem"}
+    assert d["season_id"] == "sea-1"
+    assert d["season"] == 1 and d["episode"] == 4
+    assert d["runtime"] == 3635  # 36,351,680,000 ticks / 1e7
+    assert d["play"]["played"] is True
+
+
+def test_item_detail_absent_or_unknown_returns_none():
+    """Phase 1: no detail for unknown types / missing ids / unconfigured."""
+    from services.library.jellyfin import JellyfinLibraryProvider
+    # Unknown item type (BoxSet etc.) is not a preplay target.
+    assert JellyfinLibraryProvider._detail_from_item(
+        {"Id": "x1", "Name": "Collection", "Type": "BoxSet"}) is None
+    assert JellyfinLibraryProvider._detail_from_item({}) is None
+    assert JellyfinLibraryProvider._detail_from_item(None) is None
+    # Not configured → provider returns None without a network call.
+    assert JellyfinLibraryProvider(config=_cfg(JELLYFIN_API_KEY="")).item_detail("itm-1") is None
+    assert JellyfinLibraryProvider(config=_cfg()).item_detail("") is None
+
+
+def test_item_detail_network_failure_returns_none():
+    """Phase 1: a failed upstream fetch is a soft miss, never an exception."""
+    from services.library.jellyfin import JellyfinLibraryProvider
+    import urllib.error
+
+    def boom(url, *args, **kwargs):
+        raise urllib.error.URLError("jellyfin down")
+
+    prov = JellyfinLibraryProvider(config=_cfg())
+    with patch("urllib.request.urlopen", side_effect=boom):
+        assert prov.item_detail("itm-1") is None
+
+
+def test_library_service_item_detail_collapses_to_first_provider_with_result():
+    """Phase 1: LibraryService.item_detail skips ABC-default providers."""
+    from services.library.service import LibraryService
+    detail = {"type": "movie", "item_id": "a1", "name": "A",
+              "genres": [], "people": {"actors": [], "directors": [], "writers": []},
+              "play": {"played": False, "resume_ticks": 0, "resume": 0, "play_count": 0}}
+    plex = SimpleNamespace(name="plex", item_detail=lambda iid: None)
+    jellyfin = SimpleNamespace(name="jellyfin", item_detail=lambda iid: detail)
+    svc = LibraryService(providers=[plex, jellyfin])
+    assert svc.item_detail("a1") == detail
+    # No provider with a result -> graceful None.
+    assert LibraryService(providers=[plex]).item_detail("a1") is None

@@ -314,6 +314,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/jellyfin/person": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Jellyfin Person
+         * @description Proxy a Jellyfin person's headshot (``People.Id`` → Primary image).
+         *
+         *     Live-verified on Jellyfin 10.11.11: person images live at the same
+         *     ``/Items/{id}/Images/Primary`` shape as items, so this is the existing
+         *     poster proxy with a ``person`` semantic — lets the cast row render lazy
+         *     headshots without leaking the token. People with no headshot 404 (the
+         *     detail payload's ``has_image`` flag lets the UI skip those requests).
+         */
+        get: operations["jellyfin_person_api_jellyfin_person_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/jellyfin/backdrop": {
         parameters: {
             query?: never;
@@ -504,6 +530,26 @@ export interface paths {
          *     ``/api/jellyfin/subtitle?id=<item>&ms=<source>&index=<n>`` just works.
          */
         get: operations["jellyfin_subtitle_api_jellyfin_subtitle_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jellyfin/detail": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Jellyfin Detail
+         * @description Rich preplay metadata for one library item (movie/series/episode).
+         */
+        get: operations["jellyfin_detail_api_jellyfin_detail_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1710,6 +1756,38 @@ export interface operations {
             };
         };
     };
+    jellyfin_person_api_jellyfin_person_get: {
+        parameters: {
+            query?: {
+                id?: string;
+                width?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     jellyfin_backdrop_api_jellyfin_backdrop_get: {
         parameters: {
             query?: {
@@ -1928,6 +2006,37 @@ export interface operations {
                 /** @description MediaSourceId (defaults to the item id) */
                 ms?: string;
                 index?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    jellyfin_detail_api_jellyfin_detail_get: {
+        parameters: {
+            query?: {
+                id?: string;
             };
             header?: never;
             path?: never;

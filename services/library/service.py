@@ -108,6 +108,10 @@ class LibraryProvider(ABC):
         """Enumerate an item's audio + text-subtitle tracks. Default ``None``."""
         return None
 
+    def item_detail(self, item_id: str) -> Optional[dict]:
+        """Rich single-item metadata for a preplay/detail view. Default ``None``."""
+        return None
+
     def recently_watched(self, limit: int = 12) -> list[dict]:
         """Recently *finished* titles (most-recently-played first). Default ``[]``."""
         return []
@@ -369,6 +373,18 @@ class LibraryService:
                 result = p.playback_info(item_id)
             except Exception as e:
                 logger.warning("playback_info failed for %s: %s", p.name, e)
+                continue
+            if result:
+                return result
+        return None
+
+    def item_detail(self, item_id: str) -> Optional[dict]:
+        """Rich single-item metadata from the first provider able to serve it."""
+        for p in self._providers:
+            try:
+                result = p.item_detail(item_id)
+            except Exception as e:
+                logger.warning("item_detail failed for %s: %s", p.name, e)
                 continue
             if result:
                 return result

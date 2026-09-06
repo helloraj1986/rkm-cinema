@@ -20,6 +20,19 @@ def jellyfin_poster(id: str = Query(default=""), width: int = Query(default=500,
     return _proxy_image(id, width, "Primary")
 
 
+@router.get("/jellyfin/person")
+def jellyfin_person(id: str = Query(default=""), width: int = Query(default=300, ge=16, le=2000)):
+    """Proxy a Jellyfin person's headshot (``People.Id`` → Primary image).
+
+    Live-verified on Jellyfin 10.11.11: person images live at the same
+    ``/Items/{id}/Images/Primary`` shape as items, so this is the existing
+    poster proxy with a ``person`` semantic — lets the cast row render lazy
+    headshots without leaking the token. People with no headshot 404 (the
+    detail payload's ``has_image`` flag lets the UI skip those requests).
+    """
+    return _proxy_image(id, width, "Primary")
+
+
 @router.get("/jellyfin/backdrop")
 def jellyfin_backdrop(id: str = Query(default=""), width: int = Query(default=1600, ge=16, le=4000)):
     """Proxy a Jellyfin item's 16:9 backdrop (keyart) for rich player backdrops."""

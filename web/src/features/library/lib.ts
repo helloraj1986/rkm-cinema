@@ -4,7 +4,7 @@
  * React port is at 1:1 parity. Kept as pure functions so they're unit-testable
  * without a DOM (vitest node env).
  */
-import type { MediaItem } from "../../lib/api/client";
+import type { DetailPlay, MediaItem } from "../../lib/api/client";
 
 /** Poster proxy URL for a library item (Jellyfin id first, Plex thumb fallback). */
 export function posterUrl(item: Pick<MediaItem, "item_id" | "thumb">): string | null {
@@ -45,4 +45,47 @@ export function isSeries(item: MediaItem): boolean {
 /** Row heading used by both Continue Watching and Full Library. */
 export function rowHead(title: string, subtitle?: string): string {
   return subtitle ? `${title} · ${subtitle}` : title;
+}
+
+// ---------------------------------------------- Plex-style detail (Phase 2)
+/** Person-headshot proxy URL (token stays server-side). */
+export function personHeadshotUrl(personId: string, width = 200): string | null {
+  return personId ? `/api/jellyfin/person?id=${encodeURIComponent(personId)}&width=${width}` : null;
+}
+
+/** Plex-style runtime label: "2h 33m" / "44m" / "" (0 or unknown). */
+export function fmtRuntime(totalSeconds: number | null | undefined): string {
+  const s = Math.max(0, Math.floor(Number(totalSeconds) || 0));
+  if (s <= 0) return "";
+  const h = Math.floor(s / 3600);
+  const m = Math.round((s % 3600) / 60);
+  if (h > 0) {
+    return m > 0 ? `${h}h ${m}m` : `${h}h`;
+  }
+  return `${Math.max(1, m)}m`;
+}
+
+/** One-decimal community rating for the ★ readout (7.473 → "7.5"). */
+export function ratingText(rating: number | null | undefined): string {
+  const n = Number(rating);
+  if (!Number.isFinite(n) || n <= 0) return "";
+  return n.toFixed(1).replace(/\.0$/, "");
+}
+
+/** Resume % for the detail overlay's bar (0 when nothing to resume). */
+export function detailResumePercent(play: DetailPlay | undefined, runtimeSec: number | null | undefined): number {
+  const pos = Number(play?.resume || 0);
+  const rt = Number(runtimeSec || 0);
+  if (play?.played || pos <= 0 || rt <= 0) return 0;
+  return Math.min(100, Math.round((pos / rt) * 100));
+}
+
+/** True when the title is mid-play (resume applies) and not finished. */
+export function detailInProgress(play: DetailPlay | undefined): boolean {
+  return Boolean(!play?.played && Number(play?.resume || 0) > 0);
+}
+
+/** Primary preplay button label: "Resume" mid-play, else "Play". */
+export function detailPrimaryLabel(play: DetailPlay | undefined): string {
+  return detailInProgress(play) ? "Resume" : "Play";
 }

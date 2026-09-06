@@ -8,6 +8,7 @@ describe("frozen /api client surface", () => {
     expect(typeof api.getLibraryItems).toBe("function");
     expect(typeof api.getContinueWatching).toBe("function");
     expect(typeof api.getEpisodes).toBe("function");
+    expect(typeof api.getItemDetail).toBe("function"); // Plex preplay (detail)
   });
 
   it("classifies non-2xx as ApiError with a status", () => {

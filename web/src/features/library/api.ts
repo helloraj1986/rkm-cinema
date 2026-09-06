@@ -13,6 +13,20 @@ export function useRecentlyWatched() {
   return useQuery({ queryKey: ["library", "recently-watched"], queryFn: api.getRecentlyWatched });
 }
 
+/**
+ * Plex-style preplay metadata for one item. Fetched ONLY on detail open and
+ * cached per item (queryKey ["library","detail",id]) so re-opening the same
+ * title is instant (PLEX_UI_PLAN.md §2: detail data fetched on demand only).
+ */
+export function useItemDetail(itemId: string | null) {
+  return useQuery({
+    queryKey: ["library", "detail", itemId],
+    queryFn: () => api.getItemDetail(itemId as string),
+    enabled: Boolean(itemId),
+    staleTime: 5 * 60_000,
+  });
+}
+
 /** Trigger a backend library scan; invalidates the library queries on success. */
 export function useScanLibrary() {
   const qc = useQueryClient();

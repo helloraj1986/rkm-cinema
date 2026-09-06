@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import type { EpisodeShape } from "../../lib/api/client";
 import {
   episodeQueue, groupBySeason, nextEpisode, playLabel, startPosition,
+  nextPlayableEpisode, episodeCode,
   PLAYBACK_RATES, QUALITY_OPTIONS, qualityFor, AUTOPLAY_DELAY_MS,
   audioCodecNeedsTranscode, fmtTime, barTotal, isFiniteDuration, clampSeek,
   videoNeedsTranscode, pickStreamMode, streamModeLabel, playMethodForMode,
@@ -238,5 +239,35 @@ describe("HLS/MSE transport (player Phase 2)", () => {
     expect(hlsModeLabel("remux")).toBe("Remux (HLS)");
     expect(hlsModeLabel("transcode_audio")).toBe("Transcode (audio)");
     expect(hlsModeLabel("transcode")).toBe("Transcode");
+  });
+});
+
+describe("nextPlayableEpisode + episodeCode (series preplay auto-continue)", () => {
+  const mk = (id: string, season: number, episode: number, over: Partial<EpisodeShape> = {}): EpisodeShape => ({
+    id, name: `E${id}`, season, episode, played: false,
+    playback_position: 0, runtime: 1800, ...over,
+  });
+  it("prefers the in-progress episode", () => {
+    const eps = [
+      mk("a", 1, 1),
+      mk("b", 1, 2, { playback_position: 600 }),
+      mk("c", 1, 3),
+    ];
+    expect(nextPlayableEpisode(eps)?.id).toBe("b");
+  });
+  it("else the first unwatched, sorted by season/episode", () => {
+    const eps = [
+      mk("s2e1", 2, 1, { played: true }),
+      mk("s1e1", 1, 1),
+      mk("s1e2", 1, 2),
+    ];
+    expect(nextPlayableEpisode(eps)?.id).toBe("s1e1");
+  });
+  it("null when everything is watched", () => {
+    const eps = [mk("a", 1, 1, { played: true }), mk("b", 1, 2, { played: true })];
+    expect(nextPlayableEpisode(eps)).toBeNull();
+  });
+  it("episodeCode formats S/E", () => {
+    expect(episodeCode({ season: 1, episode: 4 })).toBe("S1E4");
   });
 });

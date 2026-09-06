@@ -3,10 +3,10 @@ import { useLibraryItems, useContinueWatching, useRecentlyWatched, useScanLibrar
 import { isSeries } from "./lib";
 import { MediaCard } from "./MediaCard";
 import { ContinueWatchingRow } from "./ContinueWatchingRow";
+import { ItemDetail } from "./ItemDetail";
 import { Player, type PlayTarget } from "../playback/Player";
-import { EpisodePicker } from "../playback/EpisodePicker";
 import { startPosition, type QueueEntry } from "../playback/lib";
-import type { MediaItem, EpisodeShape } from "../../lib/api/client";
+import type { EpisodeShape, MediaItem } from "../../lib/api/client";
 
 interface PlayState {
   item: PlayTarget;
@@ -22,7 +22,7 @@ export function LibraryView() {
   const scan = useScanLibrary();
   const mutateState = useMutateItemState();
   const [playing, setPlaying] = useState<PlayState | null>(null);
-  const [picking, setPicking] = useState<{ seriesId: string; title: string } | null>(null);
+  const [detail, setDetail] = useState<MediaItem | null>(null);
 
   const all = items.data?.items ?? [];
   const movies = all.filter((i) => !isSeries(i)).length;
@@ -32,22 +32,42 @@ export function LibraryView() {
     mutateState.mutate({ itemId: item.item_id, watched: !item.played });
   }
 
-  function handlePlay(item: MediaItem) {
+  /** Whole-card click → Plex-style detail/preplay overlay (movie or series). */
+  function handleOpenDetail(item: MediaItem) {
+    setDetail(item);
+  }
+
+  /** Hover primary action: movies play now; series open detail (episodes live there). */
+  function handleQuickPlay(item: MediaItem) {
     if (isSeries(item)) {
-      setPicking({ seriesId: item.item_id, title: item.title });
+      setDetail(item);
       return;
     }
     setPlaying({ item: { item_id: item.item_id, title: item.title }, resume: item.playback_position || 0, queue: [], runtime: item.runtime || 0 });
   }
 
+  /** Movie Play/Resume from the detail overlay. */
+  function handlePlayMovie(itemId: string, title: string, resume: number, runtime: number) {
+    setDetail(null);
+    setPlaying({ item: { item_id: itemId, title }, resume, queue: [], runtime });
+  }
+
+  /** Episode Play/Resume from the detail overlay (queue rides for Up Next). */
   function handlePlayEpisode(ep: EpisodeShape, queue: QueueEntry[]) {
-    setPicking(null);
+    setDetail(null);
     setPlaying({ item: { item_id: ep.id, title: ep.name }, resume: startPosition(ep), queue, runtime: ep.runtime || 0 });
   }
 
   function handleSwitch(entry: QueueEntry) {
     setPlaying({ item: { item_id: entry.id, title: entry.name }, resume: entry.position, queue: playing?.queue ?? [], runtime: entry.runtime ?? playing?.runtime ?? 0 });
   }
+
+  const cardProps = (item: MediaItem) => ({
+    item,
+    onQuickPlay: handleQuickPlay,
+    onOpenDetail: handleOpenDetail,
+    onToggleWatched: handleToggleWatched,
+  });
 
   return (
     <div className="flex flex-col gap-8">
@@ -72,7 +92,8 @@ export function LibraryView() {
 
       <ContinueWatchingRow
         items={continueWatching.data?.items ?? []}
-        onPlay={handlePlay}
+        onQuickPlay={handleQuickPlay}
+        onOpenDetail={handleOpenDetail}
         onToggleWatched={handleToggleWatched}
       />
 
@@ -84,12 +105,7 @@ export function LibraryView() {
           </h2>
           <div className="flex flex-wrap gap-3">
             {recentlyWatched.data.items.map((item) => (
-              <MediaCard
-                key={item.item_id}
-                item={item}
-                onPlay={handlePlay}
-                onToggleWatched={handleToggleWatched}
-              />
+              <MediaCard key={item.item_id} {...cardProps(item)} />
             ))}
           </div>
         </section>
@@ -107,18 +123,20 @@ export function LibraryView() {
         ) : (
           <div className="flex flex-wrap gap-3">
             {all.map((item) => (
-              <MediaCard key={item.item_id} item={item} onPlay={handlePlay} onToggleWatched={handleToggleWatched} />
+              <MediaCard key={item.item_id} {...cardProps(item)} />
             ))}
           </div>
         )}
       </section>
 
-      {picking && (
-        <EpisodePicker
-          seriesId={picking.seriesId}
-          title={picking.title}
-          onPlay={handlePlayEpisode}
-          onClose={() => setPicking(null)}
+      {detail && (
+        <ItemDetail
+          key={detail.item_id}
+          item={detail}
+          onPlayMovie={handlePlayMovie}
+          onPlayEpisode={handlePlayEpisode}
+          onToggleWatched={handleToggleWatched}
+          onClose={() => setDetail(null)}
         />
       )}
       {playing && (

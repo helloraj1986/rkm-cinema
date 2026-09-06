@@ -93,6 +93,68 @@ export interface ItemStateResult {
   play_count: number;
 }
 
+/** One cast/credit person in the detail payload (people group entry). */
+export interface DetailPerson {
+  id: string;
+  name: string;
+  /** Character (actors) or credit role. */
+  role: string;
+  /** Jellyfin reports a headshot (people without one 404 on the proxy). */
+  has_image: boolean;
+}
+
+export interface DetailPeople {
+  actors: DetailPerson[];
+  directors: DetailPerson[];
+  writers: DetailPerson[];
+}
+
+/** Play state in the detail payload (ticks + ergonomic seconds). */
+export interface DetailPlay {
+  played: boolean;
+  resume_ticks: number;
+  /** Resume position in seconds (ticks / 1e7). */
+  resume: number;
+  play_count: number;
+}
+
+/** Series context carried by Episode-type detail items. */
+export interface DetailSeriesContext {
+  id: string;
+  name: string;
+}
+
+/**
+ * GET /api/jellyfin/detail — the Plex-style preplay payload
+ * (docs/PLEX_UI_PLAN.md): synopsis/genres/ratings/studios/cast/backdrop facts.
+ */
+export interface ItemDetail {
+  type: "movie" | "tv" | "episode";
+  item_id: string;
+  name: string;
+  year?: number | null;
+  /** Runtime in seconds (0 for Series records — episodes carry their own). */
+  runtime?: number;
+  runtime_ticks?: number;
+  overview?: string;
+  genres?: string[];
+  /** Jellyfin community rating on a 0–10 scale (e.g. 7.473). */
+  community_rating?: number | null;
+  /** Content rating (e.g. "AU-MA 15+"). */
+  official_rating?: string | null;
+  studios?: string[];
+  people?: DetailPeople;
+  has_backdrop?: boolean;
+  /** Poster aspect ratio (2:3 posters ≈ 0.667). */
+  primary_aspect?: number | null;
+  play: DetailPlay;
+  /** Present when the detail item is an Episode. */
+  series?: DetailSeriesContext;
+  season_id?: string;
+  season?: number;
+  episode?: number;
+}
+
 /** One audio/subtitle track from GET /api/jellyfin/playback-info. */
 export interface PlaybackTrack {
   index: number;
@@ -196,6 +258,9 @@ export const api = {
   getEpisodes: (seriesId: string) => getJson<EpisodesShape>(`/library/series/${encodeURIComponent(seriesId)}/episodes`),
   scanLibrary: () => getJson<ScanResult>("/library/scan"),
   getRecentlyWatched: () => getJson<LibraryItemsShape>("/library/recently-watched"),
+  /** Plex-style preplay metadata for one item (fetched on detail open). */
+  getItemDetail: (itemId: string) =>
+    getJson<ItemDetail>(`/jellyfin/detail?id=${encodeURIComponent(itemId)}`),
   mutateItemState: (itemId: string, watched: boolean) =>
     postJson<ItemStateResult>(`/library/${encodeURIComponent(itemId)}/state`, { watched }),
   /** Fire-and-forget playback position report (soft no when backend absent). */

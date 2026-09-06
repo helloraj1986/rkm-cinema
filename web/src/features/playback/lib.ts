@@ -321,3 +321,24 @@ export function playLabel(ep: EpisodeShape): string {
 export function startPosition(ep: EpisodeShape): number {
   return ep.played ? 0 : ep.playback_position || 0;
 }
+
+/**
+ * The episode a Plex-style series preplay "Play" should start on: the first
+ * in-progress (resume) episode, else the first unwatched, else null when the
+ * whole series is watched (UI then offers a replay of S1E1).
+ */
+export function nextPlayableEpisode(episodes: EpisodeShape[]): EpisodeShape | null {
+  const sorted = [...episodes].sort(
+    (a, b) => (a.season - b.season) || (a.episode - b.episode),
+  );
+  return (
+    sorted.find((e) => !e.played && (e.playback_position || 0) > 0) ??
+    sorted.find((e) => !e.played) ??
+    null
+  );
+}
+
+/** "S1E4" code for an episode row/preplay label. */
+export function episodeCode(ep: Pick<EpisodeShape, "season" | "episode">): string {
+  return `S${ep.season}E${ep.episode}`;
+}

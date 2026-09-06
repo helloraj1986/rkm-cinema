@@ -211,6 +211,20 @@ export const api = {
     const qs = q.toString();
     return `${BASE}/jellyfin/stream/${encodeURIComponent(itemId)}${qs ? `?${qs}` : ""}`;
   },
+  /** Same-origin HLS master-playlist URL for an item (HLS plan Phases 1–2).
+   *  The proxy strips the token and serves rewritten media/segment URIs. */
+  hlsMasterUrl: (itemId: string, opts?: {
+    mode: Exclude<StreamOptions["mode"], "direct" | undefined>;
+    audio_stream_index?: number;
+    max_bitrate?: number;
+  }) => {
+    const q = new URLSearchParams();
+    if (opts?.mode) q.set("mode", opts.mode);
+    if (opts?.audio_stream_index) q.set("audio_stream_index", String(opts.audio_stream_index));
+    if (opts?.max_bitrate) q.set("max_bitrate", String(opts.max_bitrate));
+    const qs = q.toString();
+    return `${BASE}/jellyfin/hls/${encodeURIComponent(itemId)}/master.m3u8${qs ? `?${qs}` : ""}`;
+  },
   /** Audio + text-subtitle track lists for the player pickers. */
   playbackInfo: (itemId: string) => getJson<PlaybackInfo>(`/jellyfin/playback-info?id=${encodeURIComponent(itemId)}`),
   /** Proxy URL for a text subtitle (WebVTT) stream. */

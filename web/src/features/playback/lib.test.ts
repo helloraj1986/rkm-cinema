@@ -6,6 +6,7 @@ import {
   audioCodecNeedsTranscode, fmtTime, barTotal, isFiniteDuration, clampSeek,
   videoNeedsTranscode, pickStreamMode, streamModeLabel, playMethodForMode,
   parseVtt, parseVttTime, activeCueText,
+  usesHls, nextHlsMode, hlsEngineFor, hlsModeLabel, HLS_LADDER,
 } from "./lib";
 
 const ep = (id: string, season: number, episode: number, played = false, position = 0): EpisodeShape => ({
@@ -201,5 +202,41 @@ Last`;
     expect(activeCueText(cues, 8)).toBeNull();
     expect(activeCueText(cues, 422)).toBe("mid");
     expect(activeCueText(cues, 9)).toBeNull();
+  });
+});
+
+describe("HLS/MSE transport (player Phase 2)", () => {
+  it("usesHls is true for every non-direct mode", () => {
+    expect(usesHls("direct")).toBe(false);
+    expect(usesHls("remux")).toBe(true);
+    expect(usesHls("transcode_audio")).toBe(true);
+    expect(usesHls("transcode")).toBe(true);
+  });
+  it("the HLS ladder escalates remux → transcode_audio → transcode → give-up", () => {
+    expect(HLS_LADDER).toEqual(["remux", "transcode_audio", "transcode"]);
+    // from a direct-play failure the first HLS attempt is remux (copy-copy)
+    expect(nextHlsMode("direct")).toBe("remux");
+    expect(nextHlsMode("remux")).toBe("transcode_audio");
+    expect(nextHlsMode("transcode_audio")).toBe("transcode");
+    expect(nextHlsMode("transcode")).toBeNull();
+  });
+  it("hlsEngineFor prefers native HLS on Apple mobile, hls.js elsewhere", () => {
+    // Safari/iOS (Apple mobile): canPlayType maybe/probably → native HLS.
+    expect(hlsEngineFor(() => "maybe", false, true)).toBe("native");
+    expect(hlsEngineFor(() => "probably", false, true)).toBe("native");
+    // Desktop Chrome/Firefox/Edge: no Apple UA → hls.js when MSE is available —
+    // even recent Chromium that advertises canPlayType("maybe") (native TS
+    // demuxers proved unreliable for Jellyfin segments; hls.js transmuxes).
+    expect(hlsEngineFor(() => "maybe", true, false)).toBe("hlsjs");
+    expect(hlsEngineFor(() => "", true, false)).toBe("hlsjs");
+    expect(hlsEngineFor(() => "no", true, true)).toBe("hlsjs"); // canPlayType no → not native
+    // no MSE at all → none (ancient browser; error path)
+    expect(hlsEngineFor(() => "", false, false)).toBe("none");
+  });
+  it("hlsModeLabel is a clear per-mode chip label", () => {
+    expect(hlsModeLabel("direct")).toBe("Direct play");
+    expect(hlsModeLabel("remux")).toBe("Remux (HLS)");
+    expect(hlsModeLabel("transcode_audio")).toBe("Transcode (audio)");
+    expect(hlsModeLabel("transcode")).toBe("Transcode");
   });
 });

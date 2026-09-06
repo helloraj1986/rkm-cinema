@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react";
+import Hls from "hls.js";
 import { api, type PlaybackInfo, type ProgressPayload } from "../../lib/api/client";
 import {
   nextEpisode, qualityFor, AUTOPLAY_DELAY_MS, QUALITY_OPTIONS, PLAYBACK_RATES,
-  fmtTime, isFiniteDuration, clampSeek, pickStreamMode, streamModeLabel,
-  playMethodForMode, parseVtt, activeCueText, type VttCue, type QueueEntry,
+  fmtTime, isFiniteDuration, clampSeek, pickStreamMode, hlsModeLabel,
+  playMethodForMode, usesHls, hlsEngineFor, nextHlsMode, type HlsEngine,
+  parseVtt, activeCueText, type VttCue, type QueueEntry,
   type StreamMode,
 } from "./lib";
 
@@ -13,24 +15,23 @@ export interface PlayTarget {
 }
 
 const SEEK_STEP = 10; // seconds for ← / → keys
-
-/** Escalation ladder when a stream fails (each rung re-encodes more). */
-const LADDER: StreamMode[] = ["direct", "remux", "transcode_audio", "transcode"];
+const MPEGURL = "application/vnd.apple.mpegurl";
 
 /**
- * In-app player with HONEST stream routing:
+ * In-app player with Plex-style transport (HLS/MSE plan):
  *
- * - **direct** (Static file, HTTP-range seekable) for browser-safe MP4;
- * - **remux** (copy/copy → MP4) for MKV-style containers the browser can't
- *   index up-front (solves duration=Infinity and gives a proper total);
- * - **transcode_audio** (video copy + AAC) for EAC3/AC3/DTS/TrueHD tracks;
- * - **transcode** (H.264 + AAC) for unsafe video codecs OR the quality picker.
+ * - **direct** (Static file, HTTP-range seekable) for browser-safe MP4 — kept
+ *   on the native <video> path with byte-range currentTime seeks.
+ * - **remux / transcode_audio / transcode** ride **HLS** — hls.js on
+ *   Chrome/Firefox/Edge over the same-origin proxy
+ *   (`/api/jellyfin/hls/{id}/master.m3u8`), native HLS on Safari/iOS.
  *
- * Static=true IGNORES AudioStreamIndex/MaxStreamingBitrate (verified live), so
- * any quality/track request forces a non-direct mode. Non-direct streams are
- * chunked MP4 (no byte ranges) — seeking RESTARTS the stream at
- * `start_time_ticks`, and the bar keeps an offset so position stays seamless.
- * On a media error the player escalates up the ladder before giving up.
+ * Position = plain `video.currentTime` on the ITEM timeline for every mode
+ * (the offset/restart-seek model is deleted): HLS seeks by asking the server
+ * for the segment at the clicked time — a silent no-op seek is structurally
+ * impossible. Audio/quality changes rebuild the master URL at the same
+ * position; media errors escalate along the audio-aware HLS ladder
+ * (remux → transcode_audio → transcode) before a friendly give-up.
  *
  * The control bar's total = the API runtime hint (scan metadata) until the
  * stream duration resolves — length + progress are correct from the start.
@@ -54,10 +55,13 @@ export function Player({
   const videoRef = useRef<HTMLVideoElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const resumeRef = useRef(Math.max(0, Number(resume) || 0));
-  // Seconds into the ITEM where the current stream begins (0 = direct from 0).
-  const baseRef = useRef(0);
-  // Direct-mode seek to apply once duration is known (resume / return-to-direct).
-  const pendingSeekRef = useRef<number | null>(resumeRef.current > 0 ? resumeRef.current : null);
+  const engineStartRef = useRef(resumeRef.current); // where the NEXT engine begins
+  const hasStartedRef = useRef(false); // any real playback yet? (resume vs live pos)
+  // Position to seek once the media element has metadata (direct/native-HLS
+  // resume + mid-play mode switches that plain-load a new URL).
+  const pendingSeekRef = useRef<number | null>(null);
+  const hlsRef = useRef<Hls | null>(null);
+  const engineTypeRef = useRef<HlsEngine | null>(null);
   const lastReportRef = useRef(0);
   const queueRef = useRef(queue);
   const autoTimerRef = useRef<number | null>(null);
@@ -65,14 +69,14 @@ export function Player({
   const onSwitchRef = useRef(onSwitch);
   const modeRef = useRef<StreamMode>("direct");
   const rateRef = useRef(1);
-  const srcRef = useRef("");
+  const srcKeyRef = useRef("");
   useEffect(() => {
     queueRef.current = queue;
     onSwitchRef.current = onSwitch;
   }, [queue, onSwitch]);
 
   const [error, setError] = useState<string | null>(null);
-  const [switching, setSwitching] = useState(true); // stream (re)loading
+  const [switching, setSwitching] = useState(true); // engine (re)loading
   const [upNext, setUpNext] = useState<QueueEntry | null>(null);
   const [autoSecs, setAutoSecs] = useState(0);
   const [info, setInfo] = useState<PlaybackInfo | null>(null);
@@ -80,13 +84,13 @@ export function Player({
   const [subIndex, setSubIndex] = useState<number | null>(null); // null = off
   const [quality, setQuality] = useState("Original");
   const [rate, setRate] = useState(1);
-  // Stream session: how Jellyfin serves it + where it starts (restart-seek).
+  // How Jellyfin serves it: direct (progressive) or an HLS mode (remux /
+  // transcode_audio / transcode). The mode chip shows the label.
   const [mode, setMode] = useState<StreamMode>("direct");
-  const [startAt, setStartAt] = useState(0);
 
   // Custom control bar state.
   const [playing, setPlaying] = useState(false);
-  const [cur, setCur] = useState(0); // display position = offset + local time
+  const [cur, setCur] = useState(0); // display position = video.currentTime
   const [mediaDur, setMediaDur] = useState(0); // stream duration once finite
   const [muted, setMuted] = useState(false);
   const [volume, setVolume] = useState(1);
@@ -94,10 +98,11 @@ export function Player({
   const barRef = useRef<HTMLDivElement>(null);
   const [scrub, setScrub] = useState<number | null>(null);
   const scrubbingRef = useRef(false);
-  // Auto-play after the next stream (re)load — preserved through seeks/quality
-  // switches so a pause + seek doesn't unexpectedly start playing.
+  // Auto-play after the next engine (re)build — preserved through mode/quality
+  // switches so a pause + change doesn't unexpectedly start playing.
   const autoPlayRef = useRef(true);
-  // Subtitle overlay state (item-time cues, works across restart-seeks).
+  // Subtitle overlay state (item-time cues — trivially aligned now the media
+  // timeline IS the item timeline).
   const [subText, setSubText] = useState<string | null>(null);
   const subCuesRef = useRef<VttCue[]>([]);
 
@@ -121,69 +126,145 @@ export function Player({
     : null;
 
   const bitrate = qualityFor(quality);
-  const src = api.streamUrl(item.item_id, {
-    ...(mode !== "direct" ? { mode, start_time_ticks: Math.round(startAt * 1e7) } : {}),
+  // Direct = progressive stream URL (browser byte-range seeks). HLS modes =
+  // same-origin master URL built with the mode's codec pair.
+  const directSrc = api.streamUrl(item.item_id, {
     ...(audioIndex > 0 ? { audio_stream_index: audioIndex } : {}),
-    ...(bitrate && mode !== "direct" && mode !== "remux" ? { max_bitrate: bitrate } : {}),
   });
+  const hlsSrc = usesHls(mode)
+    ? api.hlsMasterUrl(item.item_id, {
+        mode,
+        ...(audioIndex > 0 ? { audio_stream_index: audioIndex } : {}),
+        ...(bitrate && mode !== "remux" ? { max_bitrate: bitrate } : {}),
+      })
+    : "";
+  const engineKey = usesHls(mode) ? hlsSrc : directSrc;
   const backdrop = api.backdropUrl(item.item_id);
   // Display total: the API runtime (scan metadata) is authoritative; fall back
-  // to the resolved stream duration (+offset for restart-seek streams).
+  // to the resolved stream duration. HLS VOD durations resolve to ~runtime.
   const total =
     runtime > 0
       ? runtime
       : isFiniteDuration(mediaDur)
-        ? mediaDur + baseRef.current
+        ? mediaDur
         : 0;
 
-  const posNow = () => baseRef.current + (videoRef.current ? videoRef.current.currentTime || 0 : 0);
-  const seekBase = () => {
-    const p = posNow();
-    return p > 0 ? p : resumeRef.current;
-  };
+  const posNow = () => (videoRef.current ? videoRef.current.currentTime || 0 : 0);
+  // Where the NEXT engine load should start: the live position once anything
+  // has played, otherwise the mount resume point.
+  const currentTarget = () => (hasStartedRef.current ? posNow() : resumeRef.current);
   // Paint a display position + the active subtitle cue (item-time based).
   const paint = (p: number) => {
     setCur(p);
     setSubText(activeCueText(subCuesRef.current, p));
   };
 
-  // Apply a mode/position transition (info-driven auto-route, user quality or
-  // audio changes, and the error-ladder escalations all land here).
-  const transitionTo = (next: StreamMode, atSeconds?: number) => {
-    const v0 = videoRef.current;
-    autoPlayRef.current = v0 ? !v0.paused : autoPlayRef.current;
-    const at = atSeconds ?? seekBase();
-    pendingSeekRef.current = next === "direct" && at > 0 ? at : null;
-    const nextBase = next === "direct" ? 0 : at;
-    baseRef.current = nextBase;
-    setStartAt(nextBase);
+  // Switch the engine (mode / desired-route / quality / audio / escalation).
+  // HLS rebuilds the master URL; the build effect restarts at `at` so the
+  // switch is seamless. Direct keeps the plain <video> reload path.
+  const switchModeTo = (next: StreamMode, at?: number) => {
+    const v = videoRef.current;
+    autoPlayRef.current = v ? !v.paused : autoPlayRef.current;
+    engineStartRef.current = at ?? currentTarget();
     setMode(next);
     setMediaDur(0);
     setError(null);
     setSwitching(true);
+    paint(engineStartRef.current);
   };
 
   // Auto-route once playback-info resolves (or when quality/audio change).
   useEffect(() => {
     if (!desiredMode || desiredMode === mode) return;
-    transitionTo(desiredMode);
+    switchModeTo(desiredMode);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [desiredMode]);
 
-  // Reload <video> whenever the stream URL changes (mode/quality/track/seek).
+  // (Re)build the playback engine when the source changes. Mode switches,
+  // quality/audio changes and escalations all land here via engineKey.
   useEffect(() => {
     const v = videoRef.current;
-    if (!v || srcRef.current === src) return;
-    srcRef.current = src;
-    paint(baseRef.current);
-    try {
-      v.load();
-      if (autoPlayRef.current) void v.play().catch(() => {});
-    } catch {
-      /* playback resumes on user gesture if autoplay is blocked */
+    if (!v || !engineKey || engineKey === srcKeyRef.current) return;
+    srcKeyRef.current = engineKey;
+    if (engineTypeRef.current === null) {
+      const ua = navigator.userAgent || "";
+      // iPadOS 13+ masquerades as a Macintosh UA — detect via touch support.
+      const appleMobile =
+        /iPhone|iPad|iPod/.test(ua) ||
+        (/Macintosh/.test(ua) && typeof window !== "undefined" && "ontouchstart" in window && navigator.maxTouchPoints > 1);
+      engineTypeRef.current = hlsEngineFor(
+        () => v.canPlayType(MPEGURL),
+        Hls.isSupported(),
+        appleMobile,
+      );
     }
+    const engineType = engineTypeRef.current;
+    const isHls = usesHls(modeRef.current);
+    const start = engineStartRef.current;
+    engineStartRef.current = 0; // consumed by this build
+    setSwitching(true);
+
+    const teardownHls = () => {
+      if (hlsRef.current) {
+        hlsRef.current.destroy();
+        hlsRef.current = null;
+      }
+      v.removeAttribute("src");
+      try {
+        v.load();
+      } catch {
+        /* element may be detached during unmount */
+      }
+    };
+    teardownHls();
+
+    if (!isHls) {
+      // Native direct play (browser-safe MP4) — byte-range seek via currentTime.
+      pendingSeekRef.current = start > 0 ? start : null;
+      v.src = engineKey;
+      try {
+        v.load();
+        if (autoPlayRef.current) void v.play().catch(() => {});
+      } catch {
+        /* playback resumes on user gesture if autoplay is blocked */
+      }
+      return;
+    }
+
+    if (engineType === "native") {
+      // Safari/iOS native HLS — no hls.js needed; seek = currentTime set.
+      pendingSeekRef.current = start > 0 ? start : null;
+      v.src = engineKey;
+      try {
+        v.load();
+        if (autoPlayRef.current) void v.play().catch(() => {});
+      } catch {
+        /* resume on gesture */
+      }
+      return;
+    }
+
+    if (engineType === "hlsjs") {
+      const hls = new Hls({
+        ...(start > 0 ? { startPosition: start } : {}),
+        maxBufferLength: 30,
+      });
+      hlsRef.current = hls;
+      hls.loadSource(engineKey);
+      hls.attachMedia(v);
+      hls.on(Hls.Events.ERROR, (_evt, data) => {
+        if (data.fatal) escalateHls();
+      });
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        if (autoPlayRef.current) void v.play().catch(() => {});
+      });
+      return;
+    }
+
+    // engineType === "none": no MSE and no native HLS — can't play HLS.
+    setError("Your browser can't play HLS streams (no MediaSource support).");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [src]);
+  }, [engineKey, item.item_id]);
 
   // Load track info once per item (audio/subtitle pickers + routing facts).
   useEffect(() => {
@@ -193,8 +274,11 @@ export function Player({
     setSubIndex(null);
     setQuality("Original");
     setMode("direct");
-    setStartAt(0);
-    baseRef.current = 0;
+    setMediaDur(0);
+    srcKeyRef.current = "";
+    engineTypeRef.current = null;
+    engineStartRef.current = resumeRef.current;
+    hasStartedRef.current = false;
     pendingSeekRef.current = resumeRef.current > 0 ? resumeRef.current : null;
     api
       .playbackInfo(item.item_id)
@@ -206,13 +290,18 @@ export function Player({
       });
     return () => {
       alive = false;
+      if (hlsRef.current) {
+        hlsRef.current.destroy();
+        hlsRef.current = null;
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [item.item_id]);
 
   // Fetch + parse the selected subtitle stream as item-time cues. Native
-  // <track> doesn't survive stream restarts / offset timelines reliably, so the
-  // overlay renders from these cues instead (aligned via posNow()).
+  // <track> doesn't survive engine switches reliably, so the overlay renders
+  // from these cues instead (aligned via currentTime — trivially correct on
+  // the HLS timeline).
   useEffect(() => {
     let alive = true;
     subCuesRef.current = [];
@@ -263,25 +352,34 @@ export function Player({
     }, 1000);
   };
 
+  // Plain currentTime seek for EVERY mode. Direct MP4 byte-range-seeks; HLS
+  // (hls.js / native) fetches the segment at the target — the transport no
+  // longer needs restart-at-StartTimeTicks or an offset model.
   const seekTo = (seconds: number) => {
     const v = videoRef.current;
     if (!v) return;
     const target = clampSeek(seconds, total > 0 ? total : seconds);
-    if (modeRef.current === "direct") {
-      // Static file: HTTP-range seek straight on the media element.
-      try {
-        v.currentTime = target;
-        paint(target);
-      } catch {
-        /* not seekable yet — position stays visible via the bar */
-      }
-    } else {
-      // Chunked remux/transcode: ONE restart at the target offset (scrubbing
-      // commits on release, so a drag never fires a restart per pixel).
-      if (Math.abs(posNow() - target) < 2) return;
-      transitionTo(modeRef.current, target);
+    try {
+      v.currentTime = target;
       paint(target);
+    } catch {
+      /* not seekable yet — position stays visible via the bar */
     }
+  };
+
+  const escalateHls = () => {
+    const v = videoRef.current;
+    const wasPlaying = v ? !v.paused : false;
+    autoPlayRef.current = wasPlaying;
+    const next = nextHlsMode(modeRef.current);
+    if (!next) {
+      reportNow("stopped");
+      setError(
+        "Couldn't play this file in the browser — even HLS transcoding failed. Open it in Jellyfin directly instead.",
+      );
+      return;
+    }
+    switchModeTo(next);
   };
 
   const togglePlay = () => {
@@ -364,39 +462,32 @@ export function Player({
     else void el.requestFullscreen().catch(() => {});
   };
 
+  const reportNow = (event: ProgressPayload["event"]) => {
+    const pos = posNow();
+    if (resumeRef.current > 0 && pos < resumeRef.current - 1) return;
+    const ticks = Math.round(pos * 1e7);
+    void api
+      .reportProgress({
+        item_id: item.item_id,
+        position_ticks: ticks,
+        is_paused: false,
+        event,
+        play_method: playMethodForMode(modeRef.current),
+      })
+      .catch(() => {});
+  };
+
   useEffect(() => {
     const v = videoRef.current;
     if (!v) return;
 
-    const report = (event: ProgressPayload["event"]) => {
-      const pos = posNow();
-      if (resumeRef.current > 0 && pos < resumeRef.current - 1) return;
-      const ticks = Math.round(pos * 1e7);
-      void api
-        .reportProgress({
-          item_id: item.item_id,
-          position_ticks: ticks,
-          is_paused: false,
-          event,
-          play_method: playMethodForMode(modeRef.current),
-        })
-        .catch(() => {});
-    };
-
-    const escalate = () => {
-      const idx = LADDER.indexOf(modeRef.current);
-      const next = idx >= 0 && idx < LADDER.length - 1 ? LADDER[idx + 1] : null;
-      if (!next) {
-        report("stopped");
-        setError("Couldn't play this file in the browser — even transcoding failed. Open it in Jellyfin directly instead.");
-        return;
-      }
-      transitionTo(next);
-    };
+    const report = (event: ProgressPayload["event"]) => reportNow(event);
 
     const onMeta = () => {
       if (isFiniteDuration(v.duration)) setMediaDur(v.duration);
-      // Direct-mode resume / return: seek once duration is known.
+      hasStartedRef.current = true;
+      // Direct / native-HLS resume + mid-play reloads: seek once duration is
+      // known (hls.js instead consumes startPosition at build time).
       const pending = pendingSeekRef.current;
       if (pending != null && pending > 0) {
         const d = isFiniteDuration(v.duration) ? v.duration : Number.POSITIVE_INFINITY;
@@ -404,12 +495,12 @@ export function Player({
           try {
             v.currentTime = pending;
           } catch {
-            /* ignore seek failure — position stays visible via offset */
+            /* ignore seek failure — position stays visible via the bar */
           }
         }
         pendingSeekRef.current = null;
       }
-      paint(baseRef.current + (v.currentTime || 0));
+      paint(v.currentTime || 0);
     };
     const onDur = () => {
       if (isFiniteDuration(v.duration)) setMediaDur(v.duration);
@@ -423,7 +514,10 @@ export function Player({
       }
       report("start");
     };
-    const onPlaying = () => setSwitching(false);
+    const onPlaying = () => {
+      hasStartedRef.current = true;
+      setSwitching(false);
+    };
     const onCanPlay = () => {
       // Autoplay may be blocked/paused: clear the "Preparing stream…" spinner.
       if (v.paused) setSwitching(false);
@@ -433,12 +527,17 @@ export function Player({
       report("stopped");
     };
     const onError = () => {
-      if (modeRef.current !== "transcode") {
-        escalate(); // ladder: direct → remux → transcode_audio → transcode
-      } else {
+      // hls.js reports its own fatal errors (escalateHls); don't double-fire.
+      if (hlsRef.current) return;
+      const next = nextHlsMode(modeRef.current);
+      if (!next) {
         report("stopped");
-        setError("Couldn't play this file in the browser — the codec may not be supported. Open it in Jellyfin directly instead.");
+        setError(
+          "Couldn't play this file in the browser — the codec may not be supported. Open it in Jellyfin directly instead.",
+        );
+        return;
       }
+      switchModeTo(next);
     };
     const onTime = () => {
       paint(posNow());
@@ -558,7 +657,7 @@ export function Player({
           {item.title}
           {desiredMode && (
             <span className="ml-2 rounded bg-zinc-800/80 px-1.5 py-0.5 align-middle text-[10px] font-medium tracking-wide text-zinc-400">
-              {streamModeLabel(mode)}
+              {hlsModeLabel(mode)}
             </span>
           )}
         </div>
@@ -576,7 +675,6 @@ export function Player({
             ref={videoRef}
             autoPlay
             playsInline
-            src={src}
             onClick={togglePlay}
             className="max-h-full max-w-full cursor-pointer rounded-lg bg-black shadow-2xl"
           />
@@ -630,8 +728,8 @@ export function Player({
             </div>
           )}
 
-          {/* Subtitle overlay — item-time cues parsed from the VTT proxy, aligned
-              via the offset position model (survives restart-seek streams). */}
+          {/* Subtitle overlay — item-time cues parsed from the VTT proxy. The
+              HLS/direct timeline IS the item timeline, so alignment is exact. */}
           {subText && (
             <div className="pointer-events-none absolute inset-x-0 bottom-16 z-[5] flex justify-center px-6">
               <div className="max-w-[85%] whitespace-pre-line rounded bg-black/60 px-3 py-1 text-center text-base text-white [text-shadow:0_1px_3px_rgba(0,0,0,0.95)]">
@@ -701,7 +799,7 @@ export function Player({
               </span>
               {mode !== "direct" && (
                 <span className="rounded bg-amber-400/15 px-1.5 py-0.5 font-medium text-amber-300">
-                  {streamModeLabel(mode)}
+                  {hlsModeLabel(mode)}
                 </span>
               )}
               <button

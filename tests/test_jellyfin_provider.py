@@ -526,7 +526,7 @@ def test_mark_state_posts_played_unplayed_and_returns_fresh_state():
                 full = url_or_req
                 method = "GET"
             calls.append((method, full))
-            if method == "POST" and ("/PlayedItems/" in full or "/UnplayedItems/" in full):
+            if method in ("POST", "DELETE") and "/PlayedItems/" in full:
                 return _Resp(204, b"")
             if "IncludeItemTypes" not in full:  # single-item UserData GET
                 ud = {"Played": played_delta,
@@ -548,7 +548,10 @@ def test_mark_state_posts_played_unplayed_and_returns_fresh_state():
     calls, fake = make_fake(False)
     with _patch("services.library.jellyfin.urllib.request.urlopen", fake):
         st2 = prov.mark_state("i1", False)
-    assert any(m == "POST" and "/UnplayedItems/i1" in u for m, u in calls), calls
+    # Live-verified on Jellyfin 10.11.11: unwatched = DELETE PlayedItems/{id}
+    # (POST UnplayedItems/{id} 404s). Pin the working route so this can't regress.
+    assert any(m == "DELETE" and "/PlayedItems/i1" in u for m, u in calls), calls
+    assert not any("UnplayedItems" in u for _, u in calls), calls
     assert st2 == {"played": False, "play_count": 0}
 
 

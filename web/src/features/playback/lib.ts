@@ -172,6 +172,59 @@ export function playMethodForMode(mode: StreamMode): "DirectPlay" | "DirectStrea
   return "Transcode";
 }
 
+// ------------------------------------------------------------------ HLS (MSE)
+/** Modes that ride the HLS/MSE transport (everything non-direct). */
+export type HlsMode = Exclude<StreamMode, "direct">;
+
+/** True when a mode is played via HLS (hls.js / native HLS) rather than the
+ *  progressive <video> path. Direct MP4 (range-seekable) stays native. */
+export function usesHls(mode: StreamMode): mode is HlsMode {
+  return mode !== "direct";
+}
+
+/** Order HLS attempts escalate in on fatal errors (audio-aware: EAC3 etc.
+ *  titles start at transcode_audio because copy-copy HLS keeps `ec-3`, which
+ *  Chrome MSE can't decode — Phase 0 finding). */
+export const HLS_LADDER: HlsMode[] = ["remux", "transcode_audio", "transcode"];
+
+/** The next HLS mode to try after *mode* (null = give up). */
+export function nextHlsMode(mode: StreamMode): HlsMode | null {
+  if (mode === "direct") return HLS_LADDER[0] ?? null;
+  const i = HLS_LADDER.indexOf(mode as HlsMode);
+  return i >= 0 && i < HLS_LADDER.length - 1 ? HLS_LADDER[i + 1] : null;
+}
+
+/** HLS playback engine for the current browser: hls.js (MSE — Chrome/Firefox/
+ *  Edge), "native" (Safari/iOS play mpegurl without hls.js), or "none". */
+export type HlsEngine = "hlsjs" | "native" | "none";
+
+/** Detect the engine. `canPlayMpegurl` is `video.canPlayType('application/
+ *  vnd.apple.mpegurl')` and `isAppleMobile` is an iPhone/iPad UA check —
+ *  injectable so the decision is unit-testable.
+ *
+ *  Native HLS is used ONLY on Apple mobile (Safari/iOS), where it is the
+ *  robust, intended path. Desktop Chrome/Firefox/Edge ride hls.js even when a
+ *  recent Chromium advertises canPlayType("maybe") — those native TS demuxers
+ *  proved unreliable for Jellyfin segments, while hls.js transmuxes TS→fMP4
+ *  that MSE decodes cleanly (verified in the headless harness). */
+export function hlsEngineFor(
+  canPlayMpegurl: () => string,
+  hlsSupported = false,
+  isAppleMobile = false,
+): HlsEngine {
+  const ct = (canPlayMpegurl() || "").toLowerCase();
+  if (isAppleMobile && ct && ct !== "no") return "native"; // Safari/iOS
+  return hlsSupported ? "hlsjs" : "none";
+}
+
+/** Label for the mode chip when riding HLS ("Remux"/"Transcode (audio)"/"Transcode"). */
+export function hlsModeLabel(mode: StreamMode): string {
+  if (mode === "direct") return "Direct play";
+  if (mode === "transcode_audio") return "Transcode (audio)";
+  if (mode === "transcode") return "Transcode";
+  return "Remux (HLS)";
+}
+
 /** One parsed subtitle cue (item-time seconds). */
 export interface VttCue {
   start: number;

@@ -301,7 +301,11 @@ class JellyfinLibraryProvider(LibraryProvider):
 
     def mark_state(self, item_id: str, watched: bool) -> dict:
         """Mark an item watched (``watched=True``) or unwatched via Jellyfin's
-        ``/Users/{uid}/PlayedItems|UnplayedItems`` endpoints.
+        ``/Users/{uid}/PlayedItems`` endpoint.
+
+        Verified live on Jellyfin 10.11.11: watched = ``POST
+        PlayedItems/{id}``; unwatched = ``DELETE PlayedItems/{id}`` (the
+        ``POST UnplayedItems/{id}`` variant 404s on 10.11 — do not use it).
 
         Returns the fresh ``{"played": bool, "play_count": int}`` state. Drops the
         scan cache so the next library read reflects the change immediately.
@@ -311,11 +315,11 @@ class JellyfinLibraryProvider(LibraryProvider):
         uid = self._user_id()
         if not uid:
             return {"played": False, "play_count": 0}
-        action = "PlayedItems" if watched else "UnplayedItems"
-        url = (f"{self.config.JELLYFIN_URL}/Users/{uid}/{action}/{item_id}"
+        method = "POST" if watched else "DELETE"
+        url = (f"{self.config.JELLYFIN_URL}/Users/{uid}/PlayedItems/{item_id}"
                f"?api_key={self.config.JELLYFIN_API_KEY}")
         try:
-            req = urllib.request.Request(url, method="POST", data=b"",
+            req = urllib.request.Request(url, method=method, data=b"",
                                          headers={"Content-Type": "application/json"})
             with urllib.request.urlopen(req, timeout=10):
                 pass

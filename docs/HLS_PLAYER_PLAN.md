@@ -1,7 +1,7 @@
 # HLS/MSE Player Plan — "make it play like Plex"
 
-Status: **Phase 1 DONE (2026-09-06) — backend HLS proxy live-verified; Phase 2
-(frontend hls.js engine) NEXT.** Decision date 2026-09-06 (user, after confirming the
+Status: **Phases 0–2 DONE + Phase 3 headless acceptance PASSED (2026-09-06);
+deploy to RKM-HP is the remaining step before the user's live check.** Decision date 2026-09-06 (user, after confirming the
 seek-bar fix `f74ceba` was redeployed and the bug **still reproduces on every
 3 Body Problem episode**). The progressive-stream approach is being replaced with
 a Plex-style HLS/MSE player. Do NOT continue patching
@@ -167,6 +167,51 @@ passthrough `GET /api/jellyfin/hls/{item_id}/{rest}`.
 - Contract snapshot + `types.ts` regenerated; **vitest 36/36** · `tsc` clean ·
   `vite build` ok (frontend untouched — types additive only).
 - Committed (see PROGRESS for hashes) + pushed.
+
+## 3d. Phase 2 — EXECUTED 2026-09-06 (hls.js engine in the player) + Phase 3 headless PASS
+
+`npm i hls.js` (1.7.2). `web/src/features/playback/lib.ts` gained pure HLS
+helpers (`usesHls`, `HLS_LADDER`, `nextHlsMode`, `hlsEngineFor`,
+`hlsModeLabel`); `client.ts` gained `hlsMasterUrl`; `Player.tsx` now branches
+the playback engine on mode and **the offset/restart-seek machinery is gone**.
+
+**Engine routing:** direct → existing `<video>` progressive path unchanged.
+remux/transcode_audio/transcode → same-origin HLS master URL via
+`/api/jellyfin/hls/{id}/master.m3u8?mode=…&audio_stream_index=…&max_bitrate=…`;
+engine = **hls.js on Chrome/Firefox/Edge**, **native `video.src` on Apple
+mobile** (Safari/iOS). Audio-aware escalation on fatal errors follows the
+§3b ladder (transcode_audio → transcode → give-up). Quality/audio changes
+rebuild the master URL at the current position; mode chip stays.
+
+**Deleted:** `baseRef` offset model, `startAt`/`start_time_ticks` restart-seek,
+transition-restart, restart-special scrubbing. Position = plain
+`video.currentTime`; seek = plain `currentTime` set for EVERY mode (hls.js
+fetches the segment at that time — a silent no-op is structurally impossible);
+subtitle overlay aligns trivially. Direct resume still uses the pending-seek
+after `loadedmetadata` (byte-range).
+
+**Engine-detection fix found in the harness:** recent desktop Chromium
+advertises `canPlayType('application/vnd.apple.mpegurl') = "maybe"` (native
+HLS), but its native TS demuxer **failed** on Jellyfin segments
+(`DEMUXER_ERROR_COULD_NOT_PARSE`) while hls.js's TS→fMP4 transmux decoded
+cleanly (MSE `avc1`/`mp4a` = supported). `hlsEngineFor` therefore returns
+`native` ONLY on Apple-mobile UAs; everything else uses hls.js.
+
+**Second harness fix:** after `hls.attachMedia(v)` hls.js owns the element's
+src (MSE blob); a leftover `v.removeAttribute("src")` after attach killed the
+pipeline (no segments ever fetched) — removed.
+
+**Verification:** vitest **40/40** (+4 HLS helpers) · `tsc` clean · `vite build`
+ok. **Phase 3 headless acceptance (real built app → real bundled Jellyfin
+10.11.11, headless Chromium):** played a real 3 Body Problem episode through
+the hls.js engine (mode=transcode_audio, `copy+aac` — decoded, currentTime
+advancing, sequential `.ts` segment fetches through the proxy); clicked the
+seek bar at **10:05 → currentTime = 605** (aria-valuenow 605), then **30:00 →
+landed 1800 and continued to 1804**, **40:00 → landed 2400, continued 2404**.
+All PASS. Library state mutated by the harness was restored afterwards.
+
+**Deploy to RKM-HP remains** — `.\\bootstrap.ps1` (api+web rebuild) then the
+user's live check on 3 Body Problem episodes/movies.
 
 ## 4. Phase 1 — Backend HLS proxy (½–1 day)
 

@@ -377,10 +377,13 @@ class JellyfinLibraryProvider(LibraryProvider):
         image/PGS track can't render in ``<track>`` and is deliberately skipped
         so the picker never offers a subtitle the browser can't draw.
 
-        Returns ``{"media_source_id": str, "audio": [{"index", "name",
-        "language", "codec"}], "subtitles": [{"index", "name",
-        "language"}]}`` or None. ``codec`` drives the player's audio-transcode
-        decision (EAC3/AC3/DTS/TrueHD aren't browser-decodable; AAC/MP3/Opus are).
+        Returns ``{"media_source_id": str, "container": str, "video":
+        {"codec", "profile", "width", "height", "bit_depth", "bit_rate"} | None,
+        "audio": [{"index", "name", "language", "codec"}], "subtitles":
+        [{"index", "name", "language"}]}`` or None. ``codec`` drives the
+        player's audio-transcode decision (EAC3/AC3/DTS/TrueHD aren't
+        browser-decodable; AAC/MP3/Opus are); ``container`` + ``video`` drive
+        the direct/remux/transcode routing decision.
         """
         if not self._configured() or not item_id:
             return None
@@ -405,10 +408,13 @@ class JellyfinLibraryProvider(LibraryProvider):
             return None
 
         sources = d.get("MediaSources") or []
-        ms_id = str((sources[0] or {}).get("Id") or "") if sources else ""
+        ms0 = sources[0] if sources else {}
+        ms_id = str(ms0.get("Id") or "")
+        container = str(ms0.get("Container") or "").lower()
+        video: Optional[dict] = None
         audio: list[dict] = []
         subtitles: list[dict] = []
-        for st in (sources[0].get("MediaStreams") or []) if sources else []:
+        for st in (ms0.get("MediaStreams") or []):
             kind = str(st.get("Type") or "")
             index = st.get("Index")
             if index is None:
@@ -416,14 +422,26 @@ class JellyfinLibraryProvider(LibraryProvider):
             name = str(st.get("DisplayTitle") or st.get("Language")
                        or f"Track {index}")
             lang = str(st.get("Language") or "")
-            if kind == "Audio":
+            if kind == "Video" and video is None:
+                video = {
+                    "codec": str(st.get("Codec") or "").lower(),
+                    "profile": str(st.get("Profile") or ""),
+                    "width": int(st.get("Width") or 0),
+                    "height": int(st.get("Height") or 0),
+                    "bit_depth": int(st.get("BitDepth") or 0),
+                    "bit_rate": int(st.get("BitRate") or 0),
+                }
+            elif kind == "Audio":
                 audio.append({
                     "index": int(index), "name": name, "language": lang,
-                    "codec": str(st.get("Codec") or ""),
+                    "codec": str(st.get("Codec") or "").lower(),
                 })
             elif kind == "Subtitle" and bool(st.get("IsTextSubtitleStream")):
                 subtitles.append({"index": int(index), "name": name, "language": lang})
-        return {"media_source_id": ms_id, "audio": audio, "subtitles": subtitles}
+        return {
+            "media_source_id": ms_id, "container": container, "video": video,
+            "audio": audio, "subtitles": subtitles,
+        }
 
     def get_library_counts(self) -> dict:
         return {

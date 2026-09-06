@@ -48,6 +48,8 @@ class JellyfinProgressRequest(BaseModel):
     position_ticks: int = 0
     is_paused: bool = False
     event: str = "timeupdate"
+    #: How the item is being played: DirectPlay | DirectStream | Transcode.
+    play_method: str = "DirectPlay"
 
 
 class StatusEntry(BaseModel):

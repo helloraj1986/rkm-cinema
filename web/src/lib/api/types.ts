@@ -345,18 +345,30 @@ export interface paths {
          * Jellyfin Stream
          * @description Proxy one Jellyfin item's video to the browser for in-app playback.
          *
-         *     Forwarded headers: the client's ``Range`` (so seeking works). Returned:
-         *     the upstream status (``206`` for a range, ``200`` for full) plus the
-         *     ``Content-Type`` / ``Accept-Ranges`` / ``Content-Range`` pass-throughs.
+         *     Forwarded headers: the client's ``Range`` (so direct-play seeking works).
+         *     Returned: the upstream status (``206`` for a range, ``200`` for full) plus
+         *     the ``Content-Type`` / ``Accept-Ranges`` / ``Content-Range`` pass-throughs.
          *
-         *     **Direct play (default):** ``Static=true`` serves the container untouched —
-         *     ideal for H.264/AAC. **Audio transcode (``transcode_audio=true``):** switches
-         *     to Jellyfin's on-the-fly stream with ``VideoCodec=copy`` (video untouched)
-         *     but ``AudioCodec=aac`` (audio re-encoded to browser-decodable AAC). The player
-         *     picks this when the selected audio track is EAC3/AC3/DTS/TrueHD.
+         *     **Routing modes** (verified live against the bundled Jellyfin):
          *
-         *     ``audio_stream_index`` selects an embedded audio track; ``max_bitrate`` caps
-         *     the stream. Both are omitted in the common default case.
+         *     - ``direct`` (default) — ``Static=true`` serves the container untouched.
+         *       HTTP-range seekable (``206``); the ideal path for browser-safe MP4.
+         *       Jellyfin *ignores* ``AudioStreamIndex``/``MaxStreamingBitrate`` here
+         *       (confirmed live), so those params are not forwarded — the pickers only
+         *       take effect on a non-direct mode.
+         *     - ``remux`` — copy/copy into an MP4 container (no re-encode). Needed when
+         *       the container (e.g. MKV) can't be indexed up-front by the browser: the
+         *       remuxed MP4 starts with ``ftyp``/``moov`` so duration + playback are
+         *       correct immediately. Chunked (no byte ranges) — seek by restarting with
+         *       ``start_time_ticks``.
+         *     - ``transcode_audio`` — ``VideoCodec=copy`` + ``AudioCodec=aac``
+         *       (video untouched, audio re-encoded) for EAC3/AC3/DTS/TrueHD tracks.
+         *     - ``transcode`` — ``VideoCodec=h264`` + ``AudioCodec=aac``; honours
+         *       ``max_bitrate``. Used when the video codec isn't browser-decodable
+         *       (HEVC/10-bit) or the quality picker asks for a lower bitrate.
+         *
+         *     Non-direct streams are chunked ``200`` MP4 (``ftyp`` first): seeking is done
+         *     by restarting the stream at ``start_time_ticks``, not by byte ranges.
          */
         get: operations["jellyfin_stream_api_jellyfin_stream__item_id__get"];
         put?: never;
@@ -787,6 +799,11 @@ export interface components {
              * @default timeupdate
              */
             event: string;
+            /**
+             * Play Method
+             * @default DirectPlay
+             */
+            play_method: string;
         };
         /**
          * JobRunResponse
@@ -1662,10 +1679,14 @@ export interface operations {
         parameters: {
             query?: {
                 audio_stream_index?: number;
-                /** @description MaxStreamingBitrate (bps) for the quality picker; 0 = original */
+                /** @description MaxStreamingBitrate (bps) — applied on the transcode modes; 0 = original */
                 max_bitrate?: number;
-                /** @description Transcode audio to AAC (video copied) — required for EAC3/AC3/DTS/TrueHD, which browsers can't decode */
+                /** @description Legacy alias for mode=transcode_audio (video copied, audio → AAC) */
                 transcode_audio?: boolean;
+                /** @description direct (Static file, HTTP-range seekable) | remux (copy/copy → mp4) | transcode_audio (video copy + AAC) | transcode (H.264 + AAC, honours max_bitrate) */
+                mode?: string;
+                /** @description Start the stream at this item offset (restart-seek for non-direct modes); seconds × 1e7 */
+                start_time_ticks?: number;
             };
             header?: never;
             path: {

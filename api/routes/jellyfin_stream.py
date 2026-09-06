@@ -2,14 +2,17 @@
 
 Mirrors ``jellyfin_poster.py``: keeps the Jellyfin credential server-side and
 serves a same-origin ``/api`` URL the browser can hand straight to a native
-``<video>`` element. Uses Jellyfin **direct play** (``Static=true``) so HTTP
-Range / seeking stay intact and no server-side transcoding is needed for the
-bundled H.264/AAC MP4 library.
+``<video>`` element. The default route is Jellyfin **direct play**
+(``Static=true``) so HTTP Range / seeking stay intact; non-direct **modes**
+(remux / transcode_audio / transcode) re-container or re-encode on Jellyfin's
+side for containers/codecs the browser can't handle.
 
 Range requests are forwarded verbatim upstream and the upstream's status plus
 ``Content-Range`` / ``Accept-Ranges`` / ``Content-Type`` are passed through
 unchanged (verified live: ``GET /Videos/{id}/stream?Static=true`` returns
-``206`` + ``Content-Range: bytes 0-1023/1882377499`` for ``Range: bytes=0-1023``).
+``206`` + ``Content-Range`` for a range request; remux/transcode return
+chunked ``200`` MP4 whose ``ftyp`` header arrives first — duration resolves
+instantly, and seeking those modes is done by restarting at ``StartTimeTicks``).
 """
 from __future__ import annotations
 
@@ -34,6 +37,9 @@ _CHUNK = 65536
 # encoding and relies on Content-Range + Accept-Ranges for seeking instead.
 _PASSTHROUGH = ("Content-Type", "Accept-Ranges", "Content-Range")
 
+#: Stream routing modes (honest — verified live, see module docstring).
+_VALID_MODES = ("direct", "remux", "transcode_audio", "transcode")
+
 
 def _iter_chunks(resp):
     """Read the upstream response body in bounded chunks, closing on exit."""
@@ -55,23 +61,37 @@ def jellyfin_stream(
     item_id: str,
     request: Request,
     audio_stream_index: int = Query(default=0, ge=0),
-    max_bitrate: int = Query(default=0, ge=0, description="MaxStreamingBitrate (bps) for the quality picker; 0 = original"),
-    transcode_audio: bool = Query(default=False, description="Transcode audio to AAC (video copied) — required for EAC3/AC3/DTS/TrueHD, which browsers can't decode"),
+    max_bitrate: int = Query(default=0, ge=0, description="MaxStreamingBitrate (bps) — applied on the transcode modes; 0 = original"),
+    transcode_audio: bool = Query(default=False, description="Legacy alias for mode=transcode_audio (video copied, audio → AAC)"),
+    mode: str = Query(default="direct", description="direct (Static file, HTTP-range seekable) | remux (copy/copy → mp4) | transcode_audio (video copy + AAC) | transcode (H.264 + AAC, honours max_bitrate)"),
+    start_time_ticks: int = Query(default=0, ge=0, description="Start the stream at this item offset (restart-seek for non-direct modes); seconds × 1e7"),
 ):
     """Proxy one Jellyfin item's video to the browser for in-app playback.
 
-    Forwarded headers: the client's ``Range`` (so seeking works). Returned:
-    the upstream status (``206`` for a range, ``200`` for full) plus the
-    ``Content-Type`` / ``Accept-Ranges`` / ``Content-Range`` pass-throughs.
+    Forwarded headers: the client's ``Range`` (so direct-play seeking works).
+    Returned: the upstream status (``206`` for a range, ``200`` for full) plus
+    the ``Content-Type`` / ``Accept-Ranges`` / ``Content-Range`` pass-throughs.
 
-    **Direct play (default):** ``Static=true`` serves the container untouched —
-    ideal for H.264/AAC. **Audio transcode (``transcode_audio=true``):** switches
-    to Jellyfin's on-the-fly stream with ``VideoCodec=copy`` (video untouched)
-    but ``AudioCodec=aac`` (audio re-encoded to browser-decodable AAC). The player
-    picks this when the selected audio track is EAC3/AC3/DTS/TrueHD.
+    **Routing modes** (verified live against the bundled Jellyfin):
 
-    ``audio_stream_index`` selects an embedded audio track; ``max_bitrate`` caps
-    the stream. Both are omitted in the common default case.
+    - ``direct`` (default) — ``Static=true`` serves the container untouched.
+      HTTP-range seekable (``206``); the ideal path for browser-safe MP4.
+      Jellyfin *ignores* ``AudioStreamIndex``/``MaxStreamingBitrate`` here
+      (confirmed live), so those params are not forwarded — the pickers only
+      take effect on a non-direct mode.
+    - ``remux`` — copy/copy into an MP4 container (no re-encode). Needed when
+      the container (e.g. MKV) can't be indexed up-front by the browser: the
+      remuxed MP4 starts with ``ftyp``/``moov`` so duration + playback are
+      correct immediately. Chunked (no byte ranges) — seek by restarting with
+      ``start_time_ticks``.
+    - ``transcode_audio`` — ``VideoCodec=copy`` + ``AudioCodec=aac``
+      (video untouched, audio re-encoded) for EAC3/AC3/DTS/TrueHD tracks.
+    - ``transcode`` — ``VideoCodec=h264`` + ``AudioCodec=aac``; honours
+      ``max_bitrate``. Used when the video codec isn't browser-decodable
+      (HEVC/10-bit) or the quality picker asks for a lower bitrate.
+
+    Non-direct streams are chunked ``200`` MP4 (``ftyp`` first): seeking is done
+    by restarting the stream at ``start_time_ticks``, not by byte ranges.
     """
     cfg = get_config()
     if not (cfg.JELLYFIN_URL and cfg.JELLYFIN_API_KEY):
@@ -79,22 +99,31 @@ def jellyfin_stream(
     if not item_id:
         raise HTTPException(status_code=404, detail="Missing item id")
 
-    if transcode_audio:
-        # Jellyfin progressive stream: copy video, transcode audio -> AAC 2.0.
-        up = (f"{cfg.JELLYFIN_URL}/Videos/{item_id}/stream"
-              f"?api_key={cfg.JELLYFIN_API_KEY}&MediaSourceId={item_id}"
-              f"&VideoCodec=copy&AudioCodec=aac&MaxAudioChannels=2")
-        if audio_stream_index > 0:
-            up += f"&AudioStreamIndex={audio_stream_index}"
-        if max_bitrate > 0:
-            up += f"&MaxStreamingBitrate={max_bitrate}"
+    # Legacy bool param maps onto the mode ladder.
+    if transcode_audio and mode == "direct":
+        mode = "transcode_audio"
+    if mode not in _VALID_MODES:
+        raise HTTPException(status_code=400, detail=f"Unknown mode: {mode}")
+
+    up = f"{cfg.JELLYFIN_URL}/Videos/{item_id}/stream?api_key={cfg.JELLYFIN_API_KEY}"
+    if mode == "direct":
+        # Static=true: Jellyfin serves the file untouched. Track/bitrate params
+        # are no-ops here (verified live) — deliberately not forwarded.
+        up += "&Static=true"
     else:
-        up = (f"{cfg.JELLYFIN_URL}/Videos/{item_id}/stream"
-              f"?api_key={cfg.JELLYFIN_API_KEY}&Static=true")
+        up += f"&Static=false&MediaSourceId={item_id}&Container=mp4"
+        if mode == "remux":
+            up += "&VideoCodec=copy&AudioCodec=copy"
+        elif mode == "transcode_audio":
+            up += "&VideoCodec=copy&AudioCodec=aac&MaxAudioChannels=2"
+        else:  # transcode
+            up += "&VideoCodec=h264&AudioCodec=aac&MaxAudioChannels=2"
         if audio_stream_index > 0:
             up += f"&AudioStreamIndex={audio_stream_index}"
-        if max_bitrate > 0:
+        if max_bitrate > 0 and mode in ("transcode_audio", "transcode"):
             up += f"&MaxStreamingBitrate={max_bitrate}"
+        if start_time_ticks > 0:
+            up += f"&StartTimeTicks={start_time_ticks}"
     headers: dict[str, str] = {}
     rng = request.headers.get("range")
     if rng:
@@ -145,7 +174,7 @@ def jellyfin_progress(payload: JellyfinProgressRequest):
         "MediaSourceId": payload.item_id,
         "PositionTicks": int(payload.position_ticks),
         "CanSeek": True,
-        "PlayMethod": "DirectPlay",
+        "PlayMethod": payload.play_method or "DirectPlay",
         "IsPaused": bool(payload.is_paused),
         "PlaybackRate": 1.0,
     }

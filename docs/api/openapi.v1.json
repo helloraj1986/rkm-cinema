@@ -492,7 +492,7 @@
     "/api/jellyfin/stream/{item_id}": {
       "get": {
         "summary": "Jellyfin Stream",
-        "description": "Proxy one Jellyfin item's video to the browser for in-app playback.\n\nForwarded headers: the client's ``Range`` (so seeking works). Returned:\nthe upstream status (``206`` for a range, ``200`` for full) plus the\n``Content-Type`` / ``Accept-Ranges`` / ``Content-Range`` pass-throughs.\n\n**Direct play (default):** ``Static=true`` serves the container untouched \u2014\nideal for H.264/AAC. **Audio transcode (``transcode_audio=true``):** switches\nto Jellyfin's on-the-fly stream with ``VideoCodec=copy`` (video untouched)\nbut ``AudioCodec=aac`` (audio re-encoded to browser-decodable AAC). The player\npicks this when the selected audio track is EAC3/AC3/DTS/TrueHD.\n\n``audio_stream_index`` selects an embedded audio track; ``max_bitrate`` caps\nthe stream. Both are omitted in the common default case.",
+        "description": "Proxy one Jellyfin item's video to the browser for in-app playback.\n\nForwarded headers: the client's ``Range`` (so direct-play seeking works).\nReturned: the upstream status (``206`` for a range, ``200`` for full) plus\nthe ``Content-Type`` / ``Accept-Ranges`` / ``Content-Range`` pass-throughs.\n\n**Routing modes** (verified live against the bundled Jellyfin):\n\n- ``direct`` (default) \u2014 ``Static=true`` serves the container untouched.\n  HTTP-range seekable (``206``); the ideal path for browser-safe MP4.\n  Jellyfin *ignores* ``AudioStreamIndex``/``MaxStreamingBitrate`` here\n  (confirmed live), so those params are not forwarded \u2014 the pickers only\n  take effect on a non-direct mode.\n- ``remux`` \u2014 copy/copy into an MP4 container (no re-encode). Needed when\n  the container (e.g. MKV) can't be indexed up-front by the browser: the\n  remuxed MP4 starts with ``ftyp``/``moov`` so duration + playback are\n  correct immediately. Chunked (no byte ranges) \u2014 seek by restarting with\n  ``start_time_ticks``.\n- ``transcode_audio`` \u2014 ``VideoCodec=copy`` + ``AudioCodec=aac``\n  (video untouched, audio re-encoded) for EAC3/AC3/DTS/TrueHD tracks.\n- ``transcode`` \u2014 ``VideoCodec=h264`` + ``AudioCodec=aac``; honours\n  ``max_bitrate``. Used when the video codec isn't browser-decodable\n  (HEVC/10-bit) or the quality picker asks for a lower bitrate.\n\nNon-direct streams are chunked ``200`` MP4 (``ftyp`` first): seeking is done\nby restarting the stream at ``start_time_ticks``, not by byte ranges.",
         "operationId": "jellyfin_stream_api_jellyfin_stream__item_id__get",
         "parameters": [
           {
@@ -522,11 +522,11 @@
             "schema": {
               "type": "integer",
               "minimum": 0,
-              "description": "MaxStreamingBitrate (bps) for the quality picker; 0 = original",
+              "description": "MaxStreamingBitrate (bps) \u2014 applied on the transcode modes; 0 = original",
               "default": 0,
               "title": "Max Bitrate"
             },
-            "description": "MaxStreamingBitrate (bps) for the quality picker; 0 = original"
+            "description": "MaxStreamingBitrate (bps) \u2014 applied on the transcode modes; 0 = original"
           },
           {
             "name": "transcode_audio",
@@ -534,11 +534,36 @@
             "required": false,
             "schema": {
               "type": "boolean",
-              "description": "Transcode audio to AAC (video copied) \u2014 required for EAC3/AC3/DTS/TrueHD, which browsers can't decode",
+              "description": "Legacy alias for mode=transcode_audio (video copied, audio \u2192 AAC)",
               "default": false,
               "title": "Transcode Audio"
             },
-            "description": "Transcode audio to AAC (video copied) \u2014 required for EAC3/AC3/DTS/TrueHD, which browsers can't decode"
+            "description": "Legacy alias for mode=transcode_audio (video copied, audio \u2192 AAC)"
+          },
+          {
+            "name": "mode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "direct (Static file, HTTP-range seekable) | remux (copy/copy \u2192 mp4) | transcode_audio (video copy + AAC) | transcode (H.264 + AAC, honours max_bitrate)",
+              "default": "direct",
+              "title": "Mode"
+            },
+            "description": "direct (Static file, HTTP-range seekable) | remux (copy/copy \u2192 mp4) | transcode_audio (video copy + AAC) | transcode (H.264 + AAC, honours max_bitrate)"
+          },
+          {
+            "name": "start_time_ticks",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Start the stream at this item offset (restart-seek for non-direct modes); seconds \u00d7 1e7",
+              "default": 0,
+              "title": "Start Time Ticks"
+            },
+            "description": "Start the stream at this item offset (restart-seek for non-direct modes); seconds \u00d7 1e7"
           }
         ],
         "responses": {
@@ -1332,6 +1357,11 @@
             "type": "string",
             "title": "Event",
             "default": "timeupdate"
+          },
+          "play_method": {
+            "type": "string",
+            "title": "Play Method",
+            "default": "DirectPlay"
           }
         },
         "type": "object",

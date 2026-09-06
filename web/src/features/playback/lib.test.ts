@@ -4,6 +4,7 @@ import {
   episodeQueue, groupBySeason, nextEpisode, playLabel, startPosition,
   PLAYBACK_RATES, QUALITY_OPTIONS, qualityFor, AUTOPLAY_DELAY_MS,
   audioCodecNeedsTranscode, fmtTime, barTotal, isFiniteDuration, clampSeek,
+  videoNeedsTranscode, pickStreamMode, streamModeLabel, playMethodForMode,
 } from "./lib";
 
 const ep = (id: string, season: number, episode: number, played = false, position = 0): EpisodeShape => ({
@@ -117,5 +118,44 @@ describe("item 3 player helpers", () => {
     expect(clampSeek(5000, 2648)).toBe(2648);
     expect(clampSeek(421, 2648)).toBe(421);
     expect(clampSeek(30, 0)).toBe(30); // unknown total → allow forward step
+  });
+});
+
+describe("stream routing (tier 1 honest modes)", () => {
+  const h264 = { codec: "h264", profile: "High", bit_depth: 8 };
+  const h264hi10 = { codec: "h264", profile: "High 10", bit_depth: 10 };
+  const hevc = { codec: "hevc", profile: "Main", bit_depth: 8 };
+  it("videoNeedsTranscode flags unsafe codecs + 10-bit h264", () => {
+    expect(videoNeedsTranscode(h264)).toBe(false);
+    expect(videoNeedsTranscode(h264hi10)).toBe(true); // High-10 undecodable
+    expect(videoNeedsTranscode(hevc)).toBe(true);
+    expect(videoNeedsTranscode({ codec: "mpeg2video" })).toBe(true);
+    expect(videoNeedsTranscode(null)).toBe(false);
+    expect(videoNeedsTranscode(undefined)).toBe(false);
+    expect(videoNeedsTranscode({})).toBe(false); // unknown → attempt play
+  });
+  it("pickStreamMode picks direct for browser-safe mp4", () => {
+    expect(pickStreamMode({ quality: "Original", container: "mp4", video: h264, activeAudioCodec: "aac" })).toBe("direct");
+  });
+  it("pickStreamMode remuxes non-mp4 containers", () => {
+    expect(pickStreamMode({ quality: "Original", container: "mkv", video: h264, activeAudioCodec: "aac" })).toBe("remux");
+    expect(pickStreamMode({ quality: "Original", container: "", video: h264, activeAudioCodec: "aac" })).toBe("direct");
+  });
+  it("pickStreamMode honours audio + video codecs", () => {
+    expect(pickStreamMode({ quality: "Original", container: "mp4", video: h264, activeAudioCodec: "eac3" })).toBe("transcode_audio");
+    expect(pickStreamMode({ quality: "Original", container: "mkv", video: hevc, activeAudioCodec: "aac" })).toBe("transcode");
+  });
+  it("quality + explicit audio track force non-direct (Static ignores them)", () => {
+    expect(pickStreamMode({ quality: "1080p", container: "mp4", video: h264, activeAudioCodec: "aac" })).toBe("transcode");
+    expect(pickStreamMode({ quality: "Original", container: "mp4", video: h264, activeAudioCodec: "aac", forceNonDirect: true })).toBe("remux");
+  });
+  it("labels + play methods map 1:1", () => {
+    expect(streamModeLabel("direct")).toBe("Direct play");
+    expect(streamModeLabel("remux")).toBe("Remux");
+    expect(streamModeLabel("transcode")).toBe("Transcode");
+    expect(playMethodForMode("direct")).toBe("DirectPlay");
+    expect(playMethodForMode("remux")).toBe("DirectStream");
+    expect(playMethodForMode("transcode_audio")).toBe("Transcode");
+    expect(playMethodForMode("transcode")).toBe("Transcode");
   });
 });

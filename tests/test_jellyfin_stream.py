@@ -121,8 +121,10 @@ def test_stream_503_when_not_configured(monkeypatch):
 
 
 # ----------------------------------------------------- track / artwork routes (item 3)
-def test_stream_forwards_audio_index_and_bitrate(monkeypatch):
-    """audio_stream_index + max_bitrate are forwarded; absent params are omitted."""
+def test_stream_direct_play_ignores_track_and_quality_params(monkeypatch):
+    """Static=true serves the file untouched — track/bitrate params are no-ops
+    (verified live against Jellyfin), so the URL is pure Static and they are
+    deliberately NOT forwarded."""
     _patch_config(monkeypatch)
     captured = {}
 
@@ -134,18 +136,67 @@ def test_stream_forwards_audio_index_and_bitrate(monkeypatch):
     with patch("api.routes.jellyfin_stream.urllib.request.urlopen", fake_urlopen):
         client.get("/api/jellyfin/stream/abc123",
                    params={"audio_stream_index": 2, "max_bitrate": 8000000})
-    assert "AudioStreamIndex=2" in captured["url"]
-    assert "MaxStreamingBitrate=8000000" in captured["url"]
-
-    captured.clear()
-    with patch("api.routes.jellyfin_stream.urllib.request.urlopen", fake_urlopen):
-        client.get("/api/jellyfin/stream/abc123")
-    assert "AudioStreamIndex" not in captured["url"], "defaults are not forwarded"
+    assert "Static=true" in captured["url"]
+    assert "AudioStreamIndex" not in captured["url"]
     assert "MaxStreamingBitrate" not in captured["url"]
 
 
-def test_stream_transcodes_audio_to_aac(monkeypatch):
-    """transcode_audio=true → video-copy + audio-to-AAC upstream (no Static direct play)."""
+def test_stream_remux_mode_builds_copy_to_mp4(monkeypatch):
+    """mode=remux → Static=false copy/copy into an mp4 container (MKV etc. that
+    the browser can't index up-front get a duration-resolvable MP4 header)."""
+    _patch_config(monkeypatch)
+    captured = {}
+
+    def fake_urlopen(req, timeout=None):
+        captured["url"] = req.full_url
+        return _FakeStreamResponse(body=b"X", status=200,
+                                   headers={"Content-Type": "video/mp4"})
+
+    with patch("api.routes.jellyfin_stream.urllib.request.urlopen", fake_urlopen):
+        client.get("/api/jellyfin/stream/abc123",
+                   params={"mode": "remux", "audio_stream_index": 2,
+                           "start_time_ticks": 421_000_000_000})
+    u = captured["url"]
+    assert "Static=true" not in u
+    assert "Static=false" in u
+    assert "Container=mp4" in u
+    assert "VideoCodec=copy" in u and "AudioCodec=copy" in u  # no re-encode
+    assert "AudioStreamIndex=2" in u
+    assert "StartTimeTicks=421000000000" in u, "restart-seek offset honoured"
+    assert "api_key=sekret" in u
+
+
+def test_stream_transcode_mode_h264_aac_with_bitrate(monkeypatch):
+    """mode=transcode → H.264 + AAC + MaxStreamingBitrate (codec fallback /
+    quality-ladder path). max_bitrate 0 keeps full quality (codec-only)."""
+    _patch_config(monkeypatch)
+    captured = {}
+
+    def fake_urlopen(req, timeout=None):
+        captured["url"] = req.full_url
+        return _FakeStreamResponse(body=b"X", status=200,
+                                   headers={"Content-Type": "video/mp4"})
+
+    with patch("api.routes.jellyfin_stream.urllib.request.urlopen", fake_urlopen):
+        client.get("/api/jellyfin/stream/abc123",
+                   params={"mode": "transcode", "max_bitrate": 5_000_000,
+                           "audio_stream_index": 1, "start_time_ticks": 60_000_000_000})
+    u = captured["url"]
+    assert "VideoCodec=h264" in u
+    assert "AudioCodec=aac" in u and "MaxAudioChannels=2" in u
+    assert "MaxStreamingBitrate=5000000" in u
+    assert "AudioStreamIndex=1" in u
+    assert "StartTimeTicks=60000000000" in u
+
+    captured.clear()
+    with patch("api.routes.jellyfin_stream.urllib.request.urlopen", fake_urlopen):
+        client.get("/api/jellyfin/stream/abc123", params={"mode": "transcode"})
+    assert "MaxStreamingBitrate" not in captured["url"], "0 bitrate = full quality"
+    assert "VideoCodec=h264" in captured["url"]
+
+
+def test_stream_legacy_transcode_audio_bool_maps_to_mode(monkeypatch):
+    """transcode_audio=true (legacy flag) routes to the transcode_audio mode."""
     _patch_config(monkeypatch)
     captured = {}
 
@@ -157,12 +208,22 @@ def test_stream_transcodes_audio_to_aac(monkeypatch):
     with patch("api.routes.jellyfin_stream.urllib.request.urlopen", fake_urlopen):
         client.get("/api/jellyfin/stream/abc123",
                    params={"transcode_audio": True, "audio_stream_index": 2})
-    assert "Static=true" not in captured["url"], "not direct play when transcoding audio"
-    assert "VideoCodec=copy" in captured["url"]         # video untouched
-    assert "AudioCodec=aac" in captured["url"]          # audio re-encoded for browser
-    assert "MaxAudioChannels=2" in captured["url"]
-    assert "AudioStreamIndex=2" in captured["url"]
-    assert "api_key=sekret" in captured["url"]
+    u = captured["url"]
+    assert "Static=true" not in u, "not direct play when transcoding audio"
+    assert "Static=false" in u and "Container=mp4" in u
+    assert "VideoCodec=copy" in u         # video untouched
+    assert "AudioCodec=aac" in u          # audio re-encoded for browser
+    assert "MaxAudioChannels=2" in u
+    assert "AudioStreamIndex=2" in u
+    assert "api_key=sekret" in u
+
+
+def test_stream_rejects_unknown_mode(monkeypatch):
+    _patch_config(monkeypatch)
+    with patch("api.routes.jellyfin_stream.urllib.request.urlopen") as m:
+        r = client.get("/api/jellyfin/stream/abc123", params={"mode": "bogus"})
+    m.assert_not_called()
+    assert r.status_code == 400
 
 
 def test_jellyfin_backdrop_route_uses_backdrop_kind(monkeypatch):

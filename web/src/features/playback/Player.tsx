@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { api, type PlaybackInfo, type ProgressPayload } from "../../lib/api/client";
 import {
   nextEpisode, qualityFor, AUTOPLAY_DELAY_MS, QUALITY_OPTIONS, PLAYBACK_RATES,
-  audioCodecNeedsTranscode, fmtTime, barTotal, isFiniteDuration, clampSeek,
-  type QueueEntry,
+  fmtTime, isFiniteDuration, clampSeek, pickStreamMode, streamModeLabel,
+  playMethodForMode, type QueueEntry, type StreamMode,
 } from "./lib";
 
 export interface PlayTarget {
@@ -13,21 +13,26 @@ export interface PlayTarget {
 
 const SEEK_STEP = 10; // seconds for ← / → keys
 
+/** Escalation ladder when a stream fails (each rung re-encodes more). */
+const LADDER: StreamMode[] = ["direct", "remux", "transcode_audio", "transcode"];
+
 /**
- * In-app player, at legacy `openPlayer` parity (item 3 adds the pickers):
- * - streams the same-origin `/api/jellyfin/stream/{id}` (token stays server-side)
- * - seeks to the saved resume point once the stream allows it
- * - reports position back to `/api/jellyfin/progress` (start / throttled 5s
- *   timeupdate / stopped) WITHOUT clobbering the resume spot
- * - codec failure → friendly fallback note
- * - an episode ending offers "Up Next" from the loaded series queue, with a
- *   cancellable autoplay-next countdown
+ * In-app player with HONEST stream routing:
  *
- * Custom controls (no native `controls`): a direct-play container the browser
- * can't index up-front reports `duration = Infinity`, which breaks the native
- * bar (no total, wrong position). The bar therefore takes its total from the
- * API runtime hint (`runtime` — Jellyfin scan metadata) until the stream
- * duration resolves finite, so length + progress are correct from the start.
+ * - **direct** (Static file, HTTP-range seekable) for browser-safe MP4;
+ * - **remux** (copy/copy → MP4) for MKV-style containers the browser can't
+ *   index up-front (solves duration=Infinity and gives a proper total);
+ * - **transcode_audio** (video copy + AAC) for EAC3/AC3/DTS/TrueHD tracks;
+ * - **transcode** (H.264 + AAC) for unsafe video codecs OR the quality picker.
+ *
+ * Static=true IGNORES AudioStreamIndex/MaxStreamingBitrate (verified live), so
+ * any quality/track request forces a non-direct mode. Non-direct streams are
+ * chunked MP4 (no byte ranges) — seeking RESTARTS the stream at
+ * `start_time_ticks`, and the bar keeps an offset so position stays seamless.
+ * On a media error the player escalates up the ladder before giving up.
+ *
+ * The control bar's total = the API runtime hint (scan metadata) until the
+ * stream duration resolves — length + progress are correct from the start.
  */
 export function Player({
   item,
@@ -48,17 +53,25 @@ export function Player({
   const videoRef = useRef<HTMLVideoElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const resumeRef = useRef(Math.max(0, Number(resume) || 0));
+  // Seconds into the ITEM where the current stream begins (0 = direct from 0).
+  const baseRef = useRef(0);
+  // Direct-mode seek to apply once duration is known (resume / return-to-direct).
+  const pendingSeekRef = useRef<number | null>(resumeRef.current > 0 ? resumeRef.current : null);
   const lastReportRef = useRef(0);
   const queueRef = useRef(queue);
   const autoTimerRef = useRef<number | null>(null);
   const autoTimeoutRef = useRef<number | null>(null);
   const onSwitchRef = useRef(onSwitch);
+  const modeRef = useRef<StreamMode>("direct");
+  const rateRef = useRef(1);
+  const srcRef = useRef("");
   useEffect(() => {
     queueRef.current = queue;
     onSwitchRef.current = onSwitch;
   }, [queue, onSwitch]);
 
   const [error, setError] = useState<string | null>(null);
+  const [switching, setSwitching] = useState(true); // stream (re)loading
   const [upNext, setUpNext] = useState<QueueEntry | null>(null);
   const [autoSecs, setAutoSecs] = useState(0);
   const [info, setInfo] = useState<PlaybackInfo | null>(null);
@@ -66,42 +79,115 @@ export function Player({
   const [subIndex, setSubIndex] = useState<number | null>(null); // null = off
   const [quality, setQuality] = useState("Original");
   const [rate, setRate] = useState(1);
-  // True when the active audio track needs transcode (EAC3/AC3/DTS/TrueHD).
-  const [transcode, setTranscode] = useState(false);
+  // Stream session: how Jellyfin serves it + where it starts (restart-seek).
+  const [mode, setMode] = useState<StreamMode>("direct");
+  const [startAt, setStartAt] = useState(0);
 
   // Custom control bar state.
   const [playing, setPlaying] = useState(false);
-  const [cur, setCur] = useState(0);
-  const [mediaDur, setMediaDur] = useState(0); // 0 while unknown (Infinity/NaN)
+  const [cur, setCur] = useState(0); // display position = offset + local time
+  const [mediaDur, setMediaDur] = useState(0); // stream duration once finite
   const [muted, setMuted] = useState(false);
   const [volume, setVolume] = useState(1);
   const [isFs, setIsFs] = useState(false);
 
+  modeRef.current = mode;
+  rateRef.current = rate;
+
+  const activeAudioCodec =
+    (audioIndex > 0
+      ? info?.audio.find((a) => a.index === audioIndex)?.codec
+      : info?.audio[0]?.codec) ?? null;
+
+  // The mode the CURRENT facts call for (null until playback-info arrives).
+  const desiredMode: StreamMode | null = info
+    ? pickStreamMode({
+        quality,
+        container: info.container,
+        video: info.video ?? null,
+        activeAudioCodec,
+        forceNonDirect: audioIndex > 0, // a chosen track can't work on Static
+      })
+    : null;
+
   const msId = info?.media_source_id || item.item_id;
   const bitrate = qualityFor(quality);
   const src = api.streamUrl(item.item_id, {
-    ...(audioIndex ? { audio_stream_index: audioIndex } : {}),
-    ...(bitrate ? { max_bitrate: bitrate } : {}),
-    ...(transcode ? { transcode_audio: true } : {}),
+    ...(mode !== "direct" ? { mode, start_time_ticks: Math.round(startAt * 1e7) } : {}),
+    ...(audioIndex > 0 ? { audio_stream_index: audioIndex } : {}),
+    ...(bitrate && mode !== "direct" && mode !== "remux" ? { max_bitrate: bitrate } : {}),
   });
   const subSrc = subIndex != null && info ? api.subtitleUrl(item.item_id, msId, subIndex) : null;
   const backdrop = api.backdropUrl(item.item_id);
-  const total = barTotal(mediaDur || null, runtime || null);
+  // Display total: the API runtime (scan metadata) is authoritative; fall back
+  // to the resolved stream duration (+offset for restart-seek streams).
+  const total =
+    runtime > 0
+      ? runtime
+      : isFiniteDuration(mediaDur)
+        ? mediaDur + baseRef.current
+        : 0;
 
-  // Load track info once per item (audio/subtitle pickers).
+  const posNow = () => baseRef.current + (videoRef.current ? videoRef.current.currentTime || 0 : 0);
+  const seekBase = () => {
+    const p = posNow();
+    return p > 0 ? p : resumeRef.current;
+  };
+
+  // Apply a mode/position transition (info-driven auto-route, user quality or
+  // audio changes, and the error-ladder escalations all land here).
+  const transitionTo = (next: StreamMode, atSeconds?: number) => {
+    const at = atSeconds ?? seekBase();
+    pendingSeekRef.current = next === "direct" && at > 0 ? at : null;
+    const nextBase = next === "direct" ? 0 : at;
+    baseRef.current = nextBase;
+    setStartAt(nextBase);
+    setMode(next);
+    setMediaDur(0);
+    setError(null);
+    setSwitching(true);
+  };
+
+  // Auto-route once playback-info resolves (or when quality/audio change).
+  useEffect(() => {
+    if (!desiredMode || desiredMode === mode) return;
+    transitionTo(desiredMode);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [desiredMode]);
+
+  // Reload <video> whenever the stream URL changes (mode/quality/track/seek).
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v || srcRef.current === src) return;
+    srcRef.current = src;
+    setCur(baseRef.current);
+    try {
+      v.load();
+      void v.play().catch(() => {});
+    } catch {
+      /* playback resumes on user gesture if autoplay is blocked */
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [src]);
+
+  // Load track info once per item (audio/subtitle pickers + routing facts).
   useEffect(() => {
     let alive = true;
     setInfo(null);
     setAudioIndex(0);
     setSubIndex(null);
     setQuality("Original");
+    setMode("direct");
+    setStartAt(0);
+    baseRef.current = 0;
+    pendingSeekRef.current = resumeRef.current > 0 ? resumeRef.current : null;
     api
       .playbackInfo(item.item_id)
       .then((d) => {
         if (alive) setInfo(d || null);
       })
       .catch(() => {
-        /* track pickers stay hidden when the backend can't answer */
+        /* stay direct; the error-ladder still rescues a bad direct attempt */
       });
     return () => {
       alive = false;
@@ -115,15 +201,6 @@ export function Player({
     if (!v) return;
     v.playbackRate = rate;
   }, [rate]);
-
-  // Audio-transcode decision from the active track's codec.
-  useEffect(() => {
-    if (!info) return;
-    const active = audioIndex > 0
-      ? info.audio.find((a) => a.index === audioIndex)
-      : info.audio[0];
-    setTranscode(audioCodecNeedsTranscode(active?.codec));
-  }, [info, audioIndex]);
 
   const clearAuto = () => {
     if (autoTimerRef.current != null) window.clearInterval(autoTimerRef.current);
@@ -148,12 +225,19 @@ export function Player({
   const seekTo = (seconds: number) => {
     const v = videoRef.current;
     if (!v) return;
-    const target = clampSeek(seconds, barTotal(v.duration, runtime || null));
-    try {
-      v.currentTime = target;
-      setCur(target);
-    } catch {
-      /* not seekable yet — bar will reflect reality on next timeupdate */
+    const target = clampSeek(seconds, total > 0 ? total : seconds);
+    if (modeRef.current === "direct") {
+      // Static file: HTTP-range seek straight on the media element.
+      try {
+        v.currentTime = target;
+        setCur(target);
+      } catch {
+        /* not seekable yet */
+      }
+    } else {
+      // Chunked remux/transcode: restart the stream at the target offset.
+      if (Math.abs(posNow() - target) < 2) return;
+      transitionTo(modeRef.current, target);
     }
   };
 
@@ -183,51 +267,82 @@ export function Player({
     if (!v) return;
 
     const report = (event: ProgressPayload["event"]) => {
-      const pos = v.currentTime || 0;
+      const pos = posNow();
       if (resumeRef.current > 0 && pos < resumeRef.current - 1) return;
       const ticks = Math.round(pos * 1e7);
-      void api.reportProgress({ item_id: item.item_id, position_ticks: ticks, is_paused: false, event }).catch(() => {});
+      void api
+        .reportProgress({
+          item_id: item.item_id,
+          position_ticks: ticks,
+          is_paused: false,
+          event,
+          play_method: playMethodForMode(modeRef.current),
+        })
+        .catch(() => {});
+    };
+
+    const escalate = () => {
+      const idx = LADDER.indexOf(modeRef.current);
+      const next = idx >= 0 && idx < LADDER.length - 1 ? LADDER[idx + 1] : null;
+      if (!next) {
+        report("stopped");
+        setError("Couldn't play this file in the browser — even transcoding failed. Open it in Jellyfin directly instead.");
+        return;
+      }
+      transitionTo(next);
     };
 
     const onMeta = () => {
-      // Resolve the stream duration when the browser finally knows it
-      // (direct-play containers may report Infinity until fully indexable);
-      // until then the API runtime hint stays the bar's total.
       if (isFiniteDuration(v.duration)) setMediaDur(v.duration);
-      if (resumeRef.current > 0) {
+      // Direct-mode resume / return: seek once duration is known.
+      const pending = pendingSeekRef.current;
+      if (pending != null && pending > 0) {
         const d = isFiniteDuration(v.duration) ? v.duration : Number.POSITIVE_INFINITY;
-        if (resumeRef.current < d) {
+        if (pending < d) {
           try {
-            v.currentTime = resumeRef.current;
+            v.currentTime = pending;
+            setCur(pending);
           } catch {
-            /* ignore seek failure */
+            /* ignore seek failure — position stays visible via offset */
           }
         }
+        pendingSeekRef.current = null;
       }
+      setCur(baseRef.current);
     };
     const onDur = () => {
       if (isFiniteDuration(v.duration)) setMediaDur(v.duration);
     };
     const onPlay = () => {
       setPlaying(true);
+      try {
+        v.playbackRate = rateRef.current;
+      } catch {
+        /* ignore */
+      }
       report("start");
     };
+    const onPlaying = () => setSwitching(false);
     const onPause = () => {
       setPlaying(false);
       report("stopped");
     };
     const onError = () => {
-      report("stopped");
-      clearAuto();
-      setError("Couldn't play this file in the browser — the codec may not be supported.");
+      if (modeRef.current !== "transcode") {
+        escalate(); // ladder: direct → remux → transcode_audio → transcode
+      } else {
+        report("stopped");
+        setError("Couldn't play this file in the browser — the codec may not be supported. Open it in Jellyfin directly instead.");
+      }
     };
     const onTime = () => {
-      setCur(v.currentTime || 0);
+      setCur(posNow());
       const now = Date.now();
       if (now - lastReportRef.current < 5000) return;
       lastReportRef.current = now;
       report("timeupdate");
     };
+    const onWaiting = () => setSwitching(true);
     const onEnded = () => {
       report("stopped");
       const next = nextEpisode(queueRef.current, item.item_id);
@@ -238,6 +353,8 @@ export function Player({
     v.addEventListener("loadedmetadata", onMeta);
     v.addEventListener("durationchange", onDur);
     v.addEventListener("play", onPlay);
+    v.addEventListener("playing", onPlaying);
+    v.addEventListener("waiting", onWaiting);
     v.addEventListener("pause", onPause);
     v.addEventListener("timeupdate", onTime);
     v.addEventListener("ended", onEnded);
@@ -248,6 +365,8 @@ export function Player({
       v.removeEventListener("loadedmetadata", onMeta);
       v.removeEventListener("durationchange", onDur);
       v.removeEventListener("play", onPlay);
+      v.removeEventListener("playing", onPlaying);
+      v.removeEventListener("waiting", onWaiting);
       v.removeEventListener("pause", onPause);
       v.removeEventListener("timeupdate", onTime);
       v.removeEventListener("ended", onEnded);
@@ -256,7 +375,7 @@ export function Player({
       clearAuto();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [item.item_id, runtime]);
+  }, [item.item_id]);
 
   // Keyboard: space play/pause, ←/→ ±10s, m mute, f fullscreen.
   useEffect(() => {
@@ -270,10 +389,10 @@ export function Player({
           togglePlay();
           break;
         case "ArrowRight":
-          if (v) seekTo(v.currentTime + SEEK_STEP);
+          if (v) seekTo(posNow() + SEEK_STEP);
           break;
         case "ArrowLeft":
-          if (v) seekTo(v.currentTime - SEEK_STEP);
+          if (v) seekTo(posNow() - SEEK_STEP);
           break;
         case "m":
         case "M":
@@ -327,11 +446,18 @@ export function Player({
       />
       <div className="pointer-events-none absolute inset-0 bg-black/55" aria-hidden="true" />
 
-      <div className="relative z-10 flex items-center justify-between p-3">
-        <div className="truncate text-sm font-medium text-zinc-100">{item.title}</div>
+      <div className="relative z-10 flex items-center justify-between gap-3 p-3">
+        <div className="min-w-0 truncate text-sm font-medium text-zinc-100">
+          {item.title}
+          {desiredMode && (
+            <span className="ml-2 rounded bg-zinc-800/80 px-1.5 py-0.5 align-middle text-[10px] font-medium tracking-wide text-zinc-400">
+              {streamModeLabel(mode)}
+            </span>
+          )}
+        </div>
         <button
           onClick={onClose}
-          className="rounded-full bg-zinc-800/90 px-3 py-1 text-sm text-zinc-100 hover:bg-zinc-700"
+          className="shrink-0 rounded-full bg-zinc-800/90 px-3 py-1 text-sm text-zinc-100 hover:bg-zinc-700"
         >
           Close
         </button>
@@ -350,7 +476,14 @@ export function Player({
             {subSrc && <track key={subSrc} kind="subtitles" src={subSrc} default />}
           </video>
 
-          {!playing && !error && (
+          {switching && !error && (
+            <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/30">
+              <div className="h-8 w-8 animate-spin rounded-full border-2 border-zinc-600 border-t-amber-400" />
+              <span className="text-[11px] text-zinc-300">Preparing stream…</span>
+            </div>
+          )}
+
+          {!playing && !error && !switching && (
             <button
               onClick={togglePlay}
               aria-label="Play"
@@ -434,6 +567,11 @@ export function Player({
               <span className="tabular-nums">
                 {fmtTime(cur)} / {total > 0 ? fmtTime(total) : "--:--"}
               </span>
+              {mode !== "direct" && (
+                <span className="rounded bg-amber-400/15 px-1.5 py-0.5 font-medium text-amber-300">
+                  {streamModeLabel(mode)}
+                </span>
+              )}
               <button
                 onClick={toggleFullscreen}
                 aria-label={isFs ? "Exit fullscreen" : "Fullscreen"}
@@ -503,7 +641,7 @@ export function Player({
 
           <span className="ml-auto text-[11px] text-zinc-500">
             {info ? `${info.audio.length} audio · ${info.subtitles.length} sub tracks` : "tracks unavailable"}
-            {transcode ? " · ⚠ audio transcoding (codec)" : ""}
+            {mode === "transcode_audio" ? " · ⚠ audio transcoding" : ""}
           </span>
         </div>
       </div>

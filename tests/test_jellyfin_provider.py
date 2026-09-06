@@ -6,9 +6,8 @@ shape, per-backend selection in build_library_service, and the runtime-config
 loader (chicken-and-egg: provisioner writes /shared/runtime.json).
 """
 import json
-import os
 from types import SimpleNamespace
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 from domain.identity import MediaIdentity
 from domain.enums import MediaType
@@ -157,13 +156,15 @@ class _CtxBody:
 
 
 def test_playback_info_normalizes_tracks():
-    """playback_info returns audio + text-only subtitle tracks from PlaybackInfo."""
+    """playback_info returns video facts, audio + text-only subtitles from PlaybackInfo."""
     import json as _json
     from services.library.jellyfin import JellyfinLibraryProvider
     prov = JellyfinLibraryProvider(config=_cfg())
     prov._user_id = lambda: "u1"  # avoid a real /Users call
     media = [
-        {"Type": "Audio", "Index": 1, "DisplayTitle": "eng (AAC)", "Language": "eng", "Codec": "aac"},
+        {"Type": "Video", "Index": 0, "Codec": "hevc", "Profile": "Main 10",
+         "Width": 1920, "Height": 1080, "BitDepth": 10, "BitRate": 8_000_000},
+        {"Type": "Audio", "Index": 1, "DisplayTitle": "eng (AAC)", "Language": "eng", "Codec": "AAC"},
         {"Type": "Audio", "Index": 2, "DisplayTitle": "spa", "Language": "spa", "Codec": "eac3"},
         {"Type": "Subtitle", "Index": 3, "DisplayTitle": "English (SRT)",
          "Language": "eng", "IsTextSubtitleStream": True},
@@ -171,7 +172,8 @@ def test_playback_info_normalizes_tracks():
         {"Type": "Subtitle", "Index": 4, "DisplayTitle": "PGS", "Language": "eng",
          "IsTextSubtitleStream": False},
     ]
-    payload = _json.dumps({"MediaSources": [{"Id": "src-1", "MediaStreams": media}]}).encode()
+    payload = _json.dumps({"MediaSources": [{"Id": "src-1", "Container": "mkv",
+                                             "MediaStreams": media}]}).encode()
     captured = {}
 
     def fake_urlopen(req, timeout=None):
@@ -184,8 +186,14 @@ def test_playback_info_normalizes_tracks():
         info = prov.playback_info("itm-1")
 
     assert info["media_source_id"] == "src-1"
+    assert info["container"] == "mkv", "container drives the remux/direct decision"
+    assert info["video"] == {
+        "codec": "hevc", "profile": "Main 10", "width": 1920, "height": 1080,
+        "bit_depth": 10, "bit_rate": 8_000_000,
+    }, "video facts drive the transcode decision"
     assert [a["index"] for a in info["audio"]] == [1, 2]
     assert info["audio"][0]["name"] == "eng (AAC)"
+    assert info["audio"][0]["codec"] == "aac", "codecs normalised lowercase"
     assert info["audio"][1]["codec"] == "eac3", "audio codec drives the transcode decision"
     assert [s["index"] for s in info["subtitles"]] == [3], "image subs excluded"
     assert info["subtitles"][0]["language"] == "eng"
@@ -193,6 +201,27 @@ def test_playback_info_normalizes_tracks():
     assert "api_key=jkey" in captured["url"]
     assert captured["method"] == "POST"
     assert captured["body"]["UserId"] == "u1"
+
+
+def test_playback_info_video_none_when_no_video_stream():
+    """A source without a Video stream yields video=None (audio-only safety)."""
+    import json as _json
+    from services.library.jellyfin import JellyfinLibraryProvider
+    prov = JellyfinLibraryProvider(config=_cfg())
+    prov._user_id = lambda: "u1"
+    payload = _json.dumps({"MediaSources": [{"Id": "s", "Container": "mp4",
+                                             "MediaStreams": [
+                                                 {"Type": "Audio", "Index": 1,
+                                                  "DisplayTitle": "a", "Codec": "aac"}]}]}).encode()
+
+    def fake_urlopen(req, timeout=None):
+        return _CtxBody(payload)
+
+    with patch("services.library.jellyfin.urllib.request.urlopen", fake_urlopen):
+        info = prov.playback_info("itm-1")
+    assert info["video"] is None
+    assert info["container"] == "mp4"
+    assert len(info["audio"]) == 1
 
 
 def test_playback_info_none_when_not_configured():

@@ -92,6 +92,86 @@ export function clampSeek(target: number, total: number): number {
   return Math.max(0, target);
 }
 
+/**
+ * Stream routing — how Jellyfin should serve this item:
+ * - "direct": Static file, HTTP-range seekable (browser-safe MP4 family)
+ * - "remux": copy/copy into MP4 (MKV etc. the browser can't index up-front)
+ * - "transcode_audio": video copied, audio → AAC (EAC3/AC3/DTS/TrueHD)
+ * - "transcode": H.264 + AAC (browser-unsafe video codec, or lower bitrate)
+ */
+export type StreamMode = "direct" | "remux" | "transcode_audio" | "transcode";
+
+/** Video facts from playback-info (drives the transcode decision). */
+export interface PlaybackVideoFacts {
+  codec?: string | null;
+  profile?: string | null;
+  bit_depth?: number;
+  width?: number;
+  height?: number;
+  bit_rate?: number;
+}
+
+/** Containers the browser indexes up-front (duration + byte-range seeking). */
+const DIRECT_CONTAINERS = new Set(["mp4", "m4v", "mov", "webm"]);
+
+/** Video codecs major browsers decode natively (8-bit H.264 + modern codecs). */
+const SAFE_VIDEO_CODECS = new Set(["h264", "avc1", "vp9", "av01", "vp8", "theora"]);
+
+/**
+ * True when a video stream must be transcoded for the browser: unknown/absent
+ * facts -> false (attempt play; the error-ladder escalates on failure).
+ */
+export function videoNeedsTranscode(video?: PlaybackVideoFacts | null): boolean {
+  if (!video) return false;
+  const codec = String(video.codec || "").toLowerCase();
+  if (codec && !SAFE_VIDEO_CODECS.has(codec)) return true; // hevc/vc1/mpeg2/…
+  if (codec === "h264" || codec === "avc1") {
+    if ((video.bit_depth || 0) >= 10) return true; // High-10 / 4:2:2 10 undecodable
+    const prof = String(video.profile || "").toLowerCase();
+    if (prof.includes("10")) return true; // conservative: "high 10" etc.
+  }
+  return false;
+}
+
+/**
+ * Pick the cheapest mode that will actually play in the browser.
+ * Honest routing (verified live): Jellyfin IGNORES AudioStreamIndex /
+ * MaxStreamingBitrate under Static=true, so any track/quality request forces
+ * a non-direct mode; MKV-type containers need a remux to resolve duration.
+ */
+export function pickStreamMode(facts: {
+  quality: string;
+  container?: string | null;
+  video?: PlaybackVideoFacts | null;
+  activeAudioCodec?: string | null;
+  /** True when a specific audio track was chosen (Static can't honour it). */
+  forceNonDirect?: boolean;
+}): StreamMode {
+  if (facts.quality !== "Original") return "transcode"; // re-encode for bitrate
+  if (videoNeedsTranscode(facts.video)) return "transcode";
+  if (audioCodecNeedsTranscode(facts.activeAudioCodec)) return "transcode_audio";
+  const c = String(facts.container || "").toLowerCase();
+  if (facts.forceNonDirect || (c !== "" && !DIRECT_CONTAINERS.has(c))) return "remux";
+  return "direct";
+}
+
+/** Short label for the player's playback-mode chip. */
+export function streamModeLabel(mode: StreamMode): string {
+  switch (mode) {
+    case "direct": return "Direct play";
+    case "remux": return "Remux";
+    case "transcode_audio": return "Transcode (audio)";
+    default: return "Transcode";
+  }
+}
+
+/** Jellyfin Sessions PlayMethod reported with progress for a given mode. */
+export function playMethodForMode(mode: StreamMode): "DirectPlay" | "DirectStream" | "Transcode" {
+  if (mode === "direct") return "DirectPlay";
+  if (mode === "remux") return "DirectStream";
+  return "Transcode";
+}
+
 /** Group episodes by season number, seasons ascending. */
 export function groupBySeason(episodes: EpisodeShape[]): { season: number; episodes: EpisodeShape[] }[] {
   const map = new Map<number, EpisodeShape[]>();

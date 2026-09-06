@@ -102,19 +102,44 @@ export interface PlaybackTrack {
   codec?: string;
 }
 
+/** Video facts from playback-info (drives the direct/remux/transcode routing). */
+export interface PlaybackVideo {
+  codec?: string;
+  profile?: string;
+  width?: number;
+  height?: number;
+  bit_depth?: number;
+  bit_rate?: number;
+}
+
 /** Tracks + media-source for the player's audio/subtitle pickers. */
 export interface PlaybackInfo {
   media_source_id: string;
+  /** Original container (e.g. "mkv", "mp4") — remux needed when not mp4-family. */
+  container?: string;
+  /** First video stream's codec facts (null for audio-only sources). */
+  video?: PlaybackVideo | null;
   audio: PlaybackTrack[];
   subtitles: PlaybackTrack[];
 }
 
-/** Optional overrides for the direct-play stream URL (item 3). */
+/**
+ * How Jellyfin serves the stream: direct = Static file (range-seekable);
+ * remux = copy/copy to MP4; transcode_audio = video copy + AAC;
+ * transcode = H.264 + AAC (honours max_bitrate).
+ */
+export type StreamMode = "direct" | "remux" | "transcode_audio" | "transcode";
+
+/** Optional overrides for the stream URL (item 3 + honest routing). */
 export interface StreamOptions {
   audio_stream_index?: number;
   max_bitrate?: number;
-  /** Transcode audio to AAC (video copied) for non-browser audio codecs. */
+  /** Transcode audio to AAC (video copied) — legacy bool alias for mode. */
   transcode_audio?: boolean;
+  /** Stream-routing mode (direct default). */
+  mode?: StreamMode;
+  /** Start the non-direct stream at this offset (restart-seek); ticks = s × 1e7. */
+  start_time_ticks?: number;
 }
 
 export class ApiError extends Error {
@@ -159,6 +184,8 @@ export interface ProgressPayload {
   position_ticks: number;
   is_paused: boolean;
   event: "start" | "timeupdate" | "stopped";
+  /** How the item is being played: DirectPlay | DirectStream | Transcode. */
+  play_method?: string;
 }
 
 export const api = {
@@ -173,12 +200,14 @@ export const api = {
     postJson<ItemStateResult>(`/library/${encodeURIComponent(itemId)}/state`, { watched }),
   /** Fire-and-forget playback position report (soft no when backend absent). */
   reportProgress: (payload: ProgressPayload) => postJson<unknown>("/jellyfin/progress", payload),
-  /** Same-origin direct-play stream URL for an item (token stays server-side). */
+  /** Same-origin stream URL for an item (token stays server-side). */
   streamUrl: (itemId: string, opts?: StreamOptions) => {
     const q = new URLSearchParams();
+    if (opts?.mode && opts.mode !== "direct") q.set("mode", opts.mode);
+    if (opts?.transcode_audio) q.set("transcode_audio", "true");
     if (opts?.audio_stream_index) q.set("audio_stream_index", String(opts.audio_stream_index));
     if (opts?.max_bitrate) q.set("max_bitrate", String(opts.max_bitrate));
-    if (opts?.transcode_audio) q.set("transcode_audio", "true");
+    if (opts?.start_time_ticks) q.set("start_time_ticks", String(opts.start_time_ticks));
     const qs = q.toString();
     return `${BASE}/jellyfin/stream/${encodeURIComponent(itemId)}${qs ? `?${qs}` : ""}`;
   },

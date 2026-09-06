@@ -855,11 +855,11 @@ export function Player({
             <label className="flex items-center gap-1.5 text-xs text-zinc-400">
               Subs
               <select
-                value={subIndex == null ? 0 : subIndex}
-                onChange={(e) => setSubIndex(e.target.value ? Number(e.target.value) : null)}
+                value={subIndex == null ? "" : String(subIndex)}
+                onChange={(e) => setSubIndex(e.target.value === "" ? null : Number(e.target.value))}
                 className={selectCls}
               >
-                <option value={0}>Off</option>
+                <option value="">Off</option>
                 {info.subtitles.map((s) => (
                   <option key={s.index} value={s.index}>
                     {s.name} {s.language ? `(${s.language})` : ""}

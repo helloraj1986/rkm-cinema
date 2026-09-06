@@ -64,10 +64,16 @@ def jellyfin_subtitle(
     if not id:
         raise HTTPException(status_code=404, detail="Missing item id")
     source = ms or id
-    up = (f"{cfg.JELLYFIN_URL}/Videos/{id}/{source}/Subtitles/{index}/Stream"
-          f"?api_key={cfg.JELLYFIN_API_KEY}&format=vtt")
+    # Live-verified on Jellyfin 10.11.11: the subtitle VTT stream lives at
+    # /Videos/{id}/{src}/Subtitles/{index}/0/Stream.vtt (extra `/0/` path
+    # segment + the format as a FILE EXTENSION). The
+    # `/Subtitles/{index}/Stream?format=vtt` form 404s — do not use it.
+    up = (f"{cfg.JELLYFIN_URL}/Videos/{id}/{source}/Subtitles/{index}/0/Stream.vtt"
+          f"?api_key={cfg.JELLYFIN_API_KEY}")
     try:
-        resp = urllib.request.urlopen(up, timeout=12)
+        # Generous timeout: Jellyfin converts the embedded subtitle track to
+        # VTT on first request and can take >12 s cold (then caches ~0.05 s).
+        resp = urllib.request.urlopen(up, timeout=45)
     except urllib.error.HTTPError as e:
         raise HTTPException(status_code=e.code, detail=e.reason or "Jellyfin subtitle error")  # noqa: BLE001
     except Exception as e:  # noqa: BLE001 - transport failure

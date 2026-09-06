@@ -277,8 +277,11 @@ def test_jellyfin_subtitle_route_proxies_vtt(monkeypatch):
 
     assert r.status_code == 200
     assert "api_key=sekret" in captured["url"]
-    assert "format=vtt" in captured["url"]
-    assert "/Subtitles/3/Stream" in captured["url"]
+    # Live-verified on Jellyfin 10.11.11: subtitle VTT lives at
+    # .../Subtitles/{index}/0/Stream.vtt — the format is the file extension
+    # (the ?format=vtt query form 404s).
+    assert "format=vtt" not in captured["url"]
+    assert "/Subtitles/3/0/Stream.vtt" in captured["url"]
     assert r.headers["Content-Type"].startswith("text/vtt"), r.headers
     assert b"WEBVTT" in r.content
 

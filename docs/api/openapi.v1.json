@@ -625,6 +625,159 @@
         }
       }
     },
+    "/api/jellyfin/hls/{item_id}/master.m3u8": {
+      "get": {
+        "summary": "Jellyfin Hls Master",
+        "description": "Same-origin HLS master playlist for one item.\n\nFetches Jellyfin's ``/Videos/{id}/master.m3u8`` with the codec pair for the\nrequested mode, then **rewrites every URI**: the embedded ``api_key`` is\nstripped and relative URIs are kept relative, so hls.js/native HLS resolve\nthem against this same-origin URL \u2014 media playlists and segments then hit\nthe passthrough route below and the token never leaves the server.\n\n``mode`` mirrors the stream route's non-direct ladder:\n- ``remux`` \u2192 copy/copy TS (browser-safe audio only).\n- ``transcode_audio`` \u2192 video copied, audio \u2192 AAC (the Phase 0 finding for\n  EAC3/AC3/DTS/TrueHD: copy-copy HLS keeps ``ec-3``, which Chrome MSE can't\n  decode). Legacy ``transcode_audio=true`` maps here.\n- ``transcode`` \u2192 H.264 + AAC; honours ``max_bitrate`` / ``audio_stream_index``.\n\nResume/seek needs no server param: the playlist is full VOD and hls.js\nseeks with ``startPosition``/``currentTime`` (Phase 0 verified\n``StartTimeTicks`` does NOT truncate the playlist).",
+        "operationId": "jellyfin_hls_master_api_jellyfin_hls__item_id__master_m3u8_get",
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Item Id"
+            }
+          },
+          {
+            "name": "mode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "remux (copy-copy) | transcode_audio (video copy + AAC, for EAC3 etc.) | transcode (h264+aac). Defaults to transcode unless the legacy transcode_audio=true flag is set",
+              "title": "Mode"
+            },
+            "description": "remux (copy-copy) | transcode_audio (video copy + AAC, for EAC3 etc.) | transcode (h264+aac). Defaults to transcode unless the legacy transcode_audio=true flag is set"
+          },
+          {
+            "name": "audio_stream_index",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "AudioStreamIndex forwarded to Jellyfin (>0 only)",
+              "default": 0,
+              "title": "Audio Stream Index"
+            },
+            "description": "AudioStreamIndex forwarded to Jellyfin (>0 only)"
+          },
+          {
+            "name": "max_bitrate",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "MaxStreamingBitrate (bps) on the transcode modes; 0 = unthrottled",
+              "default": 0,
+              "title": "Max Bitrate"
+            },
+            "description": "MaxStreamingBitrate (bps) on the transcode modes; 0 = unthrottled"
+          },
+          {
+            "name": "transcode_audio",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Legacy alias for mode=transcode_audio",
+              "default": false,
+              "title": "Transcode Audio"
+            },
+            "description": "Legacy alias for mode=transcode_audio"
+          },
+          {
+            "name": "media_source_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "MediaSourceId (defaults to the item id)",
+              "default": "",
+              "title": "Media Source Id"
+            },
+            "description": "MediaSourceId (defaults to the item id)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/jellyfin/hls/{item_id}/{rest}": {
+      "get": {
+        "summary": "Jellyfin Hls Resource",
+        "description": "Passthrough for the media playlist + segments the playlists reference.\n\n``rest`` mirrors the upstream path suffix after ``/Videos/{item_id}/``\n(e.g. ``main.m3u8``, ``hls1/main/0.ts``). The client query \u2014 which carries\n``MediaSourceId`` + codec params + ``runtimeTicks``/segment ticks exactly as\nJellyfin emitted them in the playlist URIs \u2014 is forwarded unchanged, with a\nserver-side ``api_key`` added; any client-supplied ``api_key`` is dropped\n(defence in depth; rewritten playlists never include one).\n\nPlaylist bodies (``*m3u8``) are read fully and re-stripped of any embedded\n``api_key``; segment bodies stream through with MIME + Range headers.",
+        "operationId": "jellyfin_hls_resource_api_jellyfin_hls__item_id___rest__get",
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Item Id"
+            }
+          },
+          {
+            "name": "rest",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Rest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/jellyfin/playback-info": {
       "get": {
         "summary": "Jellyfin Playback Info",

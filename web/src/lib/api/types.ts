@@ -401,6 +401,73 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/jellyfin/hls/{item_id}/master.m3u8": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Jellyfin Hls Master
+         * @description Same-origin HLS master playlist for one item.
+         *
+         *     Fetches Jellyfin's ``/Videos/{id}/master.m3u8`` with the codec pair for the
+         *     requested mode, then **rewrites every URI**: the embedded ``api_key`` is
+         *     stripped and relative URIs are kept relative, so hls.js/native HLS resolve
+         *     them against this same-origin URL — media playlists and segments then hit
+         *     the passthrough route below and the token never leaves the server.
+         *
+         *     ``mode`` mirrors the stream route's non-direct ladder:
+         *     - ``remux`` → copy/copy TS (browser-safe audio only).
+         *     - ``transcode_audio`` → video copied, audio → AAC (the Phase 0 finding for
+         *       EAC3/AC3/DTS/TrueHD: copy-copy HLS keeps ``ec-3``, which Chrome MSE can't
+         *       decode). Legacy ``transcode_audio=true`` maps here.
+         *     - ``transcode`` → H.264 + AAC; honours ``max_bitrate`` / ``audio_stream_index``.
+         *
+         *     Resume/seek needs no server param: the playlist is full VOD and hls.js
+         *     seeks with ``startPosition``/``currentTime`` (Phase 0 verified
+         *     ``StartTimeTicks`` does NOT truncate the playlist).
+         */
+        get: operations["jellyfin_hls_master_api_jellyfin_hls__item_id__master_m3u8_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jellyfin/hls/{item_id}/{rest}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Jellyfin Hls Resource
+         * @description Passthrough for the media playlist + segments the playlists reference.
+         *
+         *     ``rest`` mirrors the upstream path suffix after ``/Videos/{item_id}/``
+         *     (e.g. ``main.m3u8``, ``hls1/main/0.ts``). The client query — which carries
+         *     ``MediaSourceId`` + codec params + ``runtimeTicks``/segment ticks exactly as
+         *     Jellyfin emitted them in the playlist URIs — is forwarded unchanged, with a
+         *     server-side ``api_key`` added; any client-supplied ``api_key`` is dropped
+         *     (defence in depth; rewritten playlists never include one).
+         *
+         *     Playlist bodies (``*m3u8``) are read fully and re-stripped of any embedded
+         *     ``api_key``; segment bodies stream through with MIME + Range headers.
+         */
+        get: operations["jellyfin_hls_resource_api_jellyfin_hls__item_id___rest__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/jellyfin/playback-info": {
         parameters: {
             query?: never;
@@ -1728,6 +1795,80 @@ export interface operations {
                 "application/json": components["schemas"]["JellyfinProgressRequest"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    jellyfin_hls_master_api_jellyfin_hls__item_id__master_m3u8_get: {
+        parameters: {
+            query?: {
+                /** @description remux (copy-copy) | transcode_audio (video copy + AAC, for EAC3 etc.) | transcode (h264+aac). Defaults to transcode unless the legacy transcode_audio=true flag is set */
+                mode?: string | null;
+                /** @description AudioStreamIndex forwarded to Jellyfin (>0 only) */
+                audio_stream_index?: number;
+                /** @description MaxStreamingBitrate (bps) on the transcode modes; 0 = unthrottled */
+                max_bitrate?: number;
+                /** @description Legacy alias for mode=transcode_audio */
+                transcode_audio?: boolean;
+                /** @description MediaSourceId (defaults to the item id) */
+                media_source_id?: string;
+            };
+            header?: never;
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    jellyfin_hls_resource_api_jellyfin_hls__item_id___rest__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: string;
+                rest: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

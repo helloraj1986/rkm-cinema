@@ -1,12 +1,15 @@
 # Plex-Style Views & Navigation Plan — dedicated item pages + sidebar folders
 
-Status: **PARKED 2026-09-06 — NOT STARTED.** User feedback after the Plex-style
-UI revamp shipped (deployed `.\\bootstrap.ps1`, confirmed the overlay works):
-*"I wanted it like Plex — the movie or TV show should open in its own detailed
-window rather than just an overlay… like Plex has its views, and you can
-navigate to TV Shows or Movies folders on the left side bar."* This plan
-captures that direction for a future session. When started, work through it as
-Phases 0–3 exactly like `docs/PLEX_UI_PLAN.md` was executed.
+Status: **EXECUTED 2026-09-07 — Phases 0–2 DONE (`34e4dfa`, frontend-only).**
+The user approved implementing this plan; the preplay overlay became true
+Plex-style navigation: URL-backed item pages (`/library/item/:id`, Back works,
+deep-linkable) + sidebar **Home · Movies · TV Shows** folders. Phase 0–1 shipped
+(see `PROGRESS.md`); Phase 2's acceptance is the user's RKM-HP eyeball after
+rebuilding `web` — `.\\bootstrap.ps1` or
+`docker compose -p rkm-bundled up -d --build web` (live-data headless
+acceptance was deferred: the bundled-Jellyfin admin password in
+`rkm.config.toml` was stale → 401). The optional later slices in §4 remain
+future work.
 
 ---
 

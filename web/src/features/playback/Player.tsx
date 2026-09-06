@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { api, type PlaybackInfo, type ProgressPayload } from "../../lib/api/client";
 import {
   nextEpisode, qualityFor, AUTOPLAY_DELAY_MS, QUALITY_OPTIONS, PLAYBACK_RATES,
-  type QueueEntry,
+  audioCodecNeedsTranscode, type QueueEntry,
 } from "./lib";
 
 export interface PlayTarget {
@@ -57,12 +57,15 @@ export function Player({
   const [subIndex, setSubIndex] = useState<number | null>(null); // null = off
   const [quality, setQuality] = useState("Original");
   const [rate, setRate] = useState(1);
+  // True when the active audio track needs transcode (EAC3/AC3/DTS/TrueHD).
+  const [transcode, setTranscode] = useState(false);
 
   const msId = info?.media_source_id || item.item_id;
   const bitrate = qualityFor(quality);
   const src = api.streamUrl(item.item_id, {
     ...(audioIndex ? { audio_stream_index: audioIndex } : {}),
     ...(bitrate ? { max_bitrate: bitrate } : {}),
+    ...(transcode ? { transcode_audio: true } : {}),
   });
   const subSrc = subIndex != null && info ? api.subtitleUrl(item.item_id, msId, subIndex) : null;
   const backdrop = api.backdropUrl(item.item_id);
@@ -94,6 +97,16 @@ export function Player({
     if (!v) return;
     v.playbackRate = rate;
   }, [rate]);
+
+  // Decide audio transcode from the active track's codec (browser can't decode
+  // EAC3/AC3/DTS/TrueHD). Default = first audio track; else the picked track.
+  useEffect(() => {
+    if (!info) return;
+    const active = audioIndex > 0
+      ? info.audio.find((a) => a.index === audioIndex)
+      : info.audio[0];
+    setTranscode(audioCodecNeedsTranscode(active?.codec));
+  }, [info, audioIndex]);
 
   const clearAuto = () => {
     if (autoTimerRef.current != null) window.clearInterval(autoTimerRef.current);
@@ -317,6 +330,7 @@ export function Player({
 
           <span className="ml-auto text-[11px] text-zinc-500">
             {info ? `${info.audio.length} audio · ${info.subtitles.length} sub tracks` : "tracks unavailable"}
+            {transcode ? " · ⚠ audio transcoding (codec)" : ""}
           </span>
         </div>
       </div>

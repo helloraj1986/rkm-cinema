@@ -98,6 +98,8 @@ export interface PlaybackTrack {
   index: number;
   name: string;
   language: string;
+  /** Audio codec (e.g. "aac", "eac3") — drives the audio-transcode decision. */
+  codec?: string;
 }
 
 /** Tracks + media-source for the player's audio/subtitle pickers. */
@@ -111,6 +113,8 @@ export interface PlaybackInfo {
 export interface StreamOptions {
   audio_stream_index?: number;
   max_bitrate?: number;
+  /** Transcode audio to AAC (video copied) for non-browser audio codecs. */
+  transcode_audio?: boolean;
 }
 
 export class ApiError extends Error {
@@ -174,6 +178,7 @@ export const api = {
     const q = new URLSearchParams();
     if (opts?.audio_stream_index) q.set("audio_stream_index", String(opts.audio_stream_index));
     if (opts?.max_bitrate) q.set("max_bitrate", String(opts.max_bitrate));
+    if (opts?.transcode_audio) q.set("transcode_audio", "true");
     const qs = q.toString();
     return `${BASE}/jellyfin/stream/${encodeURIComponent(itemId)}${qs ? `?${qs}` : ""}`;
   },

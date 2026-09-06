@@ -3,6 +3,7 @@ import type { EpisodeShape } from "../../lib/api/client";
 import {
   episodeQueue, groupBySeason, nextEpisode, playLabel, startPosition,
   PLAYBACK_RATES, QUALITY_OPTIONS, qualityFor, AUTOPLAY_DELAY_MS,
+  audioCodecNeedsTranscode,
 } from "./lib";
 
 const ep = (id: string, season: number, episode: number, played = false, position = 0): EpisodeShape => ({
@@ -66,5 +67,19 @@ describe("item 3 player helpers", () => {
   });
   it("has a finite autoplay-next countdown", () => {
     expect(AUTOPLAY_DELAY_MS).toBeGreaterThan(0);
+  });
+  it("audioCodecNeedsTranscode only for non-browser codecs", () => {
+    expect(audioCodecNeedsTranscode("eac3")).toBe(true);
+    expect(audioCodecNeedsTranscode("ac3")).toBe(true);
+    expect(audioCodecNeedsTranscode("dts")).toBe(true);
+    expect(audioCodecNeedsTranscode("TRUEHD")).toBe(true);
+    expect(audioCodecNeedsTranscode("aac")).toBe(false);
+    expect(audioCodecNeedsTranscode("AAC")).toBe(false); // case-insensitive
+    expect(audioCodecNeedsTranscode("opus")).toBe(false);
+    expect(audioCodecNeedsTranscode("flac")).toBe(false);
+    // Unknown/missing → assume safe (don't over-transcode).
+    expect(audioCodecNeedsTranscode(undefined)).toBe(false);
+    expect(audioCodecNeedsTranscode(null)).toBe(false);
+    expect(audioCodecNeedsTranscode("")).toBe(false);
   });
 });

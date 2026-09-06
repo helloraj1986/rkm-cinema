@@ -492,7 +492,7 @@
     "/api/jellyfin/stream/{item_id}": {
       "get": {
         "summary": "Jellyfin Stream",
-        "description": "Proxy one Jellyfin item's video to the browser for in-app playback.\n\nForwarded headers: the client's ``Range`` (so seeking works). Returned:\nthe upstream status (``206`` for a range, ``200`` for full) plus the\n``Content-Type`` / ``Accept-Ranges`` / ``Content-Range`` pass-throughs.\n\nOptional ``audio_stream_index`` switches an embedded audio track (direct\nplay restarts with ``AudioStreamIndex``); ``max_bitrate`` caps the stream\nfor the quality picker. Both default to the item's original single output.",
+        "description": "Proxy one Jellyfin item's video to the browser for in-app playback.\n\nForwarded headers: the client's ``Range`` (so seeking works). Returned:\nthe upstream status (``206`` for a range, ``200`` for full) plus the\n``Content-Type`` / ``Accept-Ranges`` / ``Content-Range`` pass-throughs.\n\n**Direct play (default):** ``Static=true`` serves the container untouched \u2014\nideal for H.264/AAC. **Audio transcode (``transcode_audio=true``):** switches\nto Jellyfin's on-the-fly stream with ``VideoCodec=copy`` (video untouched)\nbut ``AudioCodec=aac`` (audio re-encoded to browser-decodable AAC). The player\npicks this when the selected audio track is EAC3/AC3/DTS/TrueHD.\n\n``audio_stream_index`` selects an embedded audio track; ``max_bitrate`` caps\nthe stream. Both are omitted in the common default case.",
         "operationId": "jellyfin_stream_api_jellyfin_stream__item_id__get",
         "parameters": [
           {
@@ -527,6 +527,18 @@
               "title": "Max Bitrate"
             },
             "description": "MaxStreamingBitrate (bps) for the quality picker; 0 = original"
+          },
+          {
+            "name": "transcode_audio",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Transcode audio to AAC (video copied) \u2014 required for EAC3/AC3/DTS/TrueHD, which browsers can't decode",
+              "default": false,
+              "title": "Transcode Audio"
+            },
+            "description": "Transcode audio to AAC (video copied) \u2014 required for EAC3/AC3/DTS/TrueHD, which browsers can't decode"
           }
         ],
         "responses": {

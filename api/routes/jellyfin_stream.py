@@ -56,6 +56,7 @@ def jellyfin_stream(
     request: Request,
     audio_stream_index: int = Query(default=0, ge=0),
     max_bitrate: int = Query(default=0, ge=0, description="MaxStreamingBitrate (bps) for the quality picker; 0 = original"),
+    transcode_audio: bool = Query(default=False, description="Transcode audio to AAC (video copied) — required for EAC3/AC3/DTS/TrueHD, which browsers can't decode"),
 ):
     """Proxy one Jellyfin item's video to the browser for in-app playback.
 
@@ -63,9 +64,14 @@ def jellyfin_stream(
     the upstream status (``206`` for a range, ``200`` for full) plus the
     ``Content-Type`` / ``Accept-Ranges`` / ``Content-Range`` pass-throughs.
 
-    Optional ``audio_stream_index`` switches an embedded audio track (direct
-    play restarts with ``AudioStreamIndex``); ``max_bitrate`` caps the stream
-    for the quality picker. Both default to the item's original single output.
+    **Direct play (default):** ``Static=true`` serves the container untouched —
+    ideal for H.264/AAC. **Audio transcode (``transcode_audio=true``):** switches
+    to Jellyfin's on-the-fly stream with ``VideoCodec=copy`` (video untouched)
+    but ``AudioCodec=aac`` (audio re-encoded to browser-decodable AAC). The player
+    picks this when the selected audio track is EAC3/AC3/DTS/TrueHD.
+
+    ``audio_stream_index`` selects an embedded audio track; ``max_bitrate`` caps
+    the stream. Both are omitted in the common default case.
     """
     cfg = get_config()
     if not (cfg.JELLYFIN_URL and cfg.JELLYFIN_API_KEY):
@@ -73,12 +79,22 @@ def jellyfin_stream(
     if not item_id:
         raise HTTPException(status_code=404, detail="Missing item id")
 
-    up = (f"{cfg.JELLYFIN_URL}/Videos/{item_id}/stream"
-          f"?api_key={cfg.JELLYFIN_API_KEY}&Static=true")
-    if audio_stream_index > 0:
-        up += f"&AudioStreamIndex={audio_stream_index}"
-    if max_bitrate > 0:
-        up += f"&MaxStreamingBitrate={max_bitrate}"
+    if transcode_audio:
+        # Jellyfin progressive stream: copy video, transcode audio -> AAC 2.0.
+        up = (f"{cfg.JELLYFIN_URL}/Videos/{item_id}/stream"
+              f"?api_key={cfg.JELLYFIN_API_KEY}&MediaSourceId={item_id}"
+              f"&VideoCodec=copy&AudioCodec=aac&MaxAudioChannels=2")
+        if audio_stream_index > 0:
+            up += f"&AudioStreamIndex={audio_stream_index}"
+        if max_bitrate > 0:
+            up += f"&MaxStreamingBitrate={max_bitrate}"
+    else:
+        up = (f"{cfg.JELLYFIN_URL}/Videos/{item_id}/stream"
+              f"?api_key={cfg.JELLYFIN_API_KEY}&Static=true")
+        if audio_stream_index > 0:
+            up += f"&AudioStreamIndex={audio_stream_index}"
+        if max_bitrate > 0:
+            up += f"&MaxStreamingBitrate={max_bitrate}"
     headers: dict[str, str] = {}
     rng = request.headers.get("range")
     if rng:

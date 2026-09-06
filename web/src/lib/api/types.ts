@@ -349,9 +349,14 @@ export interface paths {
          *     the upstream status (``206`` for a range, ``200`` for full) plus the
          *     ``Content-Type`` / ``Accept-Ranges`` / ``Content-Range`` pass-throughs.
          *
-         *     Optional ``audio_stream_index`` switches an embedded audio track (direct
-         *     play restarts with ``AudioStreamIndex``); ``max_bitrate`` caps the stream
-         *     for the quality picker. Both default to the item's original single output.
+         *     **Direct play (default):** ``Static=true`` serves the container untouched —
+         *     ideal for H.264/AAC. **Audio transcode (``transcode_audio=true``):** switches
+         *     to Jellyfin's on-the-fly stream with ``VideoCodec=copy`` (video untouched)
+         *     but ``AudioCodec=aac`` (audio re-encoded to browser-decodable AAC). The player
+         *     picks this when the selected audio track is EAC3/AC3/DTS/TrueHD.
+         *
+         *     ``audio_stream_index`` selects an embedded audio track; ``max_bitrate`` caps
+         *     the stream. Both are omitted in the common default case.
          */
         get: operations["jellyfin_stream_api_jellyfin_stream__item_id__get"];
         put?: never;
@@ -1659,6 +1664,8 @@ export interface operations {
                 audio_stream_index?: number;
                 /** @description MaxStreamingBitrate (bps) for the quality picker; 0 = original */
                 max_bitrate?: number;
+                /** @description Transcode audio to AAC (video copied) — required for EAC3/AC3/DTS/TrueHD, which browsers can't decode */
+                transcode_audio?: boolean;
             };
             header?: never;
             path: {

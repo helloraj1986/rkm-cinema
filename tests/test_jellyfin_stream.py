@@ -144,6 +144,27 @@ def test_stream_forwards_audio_index_and_bitrate(monkeypatch):
     assert "MaxStreamingBitrate" not in captured["url"]
 
 
+def test_stream_transcodes_audio_to_aac(monkeypatch):
+    """transcode_audio=true → video-copy + audio-to-AAC upstream (no Static direct play)."""
+    _patch_config(monkeypatch)
+    captured = {}
+
+    def fake_urlopen(req, timeout=None):
+        captured["url"] = req.full_url
+        return _FakeStreamResponse(body=b"X", status=206,
+                                   headers={"Content-Type": "video/mp4"})
+
+    with patch("api.routes.jellyfin_stream.urllib.request.urlopen", fake_urlopen):
+        client.get("/api/jellyfin/stream/abc123",
+                   params={"transcode_audio": True, "audio_stream_index": 2})
+    assert "Static=true" not in captured["url"], "not direct play when transcoding audio"
+    assert "VideoCodec=copy" in captured["url"]         # video untouched
+    assert "AudioCodec=aac" in captured["url"]          # audio re-encoded for browser
+    assert "MaxAudioChannels=2" in captured["url"]
+    assert "AudioStreamIndex=2" in captured["url"]
+    assert "api_key=sekret" in captured["url"]
+
+
 def test_jellyfin_backdrop_route_uses_backdrop_kind(monkeypatch):
     """GET /api/jellyfin/backdrop proxies the Backdrop image via the service."""
     import api.routes.jellyfin_poster as pmod

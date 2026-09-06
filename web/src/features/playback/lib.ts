@@ -42,6 +42,21 @@ export function qualityFor(label: string): number | null {
 /** Seconds to hold the autoplay-next countdown before advancing. */
 export const AUTOPLAY_DELAY_MS = 8000;
 
+/** Audio codecs major browsers decode natively in a <video> element. */
+const BROWSER_SAFE_AUDIO = new Set([
+  "aac", "mp3", "opus", "vorbis", "flac",
+  "pcm_s16le", "pcm_s24le", "pcm_mulaw", "alac",
+]);
+
+/**
+ * True when a codec (EAC3/AC3/DTS/TrueHD…) must be transcoded for the browser.
+ * Unknown/missing codec -> false (assume direct play is fine; don't over-transcode).
+ */
+export function audioCodecNeedsTranscode(codec?: string | null): boolean {
+  if (!codec) return false;
+  return !BROWSER_SAFE_AUDIO.has(codec.toLowerCase());
+}
+
 /** Group episodes by season number, seasons ascending. */
 export function groupBySeason(episodes: EpisodeShape[]): { season: number; episodes: EpisodeShape[] }[] {
   const map = new Map<number, EpisodeShape[]>();

@@ -378,7 +378,9 @@ class JellyfinLibraryProvider(LibraryProvider):
         so the picker never offers a subtitle the browser can't draw.
 
         Returns ``{"media_source_id": str, "audio": [{"index", "name",
-        "language"}], "subtitles": [{"index", "name", "language"}]}`` or None.
+        "language", "codec"}], "subtitles": [{"index", "name",
+        "language"}]}`` or None. ``codec`` drives the player's audio-transcode
+        decision (EAC3/AC3/DTS/TrueHD aren't browser-decodable; AAC/MP3/Opus are).
         """
         if not self._configured() or not item_id:
             return None
@@ -415,7 +417,10 @@ class JellyfinLibraryProvider(LibraryProvider):
                        or f"Track {index}")
             lang = str(st.get("Language") or "")
             if kind == "Audio":
-                audio.append({"index": int(index), "name": name, "language": lang})
+                audio.append({
+                    "index": int(index), "name": name, "language": lang,
+                    "codec": str(st.get("Codec") or ""),
+                })
             elif kind == "Subtitle" and bool(st.get("IsTextSubtitleStream")):
                 subtitles.append({"index": int(index), "name": name, "language": lang})
         return {"media_source_id": ms_id, "audio": audio, "subtitles": subtitles}

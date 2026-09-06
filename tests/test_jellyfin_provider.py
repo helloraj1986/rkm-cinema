@@ -163,8 +163,8 @@ def test_playback_info_normalizes_tracks():
     prov = JellyfinLibraryProvider(config=_cfg())
     prov._user_id = lambda: "u1"  # avoid a real /Users call
     media = [
-        {"Type": "Audio", "Index": 1, "DisplayTitle": "eng (AAC)", "Language": "eng"},
-        {"Type": "Audio", "Index": 2, "DisplayTitle": "spa", "Language": "spa"},
+        {"Type": "Audio", "Index": 1, "DisplayTitle": "eng (AAC)", "Language": "eng", "Codec": "aac"},
+        {"Type": "Audio", "Index": 2, "DisplayTitle": "spa", "Language": "spa", "Codec": "eac3"},
         {"Type": "Subtitle", "Index": 3, "DisplayTitle": "English (SRT)",
          "Language": "eng", "IsTextSubtitleStream": True},
         # Image-based PGS subtitle must be EXCLUDED (browser <track> can't render it)
@@ -186,6 +186,7 @@ def test_playback_info_normalizes_tracks():
     assert info["media_source_id"] == "src-1"
     assert [a["index"] for a in info["audio"]] == [1, 2]
     assert info["audio"][0]["name"] == "eng (AAC)"
+    assert info["audio"][1]["codec"] == "eac3", "audio codec drives the transcode decision"
     assert [s["index"] for s in info["subtitles"]] == [3], "image subs excluded"
     assert info["subtitles"][0]["language"] == "eng"
     assert "/Items/itm-1/PlaybackInfo" in captured["url"]

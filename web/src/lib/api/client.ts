@@ -63,6 +63,20 @@ export interface LibraryItemsShape {
   items: MediaItem[];
 }
 
+/**
+ * GET /api/library — the legacy library read (PLEX_VIEWS_PLAN Home view).
+ * `recent` = recently-added titles (limit 8), the same `_item_public` shape
+ * as items above. Frozen endpoint; additive client surface only.
+ */
+export interface LibraryRecentShape {
+  provider: string | null;
+  available: boolean;
+  counts: Record<string, number>;
+  recent: MediaItem[];
+  server?: string | null;
+  urls?: Record<string, string> | null;
+}
+
 export interface EpisodeShape {
   id: string;
   name: string;
@@ -254,6 +268,8 @@ export const api = {
   getConfig: () => getJson<ConfigShape>("/config"),
   getHealth: () => getJson<HealthShape>("/health"),
   getLibraryItems: () => getJson<LibraryItemsShape>("/library/items"),
+  /** GET /api/library — legacy read: counts + recently-added (Home view row). */
+  getLibraryRecent: () => getJson<LibraryRecentShape>("/library"),
   getContinueWatching: () => getJson<LibraryItemsShape>("/library/continue-watching"),
   getEpisodes: (seriesId: string) => getJson<EpisodesShape>(`/library/series/${encodeURIComponent(seriesId)}/episodes`),
   scanLibrary: () => getJson<ScanResult>("/library/scan"),

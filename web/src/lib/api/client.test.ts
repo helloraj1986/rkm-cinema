@@ -6,6 +6,7 @@ describe("frozen /api client surface", () => {
     expect(typeof api.getConfig).toBe("function");
     expect(typeof api.getHealth).toBe("function");
     expect(typeof api.getLibraryItems).toBe("function");
+    expect(typeof api.getLibraryRecent).toBe("function"); // /api/library (Home row)
     expect(typeof api.getContinueWatching).toBe("function");
     expect(typeof api.getEpisodes).toBe("function");
     expect(typeof api.getItemDetail).toBe("function"); // Plex preplay (detail)

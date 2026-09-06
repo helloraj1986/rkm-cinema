@@ -5,6 +5,11 @@ export function useLibraryItems() {
   return useQuery({ queryKey: ["library", "items"], queryFn: api.getLibraryItems });
 }
 
+/** Recently-added titles (GET /api/library) — the Home view's added row. */
+export function useLibraryRecent() {
+  return useQuery({ queryKey: ["library", "recent"], queryFn: api.getLibraryRecent });
+}
+
 export function useContinueWatching() {
   return useQuery({ queryKey: ["library", "continue"], queryFn: api.getContinueWatching });
 }

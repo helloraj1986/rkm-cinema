@@ -47,6 +47,25 @@ export function rowHead(title: string, subtitle?: string): string {
   return subtitle ? `${title} · ${subtitle}` : title;
 }
 
+// ---------------------------------------------- Plex-style views (PLEX_VIEWS_PLAN)
+/** Sidebar/library folder kinds — movies (Plex "Movies") and series ("TV Shows"). */
+export type LibraryKind = "movies" | "shows";
+
+/**
+ * Split the cached library items into one Plex-style folder. Pure + shared by
+ * the /library/movies and /library/shows folder views (client-side split of the
+ * already-fetched `/api/library/items` response — zero backend/contract work).
+ */
+export function libraryItemsByType(items: MediaItem[], kind: LibraryKind): MediaItem[] {
+  const wantSeries = kind === "shows";
+  return (items ?? []).filter((i) => (wantSeries ? isSeries(i) : !isSeries(i)));
+}
+
+/** Folder heading label ("Movies" / "TV Shows") for the routed folder views. */
+export function libraryKindLabel(kind: LibraryKind): string {
+  return kind === "movies" ? "Movies" : "TV Shows";
+}
+
 // ---------------------------------------------- Plex-style detail (Phase 2)
 /** Person-headshot proxy URL (token stays server-side). */
 export function personHeadshotUrl(personId: string, width = 200): string | null {

@@ -35,11 +35,11 @@ function Marker({ marker }: { marker: Marker }) {
 }
 
 /**
- * Plex-style card (PLEX_UI_PLAN.md §2): the WHOLE card opens the detail
- * ("preplay") overlay; hover reveals a centred play action (movies) / an
- * Episodes action (series) plus a watched toggle and the Jellyfin deep link.
- * Watched ✓ badge + amber resume bar stay as-is; metadata stays clean — the
- * detail screen holds the rest.
+ * Plex-style card (PLEX_UI_PLAN.md §2 + PLEX_VIEWS_PLAN.md): the WHOLE card
+ * navigates to the item's OWN page (/library/item/:id); hover reveals a
+ * centred play action (movies) / an Episodes action (series) plus a watched
+ * toggle and the Jellyfin deep link. Watched ✓ badge + amber resume bar stay
+ * as-is; metadata stays clean — the item page holds the rest.
  */
 export function MediaCard({
   item,
@@ -48,9 +48,9 @@ export function MediaCard({
   onToggleWatched,
 }: {
   item: MediaItem;
-  /** Primary hover action — movies start playback; series open detail. */
+  /** Primary hover action — movies start playback; series open their page. */
   onQuickPlay: (item: MediaItem) => void;
-  /** Whole-card click — opens the detail/preplay overlay. */
+  /** Whole-card click — navigates to the item's dedicated page. */
   onOpenDetail: (item: MediaItem) => void;
   onToggleWatched?: (item: MediaItem) => void;
 }) {

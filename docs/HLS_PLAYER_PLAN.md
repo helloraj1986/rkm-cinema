@@ -1,7 +1,7 @@
 # HLS/MSE Player Plan — "make it play like Plex"
 
-Status: **Phase 0 DONE (2026-09-06) — probes below; Phase 1 (backend HLS proxy)
-NEXT.** Decision date 2026-09-06 (user, after confirming the
+Status: **Phase 1 DONE (2026-09-06) — backend HLS proxy live-verified; Phase 2
+(frontend hls.js engine) NEXT.** Decision date 2026-09-06 (user, after confirming the
 seek-bar fix `f74ceba` was redeployed and the bug **still reproduces on every
 3 Body Problem episode**). The progressive-stream approach is being replaced with
 a Plex-style HLS/MSE player. Do NOT continue patching
@@ -132,6 +132,41 @@ like the stream route, though hls.js fetches whole segments.
    `pickStreamMode` today: EAC3/AC3/DTS/TrueHD → `copy+aac` (NOT copy-copy);
    HEVC/10-bit/bitrate → `h264+aac`; browser-safe audio + odd container →
    `copy-copy`. The plan's "remux-HLS (copy)" must be audio-aware.
+
+## 3c. Phase 1 — EXECUTED 2026-09-06 (backend HLS proxy, live-verified)
+
+`api/routes/jellyfin_hls.py` landed + registered (`api/main.py`); contract 30
+→ **32 paths** (additive): `GET /api/jellyfin/hls/{item_id}/master.m3u8` +
+passthrough `GET /api/jellyfin/hls/{item_id}/{rest}`.
+
+**Design (from §3b findings):**
+- `master.m3u8` takes the stream-route vocabulary — `mode=remux|transcode_audio|transcode`
+  (+ optional `audio_stream_index`, `max_bitrate`, legacy `transcode_audio=true`,
+  `media_source_id` fallback to item id) — and maps it to the Jellyfin codec
+  pair verified in §3b: remux→copy-copy, transcode_audio→copy+aac,
+  transcode→h264+aac (+bitrate/index). Default (no mode) = `transcode` unless
+  the legacy flag is set; `direct` → 400 (not an HLS mode).
+- Every upstream playlist is rewritten: **`api_key` stripped from every URI
+  line** (Jellyfin embeds it in master, media, AND each segment URI); relative
+  URIs are left relative so hls.js resolves them against the same-origin
+  master URL → media playlists and segments naturally hit the passthrough.
+- Passthrough (`{rest:path}`) re-injects the server token, drops any
+  client-supplied `api_key` (defence in depth), forwards the query verbatim
+  (MediaSourceId + codec params + runtimeTicks/segment ticks), serves playlist
+  bodies re-stripped of keys, streams `.ts` segments with MIME + Range headers.
+
+**Verification (sandbox, real bundled Jellyfin 10.11.11):**
+- **274 pytest** (+10 HLS route tests: master URL mapping per mode, api_key
+  stripped from bodies, passthrough re-injection + client-key drop, segment
+  Range 206 passthrough, media-playlist rewrite, 400s, 503) · production ruff clean.
+- **Live end-to-end** (uvicorn against host.docker.internal:8098): master →
+  media playlist (442-seg VOD) → first `.ts` segment: HTTP 200 `video/mp2t`,
+  4.8 MB, file(1) = "MPEG transport stream"; Range request → 206 +
+  Content-Range; zero `api_key` leaks in any body; transcode master with
+  bitrate clean too.
+- Contract snapshot + `types.ts` regenerated; **vitest 36/36** · `tsc` clean ·
+  `vite build` ok (frontend untouched — types additive only).
+- Committed (see PROGRESS for hashes) + pushed.
 
 ## 4. Phase 1 — Backend HLS proxy (½–1 day)
 

@@ -1,11 +1,12 @@
 # HLS/MSE Player Plan — "make it play like Plex"
 
-Status: **Phases 0–2 DONE + Phase 3 headless acceptance PASSED (2026-09-06);
-deploy to RKM-HP is the remaining step before the user's live check.** Decision date 2026-09-06 (user, after confirming the
-seek-bar fix `f74ceba` was redeployed and the bug **still reproduces on every
-3 Body Problem episode**). The progressive-stream approach is being replaced with
-a Plex-style HLS/MSE player. Do NOT continue patching
-the progressive/restart-seek machinery.
+Status: **COMPLETE — USER-CONFIRMED FIXED on RKM-HP 2026-09-06 ("YES THE
+PROGRESS BAR BUG IS FIXED NOW").** Phases 0–3 executed same-day: live probes,
+backend same-origin HLS proxy (additive contract 30→32 paths), hls.js engine
+in the player (offset/restart-seek deleted; position = `video.currentTime`;
+seek fetches the segment at the clicked time), headless acceptance PASS, then
+user deploy + live confirmation. This plan is finished — no further work
+unless a follow-up is requested.
 
 ---
 

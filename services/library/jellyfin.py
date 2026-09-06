@@ -345,14 +345,17 @@ class JellyfinLibraryProvider(LibraryProvider):
             logger.warning("Jellyfin _user_state(%s) failed: %s", item_id, e)
             return {"played": False, "play_count": 0}
 
-    def get_poster(self, item_id: str, max_width: int = 500) -> Optional[dict]:
-        """Proxy a Jellyfin item's primary image (keeps the token server-side).
+    def get_poster(self, item_id: str, max_width: int = 500, kind: str = "Primary") -> Optional[dict]:
+        """Proxy a Jellyfin item's artwork (keeps the token server-side).
+
+        ``kind`` mirrors Jellyfin's image type — ``Primary`` (poster),
+        ``Backdrop`` (16:9 keyart), ``Thumb`` (wide banner), etc.
 
         Returns ``{"content": bytes, "content_type": str}`` or None.
         """
         if not self._configured() or not item_id:
             return None
-        url = (f"{self.config.JELLYFIN_URL}/Items/{item_id}/Images/Primary"
+        url = (f"{self.config.JELLYFIN_URL}/Items/{item_id}/Images/{kind}"
                f"?api_key={self.config.JELLYFIN_API_KEY}&maxWidth={max_width}&quality=90&tag=")
         try:
             with urllib.request.urlopen(url, timeout=12) as r:
@@ -362,8 +365,60 @@ class JellyfinLibraryProvider(LibraryProvider):
                 return None
             return {"content": data, "content_type": content_type}
         except Exception as e:
-            logger.warning("Jellyfin get_poster(%s) failed: %s", item_id, e)
+            logger.warning("Jellyfin get_poster(%s/%s) failed: %s", item_id, kind, e)
             return None
+
+    def playback_info(self, item_id: str) -> Optional[dict]:
+        """Enumerate an item's audio + *text* subtitle tracks for the player.
+
+        Probes Jellyfin ``POST /Items/{id}/PlaybackInfo`` and normalises the
+        first media source's ``MediaStreams`` into player-ready lists. Only
+        **text** subtitle streams are returned (``IsTextSubtitleStream``) — an
+        image/PGS track can't render in ``<track>`` and is deliberately skipped
+        so the picker never offers a subtitle the browser can't draw.
+
+        Returns ``{"media_source_id": str, "audio": [{"index", "name",
+        "language"}], "subtitles": [{"index", "name", "language"}]}`` or None.
+        """
+        if not self._configured() or not item_id:
+            return None
+        uid = self._user_id()
+        if not uid:
+            return None
+        import json
+        url = (f"{self.config.JELLYFIN_URL}/Items/{item_id}/PlaybackInfo"
+               f"?api_key={self.config.JELLYFIN_API_KEY}")
+        body = json.dumps({
+            "UserId": uid, "StartTimeTicks": 0,
+            "AutoOpenLiveStream": False, "MediaSourceId": "",
+        }).encode("utf-8")
+        try:
+            req = urllib.request.Request(
+                url, data=body, method="POST",
+                headers={"Content-Type": "application/json"})
+            with urllib.request.urlopen(req, timeout=12) as r:
+                d = json.load(r)
+        except Exception as e:
+            logger.warning("Jellyfin playback_info(%s) failed: %s", item_id, e)
+            return None
+
+        sources = d.get("MediaSources") or []
+        ms_id = str((sources[0] or {}).get("Id") or "") if sources else ""
+        audio: list[dict] = []
+        subtitles: list[dict] = []
+        for st in (sources[0].get("MediaStreams") or []) if sources else []:
+            kind = str(st.get("Type") or "")
+            index = st.get("Index")
+            if index is None:
+                continue
+            name = str(st.get("DisplayTitle") or st.get("Language")
+                       or f"Track {index}")
+            lang = str(st.get("Language") or "")
+            if kind == "Audio":
+                audio.append({"index": int(index), "name": name, "language": lang})
+            elif kind == "Subtitle" and bool(st.get("IsTextSubtitleStream")):
+                subtitles.append({"index": int(index), "name": name, "language": lang})
+        return {"media_source_id": ms_id, "audio": audio, "subtitles": subtitles}
 
     def get_library_counts(self) -> dict:
         return {

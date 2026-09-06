@@ -1,6 +1,9 @@
 import { describe, it, expect } from "vitest";
 import type { EpisodeShape } from "../../lib/api/client";
-import { episodeQueue, groupBySeason, nextEpisode, playLabel, startPosition } from "./lib";
+import {
+  episodeQueue, groupBySeason, nextEpisode, playLabel, startPosition,
+  PLAYBACK_RATES, QUALITY_OPTIONS, qualityFor, AUTOPLAY_DELAY_MS,
+} from "./lib";
 
 const ep = (id: string, season: number, episode: number, played = false, position = 0): EpisodeShape => ({
   id,
@@ -45,5 +48,23 @@ describe("playLabel / startPosition (legacy parity)", () => {
   it("play from 0 when untouched", () => {
     expect(playLabel(ep("e", 1, 1))).toBe("Play");
     expect(startPosition(ep("e", 1, 1))).toBe(0);
+  });
+});
+
+describe("item 3 player helpers", () => {
+  it("offers 0.5–2× playback rates", () => {
+    expect(PLAYBACK_RATES).toEqual([0.5, 1, 1.25, 1.5, 2]);
+  });
+  it("maps a quality label to a bitrate (null = Original)", () => {
+    expect(qualityFor("Original")).toBeNull();
+    expect(qualityFor("1080p")).toBe(8_000_000);
+    expect(qualityFor("720p")).toBe(5_000_000);
+    expect(qualityFor("480p")).toBe(2_500_000);
+    expect(qualityFor("nope")).toBeNull();
+    // every option resolves
+    for (const q of QUALITY_OPTIONS) expect(q.bitrate).toBe(qualityFor(q.label));
+  });
+  it("has a finite autoplay-next countdown", () => {
+    expect(AUTOPLAY_DELAY_MS).toBeGreaterThan(0);
   });
 });

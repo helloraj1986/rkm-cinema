@@ -18,7 +18,7 @@ import json
 import urllib.error
 import urllib.request
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from api.models import JellyfinProgressRequest
@@ -51,12 +51,21 @@ def _iter_chunks(resp):
 
 
 @router.get("/jellyfin/stream/{item_id}")
-def jellyfin_stream(item_id: str, request: Request):
+def jellyfin_stream(
+    item_id: str,
+    request: Request,
+    audio_stream_index: int = Query(default=0, ge=0),
+    max_bitrate: int = Query(default=0, ge=0, description="MaxStreamingBitrate (bps) for the quality picker; 0 = original"),
+):
     """Proxy one Jellyfin item's video to the browser for in-app playback.
 
     Forwarded headers: the client's ``Range`` (so seeking works). Returned:
     the upstream status (``206`` for a range, ``200`` for full) plus the
     ``Content-Type`` / ``Accept-Ranges`` / ``Content-Range`` pass-throughs.
+
+    Optional ``audio_stream_index`` switches an embedded audio track (direct
+    play restarts with ``AudioStreamIndex``); ``max_bitrate`` caps the stream
+    for the quality picker. Both default to the item's original single output.
     """
     cfg = get_config()
     if not (cfg.JELLYFIN_URL and cfg.JELLYFIN_API_KEY):
@@ -64,7 +73,12 @@ def jellyfin_stream(item_id: str, request: Request):
     if not item_id:
         raise HTTPException(status_code=404, detail="Missing item id")
 
-    up = f"{cfg.JELLYFIN_URL}/Videos/{item_id}/stream?api_key={cfg.JELLYFIN_API_KEY}&Static=true"
+    up = (f"{cfg.JELLYFIN_URL}/Videos/{item_id}/stream"
+          f"?api_key={cfg.JELLYFIN_API_KEY}&Static=true")
+    if audio_stream_index > 0:
+        up += f"&AudioStreamIndex={audio_stream_index}"
+    if max_bitrate > 0:
+        up += f"&MaxStreamingBitrate={max_bitrate}"
     headers: dict[str, str] = {}
     rng = request.headers.get("range")
     if rng:

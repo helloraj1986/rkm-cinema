@@ -120,6 +120,87 @@ def test_stream_503_when_not_configured(monkeypatch):
     assert r.status_code == 503
 
 
+# ----------------------------------------------------- track / artwork routes (item 3)
+def test_stream_forwards_audio_index_and_bitrate(monkeypatch):
+    """audio_stream_index + max_bitrate are forwarded; absent params are omitted."""
+    _patch_config(monkeypatch)
+    captured = {}
+
+    def fake_urlopen(req, timeout=None):
+        captured["url"] = req.full_url
+        return _FakeStreamResponse(body=b"X", status=206,
+                                   headers={"Content-Type": "video/mp4"})
+
+    with patch("api.routes.jellyfin_stream.urllib.request.urlopen", fake_urlopen):
+        client.get("/api/jellyfin/stream/abc123",
+                   params={"audio_stream_index": 2, "max_bitrate": 8000000})
+    assert "AudioStreamIndex=2" in captured["url"]
+    assert "MaxStreamingBitrate=8000000" in captured["url"]
+
+    captured.clear()
+    with patch("api.routes.jellyfin_stream.urllib.request.urlopen", fake_urlopen):
+        client.get("/api/jellyfin/stream/abc123")
+    assert "AudioStreamIndex" not in captured["url"], "defaults are not forwarded"
+    assert "MaxStreamingBitrate" not in captured["url"]
+
+
+def test_jellyfin_backdrop_route_uses_backdrop_kind(monkeypatch):
+    """GET /api/jellyfin/backdrop proxies the Backdrop image via the service."""
+    import api.routes.jellyfin_poster as pmod
+    monkeypatch.setattr(pmod, "get_config", lambda: _cfg())
+    seen = {}
+
+    def fake_get_poster(iid, width, kind):
+        seen.update(item_id=iid, kind=kind)
+        return {"content": b"\x89PNG\r\n", "content_type": "image/png"}
+
+    fake_svc = SimpleNamespace(get_poster=fake_get_poster)
+    with patch("api.routes.jellyfin_poster.build_library_service", return_value=fake_svc):
+        r = client.get("/api/jellyfin/backdrop?id=m1")
+
+    assert r.status_code == 200
+    assert seen["kind"] == "Backdrop"
+    assert seen["item_id"] == "m1"
+    assert r.headers["Content-Type"] == "image/png"
+
+
+def test_jellyfin_playback_info_route(monkeypatch):
+    """GET /api/jellyfin/playback-info surfaces the service's track lists."""
+    import api.routes.jellyfin_tracks as tmod
+    monkeypatch.setattr(tmod, "get_config", lambda: _cfg())
+    fake_svc = SimpleNamespace(playback_info=lambda iid: {
+        "media_source_id": "src", "audio": [{"index": 1, "name": "eng", "language": "eng"}],
+        "subtitles": [{"index": 3, "name": "English", "language": "eng"}]})
+    with patch("api.routes.jellyfin_tracks.build_library_service", return_value=fake_svc):
+        r = client.get("/api/jellyfin/playback-info?id=m1")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["audio"][0]["index"] == 1
+    assert body["subtitles"][0]["index"] == 3
+
+
+def test_jellyfin_subtitle_route_proxies_vtt(monkeypatch):
+    """GET /api/jellyfin/subtitle proxies a WebVTT stream with the api key."""
+    import api.routes.jellyfin_tracks as tmod
+    monkeypatch.setattr(tmod, "get_config", lambda: _cfg())
+    captured = {}
+
+    def fake_urlopen(url, timeout=None):
+        captured["url"] = url
+        return _FakeStreamResponse(body=b"WEBVTT\n\n1\n00:00:01 --> 00:00:03\nHi",
+                                   status=200, headers={"Content-Type": "text/vtt"})
+
+    with patch("api.routes.jellyfin_tracks.urllib.request.urlopen", fake_urlopen):
+        r = client.get("/api/jellyfin/subtitle?id=m1&ms=src&index=3")
+
+    assert r.status_code == 200
+    assert "api_key=sekret" in captured["url"]
+    assert "format=vtt" in captured["url"]
+    assert "/Subtitles/3/Stream" in captured["url"]
+    assert r.headers["Content-Type"].startswith("text/vtt"), r.headers
+    assert b"WEBVTT" in r.content
+
+
 # ------------------------------------------------- item_id -> resource API
 def test_resource_watch_carries_jellyfin_item_id(monkeypatch):
     """watch.jellyfin.item_id is present in the §18 resource (frontend reads it)."""

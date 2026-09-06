@@ -17,12 +17,23 @@ def jellyfin_poster(id: str = Query(default=""), width: int = Query(default=500,
     this same-origin /api route. Phase 1: routed through the ``LibraryService``
     ``get_poster`` capability (first provider able to serve it wins).
     """
+    return _proxy_image(id, width, "Primary")
+
+
+@router.get("/jellyfin/backdrop")
+def jellyfin_backdrop(id: str = Query(default=""), width: int = Query(default=1600, ge=16, le=4000)):
+    """Proxy a Jellyfin item's 16:9 backdrop (keyart) for rich player backdrops."""
+    return _proxy_image(id, width, "Backdrop")
+
+
+def _proxy_image(id: str, width: int, kind: str):
+    """Shared artwork proxy: resolve through the service and stream it back."""
     cfg = get_config()
     if not id:
         return Response(status_code=404)
     service = build_library_service(cfg)
     try:
-        result = service.get_poster(id, width) if service is not None else None
+        result = service.get_poster(id, width, kind=kind) if service is not None else None
     except Exception:
         result = None
     if not result:

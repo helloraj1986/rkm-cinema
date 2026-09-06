@@ -100,8 +100,12 @@ class LibraryProvider(ABC):
         """Trigger a backend library rescan. Default ``False`` (not supported)."""
         return False
 
-    def get_poster(self, item_id: str, max_width: int = 500) -> Optional[dict]:
+    def get_poster(self, item_id: str, max_width: int = 500, kind: str = "Primary") -> Optional[dict]:
         """Fetch an item's primary image (``{"content": bytes, "content_type": str}``). Default ``None``."""
+        return None
+
+    def playback_info(self, item_id: str) -> Optional[dict]:
+        """Enumerate an item's audio + text-subtitle tracks. Default ``None``."""
         return None
 
     def recently_watched(self, limit: int = 12) -> list[dict]:
@@ -346,13 +350,25 @@ class LibraryService:
                 logger.warning("refresh_library failed for %s: %s", p.name, e)
         return False
 
-    def get_poster(self, item_id: str, max_width: int = 500) -> Optional[dict]:
+    def get_poster(self, item_id: str, max_width: int = 500, kind: str = "Primary") -> Optional[dict]:
         """Fetch an item image from the first provider able to serve it."""
         for p in self._providers:
             try:
-                result = p.get_poster(item_id, max_width=max_width)
+                result = p.get_poster(item_id, max_width=max_width, kind=kind)
             except Exception as e:
                 logger.warning("get_poster failed for %s: %s", p.name, e)
+                continue
+            if result:
+                return result
+        return None
+
+    def playback_info(self, item_id: str) -> Optional[dict]:
+        """Enumerate an item's tracks from the first provider able to serve it."""
+        for p in self._providers:
+            try:
+                result = p.playback_info(item_id)
+            except Exception as e:
+                logger.warning("playback_info failed for %s: %s", p.name, e)
                 continue
             if result:
                 return result

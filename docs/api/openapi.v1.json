@@ -438,10 +438,61 @@
         }
       }
     },
+    "/api/jellyfin/backdrop": {
+      "get": {
+        "summary": "Jellyfin Backdrop",
+        "description": "Proxy a Jellyfin item's 16:9 backdrop (keyart) for rich player backdrops.",
+        "operationId": "jellyfin_backdrop_api_jellyfin_backdrop_get",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Id"
+            }
+          },
+          {
+            "name": "width",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 4000,
+              "minimum": 16,
+              "default": 1600,
+              "title": "Width"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/jellyfin/stream/{item_id}": {
       "get": {
         "summary": "Jellyfin Stream",
-        "description": "Proxy one Jellyfin item's video to the browser for in-app playback.\n\nForwarded headers: the client's ``Range`` (so seeking works). Returned:\nthe upstream status (``206`` for a range, ``200`` for full) plus the\n``Content-Type`` / ``Accept-Ranges`` / ``Content-Range`` pass-throughs.",
+        "description": "Proxy one Jellyfin item's video to the browser for in-app playback.\n\nForwarded headers: the client's ``Range`` (so seeking works). Returned:\nthe upstream status (``206`` for a range, ``200`` for full) plus the\n``Content-Type`` / ``Accept-Ranges`` / ``Content-Range`` pass-throughs.\n\nOptional ``audio_stream_index`` switches an embedded audio track (direct\nplay restarts with ``AudioStreamIndex``); ``max_bitrate`` caps the stream\nfor the quality picker. Both default to the item's original single output.",
         "operationId": "jellyfin_stream_api_jellyfin_stream__item_id__get",
         "parameters": [
           {
@@ -452,6 +503,30 @@
               "type": "string",
               "title": "Item Id"
             }
+          },
+          {
+            "name": "audio_stream_index",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Audio Stream Index"
+            }
+          },
+          {
+            "name": "max_bitrate",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "MaxStreamingBitrate (bps) for the quality picker; 0 = original",
+              "default": 0,
+              "title": "Max Bitrate"
+            },
+            "description": "MaxStreamingBitrate (bps) for the quality picker; 0 = original"
           }
         ],
         "responses": {
@@ -491,6 +566,106 @@
           },
           "required": true
         },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/jellyfin/playback-info": {
+      "get": {
+        "summary": "Jellyfin Playback Info",
+        "description": "List an item's audio + text-subtitle tracks for the player track pickers.",
+        "operationId": "jellyfin_playback_info_api_jellyfin_playback_info_get",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/jellyfin/subtitle": {
+      "get": {
+        "summary": "Jellyfin Subtitle",
+        "description": "Proxy a Jellyfin **text** subtitle stream as WebVTT for the browser.\n\n``index`` is the subtitle stream's ``MediaStream.Index`` from playback-info.\nThe ``ms``/media source falls back to the item id (single-source items), so\n``/api/jellyfin/subtitle?id=<item>&ms=<source>&index=<n>`` just works.",
+        "operationId": "jellyfin_subtitle_api_jellyfin_subtitle_get",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Id"
+            }
+          },
+          {
+            "name": "ms",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "MediaSourceId (defaults to the item id)",
+              "default": "",
+              "title": "Ms"
+            },
+            "description": "MediaSourceId (defaults to the item id)"
+          },
+          {
+            "name": "index",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Index"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",

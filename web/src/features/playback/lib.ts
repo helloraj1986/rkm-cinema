@@ -17,6 +17,31 @@ export function episodeThumbUrl(episodeId: string, width = 140): string | null {
   return episodeId ? `/api/jellyfin/poster?id=${encodeURIComponent(episodeId)}&width=${width}` : null;
 }
 
+/** Playback speeds offered by the speed control (0.5–2×). */
+export const PLAYBACK_RATES = [0.5, 1, 1.25, 1.5, 2] as const;
+
+export type PlaybackRate = (typeof PLAYBACK_RATES)[number];
+
+/** Quality options: label -> MaxStreamingBitrate (bps); null = original/unthrottled. */
+export interface QualityOption {
+  label: string;
+  bitrate: number | null;
+}
+export const QUALITY_OPTIONS: QualityOption[] = [
+  { label: "Original", bitrate: null },
+  { label: "1080p", bitrate: 8_000_000 },
+  { label: "720p", bitrate: 5_000_000 },
+  { label: "480p", bitrate: 2_500_000 },
+];
+
+/** Resolution for a labelled quality (null for "Original"). */
+export function qualityFor(label: string): number | null {
+  return QUALITY_OPTIONS.find((q) => q.label === label)?.bitrate ?? null;
+}
+
+/** Seconds to hold the autoplay-next countdown before advancing. */
+export const AUTOPLAY_DELAY_MS = 8000;
+
 /** Group episodes by season number, seasons ascending. */
 export function groupBySeason(episodes: EpisodeShape[]): { season: number; episodes: EpisodeShape[] }[] {
   const map = new Map<number, EpisodeShape[]>();

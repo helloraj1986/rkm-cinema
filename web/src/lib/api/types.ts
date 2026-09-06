@@ -314,6 +314,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/jellyfin/backdrop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Jellyfin Backdrop
+         * @description Proxy a Jellyfin item's 16:9 backdrop (keyart) for rich player backdrops.
+         */
+        get: operations["jellyfin_backdrop_api_jellyfin_backdrop_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/jellyfin/stream/{item_id}": {
         parameters: {
             query?: never;
@@ -328,6 +348,10 @@ export interface paths {
          *     Forwarded headers: the client's ``Range`` (so seeking works). Returned:
          *     the upstream status (``206`` for a range, ``200`` for full) plus the
          *     ``Content-Type`` / ``Accept-Ranges`` / ``Content-Range`` pass-throughs.
+         *
+         *     Optional ``audio_stream_index`` switches an embedded audio track (direct
+         *     play restarts with ``AudioStreamIndex``); ``max_bitrate`` caps the stream
+         *     for the quality picker. Both default to the item's original single output.
          */
         get: operations["jellyfin_stream_api_jellyfin_stream__item_id__get"];
         put?: never;
@@ -354,6 +378,50 @@ export interface paths {
          *     Keeps the Jellyfin credential server-side; the browser only POSTs JSON here.
          */
         post: operations["jellyfin_progress_api_jellyfin_progress_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jellyfin/playback-info": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Jellyfin Playback Info
+         * @description List an item's audio + text-subtitle tracks for the player track pickers.
+         */
+        get: operations["jellyfin_playback_info_api_jellyfin_playback_info_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jellyfin/subtitle": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Jellyfin Subtitle
+         * @description Proxy a Jellyfin **text** subtitle stream as WebVTT for the browser.
+         *
+         *     ``index`` is the subtitle stream's ``MediaStream.Index`` from playback-info.
+         *     The ``ms``/media source falls back to the item id (single-source items), so
+         *     ``/api/jellyfin/subtitle?id=<item>&ms=<source>&index=<n>`` just works.
+         */
+        get: operations["jellyfin_subtitle_api_jellyfin_subtitle_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1553,9 +1621,45 @@ export interface operations {
             };
         };
     };
+    jellyfin_backdrop_api_jellyfin_backdrop_get: {
+        parameters: {
+            query?: {
+                id?: string;
+                width?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     jellyfin_stream_api_jellyfin_stream__item_id__get: {
         parameters: {
-            query?: never;
+            query?: {
+                audio_stream_index?: number;
+                /** @description MaxStreamingBitrate (bps) for the quality picker; 0 = original */
+                max_bitrate?: number;
+            };
             header?: never;
             path: {
                 item_id: string;
@@ -1596,6 +1700,71 @@ export interface operations {
                 "application/json": components["schemas"]["JellyfinProgressRequest"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    jellyfin_playback_info_api_jellyfin_playback_info_get: {
+        parameters: {
+            query?: {
+                id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    jellyfin_subtitle_api_jellyfin_subtitle_get: {
+        parameters: {
+            query?: {
+                id?: string;
+                /** @description MediaSourceId (defaults to the item id) */
+                ms?: string;
+                index?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

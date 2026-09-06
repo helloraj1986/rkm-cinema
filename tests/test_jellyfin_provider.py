@@ -139,6 +139,67 @@ def test_factory_default_is_plex_emby_when_no_media_server():
     assert [p.name for p in svc.providers] == ["plex", "emby"]
 
 
+class _CtxBody:
+    """Context-manager stand-in for urllib's HTTPResponse (read + close)."""
+
+    def __init__(self, data, content_type="application/json"):
+        self._d = data
+        self.headers = {"Content-Type": content_type}
+
+    def read(self):
+        return self._d
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+def test_playback_info_normalizes_tracks():
+    """playback_info returns audio + text-only subtitle tracks from PlaybackInfo."""
+    import json as _json
+    from services.library.jellyfin import JellyfinLibraryProvider
+    prov = JellyfinLibraryProvider(config=_cfg())
+    prov._user_id = lambda: "u1"  # avoid a real /Users call
+    media = [
+        {"Type": "Audio", "Index": 1, "DisplayTitle": "eng (AAC)", "Language": "eng"},
+        {"Type": "Audio", "Index": 2, "DisplayTitle": "spa", "Language": "spa"},
+        {"Type": "Subtitle", "Index": 3, "DisplayTitle": "English (SRT)",
+         "Language": "eng", "IsTextSubtitleStream": True},
+        # Image-based PGS subtitle must be EXCLUDED (browser <track> can't render it)
+        {"Type": "Subtitle", "Index": 4, "DisplayTitle": "PGS", "Language": "eng",
+         "IsTextSubtitleStream": False},
+    ]
+    payload = _json.dumps({"MediaSources": [{"Id": "src-1", "MediaStreams": media}]}).encode()
+    captured = {}
+
+    def fake_urlopen(req, timeout=None):
+        captured["url"] = req.full_url
+        captured["method"] = req.method
+        captured["body"] = _json.loads(req.data)
+        return _CtxBody(payload)
+
+    with patch("services.library.jellyfin.urllib.request.urlopen", fake_urlopen):
+        info = prov.playback_info("itm-1")
+
+    assert info["media_source_id"] == "src-1"
+    assert [a["index"] for a in info["audio"]] == [1, 2]
+    assert info["audio"][0]["name"] == "eng (AAC)"
+    assert [s["index"] for s in info["subtitles"]] == [3], "image subs excluded"
+    assert info["subtitles"][0]["language"] == "eng"
+    assert "/Items/itm-1/PlaybackInfo" in captured["url"]
+    assert "api_key=jkey" in captured["url"]
+    assert captured["method"] == "POST"
+    assert captured["body"]["UserId"] == "u1"
+
+
+def test_playback_info_none_when_not_configured():
+    from services.library.jellyfin import JellyfinLibraryProvider
+    prov = JellyfinLibraryProvider(config=_cfg(JELLYFIN_API_KEY=""))
+    assert prov.playback_info("x") is None
+
+
 def test_runtime_loader_merges_runtime_json(monkeypatch, tmp_path):
     """The provisioner-written runtime.json supplies JELLYFIN_API_KEY post-boot."""
     runtime = {"JELLYFIN_API_KEY": "rt-key", "MEDIA_SERVER": "jellyfin"}

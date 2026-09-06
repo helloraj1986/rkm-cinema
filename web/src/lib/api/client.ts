@@ -93,6 +93,26 @@ export interface ItemStateResult {
   play_count: number;
 }
 
+/** One audio/subtitle track from GET /api/jellyfin/playback-info. */
+export interface PlaybackTrack {
+  index: number;
+  name: string;
+  language: string;
+}
+
+/** Tracks + media-source for the player's audio/subtitle pickers. */
+export interface PlaybackInfo {
+  media_source_id: string;
+  audio: PlaybackTrack[];
+  subtitles: PlaybackTrack[];
+}
+
+/** Optional overrides for the direct-play stream URL (item 3). */
+export interface StreamOptions {
+  audio_stream_index?: number;
+  max_bitrate?: number;
+}
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -150,5 +170,19 @@ export const api = {
   /** Fire-and-forget playback position report (soft no when backend absent). */
   reportProgress: (payload: ProgressPayload) => postJson<unknown>("/jellyfin/progress", payload),
   /** Same-origin direct-play stream URL for an item (token stays server-side). */
-  streamUrl: (itemId: string) => `${BASE}/jellyfin/stream/${encodeURIComponent(itemId)}`,
+  streamUrl: (itemId: string, opts?: StreamOptions) => {
+    const q = new URLSearchParams();
+    if (opts?.audio_stream_index) q.set("audio_stream_index", String(opts.audio_stream_index));
+    if (opts?.max_bitrate) q.set("max_bitrate", String(opts.max_bitrate));
+    const qs = q.toString();
+    return `${BASE}/jellyfin/stream/${encodeURIComponent(itemId)}${qs ? `?${qs}` : ""}`;
+  },
+  /** Audio + text-subtitle track lists for the player pickers. */
+  playbackInfo: (itemId: string) => getJson<PlaybackInfo>(`/jellyfin/playback-info?id=${encodeURIComponent(itemId)}`),
+  /** Proxy URL for a text subtitle (WebVTT) stream. */
+  subtitleUrl: (itemId: string, mediaSourceId: string, index: number) =>
+    `${BASE}/jellyfin/subtitle?id=${encodeURIComponent(itemId)}&ms=${encodeURIComponent(mediaSourceId)}&index=${index}`,
+  /** Proxy URL for an item's 16:9 backdrop (player keyart). */
+  backdropUrl: (itemId: string, width = 1600) =>
+    `${BASE}/jellyfin/backdrop?id=${encodeURIComponent(itemId)}&width=${width}`,
 };

@@ -56,6 +56,10 @@ export interface MediaItem {
   runtime?: number; // seconds
   play_count?: number;
   last_played?: string | null;
+  /** Genre names (roadmap item 4 — discovery filters). */
+  genres?: string[];
+  /** DateCreated ISO string (roadmap item 4 — "recently added" sort). */
+  added?: string | null;
 }
 
 export interface LibraryItemsShape {

@@ -66,6 +66,89 @@ export function libraryKindLabel(kind: LibraryKind): string {
   return kind === "movies" ? "Movies" : "TV Shows";
 }
 
+// ---------------------------------------------- Library & discovery (roadmap item 4)
+/** Sort options offered by the folder toolbar. */
+export type LibrarySort = "recent" | "title" | "unwatched";
+
+export const LIBRARY_SORT_OPTIONS: { key: LibrarySort; label: string }[] = [
+  { key: "recent", label: "Recently added" },
+  { key: "title", label: "Title (A–Z)" },
+  { key: "unwatched", label: "Unwatched first" },
+];
+
+/** Toolbar filter state (all optional; empty = no filtering). */
+export interface LibraryFilter {
+  q?: string;
+  genre?: string;
+  sort?: LibrarySort;
+}
+
+/**
+ * Epoch millis for an item's `added` (Jellyfin DateCreated ISO). Jellyfin emits
+ * 7-digit fractional seconds ("...0000000Z") which some engines' Date.parse
+ * rejects — normalise to milliseconds first. Unknown/malformed -> null (never
+ * a fabricated date; callers sort nulls last).
+ */
+export function addedTime(item: MediaItem): number | null {
+  const iso = item?.added;
+  if (!iso) return null;
+  const norm = String(iso).replace(/\.(\d{3})\d+(Z|[+-]\d{2}:\d{2})$/i, ".$1$2");
+  const t = Date.parse(norm);
+  return Number.isFinite(t) ? t : null;
+}
+
+/** Genre names present in a (kind-split) list, alphabetical, unique. */
+export function libraryGenres(items: MediaItem[]): string[] {
+  const set = new Set<string>();
+  for (const i of items ?? []) for (const g of i.genres ?? []) set.add(g);
+  // Plain code-unit sort: deterministic across engines (localeCompare is not
+  // for case-distinct names like "Drama" vs "drama").
+  return [...set].sort();
+}
+
+function cmpRecentDesc(a: MediaItem, b: MediaItem): number {
+  const ta = addedTime(a);
+  const tb = addedTime(b);
+  if (ta !== null && tb !== null) return tb - ta;
+  if (ta !== null) return -1; // known dates before unknown
+  if (tb !== null) return 1;
+  return 0;
+}
+
+function cmpTitle(a: MediaItem, b: MediaItem): number {
+  return String(a.title ?? "").toLowerCase().localeCompare(String(b.title ?? "").toLowerCase());
+}
+
+function cmpUnwatched(a: MediaItem, b: MediaItem): number {
+  if (Boolean(a.played) !== Boolean(b.played)) return a.played ? 1 : -1; // unwatched first
+  return cmpRecentDesc(a, b);
+}
+
+const SORTERS: Record<LibrarySort, (a: MediaItem, b: MediaItem) => number> = {
+  recent: cmpRecentDesc,
+  title: cmpTitle,
+  unwatched: cmpUnwatched,
+};
+
+/**
+ * Search + genre filter + sort over a folder's (kind-split) items. `q` is a
+ * case-insensitive title match; `genre` requires membership in the item's
+ * genre names; `sort` orders the survivors (default "recent"). Pure — the
+ * folder views run this over the shared cache, so filtering needs no fetch.
+ */
+export function filterLibraryItems(items: MediaItem[], f: LibraryFilter = {}): MediaItem[] {
+  const q = String(f.q ?? "").trim().toLowerCase();
+  const genre = String(f.genre ?? "").trim();
+  const sort = f.sort ?? "recent";
+  const out = (items ?? []).filter((i) => {
+    if (q && !String(i.title ?? "").toLowerCase().includes(q)) return false;
+    if (genre && !(i.genres ?? []).includes(genre)) return false;
+    return true;
+  });
+  const sorter = SORTERS[sort] ?? cmpRecentDesc;
+  return [...out].sort(sorter);
+}
+
 // ---------------------------------------------- Plex-style detail (Phase 2)
 /** Person-headshot proxy URL (token stays server-side). */
 export function personHeadshotUrl(personId: string, width = 200): string | null {

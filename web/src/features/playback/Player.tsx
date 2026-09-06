@@ -91,8 +91,7 @@ export function Player({
   const [muted, setMuted] = useState(false);
   const [volume, setVolume] = useState(1);
   const [isFs, setIsFs] = useState(false);
-  // Scrub preview: while dragging, the bar shows the pointer; the actual seek
-  // (a stream RESTART on remux/transcode) only happens once on release.
+  const barRef = useRef<HTMLDivElement>(null);
   const [scrub, setScrub] = useState<number | null>(null);
   const scrubbingRef = useRef(false);
   // Auto-play after the next stream (re)load — preserved through seeks/quality
@@ -291,6 +290,65 @@ export function Player({
     if (v.paused) void v.play().catch(() => {});
     else v.pause();
   };
+
+  // --- Custom seek bar (div + pointer capture). A native <input type=range>
+  // proved unreliable here: mouse events can miss its thin hit area and a
+  // controlled range leaves the thumb visually at the click point when the
+  // underlying position doesn't change — exactly the "bar moved, video didn't"
+  // symptom. The div bar owns its fill/thumb, so UI can never desync.
+  const barPosFromClientX = (clientX: number): number => {
+    const el = barRef.current;
+    if (!el || total <= 0) return 0;
+    const rc = el.getBoundingClientRect();
+    const frac = rc.width > 0 ? (clientX - rc.left) / rc.width : 0;
+    return clampSeek(Math.round(frac * total), total);
+  };
+  const onBarPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    scrubbingRef.current = true;
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      /* ignore */
+    }
+    setScrub(barPosFromClientX(e.clientX));
+  };
+  const onBarPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!scrubbingRef.current) return;
+    e.stopPropagation();
+    setScrub(barPosFromClientX(e.clientX));
+  };
+  const onBarPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!scrubbingRef.current) return;
+    e.stopPropagation();
+    scrubbingRef.current = false;
+    const target = scrub ?? barPosFromClientX(e.clientX);
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {
+      /* ignore */
+    }
+    setScrub(null);
+    if (target > 0) seekTo(target);
+  };
+  const onBarPointerCancel = () => {
+    scrubbingRef.current = false;
+    setScrub(null);
+  };
+  const onBarKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    let target: number | null = null;
+    if (e.key === "ArrowRight") target = posNow() + SEEK_STEP;
+    else if (e.key === "ArrowLeft") target = posNow() - SEEK_STEP;
+    else if (e.key === "Home") target = 0;
+    else if (e.key === "End") target = total > 0 ? total : posNow();
+    if (target == null) return;
+    e.preventDefault();
+    e.stopPropagation();
+    seekTo(target);
+  };
+  const barPos = scrub ?? Math.min(cur, total > 0 ? total : cur);
+  const barPct = total > 0 ? Math.min(100, (barPos / total) * 100) : 0;
 
   const toggleMute = () => {
     const v = videoRef.current;
@@ -585,42 +643,34 @@ export function Player({
           {/* Custom control bar — total from the API runtime until the stream
               duration resolves, so length + progress are always correct. */}
           <div className="pointer-events-none absolute inset-x-0 bottom-0 rounded-b-lg bg-gradient-to-t from-black/90 via-black/55 to-transparent px-3 pb-2 pt-10">
-            <input
-              type="range"
-              min={0}
-              max={total > 0 ? total : 0}
-              step={1}
-              value={scrub ?? Math.min(cur, total > 0 ? total : cur)}
-              disabled={total <= 0}
-              onPointerDown={() => {
-                scrubbingRef.current = true;
-              }}
-              onPointerUp={() => {
-                scrubbingRef.current = false;
-                if (scrub != null) {
-                  seekTo(scrub);
-                  setScrub(null);
-                }
-              }}
-              onPointerCancel={() => {
-                scrubbingRef.current = false;
-                setScrub(null);
-              }}
-              onChange={(e) => {
-                const val = Number(e.target.value);
-                if (scrubbingRef.current) {
-                  // Drag: preview only — the seek (a stream restart on
-                  // remux/transcode) fires ONCE on pointer-up.
-                  setScrub(val);
-                } else {
-                  // Keyboard arrows / click without drag: seek directly.
-                  setScrub(null);
-                  seekTo(val);
-                }
-              }}
+            <div
+              ref={barRef}
+              role="slider"
+              tabIndex={0}
               aria-label="Seek"
-              className="pointer-events-auto h-1.5 w-full cursor-pointer accent-amber-400 disabled:opacity-40"
-            />
+              aria-valuemin={0}
+              aria-valuemax={total > 0 ? Math.round(total) : 0}
+              aria-valuenow={Math.round(barPos)}
+              aria-disabled={total <= 0}
+              onClick={(e) => e.stopPropagation()}
+              onPointerDown={onBarPointerDown}
+              onPointerMove={onBarPointerMove}
+              onPointerUp={onBarPointerUp}
+              onPointerCancel={onBarPointerCancel}
+              onKeyDown={onBarKeyDown}
+              className={`pointer-events-auto group relative flex h-5 w-full cursor-pointer touch-none items-center outline-none ${total <= 0 ? "opacity-40" : ""}`}
+            >
+              <div className="relative h-1 w-full overflow-visible rounded-full bg-white/20">
+                <div
+                  className="absolute inset-y-0 left-0 rounded-full bg-amber-400"
+                  style={{ width: `${barPct}%` }}
+                />
+              </div>
+              <div
+                className="pointer-events-none absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-amber-300 opacity-80 shadow transition-opacity group-hover:opacity-100"
+                style={{ left: `${barPct}%` }}
+              />
+            </div>
             <div className="pointer-events-auto mt-1.5 flex items-center gap-3 text-[11px] text-zinc-100">
               <button onClick={togglePlay} aria-label={playing ? "Pause" : "Play"} className={ctrlBtn}>
                 {playing ? "❚❚" : "▶"}

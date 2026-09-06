@@ -278,7 +278,7 @@ class JellyfinLibraryProvider(LibraryProvider):
             name=it.get("Name", ""),
             year=it.get("ProductionYear", 0),
             id=str(it.get("Id", "")),
-            thumb=it.get("Thumb", "") or it.get("PrimaryImageAspectRatio", "") or "",
+            thumb=it.get("Thumb", "") or "",
             is_series=(item_type == "Series"),
             provider_ids=pids,
             user_data=it.get("UserData") or {},

@@ -1,6 +1,6 @@
 # RKM Watchlist — Session Handoff & Project Progress
 
-> Last updated: 2026-09-06 (**re-platform Phases 0,1a,2,3a,3b,item-2,4 DONE — backend 252 pytest + ruff; `web/` tsc+build+vitest 18/18; React shell validated live against real Jellyfin data.** `/api` frozen (27 paths); ABC capability surface; React shell + typed client; library+playback slices ported; item-2 watch-state; **Phase 4 cutover**: `web/` multi-stage Docker build serves React as the origin at :8124, legacy recoverable at /legacy/. Legacy `app.js` still present (not yet retired — discover/watchlist/search/suggest un-ported, live under /legacy/). Un-pushed (token `workflow` scope deferred to last). **Open:** Jellyfin `thumb` leaks aspect-ratio float (cosmetic; React uses id-proxy posters). NEXT: port discover/watchlist/search/suggest for full parity/retirement, or fix thumb, or push.**)
+> Last updated: 2026-09-06 (**re-platform Phases 0,1a,2,3a,3b,item-2,4 DONE + `thumb` bug FIXED — backend 253 pytest + ruff; `web/` tsc+build+vitest 18/18; React shell validated live against real Jellyfin data.** `/api` frozen (27 paths); ABC capability surface; React shell + typed client; library+playback slices ported; item-2 watch-state; **Phase 4 cutover**: `web/` multi-stage Docker build serves React as the origin at :8124, legacy recoverable at /legacy/. **Jellyfin `thumb` leak fixed + regression test** (was emitting `PrimaryImageAspectRatio` float; now empty when no banner — React cards already used id-proxy posters). Legacy `app.js` still present (not yet retired — discover/watchlist/search/suggest un-ported, live under /legacy/). Un-pushed (token `workflow` scope deferred to last). NEXT: port discover/watchlist/search/suggest for full parity/retirement, or push.**)
 > Live URL: **http://rkm-hp.tail8d5e8.ts.net:8123/** (Tailscale MagicDNS, tailnet-only — NEVER `tailscale funnel` it; page proxies /api → FastAPI which holds secrets server-side)
 > Deploy path (Windows, RKM-HP): `cd D:\hermes_agent\hermes-workspace\projects\rkm-cinema; .\run-rkm-cinema.ps1` (prod api+web nginx `:8123`; Plex/Emby backend) — or `.\bootstrap.ps1` for the **bundled api+web+Jellyfin** stack (`:8098`/`:8124`; this is where in-app Jellyfin playback lives). NOTE: there is **no `setup-watchlist.ps1` anymore — it was renamed.** The sandbox's `/workspace` maps to `D:\hermes_agent\hermes-workspace` (9p mount, confirmed via mountinfo 2026-08-18; NOT `D:\media`). The `web`+`api` containers are on RKM-HP (Docker daemon unreachable from sandbox).
 > Repo: **private `rkm-cinema` on GitHub** (github.com/helloraj1986/rkm-cinema)
@@ -27,7 +27,15 @@ cd D:\hermes_agent\hermes-workspace\projects\rkm-cinema
 Legacy `app.js`/`index.html` are **kept** (not retired) — full retirement waits for discover/watchlist/search/suggest parity (Phase 3 remainder).
 
 ### Known open
-- **Jellyfin `thumb` leaks the aspect-ratio float** (`0.666…`) when an item has no `Thumb` (`_parse_item` falls back to `PrimaryImageAspectRatio`, which is a ratio not a path). Cosmetic for the React cards (they use the id-proxy poster) but wrong in the API — one-line fix + regen pending.
+- ~~Thumb leak~~ ✅ FIXED (commit below) — no open thumb issue.
+
+## ▶ LATEST SESSION (2026-09-06) — fix: Jellyfin `thumb` aspect-ratio leak ✅
+**One-line fix + regression test. `thumb=it.get("Thumb","") or it.get("PrimaryImageAspectRatio","") or ""` emitted the *numeric aspect ratio* (e.g. `0.666`) as the item's thumb whenever Jellyfin returned no `Thumb` (banner) image — which is most titles. That float-string leaked into every `/api` `thumb` field. Now: `thumb=it.get("Thumb","") or ""` (matches the Emby provider); the React cards were unaffected (they build posters from `item.id` via the `/api/jellyfin/poster` id-proxy → `Primary`), so this was purely the API-shape/wrong-value fix.**
+
+- `services/library/jellyfin.py` `_parse_item` — drop the `PrimaryImageAspectRatio` fallback (a ratio, not a path).
+- `tests/test_jellyfin_provider.py` — new `test_parse_item_thumb_never_leaks_aspect_ratio`: thumb preserved when present; empty (never a numeric ratio) when absent.
+- Verify: **253 pytest passed** (was 252) · production `ruff check` clean · no contract/`types.ts` regen needed (field stays a plain `string`; the bug was a *value*, not a type).
+- Committed locally (see `git log --oneline -1`); un-pushed with the rest until the token gains `workflow` scope.
 
 ## ▶ LATEST SESSION (2026-09-06) — Roadmap item 2: watch-state — mark watched/unwatched + Recently Watched + play count ✅
 

@@ -100,6 +100,25 @@ def test_jellyfin_not_configured_is_absent():
     assert p.find(ident, title="X", year=1999) is None
 
 
+def test_parse_item_thumb_never_leaks_aspect_ratio():
+    """Regression: an item with no ``Thumb`` image must NOT fall back to
+    ``PrimaryImageAspectRatio``. That field is a numeric ratio (e.g. ``0.666``),
+    not an image path — using it as ``thumb`` leaks a float-string into the
+    API's ``thumb`` field on every posterless title."""
+    from services.library.jellyfin import JellyfinLibraryProvider
+    prov = JellyfinLibraryProvider(config=_cfg())
+    # With a banner image: the real thumb survives.
+    assert prov._parse_item(
+        {"Name": "A", "Id": "a1", "Thumb": "http://x/a.jpg",
+         "PrimaryImageAspectRatio": 0.666}, "Movie").thumb == "http://x/a.jpg"
+    # Without a Thumb image: thumb stays empty — never the aspect-ratio float,
+    # even when (as in the /Users/.../Items response) that ratio is present.
+    no_thumb = prov._parse_item(
+        {"Name": "B", "Id": "b1", "PrimaryImageAspectRatio": 0.666}, "Movie")
+    assert no_thumb.thumb == ""
+    assert not str(no_thumb.thumb).replace(".", "", 1).isdigit(), "thumb must not be a numeric ratio string"
+
+
 def test_factory_selects_jellyfin_when_configured():
     from services.library.factory import build_library_service
     svc = build_library_service(_cfg(MEDIA_SERVER="jellyfin", JELLYFIN_API_KEY="jkey"))

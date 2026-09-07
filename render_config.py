@@ -112,7 +112,6 @@ def render(cfg: dict, data: Path) -> None:
     media_cfg = cfg.get("media_server", {})
     tmdb = cfg.get("tmdb", {})
     rec = cfg.get("recommend", {})
-    arr = cfg.get("arr", {})
 
     canonical = canonical_env()
     # TMDB key: from the TOML, else reuse the canonical workspace .env / env var.
@@ -176,11 +175,20 @@ def render(cfg: dict, data: Path) -> None:
         "RECONCILE_INTERVAL_MIN": str(rec.get("reconcile_interval_min", 10)),
         "DAILY_JOB_HOUR": str(rec.get("auto_add_hour", 18)),
         "RKM_RUNTIME_PATH": "/shared/runtime.json",
-        # Internal-only URLs (service names; Radarr/Sonarr are on the fullstack profile).
-        "RADARR_URL": "http://radarr:7878",
-        "SONARR_URL": "http://sonarr:8989",
-        "PROWLARR_URL": "http://prowlarr:9696",
-        "QBITTORRENT_URL": "http://qbittorrent:8080",
+        # Acquisition (*arr/qbit): reuse the user's REAL Radarr/Sonarr/Prowlarr/
+        # qBittorrent from the canonical workspace .env when present (the same
+        # config the prod stack reads), so downloads work on the bundled stack
+        # too — the machine's running *arr are reached via their configured
+        # URLs/keys. Fall back to the opt-in `fullstack` profile service names.
+        "RADARR_URL": canonical.get("RADARR_URL") or "http://radarr:7878",
+        "RADARR_API_KEY": canonical.get("RADARR_API_KEY", ""),
+        "SONARR_URL": canonical.get("SONARR_URL") or "http://sonarr:8989",
+        "SONARR_API_KEY": canonical.get("SONARR_API_KEY", ""),
+        "PROWLARR_URL": canonical.get("PROWLARR_URL") or "http://prowlarr:9696",
+        "PROWLARR_API_KEY": canonical.get("PROWLARR_API_KEY", ""),
+        "QBITTORRENT_URL": canonical.get("QBITTORRENT_URL") or "http://qbittorrent:8080",
+        "RADARR_QUALITY_PROFILE_ID": canonical.get("RADARR_QUALITY_PROFILE_ID", ""),
+        "SONARR_QUALITY_PROFILE_ID": canonical.get("SONARR_QUALITY_PROFILE_ID", ""),
     }
     API_ENV.write_text("".join(f"{k}={v}\n" for k, v in api_vars.items()), encoding="utf-8")
     print(f"wrote {API_ENV.name} (backend={backend})")

@@ -6,6 +6,10 @@ import { LibraryLayout } from "../features/library/LibraryLayout";
 import { LibraryHomeView } from "../features/library/LibraryHomeView";
 import { LibraryFolderView } from "../features/library/LibraryFolderView";
 import { ItemDetailPage } from "../features/library/ItemDetailPage";
+import { DiscoverView } from "../features/discover/DiscoverView";
+import { WatchlistView } from "../features/watchlist/WatchlistView";
+import { SearchView } from "../features/search/SearchView";
+import { SuggestView } from "../features/suggest/SuggestView";
 import { ENABLE_REACT } from "../lib/flags";
 
 /**
@@ -16,6 +20,9 @@ import { ENABLE_REACT } from "../lib/flags";
  * Library routes (PLEX_VIEWS_PLAN): a layout owns the full-screen player + card
  * handlers, and the children are URL-backed views — /library/home, the Movies /
  * TV Shows "folders", and each item's OWN page (/library/item/:id).
+ *
+ * Legacy parity (LEGACY_PARITY_PLAN): /discover, /watchlist, /search and
+ * /suggest are now ported React views fed by live /api data.
  */
 export const router = createBrowserRouter([
   {
@@ -36,10 +43,10 @@ export const router = createBrowserRouter([
         ],
       },
       { path: "playback", element: <PortedPlaceholder label="Playback" /> },
-      { path: "discover", element: <PortedPlaceholder label="Discover" /> },
-      { path: "watchlist", element: <PortedPlaceholder label="Watchlist" /> },
-      { path: "search", element: <PortedPlaceholder label="Search" /> },
-      { path: "suggest", element: <PortedPlaceholder label="Suggest" /> },
+      { path: "discover", element: <DiscoverView /> },
+      { path: "watchlist", element: <WatchlistView /> },
+      { path: "search", element: <SearchView /> },
+      { path: "suggest", element: <SuggestView /> },
     ],
   },
 ]);

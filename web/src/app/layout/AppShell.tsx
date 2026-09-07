@@ -2,6 +2,7 @@ import { Outlet } from "react-router-dom";
 import { Sidebar } from "./Sidebar";
 import { Header } from "./Header";
 import { LegacyPlaceholder } from "../../components/LegacyPlaceholder";
+import { Toaster } from "../../features/watchlist/Toaster";
 
 /**
  * App shell: sidebar + header + routed content. When the React port is not yet
@@ -22,6 +23,7 @@ export function AppShell({ enabled }: { enabled: boolean }) {
           </main>
         </div>
       </div>
+      <Toaster />
     </div>
   );
 }

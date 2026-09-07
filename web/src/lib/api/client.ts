@@ -173,7 +173,8 @@ export interface ItemDetail {
   episode?: number;
 }
 
-/** One audio/subtitle track from GET /api/jellyfin/playback-info. */
+/**
+ * One audio/subtitle track from GET /api/jellyfin/playback-info. */
 export interface PlaybackTrack {
   index: number;
   name: string;
@@ -230,6 +231,193 @@ export class ApiError extends Error {
     super(message);
     this.name = "ApiError";
   }
+}
+
+// ---------------------------------------------------------------- legacy parity
+// Rich watchlist-entry surface used by Discover/Watchlist/Search/Suggest.
+// `GET /api/watchlist/entries` returns these (live; same mapper as the legacy
+// dashboard generator) and `GET /api/watchlist` returns the thin §18 resources
+// below — the React port keeps the legacy DATA + RES split (LEGACY_PARITY_PLAN).
+// ----------------------------------------------------------------------------
+
+/** One rich watchlist entry (WatchlistEntryResponse shape — camelCase). */
+export interface WatchlistEntry {
+  imdbId: string;
+  tmdbId: number | null;
+  tvdbId: number | null;
+  title: string;
+  year: number;
+  type: "movie" | "tv";
+  category: string;
+  genres: string[];
+  lang: string;
+  cert: string;
+  rt: number | null;
+  imdb: number | null;
+  tmdbScore: number | null;
+  overview: string;
+  cast: string[];
+  director: string;
+  runtime: number | null;
+  poster: string;
+  backdrop: string;
+  trailerId: string;
+  trailerTitle: string;
+  trailerUrl: string;
+  added: string;
+  source: string;
+  state?: string | null;
+  detail?: string | null;
+  progress?: number | null;
+}
+
+/** GET /api/watchlist/entries — the live rich-entry parity source. */
+export interface WatchlistEntriesShape {
+  updated: string;
+  entries: WatchlistEntry[];
+}
+
+/** One provider watch link inside a MediaResource (spec §18 watch.<provider>). */
+export interface WatchLink {
+  available: boolean;
+  url?: string | null;
+  error?: string | null;
+  /** Provider-native item id for in-app playback via /api/jellyfin/stream. */
+  item_id?: string | null;
+  played?: boolean | null;
+  playback_position?: number | null;
+  runtime?: number | null;
+}
+
+/** Thin §18 media resource (GET /api/watchlist) — per-title state facts. */
+export interface MediaResource {
+  id: string;
+  title: string;
+  year?: number | null;
+  type: string;
+  status: string;
+  capabilities: { can_download: boolean; can_watch: boolean };
+  watch: Record<string, WatchLink>;
+  acquisition?: { provider?: string | null; status?: string | null } | null;
+  detail?: string | null;
+  progress?: number | null;
+  speed?: number | null;
+  eta?: number | null;
+  qbitState?: string | null;
+  qbitName?: string | null;
+}
+
+/** GET /api/watchlist — every entry as a resource. */
+export interface WatchlistResourcesShape {
+  entries: MediaResource[];
+  indexerIssue?: string | null;
+}
+
+/** One hit from GET /api/search (watchlist match or live TMDB result). */
+export interface SearchHit {
+  title: string;
+  year?: number | null;
+  type: string;
+  imdbId: string;
+  tmdbId?: number | null;
+  poster: string;
+  inWatchlist: boolean;
+  director: string;
+  cast: string[];
+  snippet: string;
+  voteAverage?: number | null;
+}
+
+/** GET /api/search?q= response. */
+export interface SearchShape {
+  watchlist: SearchHit[];
+  tmdb: SearchHit[];
+  tmdbKey: boolean;
+  servicesDown: boolean;
+}
+
+/** POST /api/suggest filter payload (legacy suggestState.filters). */
+export interface SuggestFilters {
+  media_type: "all" | "movie" | "tv";
+  genres: string[];
+  year_from: number | null;
+  year_to: number | null;
+  min_rating: number;
+  sort_by: string;
+  count: number;
+}
+
+/** One TMDB-discovered title (POST /api/suggest result). */
+export interface SuggestResult {
+  tmdb_id: number;
+  title: string;
+  year?: number | null;
+  media_type: "movie" | "tv";
+  tmdb_score: number;
+  vote_count: number;
+  genres: string[];
+  overview: string;
+  poster: string;
+  backdrop: string;
+  in_watchlist: boolean;
+  in_library: boolean;
+}
+
+/** POST /api/suggest response. */
+export interface SuggestShape {
+  results: SuggestResult[];
+  total: number;
+  filters: Record<string, unknown>;
+  genres_available: string[];
+}
+
+/** GET /api/suggest/detail/{id} — full TMDB + IMDb detail for the modal. */
+export interface SuggestDetail {
+  ok: boolean;
+  id: number;
+  media_type: "movie" | "tv";
+  title: string;
+  year?: number | null;
+  overview: string;
+  genres: string[];
+  runtime: number;
+  cert: string;
+  cast: string[];
+  director: string;
+  tmdb_score: number;
+  vote_count: number;
+  poster: string;
+  backdrop: string;
+  imdb_id: string;
+  imdb_rating: number;
+}
+
+/** POST /api/suggest/add/{id} result — ok/already + the persisted entry
+ *  (snake_case WatchlistEntry.to_dict shape — see persistedToEntry). */
+export interface SuggestAddResult {
+  ok: boolean;
+  already?: boolean;
+  message: string;
+  title?: string;
+  entry?: Record<string, unknown> | null;
+}
+
+/** POST /api/media/{id}/request result. */
+export interface RequestMediaResult {
+  ok: boolean;
+  state: string;
+  message: string;
+  mediaId?: string;
+  service?: string;
+  candidates?: unknown[];
+}
+
+/** POST /api/jobs/add_watchlist/run result (manual recommendation refresh). */
+export interface AddWatchlistJobResult {
+  status?: string;
+  error?: string;
+  added?: number;
+  [key: string]: unknown;
 }
 
 const BASE = "/api";
@@ -318,4 +506,26 @@ export const api = {
   /** Proxy URL for an item's 16:9 backdrop (player keyart). */
   backdropUrl: (itemId: string, width = 1600) =>
     `${BASE}/jellyfin/backdrop?id=${encodeURIComponent(itemId)}&width=${width}`,
+
+  // ------------------------------------------------- legacy-parity surface
+  /** Live rich watchlist entries (Discover/Watchlist data — dashboard mapper). */
+  getWatchlistEntries: () => getJson<WatchlistEntriesShape>("/watchlist/entries"),
+  /** Thin §18 resources per watchlist entry (state/capabilities/watch links). */
+  getWatchlistResources: () => getJson<WatchlistResourcesShape>("/watchlist"),
+  /** Combined watchlist + TMDB search (legacy header combobox API). */
+  search: (q: string) => getJson<SearchShape>(`/search?q=${encodeURIComponent(q)}`),
+  /** TMDB discover by taste filters. */
+  suggest: (filters: SuggestFilters) => postJson<SuggestShape>("/suggest", filters),
+  /** Full TMDB + IMDb detail for one suggested title (card-click modal). */
+  suggestDetail: (tmdbId: number, mediaType: string) =>
+    getJson<SuggestDetail>(`/suggest/detail/${tmdbId}?media_type=${encodeURIComponent(mediaType)}`),
+  /** Add a TMDB title to the watchlist (pending entry). */
+  suggestAdd: (tmdbId: number, mediaType: string) =>
+    postJson<SuggestAddResult>(`/suggest/add/${tmdbId}?media_type=${encodeURIComponent(mediaType)}`, {}),
+  /** Request a canonical media_id from the right *arr backend (§15/§17). */
+  requestMedia: (mediaId: string) =>
+    postJson<RequestMediaResult>(`/media/${encodeURIComponent(mediaId)}/request`, {}),
+  /** Run the daily recommendation job on demand (refresh button). */
+  runAddWatchlistJob: (count = 20) =>
+    postJson<AddWatchlistJobResult>("/jobs/add_watchlist/run", { count }),
 };

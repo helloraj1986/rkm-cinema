@@ -58,7 +58,7 @@ export function Sidebar() {
         ))}
       </nav>
       <div className="mt-auto border-t border-zinc-800 pt-3 text-[11px] leading-relaxed text-zinc-500">
-        React shell (Phases 0–4). Ported views render here.
+        React shell — library + legacy views ported (discover/watchlist/search/suggest).
         <div className="mt-1.5">
           <a href="/legacy/" className="text-zinc-400 underline decoration-zinc-600 hover:text-zinc-200">
             Legacy app (/legacy)

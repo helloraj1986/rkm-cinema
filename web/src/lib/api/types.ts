@@ -705,6 +705,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/watchlist/entries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Watchlist Entries
+         * @description Every watchlist entry in the rich display shape (legacy-parity source).
+         *
+         *     Reads the authoritative store through the same seam as the dashboard
+         *     generator and maps with the shared ``services.dashboard.to_rich_entry`` —
+         *     one mapper for the API and the static rebuild.
+         */
+        get: operations["get_watchlist_entries_api_watchlist_entries_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/reconcile": {
         parameters: {
             query?: never;
@@ -1362,6 +1386,80 @@ export interface components {
             playback_position?: number | null;
             /** Runtime */
             runtime?: number | null;
+        };
+        /**
+         * WatchlistEntriesResponse
+         * @description GET /api/watchlist/entries — every pending + recommended entry in the
+         *     rich display shape the SPA renders (posters/backdrops/scores/synopsis/
+         *     trailer/genres — legacy parity port source). Live from the authoritative
+         *     store via the shared ``services/dashboard.to_rich_entry`` mapper; the
+         *     static dashboard generator writes the same shape to dashboard-data.json.
+         */
+        WatchlistEntriesResponse: {
+            /**
+             * Updated
+             * @default
+             */
+            updated: string;
+            /** Entries */
+            entries?: components["schemas"]["WatchlistEntryResponse"][];
+        };
+        /** WatchlistEntryResponse */
+        WatchlistEntryResponse: {
+            /** Imdbid */
+            imdbId: string;
+            /** Tmdbid */
+            tmdbId: number | null;
+            /** Tvdbid */
+            tvdbId: number | null;
+            /** Title */
+            title: string;
+            /** Year */
+            year: number;
+            /** Type */
+            type: string;
+            /** Category */
+            category: string;
+            /** Genres */
+            genres: string[];
+            /** Lang */
+            lang: string;
+            /** Cert */
+            cert: string;
+            /** Rt */
+            rt: number | null;
+            /** Imdb */
+            imdb: number | null;
+            /** Tmdbscore */
+            tmdbScore: number | null;
+            /** Overview */
+            overview: string;
+            /** Cast */
+            cast: string[];
+            /** Director */
+            director: string;
+            /** Runtime */
+            runtime: number | null;
+            /** Poster */
+            poster: string;
+            /** Backdrop */
+            backdrop: string;
+            /** Trailerid */
+            trailerId: string;
+            /** Trailertitle */
+            trailerTitle: string;
+            /** Trailerurl */
+            trailerUrl: string;
+            /** Added */
+            added: string;
+            /** Source */
+            source: string;
+            /** State */
+            state?: string | null;
+            /** Detail */
+            detail?: string | null;
+            /** Progress */
+            progress?: number | null;
         };
         /**
          * WatchlistResponse
@@ -2278,6 +2376,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WatchlistResponse"];
+                };
+            };
+        };
+    };
+    get_watchlist_entries_api_watchlist_entries_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WatchlistEntriesResponse"];
                 };
             };
         };

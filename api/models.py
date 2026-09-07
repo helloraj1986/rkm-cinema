@@ -228,6 +228,17 @@ class WatchlistResponse(BaseModel):
     indexerIssue: Optional[str] = None
 
 
+class WatchlistEntriesResponse(BaseModel):
+    """GET /api/watchlist/entries — every pending + recommended entry in the
+    rich display shape the SPA renders (posters/backdrops/scores/synopsis/
+    trailer/genres — legacy parity port source). Live from the authoritative
+    store via the shared ``services/dashboard.to_rich_entry`` mapper; the
+    static dashboard generator writes the same shape to dashboard-data.json."""
+
+    updated: str = ""
+    entries: List[WatchlistEntryResponse] = Field(default_factory=list)
+
+
 class ReconcileResponse(BaseModel):
     """POST /api/reconcile — re-derive every entry's snapshot in one pass."""
 

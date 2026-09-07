@@ -1249,6 +1249,25 @@
         }
       }
     },
+    "/api/watchlist/entries": {
+      "get": {
+        "summary": "Get Watchlist Entries",
+        "description": "Every watchlist entry in the rich display shape (legacy-parity source).\n\nReads the authoritative store through the same seam as the dashboard\ngenerator and maps with the shared ``services.dashboard.to_rich_entry`` \u2014\none mapper for the API and the static rebuild.",
+        "operationId": "get_watchlist_entries_api_watchlist_entries_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WatchlistEntriesResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/reconcile": {
       "post": {
         "summary": "Reconcile Now",
@@ -2686,6 +2705,234 @@
         "type": "object",
         "title": "WatchEntryModel",
         "description": "One provider's watch link (spec \u00a718 ``watch.<provider>``)."
+      },
+      "WatchlistEntriesResponse": {
+        "properties": {
+          "updated": {
+            "type": "string",
+            "title": "Updated",
+            "default": ""
+          },
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/WatchlistEntryResponse"
+            },
+            "type": "array",
+            "title": "Entries"
+          }
+        },
+        "type": "object",
+        "title": "WatchlistEntriesResponse",
+        "description": "GET /api/watchlist/entries \u2014 every pending + recommended entry in the\nrich display shape the SPA renders (posters/backdrops/scores/synopsis/\ntrailer/genres \u2014 legacy parity port source). Live from the authoritative\nstore via the shared ``services/dashboard.to_rich_entry`` mapper; the\nstatic dashboard generator writes the same shape to dashboard-data.json."
+      },
+      "WatchlistEntryResponse": {
+        "properties": {
+          "imdbId": {
+            "type": "string",
+            "title": "Imdbid"
+          },
+          "tmdbId": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tmdbid"
+          },
+          "tvdbId": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tvdbid"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "year": {
+            "type": "integer",
+            "title": "Year"
+          },
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "category": {
+            "type": "string",
+            "title": "Category"
+          },
+          "genres": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Genres"
+          },
+          "lang": {
+            "type": "string",
+            "title": "Lang"
+          },
+          "cert": {
+            "type": "string",
+            "title": "Cert"
+          },
+          "rt": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rt"
+          },
+          "imdb": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Imdb"
+          },
+          "tmdbScore": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tmdbscore"
+          },
+          "overview": {
+            "type": "string",
+            "title": "Overview"
+          },
+          "cast": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Cast"
+          },
+          "director": {
+            "type": "string",
+            "title": "Director"
+          },
+          "runtime": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Runtime"
+          },
+          "poster": {
+            "type": "string",
+            "title": "Poster"
+          },
+          "backdrop": {
+            "type": "string",
+            "title": "Backdrop"
+          },
+          "trailerId": {
+            "type": "string",
+            "title": "Trailerid"
+          },
+          "trailerTitle": {
+            "type": "string",
+            "title": "Trailertitle"
+          },
+          "trailerUrl": {
+            "type": "string",
+            "title": "Trailerurl"
+          },
+          "added": {
+            "type": "string",
+            "title": "Added"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "State"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "progress": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Progress"
+          }
+        },
+        "type": "object",
+        "required": [
+          "imdbId",
+          "tmdbId",
+          "tvdbId",
+          "title",
+          "year",
+          "type",
+          "category",
+          "genres",
+          "lang",
+          "cert",
+          "rt",
+          "imdb",
+          "tmdbScore",
+          "overview",
+          "cast",
+          "director",
+          "runtime",
+          "poster",
+          "backdrop",
+          "trailerId",
+          "trailerTitle",
+          "trailerUrl",
+          "added",
+          "source"
+        ],
+        "title": "WatchlistEntryResponse"
       },
       "WatchlistResponse": {
         "properties": {

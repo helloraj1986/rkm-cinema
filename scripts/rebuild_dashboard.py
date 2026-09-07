@@ -2,9 +2,7 @@
 """Rebuild dashboard - generate dashboard-data.json + index.html from watchlist.json."""
 import json
 import os
-import re
 import time
-import urllib.parse
 from pathlib import Path
 
 # Add project root to path
@@ -13,80 +11,14 @@ sys.path.insert(0, "/workspace/projects/rkm-cinema")
 
 from config.settings import get_config
 from services import WatchlistService, WatchlistEntry
-
-
-GENRE_HINTS = {
-    "Sci-Fi/Fantasy": ["Science Fiction", "Fantasy"],
-    "Kids & Animation": ["Animation", "Family"],
-    "Hindi/Indian Cinema": ["Drama", "Thriller"],
-    "Classic/Essential": ["Classic"],
-    "Documentary": ["Documentary"],
-}
+from services.dashboard import GENRE_HINTS, to_rich_entry
 
 
 def normalize_entry(entry: WatchlistEntry) -> dict:
-    """Map one watchlist entry -> rich SPA entry. Pure data, no secrets."""
-    is_series = entry.isSeries
-    title = entry.title
-    year = entry.year
-    cat = entry.category
-    trailer_id = entry.trailerId or ""
-    trailer_title = entry.trailerTitle or ""
-    poster = entry.poster or ""
-    backdrop = entry.backdrop or ""
-
-    # Validate trailer ID format
-    if trailer_id and not re.fullmatch(r"[A-Za-z0-9_-]{11}", str(trailer_id)):
-        trailer_id = ""
-
-    # Genres: use entry.genres, fallback to category hints if empty
-    genres = entry.genres if entry.genres else GENRE_HINTS.get(cat, [cat] if cat else [])
-
-    # Overview: prefer tmdb_overview, then snippet, then fallback
-    overview = entry.tmdb_overview or entry.snippet or f"{title} ({year}) - {entry.category}"
-
-    # tmdbScore: use entry.tmdb_score, fallback to imdb
-    tmdb_score = entry.tmdb_score if entry.tmdb_score > 0 else (float(entry.imdb) if entry.imdb else 0.0)
-
-    # tvdbId: not in WatchlistEntry
-    tvdb_id = None
-
-    # source: use entry.source
-    source = entry.source
-
-    return {
-        "imdbId": entry.imdbId,
-        "tmdbId": entry.tmdbId,
-        "tvdbId": tvdb_id,
-        "title": title,
-        "year": int(year) if str(year).isdigit() else year,
-        "type": "tv" if is_series else "movie",
-        "category": cat,
-        "genres": genres,
-        "lang": entry.lang,
-        "cert": entry.cert,
-        "rt": entry.rt,
-        "imdb": entry.imdb,
-        "tmdbScore": tmdb_score,
-        "overview": overview,
-        "cast": entry.cast or [],
-        "director": entry.director,
-        "runtime": entry.runtime,
-        "poster": poster,
-        "backdrop": backdrop,
-        "trailerId": trailer_id,
-        "trailerTitle": trailer_title,
-        "trailerUrl": (f"https://www.youtube.com/embed/{trailer_id}?autoplay=1&rel=0&color=white"
-                       if trailer_id else
-                       f"https://www.youtube.com/results?search_query="
-                       f"{urllib.parse.quote(title + ' ' + str(year) + ' trailer')}"),
-        "added": entry.added,
-        "source": source,
-        # Status fields (populated by API at runtime)
-        "state": entry.state,
-        "detail": entry.detail,
-        "progress": entry.progress,
-    }
+    """Map one watchlist entry -> rich SPA entry (canonical mapper, see
+    ``services/dashboard.to_rich_entry``). Kept as a thin re-export so older
+    callers of ``rebuild_dashboard.normalize_entry`` keep working."""
+    return to_rich_entry(entry)
 
 
 def build():

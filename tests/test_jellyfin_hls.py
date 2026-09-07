@@ -186,6 +186,32 @@ def test_hls_master_default_mode_is_transcode(monkeypatch):
     assert "VideoCodec=h264" in captured["url"] and "AudioCodec=aac" in captured["url"]
 
 
+def test_hls_master_transcode_always_sends_videobitrate(monkeypatch):
+    """mode=transcode MUST send VideoBitRate — Jellyfin 10.11 sizes the transcode
+    RESOLUTION ladder from it; with none it falls back to a tiny 256 kbps /
+    416x234 encode (the "small native player" bug). MaxStreamingBitrate alone is
+    ignored (live-verified 2026-09-08: 120 Mbps via MaxStreamingBitrate still
+    returned 416x234). Unthrottled (no max_bitrate) → the 120 Mbps cap so a
+    genuine re-encode keeps the SOURCE resolution (4K AV1 → 3840x2160, 1080p
+    HEVC → 1920x1080)."""
+    _patch_config(monkeypatch)
+    captured = {}
+
+    def fake_urlopen(req, timeout=None):
+        captured["url"] = req.full_url
+        return _FakeResponse(_MASTER_BODY)
+
+    with _patch_urlopen(fake_urlopen):
+        client.get("/api/jellyfin/hls/ep1/master.m3u8", params={"mode": "transcode"})
+    assert "VideoBitRate=120000000" in captured["url"]  # unthrottled cap
+
+    with _patch_urlopen(fake_urlopen):
+        client.get("/api/jellyfin/hls/ep1/master.m3u8",
+                   params={"mode": "transcode", "max_bitrate": 8_000_000})
+    assert "VideoBitRate=8000000" in captured["url"]  # quality-picker cap
+    assert "MaxStreamingBitrate=8000000" in captured["url"]
+
+
 def test_hls_master_rejects_unknown_and_direct_modes(monkeypatch):
     _patch_config(monkeypatch)
     with patch("api.routes.jellyfin_hls.urllib.request.urlopen") as m:

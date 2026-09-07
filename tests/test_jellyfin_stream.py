@@ -185,6 +185,7 @@ def test_stream_transcode_mode_h264_aac_with_bitrate(monkeypatch):
     assert "VideoCodec=h264" in u
     assert "AudioCodec=aac" in u and "MaxAudioChannels=2" in u
     assert "MaxStreamingBitrate=5000000" in u
+    assert "VideoBitRate=5000000" in u  # the resolution knob (10.11)
     assert "AudioStreamIndex=1" in u
     assert "StartTimeTicks=60000000000" in u
 
@@ -192,6 +193,7 @@ def test_stream_transcode_mode_h264_aac_with_bitrate(monkeypatch):
     with patch("api.routes.jellyfin_stream.urllib.request.urlopen", fake_urlopen):
         client.get("/api/jellyfin/stream/abc123", params={"mode": "transcode"})
     assert "MaxStreamingBitrate" not in captured["url"], "0 bitrate = full quality"
+    assert "VideoBitRate=120000000" in captured["url"]  # unthrottled cap, source res kept
     assert "VideoCodec=h264" in captured["url"]
 
 

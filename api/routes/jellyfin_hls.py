@@ -65,6 +65,18 @@ _MODE_CODECS = {
     "transcode": {"VideoCodec": "h264", "AudioCodec": "aac", "MaxAudioChannels": "2"},
 }
 
+#: ``VideoBitRate`` sent with ``mode=transcode`` when the client asks for
+#: "Original" quality (no ``max_bitrate``). Jellyfin 10.11 sizes the
+#: transcode resolution/quality ladder from ``VideoBitRate`` — with NO
+#: ``VideoBitRate`` the encoder falls back to a tiny default (~256 kbps /
+#: 416x234, the "small player" bug); ``MaxStreamingBitrate`` alone is
+#: ignored (live-verified 2026-09-08: 120 Mbps via MaxStreamingBitrate still
+#: produced 416x234; VideoBitRate=120000000 kept 3840x2160). This is an
+#: unthrottled *cap*: the encoder still targets the source's own quality
+#: (4K AV1 → ~22 Mbps in live probes), so it preserves source resolution
+#: without trying to pump 120 Mbps.
+_UNTHROTTLED_VIDEO_BITRATE = 120_000_000
+
 _API_KEY_RE = re.compile(r"api_key=[^&\s\"']*")
 
 
@@ -159,8 +171,20 @@ def jellyfin_hls_master(
     params.update(_MODE_CODECS[mode])
     if audio_stream_index > 0:
         params["AudioStreamIndex"] = str(audio_stream_index)
+    # Jellyfin 10.11 sizes the transcode RESOLUTION/bitrate ladder from
+    # ``VideoBitRate`` — ``MaxStreamingBitrate`` alone is ignored (live probe:
+    # 120 Mbps via MaxStreamingBitrate still returned 416x234; VideoBitRate is
+    # the knob). mode=transcode therefore ALWAYS sends VideoBitRate: the
+    # quality picker's cap when set, else the unthrottled 120 Mbps cap so a
+    # genuine re-encode (HEVC/AV1/10-bit) keeps the source resolution instead
+    # of Jellyfin's tiny 256 kbps default. transcode_audio keeps video=copy
+    # (resolution already preserved) and only forwards MaxStreamingBitrate.
     if max_bitrate > 0 and mode in ("transcode_audio", "transcode"):
         params["MaxStreamingBitrate"] = str(max_bitrate)
+    if mode == "transcode":
+        params["VideoBitRate"] = (
+            str(max_bitrate) if max_bitrate > 0 else str(_UNTHROTTLED_VIDEO_BITRATE)
+        )
 
     qs = urllib.parse.urlencode(params)
     up = f"{cfg.JELLYFIN_URL}/Videos/{item_id}/master.m3u8?{qs}"

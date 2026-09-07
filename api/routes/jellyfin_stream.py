@@ -122,6 +122,15 @@ def jellyfin_stream(
             up += f"&AudioStreamIndex={audio_stream_index}"
         if max_bitrate > 0 and mode in ("transcode_audio", "transcode"):
             up += f"&MaxStreamingBitrate={max_bitrate}"
+        # Jellyfin 10.11 sizes a genuine transcode's resolution/quality from
+        # VideoBitRate (MaxStreamingBitrate alone is ignored — same finding as
+        # the HLS route, live-verified 2026-09-08). Send the quality cap when
+        # one is chosen; otherwise an unthrottled 120 Mbps cap so a full
+        # re-encode (HEVC/AV1/10-bit) keeps the SOURCE resolution instead of
+        # Jellyfin's tiny 256 kbps default.
+        if mode == "transcode":
+            vbr = max_bitrate if max_bitrate > 0 else 120_000_000
+            up += f"&VideoBitRate={vbr}"
         if start_time_ticks > 0:
             up += f"&StartTimeTicks={start_time_ticks}"
     headers: dict[str, str] = {}

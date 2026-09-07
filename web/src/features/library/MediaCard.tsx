@@ -89,13 +89,15 @@ export function MediaCard({
         <Marker marker={marker} />
       </div>
 
-      {/* Hover primary action: ▶ play (movie) / Episodes (series). */}
+      {/* Hover primary action: ▶ play (movie) / Episodes (series).
+          pointer-events-auto: the poster wrapper is pointer-events-none, so
+          without it these clicks fall through to the card's open button. */}
       {tv ? (
         <button
           type="button"
           onClick={() => onQuickPlay(item)}
           aria-label={`Episodes for ${item.title}`}
-          className="absolute left-1/2 top-[40%] z-[2] -translate-x-1/2 -translate-y-1/2 whitespace-nowrap rounded-full bg-amber-400 px-4 py-2 text-xs font-bold text-black opacity-0 shadow-lg transition hover:bg-amber-300 group-hover:opacity-100"
+          className="pointer-events-auto absolute left-1/2 top-[40%] z-[2] -translate-x-1/2 -translate-y-1/2 whitespace-nowrap rounded-full bg-amber-400 px-4 py-2 text-xs font-bold text-black opacity-0 shadow-lg transition hover:bg-amber-300 group-hover:opacity-100"
         >
           ▶ Episodes
         </button>
@@ -104,14 +106,14 @@ export function MediaCard({
           type="button"
           onClick={() => onQuickPlay(item)}
           aria-label={`Play ${item.title}`}
-          className="absolute left-1/2 top-[40%] z-[2] flex h-12 w-12 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-amber-400 pl-0.5 text-lg text-black opacity-0 shadow-lg transition hover:scale-105 hover:bg-amber-300 group-hover:opacity-100"
+          className="pointer-events-auto absolute left-1/2 top-[40%] z-[2] flex h-12 w-12 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-amber-400 pl-0.5 text-lg text-black opacity-0 shadow-lg transition hover:scale-105 hover:bg-amber-300 group-hover:opacity-100"
         >
           ▶
         </button>
       )}
 
       {/* Hover quick actions: watched toggle + Jellyfin deep link. */}
-      <div className="absolute inset-x-2 bottom-2 z-[2] flex items-center justify-between opacity-0 transition group-hover:opacity-100">
+      <div className="pointer-events-auto absolute inset-x-2 bottom-2 z-[2] flex items-center justify-between opacity-0 transition group-hover:opacity-100">
         {onToggleWatched && (
           <button
             type="button"

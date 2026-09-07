@@ -77,8 +77,10 @@ export function SuggestCard({
           ) : null}
         </div>
 
-        {/* hover actions */}
-        <div className="absolute inset-x-2 bottom-2 z-[2] flex flex-col items-stretch gap-1.5 opacity-0 transition group-hover:opacity-100">
+        {/* hover actions — pointer-events-auto: the poster wrapper is
+            pointer-events-none, so without this clicks fall through to the
+            card and open the detail instead of pressing the button. */}
+        <div className="pointer-events-auto absolute inset-x-2 bottom-2 z-[2] flex flex-col items-stretch gap-1.5 opacity-0 transition group-hover:opacity-100">
           <button
             type="button"
             onClick={onAdd}

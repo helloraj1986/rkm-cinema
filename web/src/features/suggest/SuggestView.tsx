@@ -4,7 +4,7 @@ import { SuggestCard } from "./SuggestCard";
 import { useAddToWatchlist, useRequestMedia, useSuggestRun } from "../watchlist/api";
 import { suggestHistoryLabel, suggestHistoryPush, SUGGEST_GENRES } from "../watchlist/lib";
 import { toast } from "../watchlist/toast";
-import { errorMessage } from "../watchlist/actions";
+import { acquisitionToast, errorMessage } from "../watchlist/actions";
 import { EmptyState } from "../watchlist/CardRow";
 import { SuggestDetailModal } from "./SuggestDetailModal";
 
@@ -137,7 +137,7 @@ export function SuggestView() {
               if (r.ok) toast("Download started", item.title || "");
               else toast("Download failed", r.message || r.state, "err", 6000);
             },
-            onError: (e) => toast("Download failed", errorMessage(e), "err", 6000),
+            onError: (e) => acquisitionToast(e, "Download failed"),
             onSettled: () => setBusyId(null),
           });
         },

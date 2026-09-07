@@ -428,7 +428,7 @@ async function getJson<T>(path: string): Promise<T> {
     signal: AbortSignal.timeout(20_000),
   });
   if (!res.ok) {
-    throw new ApiError(res.status, `GET ${path} -> ${res.status}`);
+    throw new ApiError(res.status, await errorDetail(res, `GET ${path}`));
   }
   return (await res.json()) as T;
 }
@@ -441,9 +441,23 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
     signal: AbortSignal.timeout(20_000),
   });
   if (!res.ok) {
-    throw new ApiError(res.status, `POST ${path} -> ${res.status}`);
+    throw new ApiError(res.status, await errorDetail(res, `POST ${path}`));
   }
   return (await res.json()) as T;
+}
+
+/** Best human message from a failed API response: FastAPI's `detail` (string
+ *  or {message}) or `message`, else a `METHOD path -> status` fallback. */
+async function errorDetail(res: Response, fallback: string): Promise<string> {
+  try {
+    const d = await res.json();
+    if (d && typeof d.detail === "string" && d.detail) return d.detail;
+    if (d && typeof d.detail?.message === "string" && d.detail.message) return d.detail.message;
+    if (d && typeof d.message === "string" && d.message) return d.message;
+  } catch {
+    /* body not JSON — use the fallback */
+  }
+  return `${fallback} -> ${res.status}`;
 }
 
 /** Playback-progress payload for /api/jellyfin/progress (mirrors legacy reportProgress). */

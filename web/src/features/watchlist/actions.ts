@@ -7,6 +7,7 @@
  */
 import { useNavigate } from "react-router-dom";
 import type { MediaItem, WatchlistEntry } from "../../lib/api/client";
+import { ApiError } from "../../lib/api/client";
 import { useMutateItemState } from "../library/api";
 import { useRequestMedia, useRunAddWatchlist } from "./api";
 import { mediaIdOf } from "./lib";
@@ -14,6 +15,20 @@ import { toast } from "./toast";
 
 export function errorMessage(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
+}
+
+/** Friendly copy for the two "this stack can't acquire" cases so the user
+ *  knows it is environmental (no Radarr/Sonarr), not a broken button. */
+export function acquisitionToast(e: unknown, title: string): void {
+  if (e instanceof ApiError && e.status === 503) {
+    toast(title, `${e.message} — enable Radarr/Sonarr (bundled fullstack profile) or use the prod stack.`, "warn", 7000);
+    return;
+  }
+  if (e instanceof ApiError && e.status === 502) {
+    toast(title, `${e.message} — the download service is unreachable.`, "err", 7000);
+    return;
+  }
+  toast(title, errorMessage(e), "err", 6000);
 }
 
 export function useCardActions() {
@@ -29,7 +44,7 @@ export function useCardActions() {
         if (r.ok) toast("Download started", entry.title);
         else toast("Download failed", r.message || r.state, "err", 6000);
       },
-      onError: (e) => toast("Download failed", errorMessage(e), "err", 6000),
+      onError: (e) => acquisitionToast(e, "Download failed"),
     });
   };
 

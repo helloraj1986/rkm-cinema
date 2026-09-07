@@ -1,9 +1,10 @@
 # Legacy Parity Plan — Discover / Watchlist / Search / Suggest → React shell
 
 Status: **EXECUTED 2026-09-07 — Phases 0–3 shipped in one session** (plan doc
-commit + backend `…` + frontend `…`; see `PROGRESS.md` for the record).
-Remaining: RKM-HP deploy + user eyeball (`.\\bootstrap.ps1` — api + web both
-changed), then roadmap item 4 v2 ("Because you watched") queued behind this.
+commit `c19bcf4` + backend `2e18f06` + frontend `b5c7ef8`; see `PROGRESS.md`
+for the record). Remaining: RKM-HP deploy + user eyeball (`.\\bootstrap.ps1` —
+api + web both changed), then roadmap item 4 v2 ("Because you watched") queued
+behind this.
 
 ---
 

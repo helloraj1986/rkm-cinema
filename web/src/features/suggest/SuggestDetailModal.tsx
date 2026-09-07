@@ -11,13 +11,15 @@ import { fmtRating, fmtRuntimeMin } from "../watchlist/lib";
  */
 export function SuggestDetailModal({
   item,
-  busy,
+  busyAdd,
+  busyDownload,
   onClose,
   onAdd,
   onDownload,
 }: {
   item: SuggestResult;
-  busy: boolean;
+  busyAdd: boolean;
+  busyDownload: boolean;
   onClose: () => void;
   onAdd: () => void;
   onDownload: () => void;
@@ -131,18 +133,18 @@ export function SuggestDetailModal({
             <button
               type="button"
               onClick={onAdd}
-              disabled={busy || item.in_watchlist}
+              disabled={busyAdd || item.in_watchlist}
               className="rounded-full bg-zinc-800 px-4 py-2 text-sm font-bold text-zinc-100 ring-1 ring-zinc-600 hover:bg-zinc-700 disabled:opacity-60"
             >
-              {busy ? "Adding…" : item.in_watchlist ? "✓ Added to Watchlist" : "＋ Add to Watchlist"}
+              {busyAdd ? "Adding…" : item.in_watchlist ? "✓ Added to Watchlist" : "＋ Add to Watchlist"}
             </button>
             <button
               type="button"
               onClick={onDownload}
-              disabled={busy}
+              disabled={busyDownload}
               className="rounded-full bg-amber-400 px-4 py-2 text-sm font-bold text-black hover:bg-amber-300 disabled:opacity-60"
             >
-              ↓ Download
+              {busyDownload ? "Starting download…" : "↓ Download"}
             </button>
           </div>
         </div>

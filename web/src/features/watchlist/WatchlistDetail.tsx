@@ -34,6 +34,7 @@ export function WatchlistDetail({
 }) {
   const [showTrailer, setShowTrailer] = useState(openTrailer);
   const ref = useRef<HTMLDivElement>(null);
+  const trailerRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     document.body.style.overflow = "hidden";
     ref.current?.focus();
@@ -46,6 +47,18 @@ export function WatchlistDetail({
       window.removeEventListener("keydown", onKey);
     };
   }, [onClose]);
+
+  // When a trailer is opened (button click, or the card's Trailer action opens
+  // the modal with openTrailer=true), bring it into view — it sits below the
+  // fold on long entries and users shouldn't have to scroll to find it.
+  useEffect(() => {
+    if (showTrailer) {
+      const t = window.setTimeout(() => {
+        trailerRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }, 120);
+      return () => window.clearTimeout(t);
+    }
+  }, [showTrailer]);
 
   const meta: string[] = [entry.year, entry.lang, entry.cert, entry.runtime ? fmtRuntimeMin(entry.runtime) : ""]
     .filter(Boolean)
@@ -240,7 +253,11 @@ export function WatchlistDetail({
           </div>
 
           {showTrailer && entry.trailerId ? (
-            <div className="mt-4 aspect-video w-full overflow-hidden rounded-xl border border-zinc-800">
+            <div
+              ref={trailerRef}
+              data-testid="trailer-embed"
+              className="mt-4 aspect-video w-full overflow-hidden rounded-xl border border-zinc-800"
+            >
               <iframe
                 title={`${entry.title} trailer`}
                 src={`https://www.youtube.com/embed/${entry.trailerId}?autoplay=1&rel=0&color=white`}

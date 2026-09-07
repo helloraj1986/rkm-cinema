@@ -47,7 +47,9 @@ export function SuggestView() {
   }));
   const [history, setHistory] = useState<SuggestFilters[]>(loadHistory);
   const [results, setResults] = useState<SuggestResult[]>([]);
-  const [busyId, setBusyId] = useState<number | null>(null);
+  // Separate busy flags per action so Download never flips the Add button.
+  const [busyAdd, setBusyAdd] = useState<number | null>(null);
+  const [busyDownload, setBusyDownload] = useState<number | null>(null);
   const [detail, setDetail] = useState<SuggestResult | null>(null);
 
   const readInputs = (): SuggestFilters => ({
@@ -97,11 +99,16 @@ export function SuggestView() {
     search({ ...h, genres: [...h.genres] });
   };
 
-  const patchItem = (tmdbId: number, patch: Partial<SuggestResult>) =>
+  const patchItem = (tmdbId: number, patch: Partial<SuggestResult>) => {
     setResults((rs) => rs.map((r) => (r.tmdb_id === tmdbId ? { ...r, ...patch } : r)));
+    // Keep the OPEN detail modal in sync too — it snapshots the result object
+    // at open time, so without this its Add button stays "Add to Watchlist"
+    // even after the grid flips to "Added" (bug: stale modal button).
+    setDetail((d) => (d && d.tmdb_id === tmdbId ? { ...d, ...patch } : d));
+  };
 
   const handleAdd = (item: SuggestResult) => {
-    setBusyId(item.tmdb_id);
+    setBusyAdd(item.tmdb_id);
     add.mutate(
       { tmdbId: item.tmdb_id, mediaType: item.media_type },
       {
@@ -114,20 +121,20 @@ export function SuggestView() {
           }
         },
         onError: (e) => toast("Add failed", errorMessage(e), "err"),
-        onSettled: () => setBusyId(null),
+        onSettled: () => setBusyAdd(null),
       },
     );
   };
 
   const handleDownload = (item: SuggestResult) => {
-    setBusyId(item.tmdb_id);
+    setBusyDownload(item.tmdb_id);
     add.mutate(
       { tmdbId: item.tmdb_id, mediaType: item.media_type },
       {
         onSuccess: (addResp) => {
           if (!addResp.ok && !addResp.already) {
             toast("Download failed", addResp.message || "Failed to add to watchlist", "err");
-            setBusyId(null);
+            setBusyDownload(null);
             return;
           }
           patchItem(item.tmdb_id, { in_watchlist: true });
@@ -138,12 +145,12 @@ export function SuggestView() {
               else toast("Download failed", r.message || r.state, "err", 6000);
             },
             onError: (e) => acquisitionToast(e, "Download failed"),
-            onSettled: () => setBusyId(null),
+            onSettled: () => setBusyDownload(null),
           });
         },
         onError: (e) => {
           toast("Download failed", errorMessage(e), "err");
-          setBusyId(null);
+          setBusyDownload(null);
         },
       },
     );
@@ -232,7 +239,8 @@ export function SuggestView() {
             <SuggestCard
               key={item.tmdb_id}
               item={item}
-              busy={busyId === item.tmdb_id}
+              busyAdd={busyAdd === item.tmdb_id}
+              busyDownload={busyDownload === item.tmdb_id}
               onAdd={() => handleAdd(item)}
               onDownload={() => handleDownload(item)}
               onOpen={() => openDetail(item)}
@@ -250,7 +258,8 @@ export function SuggestView() {
       {detail ? (
         <SuggestDetailModal
           item={detail}
-          busy={busyId === detail.tmdb_id}
+          busyAdd={busyAdd === detail.tmdb_id}
+          busyDownload={busyDownload === detail.tmdb_id}
           onClose={() => setDetail(null)}
           onAdd={() => handleAdd(detail)}
           onDownload={() => handleDownload(detail)}

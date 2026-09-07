@@ -7,13 +7,15 @@ import type { SuggestResult } from "../../lib/api/client";
  */
 export function SuggestCard({
   item,
-  busy,
+  busyAdd,
+  busyDownload,
   onAdd,
   onDownload,
   onOpen,
 }: {
   item: SuggestResult;
-  busy: boolean;
+  busyAdd: boolean;
+  busyDownload: boolean;
   onAdd: () => void;
   onDownload: () => void;
   onOpen: () => void;
@@ -84,18 +86,18 @@ export function SuggestCard({
           <button
             type="button"
             onClick={onAdd}
-            disabled={busy || item.in_watchlist}
+            disabled={busyAdd || item.in_watchlist}
             className="rounded-full bg-zinc-200/90 px-3 py-1.5 text-center text-xs font-bold text-black hover:bg-white disabled:opacity-70"
           >
-            {busy ? "Adding…" : item.in_watchlist ? "✓ Added" : "＋ Add to Watchlist"}
+            {busyAdd ? "Adding…" : item.in_watchlist ? "✓ Added" : "＋ Add to Watchlist"}
           </button>
           <button
             type="button"
             onClick={onDownload}
-            disabled={busy}
+            disabled={busyDownload}
             className="rounded-full bg-amber-400 px-3 py-1.5 text-center text-xs font-bold text-black hover:bg-amber-300 disabled:opacity-60"
           >
-            {busy ? "Working…" : "↓ Download"}
+            {busyDownload ? "Starting download…" : "↓ Download"}
           </button>
         </div>
       </div>

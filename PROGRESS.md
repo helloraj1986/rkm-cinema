@@ -13,6 +13,14 @@
 - Gates: vitest **105/105** · tsc clean · `VITE_ENABLE_REACT=1` build ok (no backend change this round).
 - ⚠ **Deploy (RKM-HP):** web-only change → `docker compose -p rkm-bundled up -d --build web` (or `.\bootstrap.ps1`), hard-refresh, then: Suggest card **Add to Watchlist** adds (no overlay); **Download** on the bundled stack shows the friendly warn (needs the `fullstack` profile / prod stack to actually grab).
 
+## ▶ LATEST SESSION (2026-09-07) — Suggest UI fixes (modal button sync, per-action busy, trailer scroll) ✅
+**User-reported on Suggest/Watchlist:** (1) modal Add succeeded but its button flipped back to “Add to Watchlist” until the tab was re-opened; (2) clicking Download also flipped the Add button to “Adding…”; (3) opening a trailer in the detail popup left it below the fold (had to scroll).
+- **(1)**: the open detail modal snapshots its `SuggestResult` at open time; `patchItem` only updated the grid array. `patchItem` now also patches `detail` when it matches, so the modal button flips to “✓ Added to Watchlist” immediately (and reverts on failure like before).
+- **(2)**: one shared `busyId` drove both buttons. Split into `busyAdd`/`busyDownload`; card + modal each show “Adding…” only for Add and “Starting download…” only for Download.
+- **(3)**: `WatchlistDetail` scrolls the trailer embed into view when it opens (ref + `scrollIntoView`, 120 ms after open so the modal settles).
+- Gates: tsc clean · vitest **105/105** · `VITE_ENABLE_REACT=1` build ok (web-only).
+- ⚠ **Deploy (RKM-HP):** `docker compose -p rkm-bundled up -d --build web`, hard-refresh.
+
 ## ▶ LATEST SESSION (2026-09-07) — Config rework: ONE repo-level `.env`, no rkm.config.toml ✅
 **User asked for a single env file: paste everything for the full stack (Jellyfin/Radarr/Sonarr/Plex/Emby/TMDB/ports/paths) into one `.env`, and script + docker read it and run.**
 - **New single source = repo-level `.env`** (`D:\hermes_agent\hermes-workspace\projects\rkm-cinema\.env`). `.env.example` (committed, fully commented) documents every variable: `RKM_MEDIA_PATH`/ports/TZ/PUID/PGID, `MEDIA_SERVER` (jellyfin|plex|emby), `RKM_JELLYFIN_ADMIN_USER/PASSWORD/RKM_JELLYFIN_BROWSER`, `PLEX_URL/TOKEN`, `EMBY_URL/API_KEY`, `TMDB_API_KEY`, `RADARR_URL/API_KEY`, `SONARR_URL/API_KEY`, quality-profile ids, `PROWLARR_*`, `QBITTORRENT_URL`, `WATCHLIST_STORE/DB_PATH`, `WATCHLIST_SCHEDULER`, `AUTO_ADD_ENABLED/HOUR`, `RECONCILE_INTERVAL_MIN`.

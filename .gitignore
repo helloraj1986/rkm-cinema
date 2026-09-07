@@ -42,8 +42,10 @@ docker-compose.override.yml
 # Kept on disk for later bring-up; un-ignore + commit when ready.
 .github/workflows/ci.yml
 
-# Bundled-stack experiment (rkm.config.toml holds secrets; ./data is runtime media)
+# Repo-level .env is the SINGLE config (git-ignored; .env.example committed).
+# ./data is runtime media for the bundled stack.
 rkm.config.toml
+.rkm.env
 .rkm_state.json
 data/
 provisioner/__pycache__/

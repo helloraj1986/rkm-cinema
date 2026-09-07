@@ -1,100 +1,135 @@
 #!/usr/bin/env python3
-"""Render rkm.config.toml → the compose `.env` + api `.rkm.env` for the bundled stack.
+"""Render the SINGLE repo-level `.env` -> the api container env (`.rkm.env`).
 
-Also creates the storage tree (./data/media/{_movie,_tv}, ./data/downloads,
-./data/rkm). Run inside bootstrap.sh / bootstrap.ps1 before `docker compose up`.
+The one config file is ``<repo>/.env`` (copy `.env.example` and fill it in).
+This script:
 
-The TOML is the single source of truth; this script is the only bridge to the
-compose/env files, so there is exactly one place to configure the stack.
+* reads ONLY that file — no rkm.config.toml, no workspace-level .env;
+* fills safe defaults into `.env` if keys are missing (ports, media path,
+  backend, watchlist store, scheduler…) and auto-generates + persists
+  ``JELLYFIN_ADMIN_PASSWORD`` when it is blank;
+* validates required keys (TMDB_API_KEY etc.) and prints exactly what is
+  missing;
+* creates the media/storage tree (``RKM_MEDIA_PATH``);
+* writes ``.rkm.env`` (the api container's env_file — container-internal
+  values such as ``http://jellyfin:8096`` are derived HERE) and a small
+  ``.rkm_state.json`` summary.
 
-Python 3.11+ (uses stdlib `tomllib`). Run from the repo root.
+``docker compose`` reads the same ``.env`` directly for port/path/provisioner
+substitution, so there is exactly one file to edit.
+
+Run inside bootstrap.sh / bootstrap.ps1 before `docker compose up`.
+Python 3.11+. Runs from the repo root.
 """
 from __future__ import annotations
 
 import json
-import os
-import re
 import secrets
 import sys
-import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-COMPOSE_ENV = ROOT / ".env"          # compose ${VAR} substitution
-API_ENV = ROOT / ".rkm.env"          # api container env_file
-CONFIG_TOML = ROOT / "rkm.config.toml"
+ENV_PATH = ROOT / ".env"              # THE single user config
+API_ENV = ROOT / ".rkm.env"           # api container env_file (generated)
+STATE_PATH = ROOT / ".rkm_state.json"  # small render summary (generated)
 
-# Jellyfin container host + internal port (service name on the rkm-exp network).
-JELLYFIN_INTERNAL = "http://jellyfin:8096"
+# Keys we can safely default (non-secret). Appended to .env when absent so the
+# file stays complete and self-documenting for the user.
+DEFAULTS = {
+    "RKM_MEDIA_PATH": "./data",
+    "RKM_DASHBOARD_PORT": "8124",
+    "RKM_JELLYFIN_PORT": "8098",
+    "RKM_TIMEZONE": "Australia/Melbourne",
+    "RKM_PUID": "1000",
+    "RKM_PGID": "1000",
+    "MEDIA_SERVER": "jellyfin",
+    "RKM_JELLYFIN_ADMIN_USER": "admin",
+    "RKM_JELLYFIN_BROWSER": "http://localhost:8098",
+    "WATCHLIST_STORE": "json",
+    "WATCHLIST_DB_PATH": "/data/rkm/watchlist.json",
+    "WATCHLIST_SCHEDULER": "true",
+    "AUTO_ADD_ENABLED": "false",
+    "AUTO_ADD_HOUR": "18",
+    "RECONCILE_INTERVAL_MIN": "10",
+}
 
-
-def canonical_env() -> dict:
-    """Secrets already present in the canonical workspace .env (prod config).
-
-    Lets the bundled stack reuse existing keys (e.g. TMDB_API_KEY) instead of
-    forcing the user to re-type them. Searches robustly regardless of Windows
-    vs WSL path layout: walks UP from the repo root collecting the first .env
-    in each ancestor (workspace root, /workspace, drive root), and merges every
-    .env it finds (later wins). Handles `export K=v` lines, whitespace around
-    `=` and quoted values.
-    """
-    merged: dict = {}
-    # Candidate dirs: the repo itself + every ancestor up to the filesystem root
-    # (covers D:/hermes_agent/hermes-workspace/.env on Windows and /workspace/.env on WSL).
-    dirs = [ROOT]
-    p = ROOT.parent
-    for _ in range(8):
-        dirs.append(p)
-        if p == p.parent:
-            break
-        p = p.parent
-    for d in dirs:
-        env_file = d / ".env"
-        try:
-            if not env_file.exists():
-                continue
-            parsed: dict = {}
-            for line in env_file.read_text(encoding="utf-8").splitlines():
-                line = line.strip()
-                if not line or line.startswith("#") or "=" not in line:
-                    continue
-                k, _, v = line.partition("=")
-                k = k.strip().lstrip("export").strip()
-                v = v.strip().strip('"').strip("'")
-                if k:
-                    parsed[k] = v
-            merged.update(parsed)
-        except Exception:
-            continue
-    return merged
+# Internal compose service names used as fallbacks when the user has not
+# pointed at already-running *arr (the opt-in `fullstack` profile).
+INTERNAL_FALLBACKS = {
+    "RADARR_URL": "http://radarr:7878",
+    "SONARR_URL": "http://sonarr:8989",
+    "PROWLARR_URL": "http://prowlarr:9696",
+    "QBITTORRENT_URL": "http://qbittorrent:8080",
+}
 
 
 def fail(msg: str) -> None:
     print(f"ERROR: {msg}", file=sys.stderr)
-    sys.exit(1)
+    sys.exit(2)
 
 
-def load_config() -> dict:
-    if not CONFIG_TOML.exists():
-        fail("rkm.config.toml not found. Copy rkm.config.example.toml -> rkm.config.toml and fill it in.")
-    with open(CONFIG_TOML, "rb") as f:
-        return tomllib.load(f)
-
-
-def backfill_password(pw: str) -> None:
-    """Persist a generated Jellyfin admin password into rkm.config.toml so it
-    stays stable across re-renders (idempotent provisioning)."""
+def parse_env_file(path: Path) -> dict:
+    """Parse a .env file (comments, blank lines, `export`, quotes)."""
+    parsed: dict = {}
     try:
-        text = CONFIG_TOML.read_text(encoding="utf-8")
-        new, n = re.subn(r'(jellyfin_admin_password\s*=\s*)"[^"]*"', rf'\g<1>"{pw}"', text, count=1)
-        if n:
-            CONFIG_TOML.write_text(new, encoding="utf-8")
-    except Exception as e:
-        print(f"(could not persist generated password to {CONFIG_TOML.name}: {e})")
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except FileNotFoundError:
+        return parsed
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        k, _, v = line.partition("=")
+        k = k.strip().lstrip("export").strip()
+        v = v.strip().strip('"').strip("'")
+        if k:
+            parsed[k] = v
+    return parsed
 
 
-def resolve_data_path(cfg: dict) -> Path:
-    raw = str((cfg.get("storage") or {}).get("runtime_app_media_path", "./data"))
+def write_env_key(path: Path, key: str, value: str) -> None:
+    """Append or replace one key in a .env file, preserving everything else."""
+    lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+    out: list[str] = []
+    replaced = False
+    for line in lines:
+        if line.strip().startswith("#") or "=" not in line:
+            out.append(line)
+            continue
+        k = line.split("=", 1)[0].strip().lstrip("export").strip()
+        if k == key:
+            out.append(f"{key}={value}")
+            replaced = True
+        else:
+            out.append(line)
+    if not replaced:
+        out.append(f"{key}={value}")
+    path.write_text("\n".join(out) + ("\n" if out else ""), encoding="utf-8")
+
+
+def ensure_defaults() -> dict:
+    """Fill safe defaults into .env (if the file is missing, seed it from
+    .env.example), then return the parsed env."""
+    if not ENV_PATH.exists():
+        example = ROOT / ".env.example"
+        if example.exists():
+            ENV_PATH.write_text(example.read_text(encoding="utf-8"), encoding="utf-8")
+            print(f"Created {ENV_PATH.name} from .env.example — EDIT IT and fill in your keys, then re-run.")
+            fail(f"{ENV_PATH.name} still needs your values (TMDB_API_KEY, *arr keys, …).")
+        fail(f"No {ENV_PATH.name} found and no .env.example to copy. Add a .env with your settings.")
+    env = parse_env_file(ENV_PATH)
+    added = [k for k, v in DEFAULTS.items() if k not in env]
+    for k, v in DEFAULTS.items():
+        if k not in env:
+            write_env_key(ENV_PATH, k, v)
+    if added:
+        env = parse_env_file(ENV_PATH)
+        print(f"[env] filled {len(added)} default key(s) into {ENV_PATH.name}: {', '.join(added)}")
+    return env
+
+
+def resolve_data_path(env: dict) -> Path:
+    raw = str(env.get("RKM_MEDIA_PATH") or "./data")
     p = Path(raw).expanduser()
     if not p.is_absolute():
         p = (ROOT / p).resolve()
@@ -107,109 +142,91 @@ def ensure_storage(data: Path) -> None:
     print(f"storage tree ready at: {data}")
 
 
-def render(cfg: dict, data: Path) -> None:
-    app = cfg.get("app", {})
-    media_cfg = cfg.get("media_server", {})
-    tmdb = cfg.get("tmdb", {})
-    rec = cfg.get("recommend", {})
-
-    canonical = canonical_env()
-    # TMDB key: from the TOML, else reuse the canonical workspace .env / env var.
-    tmdb_key = str(tmdb.get("api_key", "") or "").strip()
-    if not tmdb_key or tmdb_key in ("REPLACE_ME", "CHANGE_ME"):
-        tmdb_key = str(canonical.get("TMDB_API_KEY", "") or "").strip()
-    if not tmdb_key:
-        tmdb_key = os.environ.get("TMDB_API_KEY", "").strip()
-    if not tmdb_key:
-        fail("[tmdb] api_key not found. Set it in rkm.config.toml [tmdb], or add TMDB_API_KEY "
-             "to your workspace .env (searched every ancestor .env of the repo).")
-    backend = str(media_cfg.get("backend", "jellyfin")).lower()
+def build_api_vars(env: dict) -> dict:
+    """Derive the api container env from the single repo .env (pure mapping —
+    unit-testable). Container-internal addresses are resolved here."""
+    backend = str(env.get("MEDIA_SERVER") or "jellyfin").strip().lower()
     if backend not in ("jellyfin", "plex", "emby"):
-        fail(f"media_server.backend must be jellyfin|plex|emby, got: {backend}")
+        fail(f"MEDIA_SERVER must be jellyfin|plex|emby, got: {backend}")
 
-    # Jellyfin admin password: from the TOML, else auto-generate + persist.
-    admin_pw = str(media_cfg.get("jellyfin_admin_password", "") or "").strip()
-    if not admin_pw or admin_pw in ("CHANGE_ME", "REPLACE_ME"):
+    # Metadata required for discovery/Suggest.
+    tmdb_key = str(env.get("TMDB_API_KEY") or "").strip()
+    if not tmdb_key:
+        fail("TMDB_API_KEY is empty — add it to .env (TMDB dashboard -> API).")
+
+    # Jellyfin admin password: generate only when the backend is the bundled
+    # Jellyfin (persisted into .env so it stays stable).
+    admin_pw = str(env.get("RKM_JELLYFIN_ADMIN_PASSWORD") or "").strip()
+    if backend == "jellyfin" and not admin_pw:
         admin_pw = secrets.token_urlsafe(18)
-        backfill_password(admin_pw)
-        print(f"[jellyfin] generated admin password -> {admin_pw} (saved to {CONFIG_TOML.name})")
+        write_env_key(ENV_PATH, "RKM_JELLYFIN_ADMIN_PASSWORD", admin_pw)
+        print(f"[env] generated RKM_JELLYFIN_ADMIN_PASSWORD -> saved to {ENV_PATH.name}")
 
-    user = str(media_cfg.get("jellyfin_admin_user", "admin") or "admin")
-    browser = str(media_cfg.get("jellyfin_browser_url", "http://localhost:8098")).rstrip("/")
+    jf_browser = str(env.get("RKM_JELLYFIN_BROWSER") or "").strip() or (
+        f"http://localhost:{env.get('RKM_JELLYFIN_PORT') or '8098'}"
+    )
+    # Container-to-container address: bundled jellyfin service, unless the user
+    # explicitly points at an external Jellyfin.
+    jf_internal = str(env.get("JELLYFIN_URL") or "").strip() or "http://jellyfin:8096"
 
-    # --- .env for compose ${VAR} substitution ---
-    compose_vars = {
-        "RKM_MEDIA_PATH": str(data),
-        "RKM_DASHBOARD_PORT": str(app.get("dashboard_port", 8124)),
-        "RKM_JELLYFIN_PORT": "8098",
-        "RKM_TIMEZONE": str(app.get("timezone", "Australia/Melbourne")),
-        "RKM_PUID": "1000",
-        "RKM_PGID": "1000",
-        "RKM_PROJECT": "rkm-bundled",
-        "RKM_JELLYFIN_BROWSER": browser,
-        "RKM_JELLYFIN_ADMIN_USER": user,
-        "RKM_JELLYFIN_ADMIN_PASSWORD": admin_pw,
-        "RKM_QBT_TORRENT_PORT": str((cfg.get("qbit") or {}).get("torrent_port", 6881)),
-    }
-    COMPOSE_ENV.write_text("".join(f"{k}={v}\n" for k, v in compose_vars.items()), encoding="utf-8")
-    print(f"wrote {COMPOSE_ENV.name} ({len(compose_vars)} vars)")
-
-    # --- .rkm.env for the api container ---
-    api_vars = {
+    api = {
         "MEDIA_SERVER": backend,
-        # Backup: if the provisioner hasn't written runtime.json yet, ask the
-        # provisioner container URL; runtime.json overrides this with the real key.
-        "JELLYFIN_URL": JELLYFIN_INTERNAL,
-        "JELLYFIN_BROWSER_URL": browser,
+        "JELLYFIN_URL": jf_internal,
+        "JELLYFIN_BROWSER_URL": jf_browser,
         "TMDB_API_KEY": tmdb_key,
-        "TVDB_API_KEY": str((cfg.get("tvdb") or {}).get("api_key", "")),
-        "WATCHLIST_STORE": "json",
-        # Container-relative path on the media bind (/data = RKM_MEDIA_PATH):
-        # the JSON repo writes <db>.json.tmp atomically next to the file, so the
-        # dir must exist INSIDE the container (/data/rkm is created by
-        # ensure_storage on the host side of the same bind). A host-side
-        # absolute path here breaks adds (ENOENT on the .tmp save).
-        "WATCHLIST_DB_PATH": "/data/rkm/watchlist.json",
-        "WATCHLIST_SCHEDULER": "true",
-        "AUTO_ADD_ENABLED": str(bool(rec.get("auto_add_enabled", False))).lower(),
-        "RECONCILE_INTERVAL_MIN": str(rec.get("reconcile_interval_min", 10)),
-        "DAILY_JOB_HOUR": str(rec.get("auto_add_hour", 18)),
+        "TVDB_API_KEY": str(env.get("TVDB_API_KEY") or "").strip(),
+        # Plex/Emby always passed through (used when MEDIA_SERVER=plex|emby).
+        "PLEX_URL": str(env.get("PLEX_URL") or "").strip(),
+        "PLEX_TOKEN": str(env.get("PLEX_TOKEN") or "").strip(),
+        "EMBY_URL": str(env.get("EMBY_URL") or "").strip(),
+        "EMBY_API_KEY": str(env.get("EMBY_API_KEY") or "").strip(),
+        # Watchlist persistence + scheduler.
+        "WATCHLIST_STORE": str(env.get("WATCHLIST_STORE") or "json").strip().lower(),
+        "WATCHLIST_DB_PATH": str(env.get("WATCHLIST_DB_PATH") or "/data/rkm/watchlist.json").strip(),
+        "WATCHLIST_SCHEDULER": str(env.get("WATCHLIST_SCHEDULER") or "true").strip().lower(),
+        "AUTO_ADD_ENABLED": str(env.get("AUTO_ADD_ENABLED") or "false").strip().lower(),
+        "DAILY_JOB_HOUR": str(env.get("AUTO_ADD_HOUR") or "18").strip(),
+        "RECONCILE_INTERVAL_MIN": str(env.get("RECONCILE_INTERVAL_MIN") or "10").strip(),
         "RKM_RUNTIME_PATH": "/shared/runtime.json",
-        # Acquisition (*arr/qbit): reuse the user's REAL Radarr/Sonarr/Prowlarr/
-        # qBittorrent from the canonical workspace .env when present (the same
-        # config the prod stack reads), so downloads work on the bundled stack
-        # too — the machine's running *arr are reached via their configured
-        # URLs/keys. Fall back to the opt-in `fullstack` profile service names.
-        "RADARR_URL": canonical.get("RADARR_URL") or "http://radarr:7878",
-        "RADARR_API_KEY": canonical.get("RADARR_API_KEY", ""),
-        "SONARR_URL": canonical.get("SONARR_URL") or "http://sonarr:8989",
-        "SONARR_API_KEY": canonical.get("SONARR_API_KEY", ""),
-        "PROWLARR_URL": canonical.get("PROWLARR_URL") or "http://prowlarr:9696",
-        "PROWLARR_API_KEY": canonical.get("PROWLARR_API_KEY", ""),
-        "QBITTORRENT_URL": canonical.get("QBITTORRENT_URL") or "http://qbittorrent:8080",
-        "RADARR_QUALITY_PROFILE_ID": canonical.get("RADARR_QUALITY_PROFILE_ID", ""),
-        "SONARR_QUALITY_PROFILE_ID": canonical.get("SONARR_QUALITY_PROFILE_ID", ""),
     }
-    API_ENV.write_text("".join(f"{k}={v}\n" for k, v in api_vars.items()), encoding="utf-8")
-    print(f"wrote {API_ENV.name} (backend={backend})")
+    # Acquisition (*arr/qbit): already-running services the user pastes in, else
+    # the opt-in fullstack profile service names.
+    for k in ("RADARR_URL", "SONARR_URL", "PROWLARR_URL", "QBITTORRENT_URL"):
+        api[k] = str(env.get(k) or "").strip() or INTERNAL_FALLBACKS[k]
+    for k in ("RADARR_API_KEY", "SONARR_API_KEY", "PROWLARR_API_KEY",
+              "RADARR_QUALITY_PROFILE_ID", "SONARR_QUALITY_PROFILE_ID"):
+        api[k] = str(env.get(k) or "").strip()
+    return api
 
-    # Export a small resolved summary for other scripts/verify steps.
+
+def render(env: dict, data: Path) -> dict:
+    """Write .rkm.env + .rkm_state.json from the env; returns api_vars."""
+    api_vars = build_api_vars(env)
+    API_ENV.write_text("".join(f"{k}={v}\n" for k, v in api_vars.items()), encoding="utf-8")
+    print(f"wrote {API_ENV.name} (backend={api_vars['MEDIA_SERVER']})")
+
     summary = {
+        "config_file": str(ENV_PATH),
         "data_path": str(data),
-        "jellyfin_internal": JELLYFIN_INTERNAL,
-        "dashboard": f"http://localhost:{app.get('dashboard_port', 8124)}",
+        "backend": api_vars["MEDIA_SERVER"],
+        "dashboard": f"http://localhost:{env.get('RKM_DASHBOARD_PORT') or '8124'}",
         "jellyfin_browser": api_vars["JELLYFIN_BROWSER_URL"],
-        "auto_add_enabled": bool(rec.get("auto_add_enabled", False)),
+        "watchlist_store": api_vars["WATCHLIST_STORE"],
     }
-    (ROOT / ".rkm_state.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    STATE_PATH.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    return api_vars
 
 
 def main() -> None:
-    cfg = load_config()
-    data = resolve_data_path(cfg)
+    env = ensure_defaults()
+    data = resolve_data_path(env)
     ensure_storage(data)
-    render(cfg, data)
-    print("\nConfig rendered. Next: run bootstrap.sh (or .\\bootstrap.ps1).")
+    api = render(env, data)
+    print(f"\nConfig rendered from {ENV_PATH.name} (single source). Next: run bootstrap.sh "
+          f"(or .\\bootstrap.ps1).")
+    if api["MEDIA_SERVER"] == "jellyfin":
+        print(f"Jellyfin admin: user={env.get('RKM_JELLYFIN_ADMIN_USER') or 'admin'} — "
+              f"password in {ENV_PATH.name} (RKM_JELLYFIN_ADMIN_PASSWORD).")
 
 
 if __name__ == "__main__":

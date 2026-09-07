@@ -123,26 +123,45 @@ See **`ARCHITECTURE_GUIDE.md`** for the definitive architecture & agent referenc
 
 ## Configuration
 
-All config lives in `.env` (canonical: `/workspace/.env`). Key variables:
+Everything the stack needs lives in **one repo-level `.env`** — copy `.env.example`
+→ `.env` (kept out of git) and fill it in. `bootstrap.ps1`/`.sh`,
+`render_config.py` and `docker compose` all read that single file; there is no
+`rkm.config.toml` any more. Key variables (full list with comments in `.env.example`):
 
 ```bash
-MEDIA_HOST=192.168.65.254
+# compose / ports / storage
+RKM_MEDIA_PATH=./data
+RKM_DASHBOARD_PORT=8124
+RKM_JELLYFIN_PORT=8098
+RKM_TIMEZONE=Australia/Melbourne
+
+# media backend + admin (bundled Jellyfin auto-provisions on first run)
+MEDIA_SERVER=jellyfin            # jellyfin | plex | emby
+RKM_JELLYFIN_ADMIN_USER=admin
+RKM_JELLYFIN_ADMIN_PASSWORD=     # blank -> auto-generated & saved into .env
+RKM_JELLYFIN_BROWSER=http://localhost:8098
+
+# metadata
+TMDB_API_KEY=...                 # required
+
+# download automation (*arr you run, or blank for the bundled fullstack profile)
 RADARR_URL=http://192.168.65.254:7878
 RADARR_API_KEY=...
 SONARR_URL=http://192.168.65.254:8989
 SONARR_API_KEY=...
-PLEX_URL=http://192.168.65.254:32400
-PLEX_TOKEN=...
-TMDB_API_KEY=...        # required for metadata/artwork
-EMBY_URL=...            # optional (shares the Plex library)
-EMBY_API_KEY=...
 QBITTORRENT_URL=http://192.168.65.254:1701
 
-WATCHLIST_STORE=sqlite                 # json | sqlite
-WATCHLIST_DB_PATH=/workspace/media/watchlist.db
-```
+# watch sources when backend = plex|emby (or watch links alongside jellyfin)
+PLEX_URL=http://192.168.65.254:32400
+PLEX_TOKEN=...
+EMBY_URL=http://192.168.65.254:8096
+EMBY_API_KEY=...
 
-> `MEDIA_HOST` in the live `.env` carries an `http://` prefix — harmless because every service URL is explicit.
+# app store + jobs
+WATCHLIST_STORE=json             # json | sqlite (container path on the media volume)
+WATCHLIST_DB_PATH=/data/rkm/watchlist.json
+WATCHLIST_SCHEDULER=true
+```
 
 ---
 

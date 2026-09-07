@@ -2,7 +2,8 @@
 # ============================================================================
 # RKM bundled stack - one-command bootstrap (Linux/macOS)
 #   run:  ./bootstrap.sh
-# Renders rkm.config.toml -> .env / .rkm.env, starts the isolated stack
+# Reads the SINGLE repo-level .env (copy .env.example and fill it in),
+# renders .rkm.env for the api container, starts the isolated stack
 # (api+web+jellyfin), runs the Jellyfin provisioner, then restarts api so it
 # picks up the freshly-created Jellyfin API key.
 # ============================================================================
@@ -10,15 +11,16 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 echo "== RKM bundled stack bootstrap =="
-if [ ! -f rkm.config.toml ]; then
-    cp rkm.config.example.toml rkm.config.toml
-    echo "Created rkm.config.toml (defaults). TMDB key auto-fills from your workspace .env;"
-    echo "a Jellyfin admin password is generated automatically. Continuing..."
+if [ ! -f .env ]; then
+    if [ -f .env.example ]; then cp .env.example .env; fi
+    echo "Created .env from .env.example."
+    echo "Open .env and fill in your keys (TMDB_API_KEY, RADARR/SONARR/PLEX/EMBY/JELLYFIN ...), then re-run bootstrap."
+    echo "Jellyfin backend: leave RKM_JELLYFIN_ADMIN_PASSWORD blank on first run - a password is generated and saved to .env automatically."
 fi
 
 command -v docker >/dev/null || { echo "Docker is not installed/run."; exit 1; }
 
-echo "Rendering rkm.config.toml ..."
+echo "Rendering .env -> .rkm.env ..."
 python3 render_config.py || { echo "render_config.py failed."; exit 1; }
 
 DP="$(sed -n 's/^RKM_DASHBOARD_PORT=\(.*\)$/\1/p' .env | tr -d '\r')"

@@ -1,7 +1,8 @@
 # ============================================================================
 # RKM bundled stack - one-command bootstrap (Windows PowerShell)
 #   run:  .\bootstrap.ps1
-# Renders rkm.config.toml -> .env / .rkm.env, starts the isolated stack
+# Reads the SINGLE repo-level .env (copy .env.example and fill it in),
+# renders .rkm.env for the api container, starts the isolated stack
 # (api+web+jellyfin), runs the Jellyfin provisioner, then restarts api so it
 # picks up the freshly-created Jellyfin API key.
 # ASCII only - PowerShell 5.1 misreads UTF-8 without BOM.
@@ -11,10 +12,11 @@ Set-Location $PSScriptRoot
 
 Write-Host "== RKM bundled stack bootstrap ==" -ForegroundColor Cyan
 
-if (!(Test-Path .\rkm.config.toml)) {
-    Copy-Item .\rkm.config.example.toml .\rkm.config.toml
-    Write-Host "Created rkm.config.toml (defaults). TMDB key auto-fills from your workspace .env;" -ForegroundColor Yellow
-    Write-Host "a Jellyfin admin password is generated automatically. Continuing..." -ForegroundColor Yellow
+if (!(Test-Path .\.env)) {
+    if (Test-Path .\.env.example) { Copy-Item .\.env.example .\.env }
+    Write-Host "Created .env from .env.example." -ForegroundColor Yellow
+    Write-Host "Open .env and fill in your keys (TMDB_API_KEY, RADARR/SONARR/PLEX/EMBY/JELLYFIN ...), then re-run bootstrap." -ForegroundColor Yellow
+    Write-Host "Jellyfin backend: leave RKM_JELLYFIN_ADMIN_PASSWORD blank on first run - a password is generated and saved to .env automatically." -ForegroundColor Yellow
 }
 
 # --- Docker present? ---
@@ -24,9 +26,9 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
-# --- Render config (TOML -> .env / .rkm.env) ---
+# --- Render config (repo .env -> .rkm.env for the api container) ---
 $py = if (Get-Command python -ErrorAction SilentlyContinue) { "python" } else { "python3" }
-Write-Host "Rendering rkm.config.toml ..." -ForegroundColor Cyan
+Write-Host "Rendering .env -> .rkm.env ..." -ForegroundColor Cyan
 & $py render_config.py
 if ($LASTEXITCODE -ne 0) { Write-Host "render_config.py failed." -ForegroundColor Red; exit 1 }
 

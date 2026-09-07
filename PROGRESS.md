@@ -6,6 +6,14 @@
 > Repo: **private `rkm-cinema` on GitHub** (github.com/helloraj1986/rkm-cinema)
 > **Status:** ✅ **Phases 1–18 committed. SQLite is now the AUTHORITATIVE watchlist store** (`WATCHLIST_STORE=sqlite`, DB on the shared `/workspace/media` volume so it survives every rebuild). `watchlist.json` is now a generated mirror/export, NOT authoritative. **DEPLOY PENDING on RKM-HP** to bake the 504/suggest API fixes + the SQLite store into the running image (`setup-watchlist.ps1`). Frontend-only (app.js synopsis fix) is already live via the volume mount.
 
+## ▶ SESSION WRAP (2026-09-07) — shipped today, concise
+Everything merged to **main** (= `experiment/bundled-docker-stack`, fast-forward):
+- **Legacy parity** — Discover / Watchlist / Search / Suggest ported from `/legacy/` to the React shell; additive `GET /api/watchlist/entries` (live rich entries); contract 34→35 paths; **291 pytest** · ruff clean · **vitest 105/105** · tsc · build ok. Plan `docs/LEGACY_PARITY_PLAN.md` EXECUTED.
+- **Real *arr integration (bundled stack)** — the bundled api now talks to the machine’s already-running **Radarr/Sonarr/Prowlarr/qBittorrent** (URLs + API keys), so Suggest/Watchlist Download works; same for Plex/Emby/Jellyfin/TMDB. Quality-profile IDs wired.
+- **Single repo-level `.env`** — `rkm.config.toml` removed; copy `.env.example` → `.env` and paste everything (Jellyfin admin, *arr, Plex/Emby, TMDB, ports, paths, store/jobs); bootstrap/render/docker all read it; one-time auto-migration already copied your existing service keys in.
+- **Bugfixes** — Suggest Add save-path (JSON store env now container path `/data/rkm/watchlist.json` + env-independent default), card hover buttons reachable (pointer-events), API errors surface real `detail`, modal Add-button sync + per-action busy states + trailer auto-scroll.
+- **Deploy:** `.\bootstrap.ps1` on RKM-HP, then eyeball the four views + downloads.
+
 ## ▶ NEXT SESSION (user-reported 2026-09-07) — PLAYER BUG: some movies open a SMALL native-style player inside the app
 **User, RKM-HP, Brave tab:** when opening a movie page and pressing Play, the video runs inside a **small media player at the centre of the screen** — “a small player inside the main player window”, **reduced quality**, and it **has its own native controls including an expand-to-fullscreen button**. Only for the titles added later to the library: **Prisoners, Nightcrawler, One Battle After Another**. Older titles ((500) Days of Summer, 50 First Dates, etc.) play correctly as intended.
 - **What this smells like:** a plain native `<video controls>` element rendering at its intrinsic small size instead of our custom full-screen player (no custom chrome, native fullscreen button → the `controls` attribute is ON somewhere for this path, or a second/fallback video element is being created). Reduced quality points at a different stream mode (transcode?) for those files.

@@ -126,7 +126,10 @@ See **`ARCHITECTURE_GUIDE.md`** for the definitive architecture & agent referenc
 Everything the stack needs lives in **one repo-level `.env`** — copy `.env.example`
 → `.env` (kept out of git) and fill it in. `bootstrap.ps1`/`.sh`,
 `render_config.py` and `docker compose` all read that single file; there is no
-`rkm.config.toml` any more. Key variables (full list with comments in `.env.example`):
+`rkm.config.toml` any more. On the first run after the upgrade,
+`render_config.py` auto-copies missing service keys (TMDB/*arr/Plex/Emby) from
+the legacy workspace `.env` into the repo `.env` once, so you don't have to
+re-type anything. Key variables (full list with comments in `.env.example`):
 
 ```bash
 # compose / ports / storage

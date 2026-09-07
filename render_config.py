@@ -62,6 +62,19 @@ INTERNAL_FALLBACKS = {
     "QBITTORRENT_URL": "http://qbittorrent:8080",
 }
 
+# Service keys migrated ONE TIME from the legacy workspace .env (the file the
+# old render_config used to borrow from). Not included on purpose: Jellyfin_
+# (the bundled stack runs its own container) and WATCHLIST_* (bundled keeps its
+# isolated /data/rkm store) stay repo-.env-only.
+LEGACY_KEYS = [
+    "TMDB_API_KEY", "TVDB_API_KEY",
+    "PLEX_URL", "PLEX_TOKEN", "EMBY_URL", "EMBY_API_KEY",
+    "RADARR_URL", "RADARR_API_KEY", "SONARR_URL", "SONARR_API_KEY",
+    "PROWLARR_URL", "PROWLARR_API_KEY", "QBITTORRENT_URL",
+    "RADARR_QUALITY_PROFILE_ID", "SONARR_QUALITY_PROFILE_ID",
+    "BROWSER_RADARR_URL", "BROWSER_SONARR_URL",
+]
+
 
 def fail(msg: str) -> None:
     print(f"ERROR: {msg}", file=sys.stderr)
@@ -107,9 +120,44 @@ def write_env_key(path: Path, key: str, value: str) -> None:
     path.write_text("\n".join(out) + ("\n" if out else ""), encoding="utf-8")
 
 
+def find_legacy_env() -> dict:
+    """Ancestor .env files OUTSIDE the repo (the workspace-root env the old
+    render_config borrowed from). Later/higher files override. Never the repo's
+    own .env — that is the single source from now on."""
+    merged: dict = {}
+    p = ROOT.parent
+    for _ in range(12):
+        f = p / ".env"
+        if f.exists():
+            merged.update(parse_env_file(f))
+        if p == p.parent:
+            break
+        p = p.parent
+    return merged
+
+
+def migrate_legacy(env: dict) -> int:
+    """One-time migration: copy any missing service keys from the legacy
+    workspace .env into the repo .env so the user never has to re-type them.
+    After this the repo .env is complete and self-contained."""
+    legacy = find_legacy_env()
+    if not legacy:
+        return 0
+    n = 0
+    for k in LEGACY_KEYS:
+        if k not in env and str(legacy.get(k) or "").strip():
+            write_env_key(ENV_PATH, k, str(legacy.get(k)).strip())
+            n += 1
+    if n:
+        print(f"[env] one-time migration: copied {n} missing key(s) from the legacy "
+              f"workspace .env into {ENV_PATH.name} — this file is now the single source.")
+    return n
+
+
 def ensure_defaults() -> dict:
     """Fill safe defaults into .env (if the file is missing, seed it from
-    .env.example), then return the parsed env."""
+    .env.example), migrate missing service keys from the legacy workspace .env,
+    then return the parsed env."""
     if not ENV_PATH.exists():
         example = ROOT / ".env.example"
         if example.exists():
@@ -123,9 +171,9 @@ def ensure_defaults() -> dict:
         if k not in env:
             write_env_key(ENV_PATH, k, v)
     if added:
-        env = parse_env_file(ENV_PATH)
         print(f"[env] filled {len(added)} default key(s) into {ENV_PATH.name}: {', '.join(added)}")
-    return env
+    migrate_legacy(env)
+    return parse_env_file(ENV_PATH)
 
 
 def resolve_data_path(env: dict) -> Path:

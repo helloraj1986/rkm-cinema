@@ -57,15 +57,33 @@ class WatchlistRepository(ABC):
 
 
 # --------------------------------------------------------------------------- JSON
+def _pick_json_default_path(*, app_exists: bool, workspace_exists: bool, data_rkm_dir: bool) -> str:
+    """Environment-independent default JSON store path (unit-testable seam).
+
+    Honours an existing file first, then whichever layout's data dir is
+    actually present: prod mounts /workspace/media, the bundled stack binds
+    the media dir at /data. The legacy blanket default stays as the final
+    fallback so prod never silently moves its store.
+    """
+    if app_exists:
+        return "/app/watchlist.json"
+    if workspace_exists:
+        return "/workspace/media/watchlist.json"
+    if data_rkm_dir:
+        return "/data/rkm/watchlist.json"
+    return "/workspace/media/watchlist.json"
+
+
 class JsonWatchlistRepository(WatchlistRepository):
     """Original watchlist.json backing (atomic tmp + os.replace + mtime cache)."""
 
     def __init__(self, path: Optional[str] = None):
         if path is None:
-            if Path("/app/watchlist.json").exists():
-                path = "/app/watchlist.json"
-            else:
-                path = "/workspace/media/watchlist.json"
+            path = _pick_json_default_path(
+                app_exists=Path("/app/watchlist.json").exists(),
+                workspace_exists=Path("/workspace/media/watchlist.json").exists(),
+                data_rkm_dir=Path("/data/rkm").is_dir(),
+            )
         self.path = Path(path)
         self._cache: Optional[dict] = None
         self._cache_mtime: float = 0

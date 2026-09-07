@@ -42,13 +42,25 @@ export function WatchCard({
   if (entry.rt) badges.push(`${entry.rt}%`);
 
   return (
-    <div className="group relative w-40 shrink-0 rounded-lg" data-testid="watch-card">
-      <button
-        type="button"
-        aria-label={`Open details for ${entry.title} (${entry.year})`}
-        onClick={() => onOpen(entry)}
-        className="absolute inset-0 z-[1] cursor-pointer rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
-      />
+    <div
+      className="group relative w-40 shrink-0 cursor-pointer rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
+      data-testid="watch-card"
+      role="button"
+      tabIndex={0}
+      aria-label={`Open details for ${entry.title} (${entry.year})`}
+      onClick={(e) => {
+        // Action buttons/link clicks handle themselves — never open the detail.
+        if ((e.target as HTMLElement).closest("button, a")) return;
+        onOpen(entry);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          if ((e.target as HTMLElement).closest("button, a")) return;
+          e.preventDefault();
+          onOpen(entry);
+        }
+      }}
+    >
       <div className="pointer-events-none relative aspect-[2/3] w-full overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900 transition duration-300 group-hover:-translate-y-1 group-hover:border-zinc-600 group-hover:shadow-xl group-hover:shadow-black/50">
         {entry.poster ? (
           <img

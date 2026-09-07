@@ -20,13 +20,25 @@ export function SuggestCard({
 }) {
   const tv = item.media_type === "tv";
   return (
-    <div className="group relative w-40 shrink-0 rounded-lg" data-testid="suggest-card">
-      <button
-        type="button"
-        aria-label={`${item.title} (${item.year || ""})`}
-        onClick={onOpen}
-        className="absolute inset-0 z-[1] cursor-pointer rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
-      />
+    <div
+      className="group relative w-40 shrink-0 cursor-pointer rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
+      data-testid="suggest-card"
+      role="button"
+      tabIndex={0}
+      aria-label={`${item.title} (${item.year || ""})`}
+      onClick={(e) => {
+        // Add/Download buttons handle themselves — a card click opens detail.
+        if ((e.target as HTMLElement).closest("button, a")) return;
+        onOpen();
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          if ((e.target as HTMLElement).closest("button, a")) return;
+          e.preventDefault();
+          onOpen();
+        }
+      }}
+    >
       <div className="pointer-events-none relative aspect-[2/3] w-full overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900 transition duration-300 group-hover:-translate-y-1 group-hover:border-zinc-600 group-hover:shadow-xl group-hover:shadow-black/50">
         {item.poster ? (
           <img

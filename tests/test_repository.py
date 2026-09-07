@@ -108,6 +108,22 @@ def test_build_repository_defaults_to_json():
         get_config.cache_clear()
 
 
+def test_json_default_path_prefers_present_layout():
+    """Regression: with NO env vars the JSON repo must pick a store in a dir
+    that actually exists in THIS deployment (prod /workspace/media file vs the
+    bundled stack's /data/rkm bind) — never blindly the legacy path that
+    breaks Suggest adds with `Save failed: ENOENT …/watchlist.json.tmp`."""
+    from infrastructure.database.repository import _pick_json_default_path as pick
+    # Bundled container layout: no app/workspace file, /data/rkm present.
+    assert pick(app_exists=False, workspace_exists=False, data_rkm_dir=True) == "/data/rkm/watchlist.json"
+    # Prod layout: the legacy /workspace/media file exists.
+    assert pick(app_exists=False, workspace_exists=True, data_rkm_dir=False) == "/workspace/media/watchlist.json"
+    # Old all-in-one image: file next to the app.
+    assert pick(app_exists=True, workspace_exists=False, data_rkm_dir=False) == "/app/watchlist.json"
+    # Nothing present anywhere: keep the legacy default (prod never moves).
+    assert pick(app_exists=False, workspace_exists=False, data_rkm_dir=False) == "/workspace/media/watchlist.json"
+
+
 def test_build_repository_sqlite(tmp_path, monkeypatch):
     dbp = str(tmp_path / "wl.db")
     monkeypatch.setenv("WATCHLIST_STORE", "sqlite")

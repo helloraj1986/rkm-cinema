@@ -165,7 +165,12 @@ def render(cfg: dict, data: Path) -> None:
         "TMDB_API_KEY": tmdb_key,
         "TVDB_API_KEY": str((cfg.get("tvdb") or {}).get("api_key", "")),
         "WATCHLIST_STORE": "json",
-        "WATCHLIST_DB_PATH": str(data / "rkm" / "watchlist.json"),
+        # Container-relative path on the media bind (/data = RKM_MEDIA_PATH):
+        # the JSON repo writes <db>.json.tmp atomically next to the file, so the
+        # dir must exist INSIDE the container (/data/rkm is created by
+        # ensure_storage on the host side of the same bind). A host-side
+        # absolute path here breaks adds (ENOENT on the .tmp save).
+        "WATCHLIST_DB_PATH": "/data/rkm/watchlist.json",
         "WATCHLIST_SCHEDULER": "true",
         "AUTO_ADD_ENABLED": str(bool(rec.get("auto_add_enabled", False))).lower(),
         "RECONCILE_INTERVAL_MIN": str(rec.get("reconcile_interval_min", 10)),

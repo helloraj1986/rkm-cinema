@@ -1,8 +1,9 @@
 # Docker build context (repo root) hygiene — keep images lean and correct.
+# (The api image builds from ./backend — see backend/.dockerignore.)
 .git
 **/node_modules
-web/dist
-web/node_modules
+frontend/dist
+frontend/node_modules
 **/__pycache__
 *.pyc
 .pytest_cache

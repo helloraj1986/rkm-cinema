@@ -8,9 +8,9 @@ WORKDIR /app
 ARG VITE_ENABLE_REACT=1
 ENV VITE_ENABLE_REACT=${VITE_ENABLE_REACT}
 # Cache node_modules across builds first.
-COPY web/package.json web/package-lock.json ./
+COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
-COPY web/ ./
+COPY frontend/ ./
 RUN npm run build
 
 FROM nginx:alpine

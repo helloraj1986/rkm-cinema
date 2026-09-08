@@ -63,7 +63,7 @@ services:
   web:
     build:
       context: .
-      dockerfile: web/Dockerfile
+      dockerfile: frontend/Dockerfile
       args:
         VITE_ENABLE_REACT: "1"
     image: rkm-bundled-web:latest

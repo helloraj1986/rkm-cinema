@@ -5,10 +5,12 @@ import {
   detailInProgress,
   detailPrimaryLabel,
   detailResumePercent,
+  episodeItemCode,
   filterLibraryItems,
   filterLibraryRows,
   fmtRuntime,
   isContinueWatching,
+  isEpisodeItem,
   isSeries,
   libraryGenres,
   libraryItemsByType,
@@ -17,6 +19,7 @@ import {
   playbackMarker,
   posterUrl,
   ratingText,
+  seriesTargetForEpisode,
   similarItemToResult,
 } from "./lib";
 
@@ -276,5 +279,52 @@ describe("filterLibraryRows (drop titles already in the local library)", () => {
   it("keeps an empty result and tolerates a null library", () => {
     expect(filterLibraryRows([], library)).toEqual([]);
     expect(filterLibraryRows([row("X", 1999)], null as unknown as MediaItem[])).toEqual([row("X", 1999)]);
+  });
+});
+
+describe("Continue-Watching episode helpers (episode facet)", () => {
+  const epItem: MediaItem = {
+    ...base,
+    item_id: "ep1",
+    title: "Our Lord",
+    type: "episode",
+    kind: "episode",
+    playback_position: 1160,
+    runtime: 2648,
+    episode: { number: 4, season: 1, series_id: "ser1", series_name: "3 Body Problem" },
+  };
+
+  it("detects episode rows by kind or type", () => {
+    expect(isEpisodeItem(epItem)).toBe(true);
+    expect(isEpisodeItem({ ...base, kind: "episode" })).toBe(true);
+    expect(isEpisodeItem({ ...base, type: "episode" })).toBe(true);
+    expect(isEpisodeItem({ ...base, kind: "movie" })).toBe(false);
+    expect(isEpisodeItem({ ...base, type: "tv", kind: "show" })).toBe(false);
+    expect(isEpisodeItem(base)).toBe(false);
+  });
+
+  it("renders the SxEy code from the facet", () => {
+    expect(episodeItemCode(epItem)).toBe("S1E4");
+    expect(episodeItemCode({ ...base, kind: "movie" })).toBeNull();
+    // No facet -> null (never fabricate a code).
+    expect(episodeItemCode({ ...base, kind: "episode" })).toBeNull();
+  });
+
+  it("maps an episode card's whole-card click to the SERIES item", () => {
+    const target = seriesTargetForEpisode(epItem);
+    expect(target?.item_id).toBe("ser1");
+    expect(target?.title).toBe("3 Body Problem");
+    expect(target?.type).toBe("tv");
+    expect(target?.kind).toBe("show");
+    expect(target?.playback_position).toBe(0);
+    expect(target?.runtime).toBe(0);
+    // episode id stays available for instant-resume hover? No — the target is
+    // for OPENING the series page; the hover action still uses the original.
+    expect(target?.episode).toBeUndefined();
+  });
+
+  it("passes non-episode items through untouched", () => {
+    expect(seriesTargetForEpisode({ ...base, kind: "movie" })).toBeNull();
+    expect(seriesTargetForEpisode({ ...base, kind: "episode" })).toBeNull(); // no series_id
   });
 });

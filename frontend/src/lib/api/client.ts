@@ -47,7 +47,7 @@ export interface HealthShape {
 export interface MediaItem {
   title: string;
   year?: number | null;
-  type?: string; // "tv" | "movie" | "show"
+  type?: string; // "tv" | "movie" | "show" | "episode"
   thumb?: string | null;
   item_id: string;
   jellyfin_url?: string;
@@ -60,6 +60,17 @@ export interface MediaItem {
   genres?: string[];
   /** DateCreated ISO string (roadmap item 4 — "recently added" sort). */
   added?: string | null;
+  /** Continue-watching facet (CONTINUE_WATCHING_EPISODES_PLAN Option A):
+   *  "movie" | "show" | "episode" — present on /library/continue-watching
+   *  rows; episode rows carry the episode facet below. */
+  kind?: "movie" | "show" | "episode";
+  /** Series context for episode-kind Continue-Watching rows. */
+  episode?: {
+    number: number;
+    season: number;
+    series_id: string;
+    series_name: string;
+  };
 }
 
 export interface LibraryItemsShape {

@@ -1,5 +1,5 @@
 import type { MediaItem } from "../../lib/api/client";
-import { isContinueWatching } from "./lib";
+import { isContinueWatching, seriesTargetForEpisode } from "./lib";
 import { MediaCard } from "./MediaCard";
 
 export function ContinueWatchingRow({
@@ -15,6 +15,11 @@ export function ContinueWatchingRow({
 }) {
   const watch = items.filter(isContinueWatching);
   if (watch.length === 0) return null;
+  // Episode cards: hover ▶ resumes the EPISODE instantly (quickPlay keeps the
+  // episode id/position); a whole-card click opens the SERIES page so context
+  // + the episode list are visible (CONTINUE_WATCHING_EPISODES_PLAN Phase 2).
+  const openDetailFor = (item: MediaItem) =>
+    onOpenDetail(seriesTargetForEpisode(item) ?? item);
   return (
     <section>
       <h2 className="mb-3 text-base font-semibold text-white">
@@ -27,7 +32,7 @@ export function ContinueWatchingRow({
             key={item.item_id}
             item={item}
             onQuickPlay={onQuickPlay}
-            onOpenDetail={onOpenDetail}
+            onOpenDetail={openDetailFor}
             onToggleWatched={onToggleWatched}
           />
         ))}

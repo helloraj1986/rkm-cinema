@@ -1,5 +1,12 @@
 import type { MediaItem } from "../../lib/api/client";
-import { posterUrl, playbackMarker, isSeries, type Marker } from "./lib";
+import {
+  posterUrl,
+  playbackMarker,
+  isSeries,
+  isEpisodeItem,
+  episodeItemCode,
+  type Marker,
+} from "./lib";
 
 function Marker({ marker }: { marker: Marker }) {
   if (marker.kind === "watched") {
@@ -57,6 +64,8 @@ export function MediaCard({
   const src = posterUrl(item);
   const marker = playbackMarker(item);
   const tv = isSeries(item);
+  const episode = isEpisodeItem(item);
+  const epCode = episodeItemCode(item);
   return (
     <div className="group relative w-40 shrink-0 rounded-lg" data-testid="media-card">
       {/* Transparent whole-card button — clicking anywhere opens the detail view. */}
@@ -84,7 +93,7 @@ export function MediaCard({
         <div className="absolute inset-0 bg-black/0 transition duration-300 group-hover:bg-black/45" />
         <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-black/80 to-transparent opacity-0 transition duration-300 group-hover:opacity-100" />
         <span className="absolute left-2 top-2 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-white">
-          {tv ? "TV" : "MOVIE"}
+          {episode && epCode ? epCode : tv ? "TV" : "MOVIE"}
         </span>
         <Marker marker={marker} />
       </div>
@@ -146,9 +155,17 @@ export function MediaCard({
 
       <div className="pointer-events-none px-0.5 pt-1.5">
         <div className="truncate text-sm font-medium text-zinc-100 group-hover:text-white">{item.title}</div>
-        <div className="flex items-center justify-between text-xs text-zinc-500">
-          <span>{item.year || ""}</span>
-          {item.play_count ? <span>{item.play_count}× plays</span> : null}
+        <div className="flex items-center justify-between gap-1 text-xs text-zinc-500">
+          {episode && item.episode?.series_name ? (
+            <span className="truncate" title={item.episode.series_name}>
+              {item.episode.series_name}
+            </span>
+          ) : (
+            <>
+              <span>{item.year || ""}</span>
+              {item.play_count ? <span>{item.play_count}× plays</span> : null}
+            </>
+          )}
         </div>
       </div>
     </div>

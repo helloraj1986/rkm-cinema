@@ -254,3 +254,39 @@ export function filterLibraryRows(
 ): SimilarItem[] {
   return (rows ?? []).filter((r) => !similarRowInLibrary(r, items));
 }
+
+// ---------------------------------- Continue-Watching episodes (CW_EPISODES_PLAN)
+/** True for an episode-kind Continue-Watching row (kind or type says episode). */
+export function isEpisodeItem(item: MediaItem): boolean {
+  return Boolean(item && (item.kind === "episode" || item.type === "episode"));
+}
+
+/** "S1E4"-style code for an episode-kind Continue-Watching row, or null. */
+export function episodeItemCode(item: MediaItem): string | null {
+  const f = isEpisodeItem(item) ? item.episode : null;
+  if (!f) return null;
+  return `S${f.season}E${f.number}`;
+}
+
+/**
+ * The series page target for an episode Continue-Watching card: whole-card
+ * click opens the SERIES (/library/item/:id on the series id) so context +
+ * the episode list are visible (CW_EPISODES_PLAN Phase 2: hover ▶ resumes the
+ * episode instantly; card click opens the series). Non-episode items pass
+ * through untouched.
+ */
+export function seriesTargetForEpisode(item: MediaItem): MediaItem | null {
+  if (!isEpisodeItem(item) || !item.episode?.series_id) return null;
+  const rest: MediaItem = { ...item };
+  delete rest.episode; // the series target never carries the episode facet
+  return {
+    ...rest,
+    item_id: item.episode.series_id,
+    title: item.episode.series_name || item.title,
+    type: "tv",
+    kind: "show",
+    played: false,
+    playback_position: 0,
+    runtime: 0,
+  };
+}

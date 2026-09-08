@@ -129,23 +129,6 @@ def run_auto_complete(dry_run: bool = False) -> dict:
             logger.error("Error checking %s: %s", title, e)
             errors.append({"title": title, "error": str(e)})
 
-    # Rebuild dashboard if changes made
-    if completed and not dry_run:
-        try:
-            import subprocess
-            rebuild_result = subprocess.run(
-                ["python3", str(BACKEND_DIR / "scripts" / "rebuild_dashboard.py")],
-                capture_output=True, text=True, timeout=120, cwd=str(BACKEND_DIR)
-            )
-            if rebuild_result.returncode != 0:
-                logger.error("Dashboard rebuild failed: %s", rebuild_result.stderr)
-                errors.append({"step": "rebuild_dashboard", "error": rebuild_result.stderr})
-            else:
-                logger.info("Dashboard rebuilt after auto-complete")
-        except Exception as e:
-            logger.error("Dashboard rebuild exception: %s", e)
-            errors.append({"step": "rebuild_dashboard", "error": str(e)})
-
     result = {
         "success": True,
         "timestamp": datetime.now().isoformat(),

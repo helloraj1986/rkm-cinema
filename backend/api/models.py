@@ -232,8 +232,7 @@ class WatchlistEntriesResponse(BaseModel):
     """GET /api/watchlist/entries — every pending + recommended entry in the
     rich display shape the SPA renders (posters/backdrops/scores/synopsis/
     trailer/genres — legacy parity port source). Live from the authoritative
-    store via the shared ``services/dashboard.to_rich_entry`` mapper; the
-    static dashboard generator writes the same shape to dashboard-data.json."""
+    store via the shared ``services/dashboard.to_rich_entry`` mapper."""
 
     updated: str = ""
     entries: List[WatchlistEntryResponse] = Field(default_factory=list)

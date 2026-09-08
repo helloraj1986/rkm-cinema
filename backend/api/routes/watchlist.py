@@ -4,8 +4,8 @@ Thin route: reconciles every pending + recommended entry in one batch via the
 canonical Reconciler and renders each as a complete §18 MediaResponse resource.
 No business rules here.
 
-Also serves the rich-entry parity source (`GET /watchlist/entries`), a live
-replacement for the static dashboard-data.json the legacy SPA used.
+Also serves the rich-entry parity source (`GET /watchlist/entries`), the live
+replacement for the old static dashboard-data.json (legacy SPA, removed).
 """
 from __future__ import annotations
 

@@ -128,10 +128,6 @@ def fetch_and_validate_trailers():
         with open(watchlist_path, 'w') as f:
             json.dump(watchlist, f, indent=2)
         print(f"\nUpdated {updated_count} trailers")
-        
-        # Rebuild dashboard
-        import subprocess
-        subprocess.run(['python3', 'scripts/rebuild_dashboard.py'], cwd='/workspace/projects/rkm-cinema')
     else:
         print("\nNo trailers updated")
 

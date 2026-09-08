@@ -93,16 +93,6 @@ def main() -> None:
     src.save(back)
     print(f"Mirrored current raw back to {src.path} (generated export, not authoritative).")
 
-    # Rebuild the dashboard so the frontend (dashboard-data.json) serves SQLite now.
-    import importlib.util
-    spec = importlib.util.spec_from_file_location(
-        "rebuild_dashboard", os.path.join(PROJECT_ROOT, "scripts", "rebuild_dashboard.py")
-    )
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)  # noqa
-    n_cards = mod.build()
-    print(f"Dashboard rebuilt: {n_cards} cards from SQLite.")
-
     print("\nDone. Authoritative store = SQLite at " + db_path)
     print("Deploy on RKM-HP to switch the container:  .\\run-rkm-cinema.ps1")
 

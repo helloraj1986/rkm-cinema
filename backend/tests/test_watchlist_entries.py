@@ -46,8 +46,8 @@ def _loaded(entries, updated="2026-09-07T00:00:00"):
 
 
 def test_entries_returns_rich_shape_matching_dashboard_mapper(client):
-    """The route emits the same rich fields rebuild_dashboard writes (genres,
-    scores, poster/backdrop, overview, trailer, status) — one mapper shared."""
+    """The route emits the same rich fields services/dashboard.to_rich_entry maps
+    (genres, scores, poster/backdrop, overview, trailer, status) — one mapper shared."""
     movie = _entry()
     show = _entry(
         title="Severance", year=2022, isSeries=True, tmdbId=95396,

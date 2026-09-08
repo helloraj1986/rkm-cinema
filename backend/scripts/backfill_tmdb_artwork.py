@@ -85,10 +85,6 @@ def main():
         json.dump(data, f, indent=2)
     print(f"Wrote {WL_PATH}")
 
-    # Rebuild dashboard
-    from scripts.rebuild_dashboard import build
-    build()
-    print("Rebuilt dashboard.")
     return 0
 
 

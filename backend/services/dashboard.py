@@ -4,7 +4,6 @@ Canonical seam between a persisted :class:`WatchlistEntry` and the rich SPA
 entry shape the UIs render (posters, backdrops, scores, synopsis, trailer,
 genres/category). Consumers:
 
-- ``scripts/rebuild_dashboard.py`` (writes the legacy static dashboard)
 - ``GET /api/watchlist/entries`` (the live rich-entry source the React shell
   uses for Discover/Watchlist parity)
 

@@ -144,22 +144,6 @@ def run_daily_recommendations(candidates: list[dict] = None) -> dict:
                     "error": str(e),
                 })
 
-    # 3. Rebuild dashboard
-    try:
-        import subprocess
-        rebuild_result = subprocess.run(
-            ["python3", str(BACKEND_DIR / "scripts" / "rebuild_dashboard.py")],
-            capture_output=True, text=True, timeout=120, cwd=str(BACKEND_DIR)
-        )
-        if rebuild_result.returncode != 0:
-            logger.error("Dashboard rebuild failed: %s", rebuild_result.stderr)
-            results["errors"].append({"step": "rebuild_dashboard", "error": rebuild_result.stderr})
-        else:
-            logger.info("Dashboard rebuilt: %s", rebuild_result.stdout.strip())
-    except Exception as e:
-        logger.error("Dashboard rebuild exception: %s", e)
-        results["errors"].append({"step": "rebuild_dashboard", "error": str(e)})
-
     logger.info("Daily recommendation run complete: added=%d, rejected=%d, errors=%d",
                len(results["added"]), len(results["rejected"]), len(results["errors"]))
     return results

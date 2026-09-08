@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import argparse
 import logging
-import subprocess
 import sys
 import time
 from pathlib import Path
@@ -90,13 +89,6 @@ def main() -> int:
     if res.status == "error":
         print(f"ERROR: job failed: {res.error}")
         return 1
-
-    # Rebuild dashboard (single source of truth for the UI data file).
-    try:
-        subprocess.run([sys.executable, str(ROOT / "scripts" / "rebuild_dashboard.py")],
-                       check=True, capture_output=True)
-    except Exception as e:  # noqa: BLE001
-        logger.error("dashboard rebuild failed: %s", e)
 
     # Diff pending to surface exactly what this run added (with titles).
     from services.watchlist import WatchlistService

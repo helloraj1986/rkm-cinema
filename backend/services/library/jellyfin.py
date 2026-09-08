@@ -168,21 +168,112 @@ class JellyfinLibraryProvider(LibraryProvider):
         return out
 
     def continue_watching(self, limit: int = 12) -> list[dict]:
-        """In-progress titles — started but not finished.
+        """In-progress titles — movies, series AND episodes.
 
-        Filters the already-fetched library scan (UserData.PlaybackPositionTicks
-        > 0 and not Played) rather than Jellyfin's finicky ``/Items/Resume``
-        endpoint, so it's deterministic and matches exactly what the UI renders.
+        Primary source: Jellyfin's ``/Users/{uid}/Items/Resume``, which lists
+        every genuinely in-progress item INDIVIDUALLY — including EPISODES
+        (series-level UserData does NOT roll up episode positions, so the old
+        scan filter could never surface a half-watched episode). Merge = resume
+        rows first (server order), then the old scan filter (position>0 and not
+        played over Movies+Series) as a fallback for anything Resume missed;
+        dedupe by id. Rows carry an additive ``kind`` (movie|show|episode);
+        episode rows add an ``episode`` facet ``{number, season, series_id,
+        series_name}``. Option A (CONTINUE_WATCHING_EPISODES_PLAN): the
+        endpoint stays free-form — no contract change.
         """
+        out: list[dict] = []
+        seen: set[str] = set()
+        resume = self._resume_rows()  # None when the endpoint is unavailable
+        for row in resume or []:
+            out.append(row)
+            seen.add(str(row["item_id"]))
+            if len(out) >= limit:
+                return out[:limit]
+        if len(out) < limit:
+            for itype in ("Movie", "Series"):
+                for item in self._get_items(itype):
+                    if item.played or item.position_ticks <= 0:
+                        continue
+                    row = self._item_public(item)
+                    row["kind"] = "show" if itype == "Series" else "movie"
+                    if str(row["item_id"]) in seen:
+                        continue
+                    seen.add(str(row["item_id"]))
+                    out.append(row)
+                    if len(out) >= limit:
+                        return out[:limit]
+        return out[:limit]
+
+    def _resume_rows(self) -> Optional[list[dict]]:
+        """In-progress rows straight from Jellyfin's Resume endpoint.
+
+        Returns rows for Movie/Series/Episode Resume entries (episodes carry a
+        ``kind: episode`` + the ``episode`` facet), or ``None`` when the
+        endpoint can't be reached (caller falls back to the scan filter).
+        """
+        if not self._configured():
+            return None
+        uid = self._user_id()
+        if not uid:
+            return None
+        url = (f"{self.config.JELLYFIN_URL}/Users/{uid}/Items/Resume"
+               f"?api_key={self.config.JELLYFIN_API_KEY}&Limit=100"
+               f"&Fields=PrimaryImageAspectRatio,ProductionYear,ProviderIds,"
+               f"UserData,Genres,DateCreated,SeriesId,SeriesName,SeasonId,"
+               f"IndexNumber,ParentIndexNumber")
+        try:
+            raw = self._fetch_raw(url)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("Jellyfin Resume fetch failed: %s", e)
+            return None
         out = []
-        for itype in ("Movie", "Series"):
-            for item in self._get_items(itype):
-                if item.played or item.position_ticks <= 0:
-                    continue
-                out.append(self._item_public(item))
-                if len(out) >= limit:
-                    return out
+        for it in raw:
+            typ = str(it.get("Type") or "")
+            if typ == "Episode":
+                row = self._episode_resume_public(it)
+                if row is not None and not row["played"]:
+                    out.append(row)
+            elif typ in ("Movie", "Series"):
+                row = self._item_public(self._parse_item(it, typ))
+                row["kind"] = "show" if typ == "Series" else "movie"
+                out.append(row)
         return out
+
+    def _episode_resume_public(self, it: dict) -> Optional[dict]:
+        """One Resume episode → the public item shape (with its episode facet).
+
+        Episode Resume entries list individually with their own ``UserData``
+        (position/runtime) + series context (``SeriesId``/``SeriesName``/
+        season + episode numbers — live-verified 2026-09-08 on the bundled
+        Jellyfin 10.11.11). ``None`` for a malformed row (never fabricate).
+        """
+        eid = str(it.get("Id") or "")
+        if not eid:
+            return None
+        ud = it.get("UserData") or {}
+        item = self._parse_item(it, "Series")  # reuse user_data/runtime parsing
+        return {
+            "title": str(it.get("Name") or ""),
+            "year": int(it["ProductionYear"]) if it.get("ProductionYear") else None,
+            "type": "episode",
+            "thumb": item.thumb,
+            "item_id": eid,
+            "jellyfin_url": self._item_web(eid),
+            "played": bool(ud.get("Played")),
+            "playback_position": self._ticks_to_sec(ud.get("PlaybackPositionTicks")),
+            "runtime": self._ticks_to_sec(it.get("RunTimeTicks")),
+            "play_count": self._int(ud.get("PlayCount")),
+            "last_played": str(ud.get("LastPlayedDate") or "") or None,
+            "genres": [str(g) for g in (it.get("Genres") or [])],
+            "added": str(it.get("DateCreated") or "") or None,
+            "kind": "episode",
+            "episode": {
+                "number": self._int(it.get("IndexNumber")),
+                "season": self._int(it.get("ParentIndexNumber")),
+                "series_id": str(it.get("SeriesId") or ""),
+                "series_name": str(it.get("SeriesName") or ""),
+            },
+        }
 
     def episodes(self, series_id: str, limit: int = 1000) -> list[dict]:
         """Every episode of a series, with per-episode playback facts.

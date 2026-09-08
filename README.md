@@ -4,9 +4,9 @@ A self-hosted **media discovery + download dashboard**. Browse your Plex library
 
 > **Plex is the source of truth** for availability. Metadata comes from **TMDB**; official trailers are found by scraping **youtube.com** (no YouTube API key).
 
-> ## ⚠ Status (2026-09-08) — production repo restructure done
+> ## ⚠ Status (2026-09-08) — production repo restructure done + legacy app removed
 > Plan: [`docs/REPO_STRUCTURE_PLAN.md`](docs/REPO_STRUCTURE_PLAN.md) · ADRs: [`docs/adr/`](docs/adr/) · **Frozen API contract:** [`docs/api/openapi.v1.json`](docs/api/openapi.v1.json) (ADR-0001).
-> Monorepo: **`backend/`** (FastAPI + tests) · **`frontend/`** (React/TS shell, `web/` renamed) · legacy vanilla app at **`frontend/legacy/`** (served under `/legacy`) · deploy/infra + `.env` stay at the repo root. Session history: `PROGRESS.md`.
+> Monorepo: **`backend/`** (FastAPI + tests) · **`frontend/`** (React/TS shell — the only UI; the legacy vanilla app + `/legacy` route were removed) · deploy/infra + `.env` stay at the repo root. Session history: `PROGRESS.md`.
 
 ---
 
@@ -78,10 +78,9 @@ auto_add_enabled = true` in the TOML to turn on the daily job. See
 cd projects/rkm-cinema
 cd backend
 pip install -r requirements.txt
-python3 scripts/rebuild_dashboard.py   # build dashboard-data.json + index.html (writes frontend/legacy/)
 python3 -m uvicorn api.main:app --port 8000   # or: python3 -m api.main
 ```
-Then serve `frontend/legacy/index.html` (or open it), pointing the UI at the API.
+Then in another shell: `cd frontend && npm run dev` (vite dev server proxies `/api` → :8000).
 
 ### Docker Compose (any host with Docker)
 ```bash
@@ -96,7 +95,7 @@ docker compose up -d --build
 | Layer | Tech |
 |---|---|
 | Backend | Python 3.11 · **FastAPI** (`uvicorn api.main:app`) under `backend/` |
-| Frontend | React 18 + TypeScript + Vite (`frontend/`) — legacy vanilla SPA recoverable at `frontend/legacy/` (`/legacy`) |
+| Frontend | React 18 + TypeScript + Vite (`frontend/`) — the only UI (legacy vanilla SPA removed) |
 | Persistence | **SQLite** (`WATCHLIST_STORE=sqlite`) — a JSON store is supported for backward compat |
 | Infra | **Docker Compose** — `api` (FastAPI, holds secrets) + `web` (nginx, proxies `/api/*`) |
 | External | Plex · Radarr · Sonarr · TMDB · YouTube · Emby · Jellyfin · qBittorrent |
@@ -120,18 +119,14 @@ rkm-cinema/                        # deploy/infra + docs + config stay at root
 │   ├── api/  services/  domain/  core/  config/  infrastructure/
 │   │        application/  jobs/  scripts/  provisioner/
 │   └── tests/                     # pytest suite (run from backend/: python -m pytest tests/)
-├── frontend/                      # renamed from web/
+├── frontend/                      # React 18 + TS + Vite shell (the only UI)
 │   ├── Dockerfile  package.json  tsconfig*  vite.config.ts  src/
-│   └── legacy/                    # old vanilla app served under /legacy
-│       ├── index.html  app.js  app.css  api.js
-│       └── tests/                 # node harnesses phase11/18/25/26
-└── tools/archive/                 # one-off utility scripts (git history kept)
+└── tools/archive/                 # one-off tools + archived scripts (git history kept)
 ```
 
 Run/test/deploy: **backend** — `cd backend && python -m pytest tests/ -q`,
 `ruff check api application config core domain infrastructure jobs services` ·
 **frontend** — `cd frontend && npm run typecheck && npx vitest run && npm run build` ·
-**legacy harnesses** — `node frontend/legacy/tests/phase*.test.mjs` ·
 **deploy** — `.\\bootstrap.ps1` (bundled Jellyfin stack) or `.\\run-rkm-cinema.ps1` (prod Plex/Emby).
 Contract snapshot (zero-diff gate): `python backend/scripts/snapshot_openapi.py` from the repo root.
 
@@ -198,8 +193,6 @@ cd backend
 python -m pytest tests/ -q               # ~292 unit/API tests (all mocked, no live LAN)
 cd ../frontend
 npm run typecheck && npx vitest run && npm run build
-cd ..
-node frontend/legacy/tests/phase*.test.mjs   # legacy vanilla-app harnesses
 ```
 
 ---

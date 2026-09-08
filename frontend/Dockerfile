@@ -1,7 +1,6 @@
-# Phase 4 cutover: build the React shell (web/dist) and serve it via nginx.
+# Build the React shell (frontend/dist) and serve it via nginx.
 # Multi-stage — no Node required on the host; `docker compose --build` builds both stages.
-# The React app is the served origin; the legacy app stays recoverable under /legacy/
-# (mounted repo root aliased in nginx) until all views reach parity.
+# nginx serves the React shell (baked into the image) as the origin. No legacy app anymore.
 
 FROM node:20-alpine AS build
 WORKDIR /app

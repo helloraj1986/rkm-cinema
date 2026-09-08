@@ -558,6 +558,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/jellyfin/similar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Jellyfin Similar
+         * @description "Because you watched <title>" rows for one library item (movie/series).
+         */
+        get: operations["jellyfin_similar_api_jellyfin_similar_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/suggest/add": {
         parameters: {
             query?: never;
@@ -2135,6 +2155,38 @@ export interface operations {
         parameters: {
             query?: {
                 id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    jellyfin_similar_api_jellyfin_similar_get: {
+        parameters: {
+            query?: {
+                id?: string;
+                limit?: number;
             };
             header?: never;
             path?: never;

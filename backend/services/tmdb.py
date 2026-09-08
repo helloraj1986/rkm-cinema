@@ -298,6 +298,54 @@ class TMDBService:
             "director": creator,  # Using creator as director for TV shows
         }
 
+    def get_similar(self, tmdb_id, media_type: str = "movie") -> list[dict]:
+        """Similar titles for one TMDB id (``/movie|tv/{id}/similar``, cached).
+
+        Returns a normalised list (never raw TMDB): ``{"tmdb_id", "title",
+        "year", "media_type" ("movie"|"tv"), "score", "poster", "backdrop"}``.
+        Rows without an id or a title are dropped (never fabricated); a failed
+        fetch or an unknown id returns ``[]`` so callers can show an empty row
+        instead of erroring. ``media_type`` anything but ``"movie"`` maps to the
+        TV endpoint (mirrors the rest of this service's tolerant tv handling).
+        """
+        if not tmdb_id:
+            return []
+        kind = "movie" if media_type == "movie" else "tv"
+        tmdb_id_int = int(tmdb_id)
+        key = f"similar:{kind}:{tmdb_id_int}"
+        return self._cached(key, lambda: self._get_similar(tmdb_id_int, kind)) or []
+
+    def _get_similar(self, tmdb_id: int, kind: str) -> list[dict]:
+        try:
+            data = self._request(f"{kind}/{tmdb_id}/similar")
+        except Exception as e:  # noqa: BLE001 - a similar fetch failing is a soft miss
+            logger.error("TMDB similar failed for %s/%s: %s", kind, tmdb_id, e)
+            return []
+        out: list[dict] = []
+        seen: set[int] = set()
+        for it in (data or {}).get("results", []) or []:
+            rid = it.get("id")
+            title = str(it.get("title") or it.get("name") or "").strip()
+            if not rid or not title:
+                continue  # never emit a fabricated/blank row
+            if int(rid) in seen:
+                continue
+            seen.add(int(rid))
+            date = str(it.get("release_date") or it.get("first_air_date") or "")
+            year = int(date[:4]) if date[:4].isdigit() else 0
+            poster_path = it.get("poster_path")
+            backdrop_path = it.get("backdrop_path")
+            out.append({
+                "tmdb_id": int(rid),
+                "title": title,
+                "year": year,
+                "media_type": "movie" if kind == "movie" else "tv",
+                "score": float(it.get("vote_average") or 0),
+                "poster": f"{self.IMAGE_BASE_URL}/w500{poster_path}" if poster_path else "",
+                "backdrop": f"{self.IMAGE_BASE_URL}/w1280{backdrop_path}" if backdrop_path else "",
+            })
+        return out
+
     def search_movie(self, title: str, year: Optional[int] = None) -> Optional[Dict[str, Any]]:
         """Search for a movie by title and year (cached)."""
         if not title:

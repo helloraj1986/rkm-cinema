@@ -69,10 +69,11 @@ class JellyfinLibraryProvider(LibraryProvider):
     #: How long a full library scan is considered fresh (spec §29: same 60s as Emby).
     JELLYFIN_SCAN_TTL = 60
 
-    def __init__(self, *, config=None, http=None):
+    def __init__(self, *, config=None, http=None, tmdb=None):
         from config.settings import get_config
         self.config = config if config is not None else get_config()
         self.http = http
+        self._tmdb_service = tmdb  # injected TMDB client (tests); lazy default
         self._item_cache: Optional[dict] = None      # {"Movie": [...], "Series": [...]}
         self._item_cache_expiry: dict = {}           # per-type expiry (item_type -> epoch)
         self._server_id_value: str = ""
@@ -496,6 +497,71 @@ class JellyfinLibraryProvider(LibraryProvider):
             logger.warning("Jellyfin item_detail(%s) failed: %s", item_id, e)
             return None
         return self._detail_from_item(it)
+
+    def item_similar(self, item_id: str, limit: int = 10) -> Optional[list[dict]]:
+        """\"Because you watched\" — TMDB similar titles for one library item.
+
+        Resolves the item's ``ProviderIds.Tmdb`` with a light single-item fetch
+        (the detail fetch's full field list is overkill here), then delegates to
+        :class:`TMDBService` for the similarity graph (movie/tv endpoints —
+        live-verified 2026-09-08). Returns display rows ``{"id", "title",
+        "year", "kind" ("movie"|"show"), "score", "poster", "backdrop"}`` capped
+        at *limit*, ``[]`` when TMDB simply has no similar titles, and ``None``
+        when the item is missing, isn't a Movie/Series, has no TMDB id, or the
+        lookup failed — callers map ``None`` to a 404 (never fabricate).
+        """
+        if not self._configured() or not item_id:
+            return None
+        uid = self._user_id()
+        if not uid:
+            return None
+        import json
+        url = (f"{self.config.JELLYFIN_URL}/Users/{uid}/Items/{item_id}"
+               f"?api_key={self.config.JELLYFIN_API_KEY}&Fields=ProviderIds")
+        try:
+            with urllib.request.urlopen(url, timeout=12) as r:
+                it = json.load(r)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("Jellyfin item_similar(%s) item fetch failed: %s", item_id, e)
+            return None
+        if not isinstance(it, dict) or not it.get("Id"):
+            return None
+        type_name = str(it.get("Type") or "")
+        if type_name not in ("Movie", "Series"):
+            return None
+        media_type = "tv" if type_name == "Series" else "movie"
+        try:
+            tmdb_id = int((it.get("ProviderIds") or {}).get("Tmdb"))
+        except (TypeError, ValueError):
+            tmdb_id = 0
+        if not tmdb_id:
+            return None
+        try:
+            rows = self._tmdb().get_similar(tmdb_id, media_type)
+        except Exception as e:  # noqa: BLE001 - a TMDB failure is a soft miss
+            logger.warning("Jellyfin item_similar(%s) tmdb failed: %s", item_id, e)
+            return None
+        out = []
+        for r in rows:
+            out.append({
+                "id": int(r.get("tmdb_id") or 0),
+                "title": str(r.get("title") or ""),
+                "year": int(r.get("year") or 0) or None,
+                "kind": "show" if r.get("media_type") == "tv" else "movie",
+                "score": float(r.get("score") or 0),
+                "poster": str(r.get("poster") or ""),
+                "backdrop": str(r.get("backdrop") or ""),
+            })
+            if len(out) >= limit:
+                break
+        return out
+
+    def _tmdb(self):
+        """The TMDB client for similarity lookups (injected in tests)."""
+        if self._tmdb_service is None:
+            from services.tmdb import TMDBService
+            self._tmdb_service = TMDBService(config=self.config, http=self.http)
+        return self._tmdb_service
 
     @classmethod
     def _detail_from_item(cls, it: dict) -> Optional[dict]:

@@ -112,6 +112,16 @@ class LibraryProvider(ABC):
         """Rich single-item metadata for a preplay/detail view. Default ``None``."""
         return None
 
+    def item_similar(self, item_id: str, limit: int = 10) -> Optional[list[dict]]:
+        """\"Because you watched\" rows for one item (TMDB similarity graph).
+
+        Returns display rows ``[{id, title, year, kind, score, poster,
+        backdrop}]``, ``[]`` when the backend answers with no similar titles,
+        or ``None`` when the backend can't answer for this item. Default
+        ``None`` (not supported — Plex/Emby slot left for later).
+        """
+        return None
+
     def recently_watched(self, limit: int = 12) -> list[dict]:
         """Recently *finished* titles (most-recently-played first). Default ``[]``."""
         return []
@@ -387,6 +397,22 @@ class LibraryService:
                 logger.warning("item_detail failed for %s: %s", p.name, e)
                 continue
             if result:
+                return result
+        return None
+
+    def item_similar(self, item_id: str, limit: int = 10) -> Optional[list[dict]]:
+        """\"Because you watched\" rows from the first provider able to answer.
+
+        ``None`` means no provider could resolve the item to similar titles
+        (route maps that to 404); a (possibly empty) list is a real answer.
+        """
+        for p in self._providers:
+            try:
+                result = p.item_similar(item_id, limit=limit)
+            except Exception as e:
+                logger.warning("item_similar failed for %s: %s", p.name, e)
+                continue
+            if result is not None:
                 return result
         return None
 

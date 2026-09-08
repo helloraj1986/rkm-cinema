@@ -5,8 +5,6 @@
 
 FROM node:20-alpine AS build
 WORKDIR /app
-ARG VITE_ENABLE_REACT=1
-ENV VITE_ENABLE_REACT=${VITE_ENABLE_REACT}
 # Cache node_modules across builds first.
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci

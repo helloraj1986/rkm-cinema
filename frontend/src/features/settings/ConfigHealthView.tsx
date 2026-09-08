@@ -1,7 +1,6 @@
 import { useConfig, useHealth } from "./api";
 import { Card } from "../../components/ui/Card";
 import { Badge } from "../../components/ui/Badge";
-import { REACT_FLAG_NAME } from "../../lib/flags";
 
 const SERVICES = ["radarr", "sonarr", "tmdb", "plex", "jellyfin", "emby"] as const;
 
@@ -16,10 +15,9 @@ export function ConfigHealthView() {
     return (
       <Card>
         <p className="text-sm text-red-400">
-          Couldn&apos;t reach the backend. If you ran the legacy app check, the React shell
-          needs its own build: <code className="rounded bg-zinc-800 px-1">npm run build</code> then serve with{" "}
-          <code className="rounded bg-zinc-800 px-1">{REACT_FLAG_NAME}=1</code>, or run{" "}
-          <code className="rounded bg-zinc-800 px-1">npm run dev</code> (dev proxy → :8000).
+          Couldn&apos;t reach the backend. Run{" "}
+          <code className="rounded bg-zinc-800 px-1">npm run dev</code> (dev proxy → :8000) or
+          serve the built shell against a running api.
         </p>
       </Card>
     );

@@ -1,7 +1,6 @@
 import { createBrowserRouter, Navigate } from "react-router-dom";
 import { AppShell } from "./layout/AppShell";
 import { ConfigHealthView } from "../features/settings/ConfigHealthView";
-import { PortedPlaceholder } from "../components/PortedPlaceholder";
 import { LibraryLayout } from "../features/library/LibraryLayout";
 import { LibraryHomeView } from "../features/library/LibraryHomeView";
 import { LibraryFolderView } from "../features/library/LibraryFolderView";
@@ -10,24 +9,22 @@ import { DiscoverView } from "../features/discover/DiscoverView";
 import { WatchlistView } from "../features/watchlist/WatchlistView";
 import { SearchView } from "../features/search/SearchView";
 import { SuggestView } from "../features/suggest/SuggestView";
-import { ENABLE_REACT } from "../lib/flags";
 
 /**
- * One router for the whole React shell. Views not yet ported to parity render
- * a `PortedPlaceholder` (they stay live in the legacy app until Phase 3).
- * The shell itself is gated by the `VITE_ENABLE_REACT` flag (see lib/flags).
+ * One router for the React shell (the legacy vanilla app was removed).
  *
  * Library routes (PLEX_VIEWS_PLAN): a layout owns the full-screen player + card
  * handlers, and the children are URL-backed views — /library/home, the Movies /
  * TV Shows "folders", and each item's OWN page (/library/item/:id).
  *
  * Legacy parity (LEGACY_PARITY_PLAN): /discover, /watchlist, /search and
- * /suggest are now ported React views fed by live /api data.
+ * /suggest are React views fed by live /api data. Playback lives inside the
+ * library routes (item pages / library layout player), not a top-level route.
  */
 export const router = createBrowserRouter([
   {
     path: "/",
-    element: <AppShell enabled={ENABLE_REACT} />,
+    element: <AppShell />,
     children: [
       { index: true, element: <Navigate to="/settings" replace /> },
       { path: "settings", element: <ConfigHealthView /> },
@@ -42,7 +39,6 @@ export const router = createBrowserRouter([
           { path: "item/:itemId", element: <ItemDetailPage /> },
         ],
       },
-      { path: "playback", element: <PortedPlaceholder label="Playback" /> },
       { path: "discover", element: <DiscoverView /> },
       { path: "watchlist", element: <WatchlistView /> },
       { path: "search", element: <SearchView /> },

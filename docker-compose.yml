@@ -72,7 +72,7 @@ services:
     ports:
       - "${RKM_DASHBOARD_PORT:-8124}:80"
     volumes:
-      - ./:/legacy-source:ro
+      - ./frontend/legacy:/legacy-source:ro
     depends_on:
       - api
     networks:

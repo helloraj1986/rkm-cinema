@@ -5,9 +5,13 @@ import os
 import time
 from pathlib import Path
 
-# Add project root to path
+# Add the backend dir to path (packages api/, services/, config/ live there).
 import sys
-sys.path.insert(0, "/workspace/projects/rkm-cinema")
+from pathlib import Path as _P
+sys.path.insert(0, str(_P(__file__).resolve().parent.parent))
+
+# Repo root = backend/../.. ; legacy app home = <repo>/frontend/legacy
+REPO_ROOT = _P(__file__).resolve().parent.parent.parent
 
 from config.settings import get_config
 from services import WatchlistService, WatchlistEntry
@@ -46,7 +50,7 @@ def build():
         raise SystemExit("REFUSED to publish: 0 cards. Keeping last good dashboard-data.json.")
 
     # Asset guard: never ship a shell that references missing assets
-    BASE = Path("/workspace/projects/rkm-cinema")
+    BASE = REPO_ROOT / "frontend" / "legacy"
     for asset in ("app.css", "app.js"):
         if not (BASE / asset).exists():
             raise SystemExit(f"REFUSED to publish: missing {asset}. Install it before building.")

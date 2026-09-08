@@ -12,8 +12,9 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-# Add project root to path
-sys.path.insert(0, "/workspace/projects/rkm-cinema")
+# Add the backend dir to path (packages api/, services/, config/ live there).
+BACKEND_DIR = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(BACKEND_DIR))
 
 from config.settings import get_config
 from core.logging import setup_logging
@@ -133,8 +134,8 @@ def run_auto_complete(dry_run: bool = False) -> dict:
         try:
             import subprocess
             rebuild_result = subprocess.run(
-                ["python3", "/workspace/projects/rkm-cinema/scripts/rebuild_dashboard.py"],
-                capture_output=True, text=True, timeout=120, cwd="/workspace/projects/rkm-cinema"
+                ["python3", str(BACKEND_DIR / "scripts" / "rebuild_dashboard.py")],
+                capture_output=True, text=True, timeout=120, cwd=str(BACKEND_DIR)
             )
             if rebuild_result.returncode != 0:
                 logger.error("Dashboard rebuild failed: %s", rebuild_result.stderr)

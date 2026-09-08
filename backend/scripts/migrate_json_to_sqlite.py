@@ -20,11 +20,11 @@ import os
 import shutil
 import sys
 from datetime import datetime
+from pathlib import Path
 
-# Make the project root importable regardless of CWD.
-PROJECT_ROOT = "/workspace/projects/rkm-cinema"
-if PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, PROJECT_ROOT)
+# Make the backend dir importable regardless of CWD (packages live under it).
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
 
 from config.settings import get_config
 from infrastructure.database.repository import (  # noqa: E402

@@ -6,6 +6,7 @@ import {
   detailPrimaryLabel,
   detailResumePercent,
   filterLibraryItems,
+  filterLibraryRows,
   fmtRuntime,
   isContinueWatching,
   isSeries,
@@ -16,6 +17,7 @@ import {
   playbackMarker,
   posterUrl,
   ratingText,
+  similarItemToResult,
 } from "./lib";
 
 const base: MediaItem = {
@@ -221,5 +223,58 @@ describe("detail resume helpers", () => {
     expect(detailPrimaryLabel(play({ resume: 2934 }))).toBe("Resume");
     expect(detailPrimaryLabel(play())).toBe("Play");
     expect(detailPrimaryLabel(undefined)).toBe("Play");
+  });
+});
+
+describe("similarItemToResult (row → actionable SuggestResult)", () => {
+  it("maps a movie row", () => {
+    const r = similarItemToResult({
+      id: 135254, title: "Movie A", year: 2014, kind: "movie",
+      score: 7.1, poster: "http://img/p.jpg", backdrop: null,
+    });
+    expect(r.tmdb_id).toBe(135254);
+    expect(r.title).toBe("Movie A");
+    expect(r.year).toBe(2014);
+    expect(r.media_type).toBe("movie");
+    expect(r.tmdb_score).toBe(7.1);
+    expect(r.poster).toBe("http://img/p.jpg");
+    expect(r.backdrop).toBe("");
+    expect(r.in_watchlist).toBe(false);
+    expect(r.in_library).toBe(false);
+  });
+  it("maps a show row to tv + tolerates missing score/year", () => {
+    const r = similarItemToResult({ id: 19, title: "Show B", year: null, kind: "show", score: 0 });
+    expect(r.media_type).toBe("tv");
+    expect(r.year).toBeNull();
+    expect(r.tmdb_score).toBe(0);
+    expect(r.genres).toEqual([]);
+  });
+});
+
+describe("filterLibraryRows (drop titles already in the local library)", () => {
+  const library: MediaItem[] = [
+    { ...base, item_id: "p1", title: "Prisoners", year: 2013 },
+    { ...base, item_id: "b1", title: "Breaking Bad", year: 2008, type: "tv" },
+  ];
+  const row = (title: string, year?: number | null) => ({ id: 1, title, year: year ?? null, kind: "movie" as const, score: 0 });
+
+  it("drops an exact title+year duplicate", () => {
+    expect(filterLibraryRows([row("Prisoners", 2013), row("New Film", 2024)], library)).toEqual([
+      row("New Film", 2024),
+    ]);
+  });
+  it("is case-insensitive on title", () => {
+    expect(filterLibraryRows([row("prisoners", 2013)], library)).toEqual([]);
+  });
+  it("keeps a same-name different-year title (remake) — never over-drop", () => {
+    expect(filterLibraryRows([row("Prisoners", 2026)], library)).toEqual([row("Prisoners", 2026)]);
+  });
+  it("drops when years agree but a library year is a string", () => {
+    const libStr = [{ ...base, item_id: "s1", title: "Scrubs", year: "2001" as unknown as number }];
+    expect(filterLibraryRows([row("Scrubs", 2001)], libStr)).toEqual([]);
+  });
+  it("keeps an empty result and tolerates a null library", () => {
+    expect(filterLibraryRows([], library)).toEqual([]);
+    expect(filterLibraryRows([row("X", 1999)], null as unknown as MediaItem[])).toEqual([row("X", 1999)]);
   });
 });

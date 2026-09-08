@@ -173,6 +173,25 @@ export interface ItemDetail {
   episode?: number;
 }
 
+/** One TMDB-similar row from GET /api/jellyfin/similar ("Because you watched").
+ *  The id is a TMDB id — the title may NOT be in the library (posters are
+ *  public TMDB CDN URLs, so no proxy is needed for row art). */
+export interface SimilarItem {
+  id: number;
+  title: string;
+  year?: number | null;
+  kind: "movie" | "show";
+  /** TMDB vote average (0 when absent — display hides sub-1 scores). */
+  score: number;
+  poster?: string | null;
+  backdrop?: string | null;
+}
+
+/** GET /api/jellyfin/similar?id=&limit= response. */
+export interface SimilarShape {
+  similar: SimilarItem[];
+}
+
 /**
  * One audio/subtitle track from GET /api/jellyfin/playback-info. */
 export interface PlaybackTrack {
@@ -483,6 +502,11 @@ export const api = {
   /** Plex-style preplay metadata for one item (fetched on detail open). */
   getItemDetail: (itemId: string) =>
     getJson<ItemDetail>(`/jellyfin/detail?id=${encodeURIComponent(itemId)}`),
+  /** "Because you watched" — TMDB similar titles for one library item. */
+  getSimilar: (itemId: string, limit = 10) =>
+    getJson<SimilarShape>(
+      `/jellyfin/similar?id=${encodeURIComponent(itemId)}&limit=${limit}`,
+    ),
   mutateItemState: (itemId: string, watched: boolean) =>
     postJson<ItemStateResult>(`/library/${encodeURIComponent(itemId)}/state`, { watched }),
   /** Fire-and-forget playback position report (soft no when backend absent). */

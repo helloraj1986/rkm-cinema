@@ -4,7 +4,12 @@
  * React port is at 1:1 parity. Kept as pure functions so they're unit-testable
  * without a DOM (vitest node env).
  */
-import type { DetailPlay, MediaItem } from "../../lib/api/client";
+import type {
+  DetailPlay,
+  MediaItem,
+  SimilarItem,
+  SuggestResult,
+} from "../../lib/api/client";
 
 /** Poster proxy URL for a library item (Jellyfin id first, Plex thumb fallback). */
 export function posterUrl(item: Pick<MediaItem, "item_id" | "thumb">): string | null {
@@ -190,4 +195,62 @@ export function detailInProgress(play: DetailPlay | undefined): boolean {
 /** Primary preplay button label: "Resume" mid-play, else "Play". */
 export function detailPrimaryLabel(play: DetailPlay | undefined): string {
   return detailInProgress(play) ? "Resume" : "Play";
+}
+
+// ---------------------------------------------- Similar titles (SIMILAR_TITLES_PLAN)
+/**
+ * Row → SuggestResult adapter so a "Because you watched" card reuses the
+ * Suggest detail modal + Add/Download actions (Phase 2 decision: cards are
+ * actionable, not decoration). vote_count/genres/overview are unknown for
+ * similar rows — the detail modal refetches full metadata via
+ * /api/suggest/detail, so the adapter stays light.
+ */
+export function similarItemToResult(item: SimilarItem): SuggestResult {
+  return {
+    tmdb_id: item.id,
+    title: item.title,
+    year: item.year ?? null,
+    media_type: item.kind === "show" ? "tv" : "movie",
+    tmdb_score: Number(item.score) || 0,
+    vote_count: 0,
+    genres: [],
+    overview: "",
+    poster: item.poster ?? "",
+    backdrop: item.backdrop ?? "",
+    in_watchlist: false,
+    in_library: false,
+  };
+}
+
+function normTitle(title: string | null | undefined): string {
+  return String(title ?? "").trim().toLowerCase();
+}
+
+/**
+ * True when a TMDB similar row already exists in the local library — exact
+ * case-insensitive title AND years agree (both known+equal, or both unknown).
+ * Conservative by design (SIMILAR_TITLES_PLAN: drop duplicates client-side,
+ * never over-drop): a same-name different-year title (remake/reboot) survives.
+ */
+export function similarRowInLibrary(
+  row: Pick<SimilarItem, "title" | "year">,
+  items: MediaItem[],
+): boolean {
+  const t = normTitle(row.title);
+  if (!t) return false;
+  const ry = row.year ? Number(row.year) : null;
+  return (items ?? []).some((i) => {
+    if (normTitle(i.title) !== t) return false;
+    const ly = i.year ? Number(i.year) : null;
+    if (ry === null || ly === null) return ry === null && ly === null;
+    return ry === ly;
+  });
+}
+
+/** Drop similar rows that are already in the local library (client-side dedupe). */
+export function filterLibraryRows(
+  rows: SimilarItem[],
+  items: MediaItem[],
+): SimilarItem[] {
+  return (rows ?? []).filter((r) => !similarRowInLibrary(r, items));
 }

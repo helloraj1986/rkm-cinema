@@ -32,6 +32,21 @@ export function useItemDetail(itemId: string | null) {
   });
 }
 
+/**
+ * "Because you watched" — TMDB similar titles for one item (SIMILAR_TITLES_PLAN
+ * Phase 2). Rendered only for movie/tv pages; 404s (episode ids / no TMDB id)
+ * must not retry — the row just stays hidden.
+ */
+export function useSimilar(itemId: string | null) {
+  return useQuery({
+    queryKey: ["library", "similar", itemId],
+    queryFn: () => api.getSimilar(itemId as string),
+    enabled: Boolean(itemId),
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+}
+
 /** Trigger a backend library scan; invalidates the library queries on success. */
 export function useScanLibrary() {
   const qc = useQueryClient();

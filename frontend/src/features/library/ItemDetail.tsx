@@ -8,6 +8,7 @@ import {
   type MediaItem,
 } from "../../lib/api/client";
 import { useItemDetail, useLibraryItems } from "./api";
+import { SimilarRow } from "./SimilarRow";
 import { useEpisodes } from "../playback/api";
 import {
   episodeCode,
@@ -398,6 +399,15 @@ export function ItemDetailContent({
                 {[creditsLine(people, "directors"), creditsLine(people, "writers")].filter(Boolean).join("  ·  ")}
               </p>
             )}
+
+            {/* "Because you watched" — TMDB similar row (movie/tv pages only). */}
+            {d && (d.type === "movie" || d.type === "tv") && title ? (
+              <SimilarRow
+                itemId={itemId}
+                title={title}
+                localItems={itemsQuery.data?.items ?? []}
+              />
+            ) : null}
           </>
         )}
       </div>

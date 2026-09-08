@@ -4,15 +4,15 @@ A self-hosted **media discovery + download dashboard**. Browse your Plex library
 
 > **Plex is the source of truth** for availability. Metadata comes from **TMDB**; official trailers are found by scraping **youtube.com** (no YouTube API key).
 
-> ## ⚠ Status (2026-09-06) — modular & scalable re-platform in progress
-> Plan: [`docs/modular-scalable-architecture.md`](docs/modular-scalable-architecture.md) · ADRs: [`docs/adr/`](docs/adr/) · **Frozen API contract:** [`docs/api/openapi.v1.json`](docs/api/openapi.v1.json) (ADR-0001).
-> **Phase 0 done** (CI + contract freeze + docs reset). Frontend `app.js` → React/TS (`web/`) behind the frozen `/api`; backend **keep-Python** (consolidate facades only, Phase 1). Session history: `PROGRESS.md`.
+> ## ⚠ Status (2026-09-08) — production repo restructure done
+> Plan: [`docs/REPO_STRUCTURE_PLAN.md`](docs/REPO_STRUCTURE_PLAN.md) · ADRs: [`docs/adr/`](docs/adr/) · **Frozen API contract:** [`docs/api/openapi.v1.json`](docs/api/openapi.v1.json) (ADR-0001).
+> Monorepo: **`backend/`** (FastAPI + tests) · **`frontend/`** (React/TS shell, `web/` renamed) · legacy vanilla app at **`frontend/legacy/`** (served under `/legacy`) · deploy/infra + `.env` stay at the repo root. Session history: `PROGRESS.md`.
 
 ---
 
 ## Features
 
-- **Watchlist lifecycle** — `requested → downloading → downloaded → available → recommended` (status derived from Plex/*arr/qBittorrent facts via a single state machine in `domain/status.py`).
+- **Watchlist lifecycle** — `requested → downloading → downloaded → available → recommended` (status derived from Plex/*arr/qBittorrent facts via a single state machine in `backend/domain/status.py`).
 - **Request movies/series** — movie → Radarr, series → Sonarr, with quality-profile selection and duplicate prevention.
 - **In-app trailers** — YouTube embed (official channels), no API key.
 - **Deep watch links** — "Watch on Plex / Emby" straight into the server's own web UI over Tailscale.
@@ -76,11 +76,12 @@ auto_add_enabled = true` in the TOML to turn on the daily job. See
 ### Local dev (WSL / sandbox)
 ```bash
 cd projects/rkm-cinema
+cd backend
 pip install -r requirements.txt
-python3 scripts/rebuild_dashboard.py   # build dashboard-data.json + index.html
-python3 -m api.main                    # FastAPI on :8000
+python3 scripts/rebuild_dashboard.py   # build dashboard-data.json + index.html (writes frontend/legacy/)
+python3 -m uvicorn api.main:app --port 8000   # or: python3 -m api.main
 ```
-Then serve `index.html` (or open it), pointing the UI at the API.
+Then serve `frontend/legacy/index.html` (or open it), pointing the UI at the API.
 
 ### Docker Compose (any host with Docker)
 ```bash
@@ -94,30 +95,45 @@ docker compose up -d --build
 
 | Layer | Tech |
 |---|---|
-| Backend | Python 3.11 · **FastAPI** (`uvicorn api.main:app`) |
-| Frontend | Vanilla JS SPA (no framework, no build step) — `api.js` + `app.js` |
+| Backend | Python 3.11 · **FastAPI** (`uvicorn api.main:app`) under `backend/` |
+| Frontend | React 18 + TypeScript + Vite (`frontend/`) — legacy vanilla SPA recoverable at `frontend/legacy/` (`/legacy`) |
 | Persistence | **SQLite** (`WATCHLIST_STORE=sqlite`) — a JSON store is supported for backward compat |
-| Infra | **Docker Compose** — `api` (FastAPI, holds secrets) + `web` (nginx :8123, proxies `/api/*`) |
-| External | Plex · Radarr · Sonarr · TMDB · YouTube · Emby · qBittorrent |
+| Infra | **Docker Compose** — `api` (FastAPI, holds secrets) + `web` (nginx, proxies `/api/*`) |
+| External | Plex · Radarr · Sonarr · TMDB · YouTube · Emby · Jellyfin · qBittorrent |
 
 ---
 
 ## Project layout
 
 ```
-├── api/             FastAPI app + routes (health, config, status, suggest, media, jobs, ...)
-├── domain/          Business layer: state machine, media identity, status rules (single source of truth)
-├── services/        External integrations + canonical seams: library/ acquisition/ recommendation/ reconciliation/
-├── infrastructure/  Persistence: WatchlistRepository (SQLite/JSON)
-├── jobs/            Scheduler + reconcile / daily-watchlist jobs
-├── application/     Use-case commands (request_media)
-├── scripts/         Host-side cron + dashboard builder (rebuild_dashboard.py)
-├── config/          settings.py + recommendations.yaml (quality gates)
-├── tests/           pytest (unit/API, all mocked) + frontend .mjs harnesses
-└── index.html · api.js · app.js · app.css   SPA (volume-mounted)
+rkm-cinema/                        # deploy/infra + docs + config stay at root
+├── .env.example  .gitignore  .dockerignore
+├── README.md  ARCHITECTURE.md  PROGRESS.md  TAILSCALE_HOSTING.md
+├── docker-compose.yml
+├── bootstrap.ps1  bootstrap.sh  run-rkm-cinema.ps1
+├── render_config.py               # deploy tooling (reads the repo .env)
+├── nginx/default.conf             # infra — COPYed by the frontend image
+├── docs/                          # plans, ADRs, api contract
+│   └── archive/                   # stale task/spec docs parked (git history kept)
+├── backend/                       # FastAPI app + tests + its Dockerfile
+│   ├── Dockerfile  requirements.txt  ruff.toml
+│   ├── api/  services/  domain/  core/  config/  infrastructure/
+│   │        application/  jobs/  scripts/  provisioner/
+│   └── tests/                     # pytest suite (run from backend/: python -m pytest tests/)
+├── frontend/                      # renamed from web/
+│   ├── Dockerfile  package.json  tsconfig*  vite.config.ts  src/
+│   └── legacy/                    # old vanilla app served under /legacy
+│       ├── index.html  app.js  app.css  api.js
+│       └── tests/                 # node harnesses phase11/18/25/26
+└── tools/archive/                 # one-off utility scripts (git history kept)
 ```
 
-See **`ARCHITECTURE_GUIDE.md`** for the definitive architecture & agent reference.
+Run/test/deploy: **backend** — `cd backend && python -m pytest tests/ -q`,
+`ruff check api application config core domain infrastructure jobs services` ·
+**frontend** — `cd frontend && npm run typecheck && npx vitest run && npm run build` ·
+**legacy harnesses** — `node frontend/legacy/tests/phase*.test.mjs` ·
+**deploy** — `.\\bootstrap.ps1` (bundled Jellyfin stack) or `.\\run-rkm-cinema.ps1` (prod Plex/Emby).
+Contract snapshot (zero-diff gate): `python backend/scripts/snapshot_openapi.py` from the repo root.
 
 ---
 
@@ -170,7 +186,7 @@ WATCHLIST_SCHEDULER=true
 
 ## Scheduled jobs
 
-- **Daily auto-add** (recommended) — host cron runs `scripts/add_watchlist_cron.py` (TMDB discover, Plex-gated, idempotent).
+- **Daily auto-add** (recommended) — host cron runs `backend/scripts/add_watchlist_cron.py` (TMDB discover, Plex-gated, idempotent).
 - **In-process scheduler** (optional) — set `WATCHLIST_SCHEDULER=true` to run reconcile (every 10 min) + daily watchlist job (default 18:00) inside the API container.
 
 ---
@@ -178,19 +194,23 @@ WATCHLIST_SCHEDULER=true
 ## Tests
 
 ```bash
-python -m pytest tests/ -q               # ~216 unit/API tests (all mocked, no live LAN)
-node tests/phase25_suggest_frontend.test.mjs   # frontend harnesses
+cd backend
+python -m pytest tests/ -q               # ~292 unit/API tests (all mocked, no live LAN)
+cd ../frontend
+npm run typecheck && npx vitest run && npm run build
+cd ..
+node frontend/legacy/tests/phase*.test.mjs   # legacy vanilla-app harnesses
 ```
 
 ---
 
 ## Key design principles
 
-1. **Single source of truth** for status & media-type rules → `domain/`.
+1. **Single source of truth** for status & media-type rules → `backend/domain/`.
 2. **Plex is authoritative** for ownership; a watch-link failure never flips an available title to "not added".
-3. **Canonical service seams** over legacy facades — extend `services/library|acquisition|recommendation|reconciliation/`, not the old wrappers.
+3. **Canonical service seams** over legacy facades — extend `backend/services/library|acquisition|recommendation|reconciliation/`, not the old wrappers.
 4. **Stable identity** — `media_id` (`type:tmdb:{id}` / `imdb` / `tvdb`), never bare `title`.
-5. **Config over code** — recommendation quality gates live in `config/recommendations.yaml`.
+5. **Config over code** — recommendation quality gates live in `backend/config/recommendations.yaml`.
 
 ---
 

@@ -1,3 +1,4 @@
+/// <reference types="vitest" />
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { fileURLToPath } from "node:url";
@@ -7,6 +8,11 @@ import { fileURLToPath } from "node:url";
 // the same origin, with API calls going to the same-origin `/api/*` proxy.
 export default defineConfig({
   plugins: [react()],
+  test: {
+    // Only the React shell's own suites — the legacy node harnesses live in
+    // legacy/tests/ and are run directly with `node` (they call process.exit).
+    include: ["src/**/*.test.{ts,tsx}"],
+  },
   resolve: {
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url)),

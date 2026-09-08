@@ -1,7 +1,7 @@
 # Repo Structure Plan — segregate frontend/backend into a production-grade monorepo
 
 > Plan doc for branch `refactor/production-repo-structure` (created 2026-09-08 from `main` @ `e71eaf0`).
-> **Status: NOT YET EXECUTED — execute next session, one phase at a time, gates green after every phase.**
+> **Status: EXECUTED 2026-09-08 — Phases 0–5 committed (8939cb5 · 0e60ca5 · 5c8b85c · 517daff · 228cb29 + docs commit), gates green after every phase, contract zero-diff. Awaiting RKM-HP deploy (`.\\bootstrap.ps1`) + merge to main + push.**
 > Target confirmed by user: `backend/` + `frontend/` (rename `web/` → `frontend/`) + deploy/infra stays at root; one-off tools and stale task/QA docs move to `tools/archive` + `docs/archive` (safe, reversible — git mv only, nothing deleted).
 
 ## Goal

@@ -1,13 +1,15 @@
 # RKM Watchlist — Architecture
 
-> ⚠ **2026-09-06:** re-platform in progress (`docs/modular-scalable-architecture.md`).
-> Frontend `app.js` → React/TS (`web/`) behind the **frozen `/api` contract**
-> (`docs/api/openapi.v1.json`, ADR-0001); backend stays Python/FastAPI (ADRs in `docs/adr/`).
-> This doc still describes the current backend; feature-slice map refreshes per-phase in Phase 3.
+> ⚠ **2026-09-08:** repo restructured into a monorepo (`docs/REPO_STRUCTURE_PLAN.md`):
+> **`backend/`** holds the FastAPI app + tests, **`frontend/`** the React/TS shell
+> (renamed from `web/`) with the legacy vanilla app at **`frontend/legacy/`**
+> (served under `/legacy`), deploy/infra + docs stay at the root. This doc still
+> describes the current backend; the authoritative project tree + commands live
+> in `README.md`.
 
 > **Single codebase.** The monolithic `api.py` has been archived
-> (`archive/api_legacy_monolith.py`) and the production backend is now the
-> modular FastAPI app: **`uvicorn api.main:app`** (see `Dockerfile`). There is
+> (`tools/archive/api_legacy_monolith.py`) and the production backend is now the
+> modular FastAPI app: **`uvicorn api.main:app`** (see `backend/Dockerfile`). There is
 > exactly ONE implementation of each business rule. Add features to the modular
 > tree, not a parallel monolith.
 
@@ -33,8 +35,8 @@ Access is private over **Tailscale**. The browser talks to nginx on :8123; nginx
       │  http://rkm-hp.tail8d5e8.ts.net:8123
       ▼
  ┌──────────────────────────────┐
- │  nginx (web container) :8123 │   serves index.html/api.js/app.js/app.css
- │  ─ proxies /api/* → api:8000 │   (static files volume-mounted from repo)
+ │  nginx (web container) :8123 │   serves the React build (frontend/);
+ │  ─ proxies /api/* → api:8000 │   legacy app recoverable at /legacy/
  └──────────────┬───────────────┘
                 ▼
  ┌──────────────────────────────┐
@@ -57,44 +59,28 @@ Access is private over **Tailscale**. The browser talks to nginx on :8123; nginx
 ## 3. Repository layout
 
 ```
-watchlist/
-├── api/
-│   ├── main.py              app factory: CORS, wires all routers
-│   ├── models.py            Pydantic request/response models
-│   └── routes/              one thin router per concern:
-│       health config status download search library quality plex_thumb
-├── services/               external integrations + app services
-│   ├── base.py              BaseService (DI-ready: config/http injectable)
-│   ├── plex.py              Plex: library, ownership, deep-links, thumb proxy
-│   ├── radarr.py            Radarr: movies, lookup/add (title fallback), profiles
-│   ├── sonarr.py            Sonarr: series, lookup/add (title fallback), tvdb resolve
-│   ├── emby.py              Emby client / counts (deep-links built in plex.py)
-│   ├── tmdb.py              TMDB metadata + artwork
-│   ├── youtube.py           YouTube trailer scraping (no API key)
-│   ├── trailers.py          Legacy trailer fallback (TVDB/TMDB/oEmbed)
-│   ├── qbittorrent.py       qBittorrent torrents + download-state
-│   ├── watchlist.py         Watchlist CRUD, atomic writes, state validation
-│   ├── media_status.py      MediaStatusService → domain state machine
-│   ├── download.py          DownloadService → movie/tv routing + add + fallback
-│   └── recommendations.py   Recommendation pipeline (rotation, gates, enrich)
-├── domain/                  business layer (no HTTP/FastAPI)
-│   ├── enums.py             MediaType, MediaStatus, DownloadResultState
-│   ├── models.py            DownloadResult (typed)
-│   ├── state_machine.py     resolve_status(): THE state machine + WatchLinks
-│   └── resolver.py          resolve_media_type(): single movie/tv resolver
-├── core/                    infrastructure
-│   ├── http_client.py       shared HTTP client (retry/cache/structured errors)
-│   ├── exceptions.py        typed app exceptions
-│   └── logging.py           structured logging
-├── config/settings.py       centralized env config (singleton, no secret leaks)
-├── scripts/                 daily pipeline + rebuild + hygiene scripts
-├── tests/                   unit + API tests (mockable, no live LAN)
-├── frontend (root):         index.html, api.js, app.js, app.css (volume-mounted)
-├── requirements.txt         production backend deps
-├── Dockerfile               runs uvicorn api.main:app
-├── docker-compose.yml       api + web (nginx) containers
-└── archive/                 legacy monolith + old throwaway scripts
+rkm-cinema/                       (full annotated tree in README.md)
+├── backend/                      FastAPI app + pytest suite + Dockerfile
+│   ├── api/                      main.py app factory + routes/ (thin routers)
+│   ├── services/                 external integrations + app services
+│   │   ├── library/ acquisition/ recommendation/ reconciliation/  (canonical)
+│   │   ├── plex.py radarr.py sonarr.py emby.py tmdb.py youtube.py
+│   │   ├── qbittorrent.py watchlist.py media_status.py recommendations.py
+│   ├── domain/                   business layer: state machine + resolver
+│   ├── core/  config/  infrastructure/  application/  jobs/
+│   ├── scripts/                  daily pipeline + rebuild + probes
+│   ├── provisioner/              bundled-stack Jellyfin provisioner
+│   └── tests/                    unit + API tests (mockable, no live LAN)
+├── frontend/                     React 18 + TS + Vite shell (nginx origin)
+│   └── legacy/                   index.html/api.js/app.js/app.css (/legacy)
+├── docs/  nginx/  tools/archive/  docker-compose.yml  bootstrap.*  render_config.py
+└── .env (single config)          .env.example (committed template)
 ```
+
+Run everything from the subdirs: `cd backend && python -m pytest tests/ -q`,
+`cd frontend && npm run typecheck && npx vitest run && npm run build`,
+`node frontend/legacy/tests/phase*.test.mjs`. Deploy stays at the root
+(`.\bootstrap.ps1` / `.\run-rkm-cinema.ps1`).
 
 ---
 
@@ -246,18 +232,18 @@ with fakes — **no test touches the live LAN**.
 
 ## 13. Adding a feature (recommended path)
 
-1. **Business rule (status/movie-tv)?** → put it in `domain/` (state machine or resolver). Wire service gatherers in `services/`.
-2. **External integration?** → add a method on the relevant `services/*` client; never in a route.
-3. **Route?** → add a thin handler in `api/routes/`, reuse a service, return a typed Pydantic model.
-4. **UI?** → update `app.js` (+ `api.js` if it's a new API call). Volume-mounted, no rebuild.
-5. **Test it** → add a mockable test under `tests/`; run `python -m pytest tests/ -q`.
-6. If the dashboard needs fresh data, run `scripts/rebuild_dashboard.py`.
-7. Deploy with `.\run-rkm-cinema.ps1`; verify `/api/health` + the dashboard.
+1. **Business rule (status/movie-tv)?** → put it in `backend/domain/` (state machine or resolver). Wire service gatherers in `backend/services/`.
+2. **External integration?** → add a method on the relevant `backend/services/*` client; never in a route.
+3. **Route?** → add a thin handler in `backend/api/routes/`, reuse a service, return a typed Pydantic model.
+4. **UI?** → update the React shell (`frontend/src/`) or, for the legacy app, `frontend/legacy/app.js` (+ `api.js` if it's a new API call).
+5. **Test it** → add a mockable pytest under `backend/tests/`; run `cd backend && python -m pytest tests/ -q`.
+6. If the dashboard needs fresh data, run `backend/scripts/rebuild_dashboard.py` (from `backend/`).
+7. Deploy with `.\run-rkm-cinema.ps1` (prod) or `.\bootstrap.ps1` (bundled stack); verify `/api/health` + the dashboard.
 
 ---
 
 ## 14. Testing
 
-- `tests/` cover: domain state machine, media-type resolver, Radarr/Sonarr routing + title fallback + ambiguity, duplicate prevention, error handling, trailer validation, Plex ownership, Plex library-scan caching, **Plex/Emby watch deep-link format** (`tests/test_watch_links.py`), recommendation pipeline, and API endpoints.
+- `backend/tests/` cover: domain state machine, media-type resolver, Radarr/Sonarr routing + title fallback + ambiguity, duplicate prevention, error handling, trailer validation, Plex ownership, Plex library-scan caching, **Plex/Emby watch deep-link format** (`tests/test_watch_links.py`), recommendation pipeline, and API endpoints.
 - All tests use **injected fakes** — no real LAN, no real API keys required.
-- Run: `python -m pytest tests/ -q` (from the repo root). **46 tests, all green** (API/e2e modules verified in the container where fastapi is installed).
+- Run: `cd backend && python -m pytest tests/ -q`. **292 tests, all green** (API/e2e modules verified in the container where fastapi is installed).

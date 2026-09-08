@@ -1,0 +1,8 @@
+# Docker build context = ./backend (see docker-compose.yml api.build.context)
+# Hygiene for the api image — keeps the build lean and correct.
+**/__pycache__
+*.pyc
+.pytest_cache
+.ruff_cache
+*.log
+tests/

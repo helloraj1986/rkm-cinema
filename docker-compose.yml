@@ -32,7 +32,9 @@ x-lsio: &lsio
 services:
   # --- RKM Cinema API (FastAPI): holds all secrets + orchestrates ---
   api:
-    build: .
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
     image: rkm-bundled-api:latest
     restart: unless-stopped
     env_file:
@@ -163,7 +165,7 @@ services:
 
   # --- One-shot provisioner: wires Jellyfin + (fullstack) *arr automatically --
   provisioner:
-    build: ./provisioner
+    build: ./backend/provisioner
     image: rkm-bundled-provisioner:latest
     restart: "no"
     profiles: ["provision"]

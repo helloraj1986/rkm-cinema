@@ -69,6 +69,9 @@ class Config:
         canonical_paths = [
             Path("/workspace/.env"),
             Path("/app/.env"),
+            # Repo-level single-source .env (repo root = backend/../..) — used
+            # when running from a bare checkout with no /workspace or /app env.
+            Path(__file__).resolve().parent.parent.parent / ".env",
         ]
         for path in canonical_paths:
             if path.exists():

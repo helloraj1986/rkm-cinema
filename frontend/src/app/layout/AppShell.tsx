@@ -1,4 +1,4 @@
-import { Outlet } from "react-router-dom";
+import { Outlet, ScrollRestoration } from "react-router-dom";
 import { Sidebar } from "./Sidebar";
 import { Header } from "./Header";
 import { MobileNav } from "./MobileNav";
@@ -9,10 +9,15 @@ import { Toaster } from "../../features/watchlist/Toaster";
  * height (content scrolls past it), the 64px top bar is sticky/blurred, and a
  * mobile bottom navigation bar takes over under md. The full-screen player and
  * toasts layer above via the z-index system (spec §75).
+ *
+ * ScrollRestoration (spec §60): the data router saves scroll per history
+ * entry, so Back from an item page returns to the folder grid at the same
+ * scroll position (filters themselves live in the URL — see folder views).
  */
 export function AppShell() {
   return (
     <div className="min-h-dvh bg-canvas text-zinc-100">
+      <ScrollRestoration />
       <div className="flex min-h-dvh">
         <Sidebar />
         <div className="flex min-w-0 flex-1 flex-col">

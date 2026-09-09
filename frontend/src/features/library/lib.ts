@@ -81,11 +81,41 @@ export const LIBRARY_SORT_OPTIONS: { key: LibrarySort; label: string }[] = [
   { key: "unwatched", label: "Unwatched first" },
 ];
 
+export const LIBRARY_SORT_KEYS: LibrarySort[] = LIBRARY_SORT_OPTIONS.map((o) => o.key);
+
 /** Toolbar filter state (all optional; empty = no filtering). */
 export interface LibraryFilter {
   q?: string;
   genre?: string;
   sort?: LibrarySort;
+}
+
+/**
+ * Parse a folder's URLSearchParams into the toolbar state (NEW_UX §63 URL
+ * state — /library/movies?q=…&genre=…&sort=… survives refresh/Back and is
+ * shareable). Unknown/empty values fall back to the defaults; a sort key that
+ * is not in LIBRARY_SORT_KEYS is never trusted (returns "recent").
+ */
+export function libraryFilterFromParams(
+  params: URLSearchParams,
+): Required<Omit<LibraryFilter, "q">> & { q: string } {
+  const q = (params.get("q") ?? "").trim();
+  const genre = (params.get("genre") ?? "").trim();
+  const rawSort = (params.get("sort") ?? "").trim();
+  const sort = (LIBRARY_SORT_KEYS as string[]).includes(rawSort) ? (rawSort as LibrarySort) : "recent";
+  return { q, genre, sort };
+}
+
+/**
+ * Build the query string for the folder toolbar state. Empty values are
+ * dropped so a clean view yields no query string (shareable, minimal).
+ */
+export function libraryFilterToParams(f: LibraryFilter): URLSearchParams {
+  const p = new URLSearchParams();
+  if (f.q && f.q.trim()) p.set("q", f.q.trim());
+  if (f.genre && f.genre.trim()) p.set("genre", f.genre.trim());
+  if (f.sort && f.sort !== "recent") p.set("sort", f.sort);
+  return p;
 }
 
 /**

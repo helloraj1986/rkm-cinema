@@ -13,6 +13,8 @@ import {
   isContinueWatching,
   isEpisodeItem,
   isSeries,
+  libraryFilterFromParams,
+  libraryFilterToParams,
   libraryGenres,
   libraryItemsByType,
   libraryKindLabel,
@@ -124,6 +126,28 @@ describe("libraryGenres", () => {
   it("empty list tolerance", () => {
     expect(libraryGenres([])).toEqual([]);
     expect(libraryGenres([{ ...base, item_id: "c" }])).toEqual([]);
+  });
+});
+
+describe("libraryFilterFromParams / libraryFilterToParams (URL state §63)", () => {
+  it("parses q + genre + sort from the query string", () => {
+    const p = new URLSearchParams("q=mad%20max&genre=Action&sort=title");
+    expect(libraryFilterFromParams(p)).toEqual({ q: "mad max", genre: "Action", sort: "title" });
+  });
+  it("defaults when params are missing or unknown", () => {
+    expect(libraryFilterFromParams(new URLSearchParams())).toEqual({ q: "", genre: "", sort: "recent" });
+    expect(libraryFilterFromParams(new URLSearchParams("q=+" ))).toEqual({ q: "", genre: "", sort: "recent" });
+    // A bogus/removed sort key is never trusted → recent.
+    expect(libraryFilterFromParams(new URLSearchParams("sort=rating"))).toEqual({ q: "", genre: "", sort: "recent" });
+  });
+  it("round-trips state through the URL", () => {
+    const f = { q: "mad max", genre: "Action", sort: "title" as const };
+    const out = libraryFilterToParams(f).toString();
+    expect(libraryFilterFromParams(new URLSearchParams(out))).toEqual(f);
+  });
+  it("drops empty values so a clean view has no query string", () => {
+    expect(libraryFilterToParams({ q: "", genre: "", sort: "recent" }).toString()).toBe("");
+    expect(libraryFilterToParams({ q: "  ", genre: "", sort: "unwatched" }).toString()).toBe("sort=unwatched");
   });
 });
 

@@ -1,10 +1,14 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useLibraryItems, useScanLibrary } from "./api";
 import {
   filterLibraryItems,
+  libraryFilterFromParams,
+  libraryFilterToParams,
   libraryGenres,
   libraryItemsByType,
   libraryKindLabel,
+  type LibraryFilter,
   type LibraryKind,
   type LibrarySort,
 } from "./lib";
@@ -14,31 +18,66 @@ import { useLibraryOutlet } from "./LibraryLayout";
 import { toast } from "../watchlist/toast";
 import { Icon } from "../../components/ui/Icon";
 
+/** How long after the user stops typing before the URL q= param updates. */
+const QUERY_DEBOUNCE_MS = 220;
+
 /**
  * /library/movies + /library/shows — the premium library folders (NEW_UX spec
  * §11–§19): a clean page header with human counts, a search + genre-pill +
  * sort toolbar, and a responsive auto-fill poster grid. Everything runs
  * client-side over the shared useLibraryItems cache — no extra fetches.
+ *
+ * URL state (§60/§63): q / genre / sort live in the URL
+ * (/library/movies?q=…&genre=…&sort=…), so filters survive refresh, Back and
+ * deep links, and the browser's scroll restoration returns to the same place.
  */
 export function LibraryFolderView({ kind }: { kind: LibraryKind }) {
   const items = useLibraryItems();
   const scan = useScanLibrary();
   const { quickPlay, openItem, toggleWatched } = useLibraryOutlet();
+  const [searchParams, setSearchParams] = useSearchParams();
 
-  const [query, setQuery] = useState("");
-  const [genre, setGenre] = useState("");
-  const [sort, setSort] = useState<LibrarySort>("recent");
+  const parsed = libraryFilterFromParams(searchParams);
+  // The search box mirrors the URL q (typing is instant); the URL is the
+  // source of truth after the debounce.
+  const [query, setQuery] = useState(parsed.q);
+  const queryRef = useRef(parsed.q);
+  queryRef.current = parsed.q;
+
+  // External navigation (Back, deep link, header search) re-syncs the box.
+  useEffect(() => {
+    setQuery(parsed.q);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [parsed.q]);
+
+  // Debounced write of the typed query back to the URL (replace — typing a
+  // query shouldn't create a history entry per keystroke).
+  useEffect(() => {
+    const raw = query.trim();
+    if (raw === queryRef.current) return;
+    const t = window.setTimeout(() => {
+      setSearchParams(libraryFilterToParams({ ...parsed, q: raw }), { replace: true });
+    }, QUERY_DEBOUNCE_MS);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query]);
+
+  const apply = (patch: LibraryFilter) => {
+    // Always carry the current box text — a genre/sort click while the query
+    // is still inside its debounce must not drop it from the URL.
+    const next = { ...parsed, q: query.trim(), ...patch };
+    setSearchParams(libraryFilterToParams(next), { replace: true });
+  };
 
   const label = libraryKindLabel(kind);
   const noun = label === "TV Shows" ? "show" : "movie";
   const kindItems = libraryItemsByType(items.data?.items ?? [], kind);
   const genres = libraryGenres(kindItems);
-  const list = filterLibraryItems(kindItems, { q: query, genre, sort });
-  const filtered = query.trim() !== "" || genre !== "";
+  const list = filterLibraryItems(kindItems, { q: query, genre: parsed.genre, sort: parsed.sort });
+  const filtered = query.trim() !== "" || parsed.genre !== "";
   const provider = items.data?.provider ?? null;
 
-  const nounLabel = (n: number) =>
-    `${n} ${noun}${n === 1 ? "" : "s"}`;
+  const nounLabel = (n: number) => `${n} ${noun}${n === 1 ? "" : "s"}`;
 
   const runScan = () => {
     scan.mutate(undefined, {
@@ -49,7 +88,7 @@ export function LibraryFolderView({ kind }: { kind: LibraryKind }) {
 
   const clear = () => {
     setQuery("");
-    setGenre("");
+    apply({ q: "", genre: "" });
   };
 
   return (
@@ -71,14 +110,16 @@ export function LibraryFolderView({ kind }: { kind: LibraryKind }) {
           label={label}
           genres={genres}
           query={query}
-          genre={genre}
-          sort={sort}
+          genre={parsed.genre}
+          sort={parsed.sort}
           resultCount={list.length}
           totalCount={kindItems.length}
           onChange={({ q, genre: g, sort: s }) => {
             if (q !== undefined) setQuery(q);
-            if (g !== undefined) setGenre(g);
-            if (s !== undefined) setSort(s);
+            const patch: LibraryFilter = {};
+            if (g !== undefined) patch.genre = g;
+            if (s !== undefined) patch.sort = s as LibrarySort;
+            if (g !== undefined || s !== undefined) apply(patch);
           }}
         />
       )}
@@ -128,7 +169,7 @@ export function LibraryFolderView({ kind }: { kind: LibraryKind }) {
         <div className="flex flex-col items-start gap-3 rounded-2xl border border-dashed border-white/[.08] px-8 py-14">
           <h2 className="font-semibold text-zinc-200">
             No {label.toLowerCase()} match{query.trim() ? ` “${query.trim()}”` : ""}
-            {genre ? ` in ${genre}` : ""}
+            {parsed.genre ? ` in ${parsed.genre}` : ""}
           </h2>
           <p className="text-sm text-zinc-500">Try another title or genre.</p>
           <button

@@ -6,7 +6,7 @@ import {
   nextEpisode, qualityFor, AUTOPLAY_DELAY_MS, QUALITY_OPTIONS, PLAYBACK_RATES,
   fmtTime, isFiniteDuration, clampSeek, pickStreamMode, hlsModeLabel,
   playMethodForMode, usesHls, hlsEngineFor, nextHlsMode, hlsConfigFor,
-  abrBadgeLabel, type AbrLevelFacts, type HlsEngine,
+  abrBadgeLabel, shouldAutoHideChrome, type AbrLevelFacts, type HlsEngine,
   parseVtt, activeCueText, type VttCue, type QueueEntry,
   type StreamMode,
 } from "./lib";
@@ -92,6 +92,13 @@ export function Player({
   // Live ABR level from hls.js (LEVEL_SWITCHED) — powers the passive
   // "Auto · 1080p" badge. Null until an HLS level actually switches.
   const [lvl, setLvl] = useState<AbrLevelFacts | null>(null);
+  // Cinema chrome auto-hide. Refs keep per-mousemove work off the render path;
+  // the timer only ticks while actively playing.
+  const [chromeHidden, setChromeHidden] = useState(false);
+  const chromeHiddenRef = useRef(false);
+  const lastActRef = useRef<number>(Date.now());
+  const hoverChromeRef = useRef(false);
+  const hideTimerRef = useRef<number | null>(null);
 
   // Custom control bar state.
   const [playing, setPlaying] = useState(false);
@@ -398,6 +405,33 @@ export function Player({
     else v.pause();
   };
 
+  // --- Cinema chrome auto-hide -------------------------------------------
+  const revealChrome = () => {
+    if (chromeHiddenRef.current) {
+      chromeHiddenRef.current = false;
+      setChromeHidden(false);
+    }
+  };
+  const hideChrome = () => {
+    if (!chromeHiddenRef.current) {
+      chromeHiddenRef.current = true;
+      setChromeHidden(true);
+    }
+  };
+  // Any pointer/keyboard activity on the player resets the idle clock + reveals.
+  const markActivity = () => {
+    lastActRef.current = Date.now();
+    revealChrome();
+  };
+  const onChromeEnter = () => {
+    hoverChromeRef.current = true;
+    revealChrome();
+  };
+  const onChromeLeave = () => {
+    hoverChromeRef.current = false;
+    lastActRef.current = Date.now(); // a fresh idle period starts on exit
+  };
+
   // --- Custom seek bar (div + pointer capture). A native <input type=range>
   // proved unreliable here: mouse events can miss its thin hit area and a
   // controlled range leaves the thumb visually at the click point when the
@@ -598,6 +632,7 @@ export function Player({
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === "INPUT" || t.tagName === "SELECT" || t.tagName === "TEXTAREA")) return;
       const v = videoRef.current;
+      markActivity();
       switch (e.key) {
         case " ":
           e.preventDefault();
@@ -627,6 +662,39 @@ export function Player({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onClose]);
 
+  // Cinema auto-hide timer: armed ONLY while actively playing with nothing
+  // loading/error/up-next; hidden chrome is revealed by any activity above.
+  useEffect(() => {
+    const busy = !playing || switching || Boolean(error) || Boolean(upNext);
+    if (busy) {
+      if (hideTimerRef.current != null) window.clearInterval(hideTimerRef.current);
+      hideTimerRef.current = null;
+      revealChrome();
+      return;
+    }
+    if (hideTimerRef.current == null) {
+      hideTimerRef.current = window.setInterval(() => {
+        if (
+          shouldAutoHideChrome({
+            playing: true,
+            switching: false,
+            error: false,
+            upNext: false,
+            hoverChrome: hoverChromeRef.current,
+            idleMs: Date.now() - lastActRef.current,
+          })
+        ) {
+          hideChrome();
+        }
+      }, 400);
+    }
+    return () => {
+      if (hideTimerRef.current != null) window.clearInterval(hideTimerRef.current);
+      hideTimerRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playing, switching, error, upNext]);
+
   const playNext = () => {
     clearAuto();
     if (upNext) onSwitchRef.current?.(upNext);
@@ -648,6 +716,9 @@ export function Player({
       role="dialog"
       aria-modal="true"
       aria-label={`${item.title} player`}
+      onPointerMove={markActivity}
+      onPointerDown={markActivity}
+      style={{ cursor: chromeHidden ? "none" : undefined }}
     >
       {/* 16:9 backdrop behind the player */}
       <div
@@ -661,7 +732,13 @@ export function Player({
       />
       <div className="pointer-events-none absolute inset-0 bg-black/55" aria-hidden="true" />
 
-      <div className="relative z-10 flex items-center justify-between gap-3 bg-gradient-to-b from-black/80 to-transparent p-3 pr-4 sm:p-4 sm:pr-5">
+      <div
+        onPointerEnter={onChromeEnter}
+        onPointerLeave={onChromeLeave}
+        className={`relative z-10 flex items-center justify-between gap-3 bg-gradient-to-b from-black/80 to-transparent p-3 pr-4 transition-opacity duration-300 sm:p-4 sm:pr-5 ${
+          chromeHidden ? "pointer-events-none opacity-0" : "opacity-100"
+        }`}
+      >
         <div className="flex min-w-0 items-center gap-2.5">
           <button
             onClick={onClose}
@@ -693,7 +770,7 @@ export function Player({
             autoPlay
             playsInline
             onClick={togglePlay}
-            className="max-h-full max-w-full cursor-pointer rounded-lg bg-black shadow-2xl"
+            className={`max-h-full max-w-full rounded-lg bg-black shadow-2xl ${chromeHidden ? "cursor-none" : "cursor-pointer"}`}
           />
 
           {switching && !error && (
@@ -771,7 +848,13 @@ export function Player({
 
           {/* Custom control bar — total from the API runtime until the stream
               duration resolves, so length + progress are always correct. */}
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 rounded-b-lg bg-gradient-to-t from-black/90 via-black/60 to-transparent px-3 pb-2.5 pt-12 sm:px-5">
+          <div
+            onPointerEnter={onChromeEnter}
+            onPointerLeave={onChromeLeave}
+            className={`pointer-events-none absolute inset-x-0 bottom-0 rounded-b-lg bg-gradient-to-t from-black/90 via-black/60 to-transparent px-3 pb-2.5 pt-12 transition-opacity duration-300 sm:px-5 ${
+              chromeHidden ? "opacity-0" : "opacity-100"
+            }`}
+          >
             <div
               ref={barRef}
               role="slider"
@@ -782,12 +865,20 @@ export function Player({
               aria-valuenow={Math.round(barPos)}
               aria-disabled={total <= 0}
               onClick={(e) => e.stopPropagation()}
-              onPointerDown={onBarPointerDown}
-              onPointerMove={onBarPointerMove}
+              onPointerDown={(e) => {
+                markActivity();
+                onBarPointerDown(e);
+              }}
+              onPointerMove={(e) => {
+                markActivity();
+                onBarPointerMove(e);
+              }}
               onPointerUp={onBarPointerUp}
               onPointerCancel={onBarPointerCancel}
               onKeyDown={onBarKeyDown}
-              className={`pointer-events-auto group relative flex h-5 w-full cursor-pointer touch-none items-center outline-none ${total <= 0 ? "opacity-40" : ""}`}
+              onPointerEnter={onChromeEnter}
+              onPointerLeave={onChromeLeave}
+              className={`${chromeHidden ? "pointer-events-none" : "pointer-events-auto"} group relative flex h-5 w-full cursor-pointer touch-none items-center outline-none ${total <= 0 ? "opacity-40" : ""}`}
             >
               <div className="relative h-1 w-full overflow-visible rounded-full bg-white/20">
                 <div
@@ -800,7 +891,11 @@ export function Player({
                 style={{ left: `${barPct}%` }}
               />
             </div>
-            <div className="pointer-events-auto mt-2 flex items-center gap-2.5 text-[11px] text-zinc-100 sm:gap-3">
+            <div
+              onPointerEnter={onChromeEnter}
+              onPointerLeave={onChromeLeave}
+              className={`${chromeHidden ? "pointer-events-none" : "pointer-events-auto"} mt-2 flex items-center gap-2.5 text-[11px] text-zinc-100 sm:gap-3`}
+            >
               <button onClick={togglePlay} aria-label={playing ? "Pause" : "Play"} className={ctrlBtn}>
                 <Icon name={playing ? "pause" : "play"} size={17} filled={!playing} />
               </button>

@@ -402,3 +402,25 @@ export function nextPlayableEpisode(episodes: EpisodeShape[]): EpisodeShape | nu
 export function episodeCode(ep: Pick<EpisodeShape, "season" | "episode">): string {
   return `S${ep.season}E${ep.episode}`;
 }
+
+// ------------------------------------------------------------------ chrome auto-hide
+/** Idle time (ms) before the player chrome auto-hides while playing. */
+export const CHROME_HIDE_MS = 2800;
+
+/**
+ * True when the cinema chrome should hide: actively playing (not loading, in an
+ * error, or showing Up Next), the pointer isn't resting on the chrome, and the
+ * user has been idle past CHROME_HIDE_MS. Subtitles never hide — this governs
+ * only the top bar, the bottom control bar and the cursor.
+ */
+export function shouldAutoHideChrome(f: {
+  playing: boolean;
+  switching: boolean;
+  error: boolean;
+  upNext: boolean;
+  hoverChrome: boolean;
+  idleMs: number;
+}): boolean {
+  if (!f.playing || f.switching || f.error || f.upNext || f.hoverChrome) return false;
+  return f.idleMs >= CHROME_HIDE_MS;
+}

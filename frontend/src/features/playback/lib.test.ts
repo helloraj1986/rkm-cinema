@@ -9,7 +9,7 @@ import {
   parseVtt, parseVttTime, activeCueText,
   usesHls, nextHlsMode, hlsEngineFor, hlsModeLabel, HLS_LADDER,
   hlsConfigFor, resolutionLabel, abrBadgeLabel, HLS_MAX_BUFFER_SEC,
-  HLS_ABR_DEFAULT_ESTIMATE_BPS,
+  HLS_ABR_DEFAULT_ESTIMATE_BPS, shouldAutoHideChrome, CHROME_HIDE_MS,
 } from "./lib";
 
 const ep = (id: string, season: number, episode: number, played = false, position = 0): EpisodeShape => ({
@@ -238,6 +238,25 @@ describe("HLS ABR/buffer policy (player tail)", () => {
     expect(abrBadgeLabel({})).toBe("Auto");
     expect(abrBadgeLabel({ height: 2160, bitrate: 40_000_000 })).toBe("Auto · 4K");
     expect(abrBadgeLabel({ height: 1080 })).toBe("Auto · 1080p");
+  });
+});
+
+describe("auto-hide chrome (player tail)", () => {
+  const ready = { playing: true, switching: false, error: false, upNext: false, hoverChrome: false, idleMs: CHROME_HIDE_MS + 500 };
+  it("hides only once playing and idle past the threshold", () => {
+    expect(shouldAutoHideChrome(ready)).toBe(true);
+    expect(shouldAutoHideChrome({ ...ready, idleMs: CHROME_HIDE_MS - 500 })).toBe(false);
+  });
+  it("never hides while paused, loading, erroring, up-next showing, or hovered", () => {
+    expect(shouldAutoHideChrome({ ...ready, playing: false })).toBe(false);
+    expect(shouldAutoHideChrome({ ...ready, switching: true })).toBe(false);
+    expect(shouldAutoHideChrome({ ...ready, error: true })).toBe(false);
+    expect(shouldAutoHideChrome({ ...ready, upNext: true })).toBe(false);
+    expect(shouldAutoHideChrome({ ...ready, hoverChrome: true })).toBe(false);
+  });
+  it("threshold is a sane 2–4 s", () => {
+    expect(CHROME_HIDE_MS).toBeGreaterThanOrEqual(2000);
+    expect(CHROME_HIDE_MS).toBeLessThanOrEqual(4000);
   });
 });
 

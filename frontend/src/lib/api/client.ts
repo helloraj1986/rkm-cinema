@@ -366,6 +366,72 @@ export interface SearchShape {
   servicesDown: boolean;
 }
 
+// -------------------------------------------------------------- global search
+/** Target for a series "Continue / Play" primary action. */
+export interface GlobalNextEpisode {
+  id: string;
+  season: number;
+  episode: number;
+  name: string;
+  position: number;
+  remaining: number;
+  kind: "play" | "continue";
+}
+
+/** One owned playable result from GET /api/search/global. */
+export interface GlobalOwnedRow {
+  id: string;
+  kind: "movie" | "show" | "episode";
+  title: string;
+  year?: number | null;
+  genres: string[];
+  rating?: number | null;
+  played: boolean;
+  playback_position: number;
+  runtime: number;
+  play_count: number;
+  series_id?: string | null;
+  series_name?: string | null;
+  season?: number | null;
+  episode?: number | null;
+  /** Primary action: watch | resume | watch_again | next_episode. */
+  state: string;
+  remaining?: number | null;
+  next_episode?: GlobalNextEpisode | null;
+}
+
+/** Intent hint (Person / Genre / BoxSet collection). */
+export interface GlobalHint {
+  id: string;
+  name: string;
+  kind: "person" | "genre" | "collection";
+  year?: number | null;
+}
+
+/** TMDB discovery row — present only when no strong owned match exists. */
+export interface GlobalDiscoveryRow {
+  tmdb_id: number;
+  media_type: "movie" | "tv";
+  title: string;
+  year?: number | null;
+  poster: string;
+  overview: string;
+}
+
+/** GET /api/search/global?q= response. */
+export interface GlobalSearchShape {
+  query: string;
+  provider: string | null;
+  tmdb_key: boolean;
+  strong_match: boolean;
+  items: GlobalOwnedRow[];
+  people: GlobalHint[];
+  person_titles: GlobalOwnedRow[];
+  genres: GlobalHint[];
+  collections: GlobalHint[];
+  discovery: GlobalDiscoveryRow[];
+}
+
 /** POST /api/suggest filter payload (legacy suggestState.filters). */
 export interface SuggestFilters {
   media_type: "all" | "movie" | "tv";
@@ -563,6 +629,8 @@ export const api = {
   getWatchlistResources: () => getJson<WatchlistResourcesShape>("/watchlist"),
   /** Combined watchlist + TMDB search (legacy header combobox API). */
   search: (q: string) => getJson<SearchShape>(`/search?q=${encodeURIComponent(q)}`),
+  /** Library-first global search (top-bar command palette). */
+  searchGlobal: (q: string) => getJson<GlobalSearchShape>(`/search/global?q=${encodeURIComponent(q)}`),
   /** TMDB discover by taste filters. */
   suggest: (filters: SuggestFilters) => postJson<SuggestShape>("/suggest", filters),
   /** Full TMDB + IMDb detail for one suggested title (card-click modal). */

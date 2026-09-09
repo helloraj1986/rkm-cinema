@@ -302,6 +302,17 @@ describe("search helpers (legacy parity)", () => {
     const hit: SearchHit = { title: "Brand New", year: 2026, type: "movie", imdbId: "", tmdbId: 999, poster: "", inWatchlist: false, director: "", cast: [], snippet: "" };
     expect(entryForHit([movie], hit)).toBeNull();
   });
+  it("never matches a live TMDB hit (imdbId \"\") to a watchlist entry with an empty imdbId", () => {
+    // Regression: pending TMDB-only titles persist with imdbId "" — before the
+    // fix, `imdbId === ""` matched them against EVERY live TMDB hit, so any
+    // live result's detail modal showed the first empty-imdb entry instead.
+    const noImdb: WatchlistEntry = { ...movie, imdbId: "", tmdbId: 1756365, title: "Sappho's Tale" };
+    const got: SearchHit = { title: "Game of Thrones", year: 2011, type: "tv", imdbId: "", tmdbId: 1399, poster: "", inWatchlist: false, director: "", cast: [], snippet: "" };
+    expect(entryForHit([noImdb, movie], got)).toBeNull();
+    // A hit that really IS the watchlist title still resolves via tmdbId.
+    const sapphoHit: SearchHit = { ...got, title: "Sappho's Tale", tmdbId: 1756365 };
+    expect(entryForHit([noImdb, movie], sapphoHit)?.title).toBe("Sappho's Tale");
+  });
 });
 
 describe("add-flow mappers (legacy entryFromWatchlistEntry / entryFromSuggestItem)", () => {

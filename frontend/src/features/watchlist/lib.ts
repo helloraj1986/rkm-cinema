@@ -394,8 +394,14 @@ export function resourceMap(resources: MediaResource[] | null | undefined): Reco
  *  imdbId first, then tmdbId). Returns null for live (non-watchlist) hits. */
 export function entryForHit(entries: WatchlistEntry[], hit: SearchHit): WatchlistEntry | null {
   if (!entries?.length) return null;
-  const byImdb = entries.find((e) => e.imdbId === hit.imdbId);
-  if (byImdb) return byImdb;
+  // IMDb matching only when the hit genuinely carries an id: live TMDB results
+  // come back with `imdbId: ""` (backend search.py), so a watchlist entry with
+  // an empty imdbId (e.g. a TMDB-only pending title like "Sappho's Tale")
+  // would otherwise match EVERY live hit and hijack the detail modal.
+  if (hit.imdbId) {
+    const byImdb = entries.find((e) => e.imdbId && e.imdbId === hit.imdbId);
+    if (byImdb) return byImdb;
+  }
   const tmdbNum = Number(hit.tmdbId);
   if (!Number.isNaN(tmdbNum) && tmdbNum > 0) return entries.find((e) => Number(e.tmdbId) === tmdbNum) ?? null;
   return null;

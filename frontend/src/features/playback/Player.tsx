@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import Hls from "hls.js";
 import { api, type PlaybackInfo, type ProgressPayload } from "../../lib/api/client";
+import { Icon } from "../../components/ui/Icon";
 import {
   nextEpisode, qualityFor, AUTOPLAY_DELAY_MS, QUALITY_OPTIONS, PLAYBACK_RATES,
   fmtTime, isFiniteDuration, clampSeek, pickStreamMode, hlsModeLabel,
@@ -628,14 +629,14 @@ export function Player({
   };
 
   const selectCls =
-    "rounded-md border border-zinc-700 bg-zinc-900 px-2 py-1 text-xs text-zinc-200";
+    "rounded-[8px] border border-white/[.08] bg-surface-2/90 px-2.5 py-2 text-xs font-medium text-zinc-100 outline-none transition backdrop-blur-sm focus:border-accent/50";
   const ctrlBtn =
-    "flex h-8 w-8 items-center justify-center rounded-full bg-white/10 text-sm text-white hover:bg-white/20";
+    "grid h-10 w-10 place-items-center rounded-full bg-white/10 text-zinc-50 ring-1 ring-white/10 backdrop-blur-sm transition hover:bg-white/20";
 
   return (
     <div
       ref={rootRef}
-      className="fixed inset-0 z-50 flex flex-col bg-black"
+      className="fixed inset-0 z-[var(--z-player)] flex flex-col bg-black"
       role="dialog"
       aria-modal="true"
       aria-label={`${item.title} player`}
@@ -652,21 +653,29 @@ export function Player({
       />
       <div className="pointer-events-none absolute inset-0 bg-black/55" aria-hidden="true" />
 
-      <div className="relative z-10 flex items-center justify-between gap-3 p-3">
-        <div className="min-w-0 truncate text-sm font-medium text-zinc-100">
-          {item.title}
+      <div className="relative z-10 flex items-center justify-between gap-3 bg-gradient-to-b from-black/80 to-transparent p-3 pr-4 sm:p-4 sm:pr-5">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <button
+            onClick={onClose}
+            aria-label="Close player"
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-black/50 text-zinc-100 ring-1 ring-white/15 backdrop-blur-sm transition hover:bg-black/80 hover:text-white"
+          >
+            <Icon name="back" size={17} />
+          </button>
+          <div className="min-w-0 truncate text-sm font-semibold text-zinc-50">{item.title}</div>
           {desiredMode && (
-            <span className="ml-2 rounded bg-zinc-800/80 px-1.5 py-0.5 align-middle text-[10px] font-medium tracking-wide text-zinc-400">
+            <span
+              className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold tracking-wide ${
+                mode !== "direct" ? "bg-accent/15 text-accent" : "bg-white/10 text-zinc-300"
+              }`}
+            >
               {hlsModeLabel(mode)}
             </span>
           )}
         </div>
-        <button
-          onClick={onClose}
-          className="shrink-0 rounded-full bg-zinc-800/90 px-3 py-1 text-sm text-zinc-100 hover:bg-zinc-700"
-        >
-          Close
-        </button>
+        <div className="shrink-0 text-right text-[11px] font-medium tabular-nums text-zinc-400">
+          {fmtTime(cur)} / {total > 0 ? fmtTime(total) : "--:--"}
+        </div>
       </div>
 
       <div className="relative z-10 flex flex-1 flex-col p-4">
@@ -680,9 +689,9 @@ export function Player({
           />
 
           {switching && !error && (
-            <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/30">
-              <div className="h-8 w-8 animate-spin rounded-full border-2 border-zinc-600 border-t-amber-400" />
-              <span className="text-[11px] text-zinc-300">Preparing stream…</span>
+            <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/30">
+              <div className="h-9 w-9 animate-spin rounded-full border-2 border-white/15 border-t-accent" />
+              <span className="text-[11px] font-medium tracking-wide text-zinc-300">Preparing stream…</span>
             </div>
           )}
 
@@ -690,37 +699,51 @@ export function Player({
             <button
               onClick={togglePlay}
               aria-label="Play"
-              className="pointer-events-auto absolute left-1/2 top-1/2 flex h-16 w-16 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-black/50 text-3xl text-white hover:bg-black/70"
+              className="pointer-events-auto absolute left-1/2 top-1/2 grid h-20 w-20 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-black/55 text-white ring-1 ring-white/20 backdrop-blur-md transition hover:bg-black/75 hover:ring-white/40"
             >
-              ▶
+              <Icon name="play" size={34} filled />
             </button>
           )}
 
           {error && (
             <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/85 p-6 text-center">
-              <div>
-                <p className="text-sm text-zinc-100">⚠️ {error}</p>
-                <p className="mt-1 text-xs text-zinc-500">Open it in Jellyfin directly instead.</p>
+              <div className="max-w-md rounded-2xl border border-white/10 bg-surface-2/90 p-6 shadow-modal">
+                <p className="text-sm font-semibold text-zinc-100">{error}</p>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="mt-4 inline-flex h-10 items-center justify-center rounded-[10px] border border-white/10 bg-white/[.07] px-4 text-sm font-bold text-zinc-100 transition hover:bg-white/[.12]"
+                >
+                  Close player
+                </button>
               </div>
             </div>
           )}
 
           {upNext && (
-            <div className="absolute bottom-24 right-6 z-10 rounded-lg border border-zinc-700 bg-zinc-900/95 p-4 shadow-xl">
-              <div className="text-[11px] font-medium tracking-wide text-zinc-400">
-                UP NEXT {autoSecs > 0 ? `· auto in ${autoSecs}s` : ""}
+            <div className="absolute bottom-28 right-6 z-10 w-72 overflow-hidden rounded-2xl border border-white/10 bg-surface-2/95 shadow-modal backdrop-blur-md">
+              <div className="flex items-center gap-3 p-4">
+                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-accent/15 text-accent">
+                  <Icon name="play" size={16} filled />
+                </span>
+                <div className="min-w-0">
+                  <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">
+                    Up next {autoSecs > 0 ? `· auto in ${autoSecs}s` : ""}
+                  </div>
+                  <div className="truncate text-sm font-semibold text-white">{upNext.name}</div>
+                </div>
               </div>
-              <div className="mt-1 text-sm font-medium text-white">{upNext.name}</div>
-              <div className="mt-3 flex gap-2">
+              <div className="flex gap-2 border-t border-white/[.06] px-4 py-3">
                 <button
                   onClick={playNext}
-                  className="rounded-lg bg-amber-400 px-3 py-1.5 text-sm font-semibold text-black hover:bg-amber-300"
+                  className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-[8px] bg-accent text-xs font-bold text-black transition hover:bg-accent-hover"
                 >
-                  ▶ Play next
+                  <Icon name="play" size={12} filled />
+                  Play next
                 </button>
                 <button
                   onClick={cancelNext}
-                  className="rounded-lg border border-zinc-600 px-3 py-1.5 text-sm text-zinc-200 hover:bg-zinc-800"
+                  className="inline-flex h-9 flex-1 items-center justify-center rounded-[8px] border border-white/10 bg-white/[.06] text-xs font-semibold text-zinc-200 transition hover:bg-white/[.12]"
                 >
                   Cancel
                 </button>
@@ -731,8 +754,8 @@ export function Player({
           {/* Subtitle overlay — item-time cues parsed from the VTT proxy. The
               HLS/direct timeline IS the item timeline, so alignment is exact. */}
           {subText && (
-            <div className="pointer-events-none absolute inset-x-0 bottom-16 z-[5] flex justify-center px-6">
-              <div className="max-w-[85%] whitespace-pre-line rounded bg-black/60 px-3 py-1 text-center text-base text-white [text-shadow:0_1px_3px_rgba(0,0,0,0.95)]">
+            <div className="pointer-events-none absolute inset-x-0 bottom-24 z-[5] flex justify-center px-6">
+              <div className="max-w-[85%] whitespace-pre-line rounded-lg bg-black/70 px-3.5 py-1.5 text-center text-base text-white shadow-lg backdrop-blur-[2px] [text-shadow:0_1px_3px_rgba(0,0,0,0.95)]">
                 {subText}
               </div>
             </div>
@@ -740,7 +763,7 @@ export function Player({
 
           {/* Custom control bar — total from the API runtime until the stream
               duration resolves, so length + progress are always correct. */}
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 rounded-b-lg bg-gradient-to-t from-black/90 via-black/55 to-transparent px-3 pb-2 pt-10">
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 rounded-b-lg bg-gradient-to-t from-black/90 via-black/60 to-transparent px-3 pb-2.5 pt-12 sm:px-5">
             <div
               ref={barRef}
               role="slider"
@@ -760,21 +783,25 @@ export function Player({
             >
               <div className="relative h-1 w-full overflow-visible rounded-full bg-white/20">
                 <div
-                  className="absolute inset-y-0 left-0 rounded-full bg-amber-400"
+                  className="absolute inset-y-0 left-0 rounded-full bg-accent"
                   style={{ width: `${barPct}%` }}
                 />
               </div>
               <div
-                className="pointer-events-none absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-amber-300 opacity-80 shadow transition-opacity group-hover:opacity-100"
+                className="pointer-events-none absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-accent shadow-[0_0_0_4px_rgba(255,196,0,.25)] transition-opacity group-hover:shadow-[0_0_0_5px_rgba(255,196,0,.3)]"
                 style={{ left: `${barPct}%` }}
               />
             </div>
-            <div className="pointer-events-auto mt-1.5 flex items-center gap-3 text-[11px] text-zinc-100">
+            <div className="pointer-events-auto mt-2 flex items-center gap-2.5 text-[11px] text-zinc-100 sm:gap-3">
               <button onClick={togglePlay} aria-label={playing ? "Pause" : "Play"} className={ctrlBtn}>
-                {playing ? "❚❚" : "▶"}
+                <Icon name={playing ? "pause" : "play"} size={17} filled={!playing} />
               </button>
-              <button onClick={toggleMute} aria-label={muted ? "Unmute" : "Mute"} className={ctrlBtn}>
-                {muted || volume === 0 ? "🔇" : volume < 0.5 ? "🔉" : "🔊"}
+              <button
+                onClick={toggleMute}
+                aria-label={muted || volume === 0 ? "Unmute" : "Mute"}
+                className={ctrlBtn}
+              >
+                <Icon name={muted || volume === 0 ? "volume-x" : "volume"} size={17} />
               </button>
               <input
                 type="range"
@@ -792,30 +819,31 @@ export function Player({
                   setMuted(val === 0);
                 }}
                 aria-label="Volume"
-                className="h-1 w-20 cursor-pointer accent-amber-400"
+                className="h-1 w-16 cursor-pointer accent-[var(--accent)] sm:w-20"
               />
-              <span className="tabular-nums">
-                {fmtTime(cur)} / {total > 0 ? fmtTime(total) : "--:--"}
-              </span>
               {mode !== "direct" && (
-                <span className="rounded bg-amber-400/15 px-1.5 py-0.5 font-medium text-amber-300">
+                <span className="hidden rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-semibold text-accent sm:inline">
                   {hlsModeLabel(mode)}
                 </span>
               )}
+              <span className="ml-auto flex items-center gap-1 tabular-nums text-zinc-300">
+                <Icon name="clock" size={12} className="text-zinc-500" />
+                {fmtTime(cur)}
+              </span>
               <button
                 onClick={toggleFullscreen}
                 aria-label={isFs ? "Exit fullscreen" : "Fullscreen"}
-                className={`${ctrlBtn} ml-auto`}
+                className={ctrlBtn}
               >
-                {isFs ? "🗗" : "⛶"}
+                <Icon name={isFs ? "minimize" : "maximize"} size={17} />
               </button>
             </div>
           </div>
         </div>
 
         {/* Item-3 player controls */}
-        <div className="mt-3 flex flex-wrap items-center gap-3">
-          <label className="flex items-center gap-1.5 text-xs text-zinc-400">
+        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2.5 rounded-2xl border border-white/[.06] bg-surface-2/70 px-4 py-3 backdrop-blur-sm">
+          <label className="flex items-center gap-2 text-xs font-medium text-zinc-400">
             Speed
             <select value={rate} onChange={(e) => setRate(Number(e.target.value))} className={selectCls}>
               {PLAYBACK_RATES.map((r) => (
@@ -824,7 +852,7 @@ export function Player({
             </select>
           </label>
 
-          <label className="flex items-center gap-1.5 text-xs text-zinc-400">
+          <label className="flex items-center gap-2 text-xs font-medium text-zinc-400">
             Quality
             <select value={quality} onChange={(e) => setQuality(e.target.value)} className={selectCls}>
               {QUALITY_OPTIONS.map((q) => (
@@ -834,7 +862,7 @@ export function Player({
           </label>
 
           {info && info.audio.length > 0 && (
-            <label className="flex items-center gap-1.5 text-xs text-zinc-400">
+            <label className="flex items-center gap-2 text-xs font-medium text-zinc-400">
               Audio
               <select
                 value={audioIndex}
@@ -852,7 +880,7 @@ export function Player({
           )}
 
           {info && info.subtitles.length > 0 && (
-            <label className="flex items-center gap-1.5 text-xs text-zinc-400">
+            <label className="flex items-center gap-2 text-xs font-medium text-zinc-400">
               Subs
               <select
                 value={subIndex == null ? "" : String(subIndex)}

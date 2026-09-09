@@ -8,11 +8,14 @@ import {
   libraryGenres,
   libraryItemsByType,
   libraryKindLabel,
+  libraryViewFromParams,
   type LibraryFilter,
   type LibraryKind,
   type LibrarySort,
+  type LibraryViewMode,
 } from "./lib";
 import { MediaCard } from "./MediaCard";
+import { MediaListRow } from "./MediaListRow";
 import { LibraryToolbar } from "./LibraryToolbar";
 import { useLibraryOutlet } from "./LibraryLayout";
 import { toast } from "../watchlist/toast";
@@ -38,6 +41,7 @@ export function LibraryFolderView({ kind }: { kind: LibraryKind }) {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const parsed = libraryFilterFromParams(searchParams);
+  const view = libraryViewFromParams(searchParams);
   // The search box mirrors the URL q (typing is instant); the URL is the
   // source of truth after the debounce.
   const [query, setQuery] = useState(parsed.q);
@@ -67,6 +71,12 @@ export function LibraryFolderView({ kind }: { kind: LibraryKind }) {
     // is still inside its debounce must not drop it from the URL.
     const next = { ...parsed, q: query.trim(), ...patch };
     setSearchParams(libraryFilterToParams(next), { replace: true });
+  };
+
+  const setView = (next: LibraryViewMode) => {
+    const p = libraryFilterToParams({ ...parsed, q: query.trim() });
+    if (next !== "grid") p.set("view", next);
+    setSearchParams(p, { replace: true });
   };
 
   const label = libraryKindLabel(kind);
@@ -112,6 +122,7 @@ export function LibraryFolderView({ kind }: { kind: LibraryKind }) {
           query={query}
           genre={parsed.genre}
           sort={parsed.sort}
+          view={view}
           resultCount={list.length}
           totalCount={kindItems.length}
           onChange={({ q, genre: g, sort: s }) => {
@@ -121,6 +132,7 @@ export function LibraryFolderView({ kind }: { kind: LibraryKind }) {
             if (s !== undefined) patch.sort = s as LibrarySort;
             if (g !== undefined || s !== undefined) apply(patch);
           }}
+          onViewChange={setView}
         />
       )}
 
@@ -182,18 +194,31 @@ export function LibraryFolderView({ kind }: { kind: LibraryKind }) {
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(158px,1fr))] gap-x-4 gap-y-7">
-            {list.map((item) => (
-              <MediaCard
-                key={item.item_id}
-                item={item}
-                fluid
-                onQuickPlay={quickPlay}
-                onOpenDetail={openItem}
-                onToggleWatched={toggleWatched}
-              />
-            ))}
-          </div>
+          {view === "compact" ? (
+            <div className="flex flex-col gap-1.5" data-testid="compact-list">
+              {list.map((item) => (
+                <MediaListRow
+                  key={item.item_id}
+                  item={item}
+                  onQuickPlay={quickPlay}
+                  onOpenDetail={openItem}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(158px,1fr))] gap-x-4 gap-y-7">
+              {list.map((item) => (
+                <MediaCard
+                  key={item.item_id}
+                  item={item}
+                  fluid
+                  onQuickPlay={quickPlay}
+                  onOpenDetail={openItem}
+                  onToggleWatched={toggleWatched}
+                />
+              ))}
+            </div>
+          )}
           {filtered && (
             <p className="text-xs text-zinc-500">
               Showing {nounLabel(list.length)} of {nounLabel(kindItems.length)} —{" "}

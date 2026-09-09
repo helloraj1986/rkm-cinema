@@ -72,16 +72,39 @@ export function libraryKindLabel(kind: LibraryKind): string {
 }
 
 // ---------------------------------------------- Library & discovery (roadmap item 4)
-/** Sort options offered by the folder toolbar. */
-export type LibrarySort = "recent" | "title" | "unwatched";
+/**
+ * Sort options offered by the folder toolbar (NEW_UX §16). Every key maps to
+ * a field the frozen /api/library payload truly carries (added/title/year/
+ * last_played/position/runtime) — "Rating" is deliberately NOT offered here
+ * because list items have no community rating (only the detail fetch does).
+ */
+export type LibrarySort =
+  | "recent"
+  | "title"
+  | "title-desc"
+  | "release"
+  | "recently-played"
+  | "progress"
+  | "runtime"
+  | "unwatched";
 
 export const LIBRARY_SORT_OPTIONS: { key: LibrarySort; label: string }[] = [
   { key: "recent", label: "Recently added" },
   { key: "title", label: "Title (A–Z)" },
+  { key: "title-desc", label: "Title (Z–A)" },
+  { key: "release", label: "Release date" },
+  { key: "recently-played", label: "Recently played" },
+  { key: "progress", label: "Progress" },
+  { key: "runtime", label: "Runtime" },
   { key: "unwatched", label: "Unwatched first" },
 ];
 
 export const LIBRARY_SORT_KEYS: LibrarySort[] = LIBRARY_SORT_OPTIONS.map((o) => o.key);
+
+/** Folder display mode (§17): poster grid (default) or compact list. */
+export type LibraryViewMode = "grid" | "compact";
+
+export const LIBRARY_VIEW_KEYS: LibraryViewMode[] = ["grid", "compact"];
 
 /** Toolbar filter state (all optional; empty = no filtering). */
 export interface LibraryFilter {
@@ -104,6 +127,12 @@ export function libraryFilterFromParams(
   const rawSort = (params.get("sort") ?? "").trim();
   const sort = (LIBRARY_SORT_KEYS as string[]).includes(rawSort) ? (rawSort as LibrarySort) : "recent";
   return { q, genre, sort };
+}
+
+/** Parse the view-mode param (§17/§60): compact when `view=compact`, else grid. */
+export function libraryViewFromParams(params: URLSearchParams): LibraryViewMode {
+  const raw = (params.get("view") ?? "").trim();
+  return (LIBRARY_VIEW_KEYS as string[]).includes(raw) ? (raw as LibraryViewMode) : "grid";
 }
 
 /**
@@ -154,6 +183,43 @@ function cmpTitle(a: MediaItem, b: MediaItem): number {
   return String(a.title ?? "").toLowerCase().localeCompare(String(b.title ?? "").toLowerCase());
 }
 
+/** Release year desc (newest first); unknown years last, then recent. */
+function cmpReleaseDesc(a: MediaItem, b: MediaItem): number {
+  const ya = Number(a.year) || 0;
+  const yb = Number(b.year) || 0;
+  if (ya !== yb) return yb - ya;
+  return cmpRecentDesc(a, b);
+}
+
+/** Recently played desc — sorts by UserData LastPlayedDate; never-played last. */
+function cmpRecentlyPlayedDesc(a: MediaItem, b: MediaItem): number {
+  const pa = a.played && a.last_played ? Date.parse(String(a.last_played)) : NaN;
+  const pb = b.played && b.last_played ? Date.parse(String(b.last_played)) : NaN;
+  const ha = Number.isFinite(pa);
+  const hb = Number.isFinite(pb);
+  if (ha !== hb) return ha ? -1 : 1; // played-with-date first
+  if (ha && hb) return pb - pa;
+  return cmpRecentDesc(a, b);
+}
+
+/** In-progress first, by resume fraction desc (highest % watched first). */
+function cmpProgressDesc(a: MediaItem, b: MediaItem): number {
+  const frac = (i: MediaItem) =>
+    i.played || !i.runtime || i.runtime <= 0 ? 0 : (Number(i.playback_position) || 0) / i.runtime;
+  const fa = frac(a);
+  const fb = frac(b);
+  if (fa !== fb) return fb - fa;
+  return cmpRecentDesc(a, b);
+}
+
+/** Runtime desc (longest first); unknown runtime last, then recent. */
+function cmpRuntimeDesc(a: MediaItem, b: MediaItem): number {
+  const ra = Number(a.runtime) || 0;
+  const rb = Number(b.runtime) || 0;
+  if (ra !== rb) return rb - ra;
+  return cmpRecentDesc(a, b);
+}
+
 function cmpUnwatched(a: MediaItem, b: MediaItem): number {
   if (Boolean(a.played) !== Boolean(b.played)) return a.played ? 1 : -1; // unwatched first
   return cmpRecentDesc(a, b);
@@ -162,6 +228,11 @@ function cmpUnwatched(a: MediaItem, b: MediaItem): number {
 const SORTERS: Record<LibrarySort, (a: MediaItem, b: MediaItem) => number> = {
   recent: cmpRecentDesc,
   title: cmpTitle,
+  "title-desc": (a, b) => cmpTitle(b, a),
+  release: cmpReleaseDesc,
+  "recently-played": cmpRecentlyPlayedDesc,
+  progress: cmpProgressDesc,
+  runtime: cmpRuntimeDesc,
   unwatched: cmpUnwatched,
 };
 

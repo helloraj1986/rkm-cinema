@@ -18,6 +18,7 @@ import {
   libraryGenres,
   libraryItemsByType,
   libraryKindLabel,
+  libraryViewFromParams,
   personHeadshotUrl,
   pickHomeHero,
   playbackMarker,
@@ -151,6 +152,15 @@ describe("libraryFilterFromParams / libraryFilterToParams (URL state §63)", () 
   });
 });
 
+describe("libraryViewFromParams (view mode §17)", () => {
+  it("compact when view=compact, grid otherwise", () => {
+    expect(libraryViewFromParams(new URLSearchParams("view=compact"))).toBe("compact");
+    expect(libraryViewFromParams(new URLSearchParams("view=grid"))).toBe("grid");
+    expect(libraryViewFromParams(new URLSearchParams("view=bogus"))).toBe("grid");
+    expect(libraryViewFromParams(new URLSearchParams())).toBe("grid");
+  });
+});
+
 describe("filterLibraryItems", () => {
   const mk = (over: Partial<MediaItem>): MediaItem => ({ ...base, item_id: over.item_id!, ...over });
   const older = mk({ item_id: "older", title: "Zeta Old", added: "2026-01-01T00:00:00.0000000Z", genres: ["Drama"] });
@@ -178,6 +188,42 @@ describe("filterLibraryItems", () => {
     const playedNew = mk({ item_id: "playednew", title: "Watched Recent", played: true, added: "2026-07-01T00:00:00.0000000Z" });
     expect(filterLibraryItems([...list, playedNew], { sort: "unwatched" }).map((i) => i.item_id)).toEqual([
       "newer", "older", "playednew", "nodate",
+    ]);
+  });
+  it("title-desc sorts Z–A", () => {
+    expect(filterLibraryItems(list, { sort: "title-desc" }).map((i) => i.item_id)).toEqual([
+      "older", "nodate", "newer",
+    ]);
+  });
+  it("release sort is newest year first, unknown years last", () => {
+    const y2024 = mk({ item_id: "y2024", title: "Newest", year: 2024, added: "2026-01-01T00:00:00Z" });
+    const y1999 = mk({ item_id: "y1999", title: "Oldest", year: 1999, added: "2026-01-01T00:00:00Z" });
+    const unknown = mk({ item_id: "unknown", title: "No Year", added: "2026-01-01T00:00:00Z" });
+    expect(filterLibraryItems([y1999, y2024, unknown], { sort: "release" }).map((i) => i.item_id)).toEqual([
+      "y2024", "y1999", "unknown",
+    ]);
+  });
+  it("recently-played sorts by LastPlayedDate desc, never-played last", () => {
+    const a = mk({ item_id: "a", title: "Played Old", played: true, last_played: "2026-01-01T00:00:00Z" });
+    const b = mk({ item_id: "b", title: "Played New", played: true, last_played: "2026-06-01T00:00:00Z" });
+    const c = mk({ item_id: "c", title: "Never", played: false });
+    expect(filterLibraryItems([a, c, b], { sort: "recently-played" }).map((i) => i.item_id)).toEqual(["b", "a", "c"]);
+  });
+  it("progress sort is highest resume fraction first; finished rows last", () => {
+    const half = mk({ item_id: "half", title: "Half", playback_position: 3000, runtime: 6000 });
+    const q = mk({ item_id: "q", title: "Quarter", playback_position: 1500, runtime: 6000 });
+    const done = mk({ item_id: "done", title: "Done", played: true, playback_position: 6000, runtime: 6000 });
+    const no = mk({ item_id: "no", title: "None" });
+    expect(filterLibraryItems([no, done, q, half], { sort: "progress" }).map((i) => i.item_id)).toEqual([
+      "half", "q", "no", "done",
+    ]);
+  });
+  it("runtime sort is longest first; unknown runtime last", () => {
+    const long = mk({ item_id: "long", title: "Long", runtime: 9000 });
+    const short = mk({ item_id: "short", title: "Short", runtime: 1800 });
+    const noRuntime = mk({ item_id: "noruntime", title: "No Runtime", runtime: 0, added: "2026-01-01T00:00:00Z" });
+    expect(filterLibraryItems([short, noRuntime, long], { sort: "runtime" }).map((i) => i.item_id)).toEqual([
+      "long", "short", "noruntime",
     ]);
   });
   it("tolerates empty input", () => {

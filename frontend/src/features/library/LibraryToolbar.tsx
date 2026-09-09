@@ -1,14 +1,16 @@
 import {
   LIBRARY_SORT_OPTIONS,
   type LibrarySort,
+  type LibraryViewMode,
 } from "./lib";
 import { Icon } from "../../components/ui/Icon";
 
 /**
  * Folder toolbar (roadmap item 4, NEW_UX §13–17): client-side search + genre
- * pill chips + sort for the Movies / TV Shows views. Presentational — state
- * lives in the folder view and everything runs over the shared library cache.
- * The count line is human copy ("6 movies"), never provider jargon.
+ * pill chips + sort + view-mode toggle for the Movies / TV Shows views.
+ * Presentational — state lives in the folder view (URL-backed) and everything
+ * runs over the shared library cache. The count line is human copy
+ * ("6 movies"), never provider jargon.
  */
 export function LibraryToolbar({
   label,
@@ -16,18 +18,22 @@ export function LibraryToolbar({
   query,
   genre,
   sort,
+  view,
   resultCount,
   totalCount,
   onChange,
+  onViewChange,
 }: {
   label: string;
   genres: string[];
   query: string;
   genre: string;
   sort: LibrarySort;
+  view: LibraryViewMode;
   resultCount: number;
   totalCount: number;
   onChange: (patch: { q?: string; genre?: string; sort?: LibrarySort }) => void;
+  onViewChange: (view: LibraryViewMode) => void;
 }) {
   const pillOn = "bg-accent text-black hover:bg-accent-hover";
   const pillOff =
@@ -65,6 +71,28 @@ export function LibraryToolbar({
             ))}
           </select>
         </label>
+
+        {/* View mode (§17): poster grid / compact list. */}
+        <div role="group" aria-label="View mode" className="flex items-center overflow-hidden rounded-[8px] border border-white/[.08] bg-surface-2">
+          <button
+            type="button"
+            onClick={() => onViewChange("grid")}
+            aria-pressed={view === "grid"}
+            title="Grid view"
+            className={`grid h-8 w-8 place-items-center transition ${view === "grid" ? "bg-white/[.1] text-white" : "text-zinc-500 hover:text-zinc-200"}`}
+          >
+            <Icon name="grid" size={15} />
+          </button>
+          <button
+            type="button"
+            onClick={() => onViewChange("compact")}
+            aria-pressed={view === "compact"}
+            title="Compact list"
+            className={`grid h-8 w-8 place-items-center transition ${view === "compact" ? "bg-white/[.1] text-white" : "text-zinc-500 hover:text-zinc-200"}`}
+          >
+            <Icon name="list" size={15} />
+          </button>
+        </div>
 
         <span className="ml-auto text-xs font-medium text-zinc-500" aria-live="polite">
           {filtered

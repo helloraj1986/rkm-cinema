@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import type { EpisodeShape } from "../../lib/api/client";
 import {
   episodeQueue, groupBySeason, nextEpisode, playLabel, startPosition,
@@ -10,6 +10,8 @@ import {
   usesHls, nextHlsMode, hlsEngineFor, hlsModeLabel, HLS_LADDER,
   hlsConfigFor, resolutionLabel, abrBadgeLabel, HLS_MAX_BUFFER_SEC,
   HLS_ABR_DEFAULT_ESTIMATE_BPS, shouldAutoHideChrome, CHROME_HIDE_MS,
+  warmGet, warmPut, warmDelete, warmClear, WARM_TTL_MS, WARM_MAX_ITEMS,
+  WARM_AHEAD_SEC, type WarmEntry,
 } from "./lib";
 
 const ep = (id: string, season: number, episode: number, played = false, position = 0): EpisodeShape => ({
@@ -257,6 +259,42 @@ describe("auto-hide chrome (player tail)", () => {
   it("threshold is a sane 2–4 s", () => {
     expect(CHROME_HIDE_MS).toBeGreaterThanOrEqual(2000);
     expect(CHROME_HIDE_MS).toBeLessThanOrEqual(4000);
+  });
+});
+
+describe("warm-start cache (player tail)", () => {
+  const entry = (at: number): WarmEntry => ({ info: Promise.resolve(null), at });
+  afterEach(() => warmClear());
+  it("stores and returns a warm entry", async () => {
+    warmPut("e2", entry(1000), 1000);
+    const got = warmGet("e2", 2000);
+    expect(got).not.toBeNull();
+    await expect(got!.info).resolves.toBeNull();
+  });
+  it("expires entries past the TTL on read", () => {
+    warmPut("e2", entry(1000), 1000);
+    expect(warmGet("e2", 1000 + WARM_TTL_MS)).not.toBeNull(); // boundary still live
+    expect(warmGet("e2", 1000 + WARM_TTL_MS + 1)).toBeNull();
+  });
+  it("warmPut replaces an existing entry (no duplicate promise)", () => {
+    const a = entry(1);
+    warmPut("x", a, 1);
+    warmPut("x", entry(2), 2);
+    expect(warmGet("x", 3)).not.toBe(a);
+  });
+  it("evicts the oldest entry once over the cap", () => {
+    for (let i = 1; i <= WARM_MAX_ITEMS; i++) warmPut(`id${i}`, entry(i * 1000), i * 1000);
+    warmPut("new", entry(9000), 9000);
+    expect(warmGet("id1", 10_000)).toBeNull(); // oldest evicted
+    expect(warmGet("new", 10_000)).not.toBeNull();
+  });
+  it("warmDelete removes an entry", () => {
+    warmPut("x", entry(1), 1);
+    warmDelete("x");
+    expect(warmGet("x", 2)).toBeNull();
+  });
+  it("warms 45 s before the end", () => {
+    expect(WARM_AHEAD_SEC).toBe(45);
   });
 });
 

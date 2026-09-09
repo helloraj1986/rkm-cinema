@@ -3,7 +3,7 @@
  * episode queue / season grouping / play-resume logic. Pure so they're
  * unit-testable without a DOM.
  */
-import type { EpisodeShape } from "../../lib/api/client";
+import type { EpisodeShape, PlaybackInfo } from "../../lib/api/client";
 import type { HlsConfig } from "hls.js";
 
 /** Ordered "Up Next" queue entry derived from an episode list. */
@@ -423,4 +423,66 @@ export function shouldAutoHideChrome(f: {
 }): boolean {
   if (!f.playing || f.switching || f.error || f.upNext || f.hoverChrome) return false;
   return f.idleMs >= CHROME_HIDE_MS;
+}
+
+// ------------------------------------------------------------------ warm-start
+/** One warm-cache slot: the in-flight (or resolved) playback-info fetch for an
+ *  item, plus an optional HLS master pre-warm. `at` is the stamp used for TTL +
+ *  LRU eviction. */
+export interface WarmEntry {
+  info: Promise<PlaybackInfo | null>;
+  at: number;
+}
+
+/** How long a warm entry is trusted before it is refetched. */
+export const WARM_TTL_MS = 10 * 60_000;
+/** Cap on warm entries (a season queue only needs a handful). */
+export const WARM_MAX_ITEMS = 8;
+/** Seconds before the end of an item at which the next queue entry warms. */
+export const WARM_AHEAD_SEC = 45;
+
+const WARM_STORE = new Map<string, WarmEntry>();
+
+function pruneWarm(now: number): void {
+  for (const [id, e] of WARM_STORE) {
+    if (now - e.at > WARM_TTL_MS) WARM_STORE.delete(id);
+  }
+}
+
+/** A live warm entry for *id*, or null (expired entries are dropped on read). */
+export function warmGet(id: string, now = Date.now()): WarmEntry | null {
+  const e = WARM_STORE.get(id);
+  if (!e) return null;
+  if (now - e.at > WARM_TTL_MS) {
+    WARM_STORE.delete(id);
+    return null;
+  }
+  return e;
+}
+
+/** Store/replace a warm entry, evicting the oldest when over the cap. */
+export function warmPut(id: string, entry: WarmEntry, now = Date.now()): void {
+  pruneWarm(now);
+  if (WARM_STORE.size >= WARM_MAX_ITEMS && !WARM_STORE.has(id)) {
+    let oldestId: string | null = null;
+    let oldestAt = Number.POSITIVE_INFINITY;
+    for (const [k, v] of WARM_STORE) {
+      if (v.at < oldestAt) {
+        oldestAt = v.at;
+        oldestId = k;
+      }
+    }
+    if (oldestId) WARM_STORE.delete(oldestId);
+  }
+  WARM_STORE.set(id, entry);
+}
+
+/** Drop a warm entry (after a Player consumes it). */
+export function warmDelete(id: string): void {
+  WARM_STORE.delete(id);
+}
+
+/** Test/teardown helper. */
+export function warmClear(): void {
+  WARM_STORE.clear();
 }

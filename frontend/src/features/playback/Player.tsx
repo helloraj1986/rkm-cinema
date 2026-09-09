@@ -6,7 +6,8 @@ import {
   nextEpisode, qualityFor, AUTOPLAY_DELAY_MS, QUALITY_OPTIONS, PLAYBACK_RATES,
   fmtTime, isFiniteDuration, clampSeek, pickStreamMode, hlsModeLabel,
   playMethodForMode, usesHls, hlsEngineFor, nextHlsMode, hlsConfigFor,
-  abrBadgeLabel, shouldAutoHideChrome, type AbrLevelFacts, type HlsEngine,
+  abrBadgeLabel, shouldAutoHideChrome, warmGet, warmPut, warmDelete,
+  WARM_AHEAD_SEC, type AbrLevelFacts, type HlsEngine,
   parseVtt, activeCueText, type VttCue, type QueueEntry,
   type StreamMode,
 } from "./lib";
@@ -18,6 +19,21 @@ export interface PlayTarget {
 
 const SEEK_STEP = 10; // seconds for ← / → keys
 const MPEGURL = "application/vnd.apple.mpegurl";
+
+/** Pre-warm Jellyfin's pipe for an item that will play next: when the default
+ *  route is HLS, fetch the master manifest once (no-store) so the transcode
+ *  pipe + proxy are hot when the Player actually mounts. Best-effort only. */
+function prefetchMasterFor(id: string, info: PlaybackInfo): void {
+  const mode = pickStreamMode({
+    quality: "Original",
+    container: info.container,
+    video: info.video ?? null,
+    activeAudioCodec: info.audio?.[0]?.codec ?? null,
+    forceNonDirect: false,
+  });
+  if (!usesHls(mode)) return;
+  void fetch(api.hlsMasterUrl(id, { mode }), { cache: "no-store" }).catch(() => {});
+}
 
 /**
  * In-app player with Plex-style transport (HLS/MSE plan):
@@ -66,6 +82,8 @@ export function Player({
   const engineTypeRef = useRef<HlsEngine | null>(null);
   const lastReportRef = useRef(0);
   const queueRef = useRef(queue);
+  const warmNextRef = useRef<(next: QueueEntry) => void>(() => {});
+  const totalRef = useRef(0);
   const autoTimerRef = useRef<number | null>(null);
   const autoTimeoutRef = useRef<number | null>(null);
   const onSwitchRef = useRef(onSwitch);
@@ -162,6 +180,7 @@ export function Player({
         : 0;
 
   const posNow = () => (videoRef.current ? videoRef.current.currentTime || 0 : 0);
+  totalRef.current = total;
   // Where the NEXT engine load should start: the live position once anything
   // has played, otherwise the mount resume point.
   const currentTarget = () => (hasStartedRef.current ? posNow() : resumeRef.current);
@@ -296,8 +315,13 @@ export function Player({
     engineStartRef.current = resumeRef.current;
     hasStartedRef.current = false;
     pendingSeekRef.current = resumeRef.current > 0 ? resumeRef.current : null;
-    api
-      .playbackInfo(item.item_id)
+    // Warm-start consume: when this item was prefetched as the "next", resolve
+    // from the warm promise (no cold fetch, no spinner). Delete so a replay
+    // refetches fresh even inside the TTL window.
+    const warm = warmGet(item.item_id);
+    const infoP = warm ? warm.info : api.playbackInfo(item.item_id);
+    warmDelete(item.item_id);
+    infoP
       .then((d) => {
         if (alive) setInfo(d || null);
       })
@@ -431,6 +455,20 @@ export function Player({
     hoverChromeRef.current = false;
     lastActRef.current = Date.now(); // a fresh idle period starts on exit
   };
+
+  // --- Warm-start: prefetch the next item so Play-next is instant -----------
+  const warmNext = (next: QueueEntry) => {
+    if (warmGet(next.id)) return; // already warming / warm
+    const info = api
+      .playbackInfo(next.id)
+      .then((d) => {
+        if (d) prefetchMasterFor(next.id, d); // hot transcode pipe for HLS routes
+        return d;
+      })
+      .catch(() => null);
+    warmPut(next.id, { info, at: Date.now() });
+  };
+  warmNextRef.current = warmNext;
 
   // --- Custom seek bar (div + pointer capture). A native <input type=range>
   // proved unreliable here: mouse events can miss its thin hit area and a
@@ -584,6 +622,14 @@ export function Player({
     };
     const onTime = () => {
       paint(posNow());
+      // Warm the next queue entry as this item nears its end so Play-next and
+      // auto-advance skip the cold start (deduped by the warm cache).
+      const dur = isFiniteDuration(v.duration) ? v.duration : totalRef.current;
+      const rem = dur > 0 ? dur - (v.currentTime || 0) : Number.POSITIVE_INFINITY;
+      if (rem <= WARM_AHEAD_SEC) {
+        const next = nextEpisode(queueRef.current, item.item_id);
+        if (next) warmNextRef.current?.(next);
+      }
       const now = Date.now();
       if (now - lastReportRef.current < 5000) return;
       lastReportRef.current = now;
@@ -594,7 +640,10 @@ export function Player({
       report("stopped");
       const next = nextEpisode(queueRef.current, item.item_id);
       setUpNext(next);
-      if (next) startAuto(next);
+      if (next) {
+        warmNextRef.current?.(next); // instant Play-next once the card shows
+        startAuto(next);
+      }
     };
 
     v.addEventListener("loadedmetadata", onMeta);

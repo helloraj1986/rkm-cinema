@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useLibraryItems } from "./api";
+import { useLibraryItems, useScanLibrary } from "./api";
 import {
   filterLibraryItems,
   libraryGenres,
@@ -11,16 +11,18 @@ import {
 import { MediaCard } from "./MediaCard";
 import { LibraryToolbar } from "./LibraryToolbar";
 import { useLibraryOutlet } from "./LibraryLayout";
+import { toast } from "../watchlist/toast";
+import { Icon } from "../../components/ui/Icon";
 
 /**
- * /library/movies + /library/shows — the Plex-style sidebar "folders". Each is
- * a type-filtered poster grid over the SHARED useLibraryItems cache (client-side
- * split via libraryItemsByType — no backend/contract change, no refetch).
- * Toolbar search/genre/sort (roadmap item 4) also runs client-side over that
- * same cache, so filtering is instant.
+ * /library/movies + /library/shows — the premium library folders (NEW_UX spec
+ * §11–§19): a clean page header with human counts, a search + genre-pill +
+ * sort toolbar, and a responsive auto-fill poster grid. Everything runs
+ * client-side over the shared useLibraryItems cache — no extra fetches.
  */
 export function LibraryFolderView({ kind }: { kind: LibraryKind }) {
   const items = useLibraryItems();
+  const scan = useScanLibrary();
   const { quickPlay, openItem, toggleWatched } = useLibraryOutlet();
 
   const [query, setQuery] = useState("");
@@ -28,19 +30,40 @@ export function LibraryFolderView({ kind }: { kind: LibraryKind }) {
   const [sort, setSort] = useState<LibrarySort>("recent");
 
   const label = libraryKindLabel(kind);
+  const noun = label === "TV Shows" ? "show" : "movie";
   const kindItems = libraryItemsByType(items.data?.items ?? [], kind);
   const genres = libraryGenres(kindItems);
   const list = filterLibraryItems(kindItems, { q: query, genre, sort });
   const filtered = query.trim() !== "" || genre !== "";
   const provider = items.data?.provider ?? null;
 
+  const nounLabel = (n: number) =>
+    `${n} ${noun}${n === 1 ? "" : "s"}`;
+
+  const runScan = () => {
+    scan.mutate(undefined, {
+      onSuccess: () => toast("Library scan complete", "New titles will appear as they are discovered."),
+      onError: () => toast("Scan failed", "Could not reach the scan job — check the backend.", "err"),
+    });
+  };
+
+  const clear = () => {
+    setQuery("");
+    setGenre("");
+  };
+
   return (
-    <div className="flex flex-col gap-6">
-      <div>
-        <h2 className="text-lg font-semibold text-white">{label}</h2>
-        <p className="text-xs text-zinc-500">
-          {provider ? `${provider} · ${kindItems.length} title${kindItems.length === 1 ? "" : "s"}` : "No library backend connected."}
-        </p>
+    <div className="flex flex-col gap-6 pb-8">
+      {/* Page header (spec §12): title + human count, never provider jargon. */}
+      <div className="pt-2">
+        <h1 className="text-[32px] font-bold leading-none tracking-[-0.02em] text-zinc-50">
+          {label}
+        </h1>
+        {provider ? (
+          <p className="mt-2 text-[13px] text-zinc-500">{nounLabel(kindItems.length)}</p>
+        ) : (
+          <p className="mt-2 text-[13px] text-zinc-500">No media server connected</p>
+        )}
       </div>
 
       {provider && kindItems.length > 0 && (
@@ -61,53 +84,88 @@ export function LibraryFolderView({ kind }: { kind: LibraryKind }) {
       )}
 
       {items.isLoading ? (
-        <p className="text-sm text-zinc-400">Loading library…</p>
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-x-4 gap-y-7" aria-hidden="true">
+          {Array.from({ length: 12 }).map((_, i) => (
+            <div key={i} className="skeleton aspect-[2/3] rounded-[10px]" />
+          ))}
+        </div>
+      ) : !provider ? (
+        <div className="flex flex-col items-center gap-4 rounded-2xl border border-dashed border-white/[.08] py-16 text-center">
+          <div className="grid h-12 w-12 place-items-center rounded-xl bg-surface-2 text-zinc-500">
+            <Icon name={kind === "movies" ? "film" : "tv"} size={22} />
+          </div>
+          <div className="max-w-sm">
+            <h2 className="font-semibold text-zinc-200">No media server connected</h2>
+            <p className="mt-1 text-sm leading-relaxed text-zinc-500">
+              Connect Jellyfin, Plex or Emby in the repo .env, then redeploy the stack.
+            </p>
+          </div>
+        </div>
       ) : kindItems.length === 0 ? (
-        <p className="text-sm text-zinc-500">No {label.toLowerCase()} in the library yet.</p>
-      ) : list.length === 0 ? (
-        <div className="flex flex-col items-start gap-3">
-          <p className="text-sm text-zinc-400">
-            No {label.toLowerCase()} match{query.trim() ? ` “${query.trim()}”` : ""}
-            {genre ? ` in ${genre}` : ""}.
-          </p>
+        <div className="flex flex-col items-center gap-4 rounded-2xl border border-dashed border-white/[.08] py-16 text-center">
+          <div className="grid h-12 w-12 place-items-center rounded-xl bg-surface-2 text-zinc-500">
+            <Icon name={kind === "movies" ? "film" : "tv"} size={22} />
+          </div>
+          <div className="max-w-sm">
+            <h2 className="font-semibold text-zinc-200">
+              {label === "TV Shows" ? "No shows yet" : "No movies yet"}
+            </h2>
+            <p className="mt-1 text-sm leading-relaxed text-zinc-500">
+              Your media folders don't have any {label.toLowerCase()} yet — scan your library after adding some.
+            </p>
+          </div>
           <button
             type="button"
-            onClick={() => {
-              setQuery("");
-              setGenre("");
-            }}
-            className="rounded-lg border border-zinc-700 px-3 py-1.5 text-xs font-medium text-zinc-300 hover:bg-zinc-800"
+            onClick={runScan}
+            disabled={scan.isPending}
+            className="inline-flex items-center gap-2 rounded-[10px] bg-accent px-4 py-2 text-sm font-bold text-black transition hover:bg-accent-hover disabled:opacity-60"
+          >
+            <Icon name="scan" size={15} />
+            {scan.isPending ? "Scanning…" : "Scan Library"}
+          </button>
+        </div>
+      ) : list.length === 0 ? (
+        <div className="flex flex-col items-start gap-3 rounded-2xl border border-dashed border-white/[.08] px-8 py-14">
+          <h2 className="font-semibold text-zinc-200">
+            No {label.toLowerCase()} match{query.trim() ? ` “${query.trim()}”` : ""}
+            {genre ? ` in ${genre}` : ""}
+          </h2>
+          <p className="text-sm text-zinc-500">Try another title or genre.</p>
+          <button
+            type="button"
+            onClick={clear}
+            className="mt-1 rounded-[10px] border border-white/10 bg-white/[.06] px-4 py-2 text-sm font-semibold text-zinc-200 transition hover:bg-white/[.1]"
           >
             Clear filters
           </button>
         </div>
       ) : (
-        <div className="flex flex-wrap gap-3">
-          {list.map((item) => (
-            <MediaCard
-              key={item.item_id}
-              item={item}
-              onQuickPlay={quickPlay}
-              onOpenDetail={openItem}
-              onToggleWatched={toggleWatched}
-            />
-          ))}
-        </div>
-      )}
-      {filtered && list.length > 0 && (
-        <p className="text-xs text-zinc-600">
-          Showing {list.length} of {kindItems.length} —{" "}
-          <button
-            type="button"
-            onClick={() => {
-              setQuery("");
-              setGenre("");
-            }}
-            className="text-zinc-400 underline decoration-zinc-600 hover:text-zinc-200"
-          >
-            clear filters
-          </button>
-        </p>
+        <>
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(158px,1fr))] gap-x-4 gap-y-7">
+            {list.map((item) => (
+              <MediaCard
+                key={item.item_id}
+                item={item}
+                fluid
+                onQuickPlay={quickPlay}
+                onOpenDetail={openItem}
+                onToggleWatched={toggleWatched}
+              />
+            ))}
+          </div>
+          {filtered && (
+            <p className="text-xs text-zinc-500">
+              Showing {nounLabel(list.length)} of {nounLabel(kindItems.length)} —{" "}
+              <button
+                type="button"
+                onClick={clear}
+                className="text-zinc-400 underline decoration-zinc-600 transition hover:text-accent"
+              >
+                clear filters
+              </button>
+            </p>
+          )}
+        </>
       )}
     </div>
   );

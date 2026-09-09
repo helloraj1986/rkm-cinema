@@ -144,6 +144,48 @@
         }
       }
     },
+    "/api/search/global": {
+      "get": {
+        "summary": "Search Global",
+        "description": "Library-first global search: owned rows + hints + deduped TMDB discovery.",
+        "operationId": "search_global_api_search_global_get",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "default": "",
+              "title": "Q"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchGlobalResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/library": {
       "get": {
         "summary": "Get Library",
@@ -1582,6 +1624,273 @@
         ],
         "title": "DownloadResponse"
       },
+      "GlobalDiscoveryRow": {
+        "properties": {
+          "tmdb_id": {
+            "type": "integer",
+            "title": "Tmdb Id"
+          },
+          "media_type": {
+            "type": "string",
+            "title": "Media Type"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Year"
+          },
+          "poster": {
+            "type": "string",
+            "title": "Poster",
+            "default": ""
+          },
+          "overview": {
+            "type": "string",
+            "title": "Overview",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "tmdb_id",
+          "media_type",
+          "title"
+        ],
+        "title": "GlobalDiscoveryRow",
+        "description": "TMDB discovery row \u2014 ONLY when no strong owned match exists."
+      },
+      "GlobalEpisodeFacts": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "season": {
+            "type": "integer",
+            "title": "Season"
+          },
+          "episode": {
+            "type": "integer",
+            "title": "Episode"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "position": {
+            "type": "integer",
+            "title": "Position",
+            "default": 0
+          },
+          "remaining": {
+            "type": "integer",
+            "title": "Remaining",
+            "default": 0
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind",
+            "default": "play"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "season",
+          "episode",
+          "name"
+        ],
+        "title": "GlobalEpisodeFacts",
+        "description": "Target for a series \"Continue / Play\" primary action (GLOBAL_SEARCH_PLAN)."
+      },
+      "GlobalHint": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Year"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "kind"
+        ],
+        "title": "GlobalHint",
+        "description": "Intent hint (Person / Genre / BoxSet collection) from provider search."
+      },
+      "GlobalOwnedRow": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Year"
+          },
+          "genres": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Genres"
+          },
+          "rating": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rating"
+          },
+          "played": {
+            "type": "boolean",
+            "title": "Played",
+            "default": false
+          },
+          "playback_position": {
+            "type": "integer",
+            "title": "Playback Position",
+            "default": 0
+          },
+          "runtime": {
+            "type": "integer",
+            "title": "Runtime",
+            "default": 0
+          },
+          "play_count": {
+            "type": "integer",
+            "title": "Play Count",
+            "default": 0
+          },
+          "series_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Series Id"
+          },
+          "series_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Series Name"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Season"
+          },
+          "episode": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Episode"
+          },
+          "state": {
+            "type": "string",
+            "title": "State",
+            "default": "watch"
+          },
+          "remaining": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remaining"
+          },
+          "next_episode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GlobalEpisodeFacts"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "title"
+        ],
+        "title": "GlobalOwnedRow",
+        "description": "One owned playable result (movie/show/episode) with playback facts + state."
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -2074,6 +2383,82 @@
         ],
         "title": "RequestMediaResponse",
         "description": "Outcome of POST /api/media/{media_id}/request (\u00a715 vocab)."
+      },
+      "SearchGlobalResponse": {
+        "properties": {
+          "query": {
+            "type": "string",
+            "title": "Query"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "tmdb_key": {
+            "type": "boolean",
+            "title": "Tmdb Key",
+            "default": false
+          },
+          "strong_match": {
+            "type": "boolean",
+            "title": "Strong Match",
+            "default": false
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/GlobalOwnedRow"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "people": {
+            "items": {
+              "$ref": "#/components/schemas/GlobalHint"
+            },
+            "type": "array",
+            "title": "People"
+          },
+          "person_titles": {
+            "items": {
+              "$ref": "#/components/schemas/GlobalOwnedRow"
+            },
+            "type": "array",
+            "title": "Person Titles"
+          },
+          "genres": {
+            "items": {
+              "$ref": "#/components/schemas/GlobalHint"
+            },
+            "type": "array",
+            "title": "Genres"
+          },
+          "collections": {
+            "items": {
+              "$ref": "#/components/schemas/GlobalHint"
+            },
+            "type": "array",
+            "title": "Collections"
+          },
+          "discovery": {
+            "items": {
+              "$ref": "#/components/schemas/GlobalDiscoveryRow"
+            },
+            "type": "array",
+            "title": "Discovery"
+          }
+        },
+        "type": "object",
+        "required": [
+          "query"
+        ],
+        "title": "SearchGlobalResponse"
       },
       "SearchResponse": {
         "properties": {

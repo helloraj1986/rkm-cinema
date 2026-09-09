@@ -6,6 +6,7 @@ from config.settings import get_config
 from core.logging import setup_logging
 
 from api.routes import health, config, status, download, search, library, quality, plex_thumb, suggest
+from api.routes import search_global as search_global_routes
 from api.routes import jellyfin_poster as jellyfin_poster_routes
 from api.routes import jellyfin_stream as jellyfin_stream_routes
 from api.routes import jellyfin_hls as jellyfin_hls_routes
@@ -45,6 +46,7 @@ def create_app() -> FastAPI:
     app.include_router(status.router, prefix="/api")
     app.include_router(download.router, prefix="/api")
     app.include_router(search.router, prefix="/api")
+    app.include_router(search_global_routes.router, prefix="/api")
     app.include_router(library.router, prefix="/api")
     app.include_router(quality.router, prefix="/api")
     app.include_router(plex_thumb.router, prefix="/api")

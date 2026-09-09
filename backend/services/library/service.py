@@ -126,6 +126,21 @@ class LibraryProvider(ABC):
         """Recently *finished* titles (most-recently-played first). Default ``[]``."""
         return []
 
+    def search_items(self, q: str, limit: int = 12) -> dict:
+        """Global-search owned media (GLOBAL_SEARCH_PLAN Phase 1).
+
+        Returns ``{"items": [...], "people": [...], "genres": [...]}`` where
+        ``items`` are playable owned rows (movie/show/episode with playback
+        facts), ``people``/``genres`` are intent hints. Default ``{}`` (not
+        supported by this provider — routes degrade to TMDB discovery only).
+        """
+        return {}
+
+    def items_by_person(self, person_id: str, limit: int = 6) -> list[dict]:
+        """Owned titles featuring *person_id* (actor/director drill-down).
+        Default ``[]`` (not supported)."""
+        return []
+
     def mark_state(self, item_id: str, watched: bool) -> Optional[dict]:
         """Mutate watched/unwatched state; return ``{"played": bool, "play_count": int}``
         or ``None`` when the backend doesn't support marking."""
@@ -439,6 +454,34 @@ class LibraryService:
             if result:
                 return result
         return {"played": False, "play_count": 0}
+
+    def search(self, q: str, limit: int = 12) -> dict:
+        """Global-search owned media: ``{provider, items, people, genres}``.
+
+        First provider that returns a real payload wins (mirrors ``all_items``);
+        providers without native search (ABC default ``{}``) are skipped.
+        """
+        for p in self._providers:
+            try:
+                found = p.search_items(q, limit=limit) or {}
+            except Exception as e:
+                logger.warning("search_items failed for %s: %s", p.name, e)
+                continue
+            if found.get("items") or found.get("people") or found.get("genres"):
+                return {"provider": p.name, **found}
+        return {"provider": None, "items": [], "people": [], "genres": []}
+
+    def items_by_person(self, person_id: str, limit: int = 6) -> dict:
+        """Titles featuring a person: ``{provider, items}`` (first provider)."""
+        for p in self._providers:
+            try:
+                items = p.items_by_person(person_id, limit=limit) or []
+            except Exception as e:
+                logger.warning("items_by_person failed for %s: %s", p.name, e)
+                continue
+            if items:
+                return {"provider": p.name, "items": items}
+        return {"provider": None, "items": []}
 
     def invalidate(self) -> None:
         """Drop every provider's library caches (force a fresh scan next read).

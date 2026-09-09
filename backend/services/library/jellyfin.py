@@ -315,6 +315,113 @@ class JellyfinLibraryProvider(LibraryProvider):
         out.sort(key=lambda e: (e["season"], e["episode"]))
         return out
 
+    def search_items(self, q: str, limit: int = 12) -> dict:
+        """Owned media + intent hints for the global search (GLOBAL_SEARCH_PLAN).
+
+        Live-verified on Jellyfin 10.11 (2026-09-10): ``/Users/{uid}/Items`` with
+        ``searchTerm`` matches Movie/Series/Episode by NAME (episodes match by
+        episode name and carry their own per-episode ``UserData``), while People
+        and Genres only resolve through ``/Search/Hints`` typed hints. So this
+        runs ONE items query for playable rows and ONE hints query for
+        Person/Genre/BoxSet rows. Provider ids ride every row for TMDB dedupe.
+        """
+        from urllib.parse import quote
+
+        if not self._configured():
+            return {}
+        user_id = self._user_id()
+        if not user_id:
+            return {}
+        fields = ("PrimaryImageAspectRatio,ProductionYear,ProviderIds,UserData,Genres,"
+                  "DateCreated,SeriesId,SeriesName,IndexNumber,ParentIndexNumber,RunTimeTicks")
+        items_url = (f"{self.config.JELLYFIN_URL}/Users/{user_id}/Items"
+                     f"?api_key={self.config.JELLYFIN_API_KEY}&searchTerm={quote(q)}&Recursive=true"
+                     f"&IncludeItemTypes=Movie,Series,Episode&Fields={fields}&Limit={limit}")
+        items: list[dict] = []
+        try:
+            for it in self._fetch_raw(items_url):
+                row = self._search_item_row(it)
+                if row:
+                    items.append(row)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("Jellyfin search_items(%r) failed: %s", q, e)
+
+        hints_url = (f"{self.config.JELLYFIN_URL}/Search/Hints"
+                     f"?api_key={self.config.JELLYFIN_API_KEY}&UserId={user_id}"
+                     f"&searchTerm={quote(q)}&Limit={limit}")
+        people: list[dict] = []
+        genres: list[dict] = []
+        collections: list[dict] = []
+        try:
+            import json
+            with urllib.request.urlopen(hints_url, timeout=10) as r:
+                hints = (json.load(r) or {}).get("SearchHints") or []
+            for h in hints[:limit]:
+                t = str(h.get("Type") or "")
+                if t == "Person":
+                    people.append({"id": str(h.get("Id", "")), "name": str(h.get("Name", "")),
+                                   "role": str(h.get("PersonType") or "")})
+                elif t == "Genre":
+                    genres.append({"id": str(h.get("Id", "")), "name": str(h.get("Name", ""))})
+                elif t == "BoxSet":
+                    collections.append({"id": str(h.get("Id", "")), "name": str(h.get("Name", "")),
+                                        "year": h.get("Year")})
+        except Exception as e:  # noqa: BLE001
+            logger.warning("Jellyfin search hints(%r) failed: %s", q, e)
+        return {"items": items, "people": people, "genres": genres, "collections": collections}
+
+    def items_by_person(self, person_id: str, limit: int = 6) -> list[dict]:
+        """Owned Movie/Series rows featuring a Person (actor/director drill-down)."""
+        if not self._configured() or not person_id:
+            return []
+        user_id = self._user_id()
+        if not user_id:
+            return []
+        fields = ("PrimaryImageAspectRatio,ProductionYear,ProviderIds,UserData,Genres,"
+                  "DateCreated,SeriesId,SeriesName,IndexNumber,ParentIndexNumber,RunTimeTicks")
+        url = (f"{self.config.JELLYFIN_URL}/Users/{user_id}/Items"
+               f"?api_key={self.config.JELLYFIN_API_KEY}&Recursive=true"
+               f"&IncludeItemTypes=Movie,Series&PersonIds={person_id}"
+               f"&Fields={fields}&Limit={limit}")
+        out: list[dict] = []
+        try:
+            for it in self._fetch_raw(url):
+                row = self._search_item_row(it)
+                if row:
+                    out.append(row)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("Jellyfin items_by_person(%s) failed: %s", person_id, e)
+        return out
+
+    def _search_item_row(self, it: dict) -> Optional[dict]:
+        """One normalized global-search row from a raw Jellyfin item dict."""
+        item_id = str(it.get("Id", ""))
+        typ = str(it.get("Type") or "")
+        if not item_id or typ not in ("Movie", "Series", "Episode"):
+            return None
+        parsed = self._parse_item(it, "Series" if typ == "Series" else "Movie")
+        ud = it.get("UserData") or {}
+        kind = "show" if typ == "Series" else ("episode" if typ == "Episode" else "movie")
+        row = {
+            "id": item_id,
+            "kind": kind,
+            "title": str(it.get("Name") or ""),
+            "year": it.get("ProductionYear") or None,
+            "genres": [str(g) for g in (it.get("Genres") or [])],
+            "rating": self._float(it.get("CommunityRating")),
+            "provider_ids": dict(parsed.provider_ids or {}),
+            "played": bool(ud.get("Played")),
+            "playback_position": self._ticks_to_sec(ud.get("PlaybackPositionTicks")),
+            "runtime": self._ticks_to_sec(it.get("RunTimeTicks")),
+            "play_count": int(ud.get("PlayCount") or 0),
+        }
+        if typ == "Episode":
+            row["series_id"] = str(it.get("SeriesId") or "")
+            row["series_name"] = str(it.get("SeriesName") or "")
+            row["season"] = self._int(it.get("ParentIndexNumber"))
+            row["episode"] = self._int(it.get("IndexNumber"))
+        return row
+
     def refresh_library(self) -> bool:
         """Trigger a full Jellyfin library scan (picks up newly-added media).
 

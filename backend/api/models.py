@@ -95,6 +95,79 @@ class SearchResponse(BaseModel):
     servicesDown: bool
 
 
+# --------------------------------------------------------------------------- global search
+class GlobalEpisodeFacts(BaseModel):
+    """Target for a series "Continue / Play" primary action (GLOBAL_SEARCH_PLAN)."""
+
+    id: str
+    season: int
+    episode: int
+    name: str
+    position: int = 0
+    remaining: int = 0
+    #: "play" (first unwatched) | "continue" (in-progress episode).
+    kind: str = "play"
+
+
+class GlobalOwnedRow(BaseModel):
+    """One owned playable result (movie/show/episode) with playback facts + state."""
+
+    id: str
+    kind: str  # movie | show | episode
+    title: str
+    year: Optional[int] = None
+    genres: List[str] = Field(default_factory=list)
+    rating: Optional[float] = None
+    played: bool = False
+    playback_position: int = 0
+    runtime: int = 0
+    play_count: int = 0
+    series_id: Optional[str] = None
+    series_name: Optional[str] = None
+    season: Optional[int] = None
+    episode: Optional[int] = None
+    #: Primary action: watch | resume | watch_again | next_episode.
+    state: str = "watch"
+    remaining: Optional[int] = None
+    next_episode: Optional[GlobalEpisodeFacts] = None
+
+
+class GlobalHint(BaseModel):
+    """Intent hint (Person / Genre / BoxSet collection) from provider search."""
+
+    id: str
+    name: str
+    kind: str  # person | genre | collection
+    year: Optional[int] = None
+
+
+class GlobalDiscoveryRow(BaseModel):
+    """TMDB discovery row — ONLY when no strong owned match exists."""
+
+    tmdb_id: int
+    media_type: str  # movie | tv
+    title: str
+    year: Optional[int] = None
+    poster: str = ""
+    overview: str = ""
+
+
+class SearchGlobalResponse(BaseModel):
+    query: str
+    provider: Optional[str] = None
+    #: Whether TMDB discovery is configured (False → discovery is empty by design).
+    tmdb_key: bool = False
+    #: A strong owned match exists → clients should NOT show the DISCOVER section.
+    strong_match: bool = False
+    items: List[GlobalOwnedRow] = Field(default_factory=list)
+    people: List[GlobalHint] = Field(default_factory=list)
+    #: Owned titles featuring the top Person hint (actor/director drill-down).
+    person_titles: List[GlobalOwnedRow] = Field(default_factory=list)
+    genres: List[GlobalHint] = Field(default_factory=list)
+    collections: List[GlobalHint] = Field(default_factory=list)
+    discovery: List[GlobalDiscoveryRow] = Field(default_factory=list)
+
+
 class LibraryResponse(BaseModel):
     provider: Optional[str]
     available: bool

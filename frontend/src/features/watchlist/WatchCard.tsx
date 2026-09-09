@@ -8,7 +8,6 @@ import {
 } from "./lib";
 import { artTone } from "../library/lib";
 import { Icon } from "../../components/ui/Icon";
-import { PopupMenu } from "../../components/ui/PopupMenu";
 
 /**
  * State-aware card for watchlist entries (legacy `cardMarkup` parity, NEW_UX
@@ -191,56 +190,6 @@ export function WatchCard({
           >
             ▶ Trailer
           </button>
-          {/* ⋯ context menu (§46) — hover AND keyboard reachable. */}
-          <PopupMenu
-            label={`More actions for ${entry.title}`}
-            triggerClassName="flex h-8 w-full items-center justify-center gap-1.5 rounded-[8px] bg-black/40 text-[11px] font-semibold text-zinc-300 ring-1 ring-white/10 backdrop-blur-sm transition hover:bg-black/70 hover:text-white"
-            items={[
-              {
-                key: "details",
-                label: "View details",
-                icon: "external",
-                onSelect: () => onOpen(entry),
-              },
-              {
-                key: "trailer",
-                label: "Watch Trailer",
-                icon: "play",
-                onSelect: () => onTrailer(entry),
-              },
-              ...(action.type === "download"
-                ? [
-                    {
-                      key: "download",
-                      label: "Download",
-                      icon: "download" as const,
-                      onSelect: () => onDownload(entry),
-                    },
-                  ]
-                : action.type === "play-rkm"
-                  ? [
-                      {
-                        key: "play",
-                        label: action.label,
-                        icon: "play" as const,
-                        onSelect: () => onPlayInRkm(entry, action.itemId),
-                      },
-                    ]
-                  : action.type === "watch-link"
-                    ? [
-                        {
-                          key: "watch",
-                          label: action.label,
-                          icon: "external" as const,
-                          onSelect: () => onWatchLink(entry, action.url),
-                        },
-                      ]
-                    : []),
-            ]}
-          >
-            <Icon name="more" size={13} />
-            More
-          </PopupMenu>
         </div>
       </div>
 

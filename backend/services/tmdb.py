@@ -346,6 +346,37 @@ class TMDBService:
             })
         return out
 
+    def search_multi(self, query: str) -> list[Dict[str, Any]]:
+        """Live multi-type search (movies + TV) through the shared HTTP client.
+
+        Lightweight and uncached — /api/search should stay fresh. Returns raw
+        TMDB result rows filtered to movie/tv (never people/episodes), in TMDB
+        order. Raises ServiceUnavailableError on transport failure so the route
+        can degrade explicitly instead of silently swallowing the reason.
+
+        The old /api/search hand-rolled a headerless ``urllib`` call here;
+        TMDB's edge rejected it from the deployed container (no RKM User-Agent
+        / Accept, no retry) while every other TMDB path via this client worked
+        — suggest returned live rows from the same container, search returned
+        [] and ``except Exception: pass`` hid the 4xx.
+        """
+        if not query or not query.strip():
+            return []
+        try:
+            data = self._request("search/multi", {
+                "query": query.strip(),
+                "include_adult": "false",
+                "language": "en-US",
+                "page": 1,
+            })
+        except Exception as e:
+            logger.error("TMDB multi-search failed for %r: %s", query, e)
+            raise
+        return [
+            r for r in (data.get("results") or [])
+            if (r.get("media_type") or "") in ("movie", "tv")
+        ]
+
     def search_movie(self, title: str, year: Optional[int] = None) -> Optional[Dict[str, Any]]:
         """Search for a movie by title and year (cached)."""
         if not title:

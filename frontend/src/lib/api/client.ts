@@ -78,6 +78,40 @@ export interface LibraryItemsShape {
   items: MediaItem[];
 }
 
+// ------------------------------------------------- configurable media libraries
+// MEDIA_LIBRARIES_PLAN: /api/library/folders drives the sidebar's Libraries
+// group; each library is either a resolved MEDIA_LIBRARY_N_* entry (name from
+// .env — the internal key is never shown) or, with no config, one of the media
+// server's own folders.
+export interface LibraryFolderShape {
+  id: string;
+  name: string;
+  collection_type: string;
+  path: string;
+}
+
+export interface ConfiguredLibraryShape {
+  name: string;
+  path: string;
+  folder_id: string | null;
+  collection_type: string;
+  ok: boolean;
+  warning: string;
+}
+
+export interface LibrariesShape {
+  provider: string | null;
+  folders: LibraryFolderShape[];
+  libraries: ConfiguredLibraryShape[];
+  warnings: string[];
+}
+
+export interface FolderItemsShape {
+  provider: string | null;
+  folder_id: string;
+  items: MediaItem[];
+}
+
 /**
  * GET /api/library — the legacy library read (PLEX_VIEWS_PLAN Home view).
  * `recent` = recently-added titles (limit 8), the same `_item_public` shape
@@ -572,6 +606,11 @@ export const api = {
   getConfig: () => getJson<ConfigShape>("/config"),
   getHealth: () => getJson<HealthShape>("/health"),
   getLibraryItems: () => getJson<LibraryItemsShape>("/library/items"),
+  /** Configured libraries + server folders (sidebar Libraries group). */
+  getLibraryFolders: () => getJson<LibrariesShape>("/library/folders"),
+  /** One library folder's Movie+Series rows (folder-scoped poster wall). */
+  getFolderItems: (folderId: string) =>
+    getJson<FolderItemsShape>(`/library/folders/${encodeURIComponent(folderId)}/items`),
   /** GET /api/library — legacy read: counts + recently-added (Home view row). */
   getLibraryRecent: () => getJson<LibraryRecentShape>("/library"),
   getContinueWatching: () => getJson<LibraryItemsShape>("/library/continue-watching"),

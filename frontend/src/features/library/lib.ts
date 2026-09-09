@@ -5,6 +5,7 @@
  * without a DOM (vitest node env).
  */
 import type {
+  ConfiguredLibraryShape,
   DetailPlay,
   MediaItem,
   SimilarItem,
@@ -69,6 +70,33 @@ export function libraryItemsByType(items: MediaItem[], kind: LibraryKind): Media
 /** Folder heading label ("Movies" / "TV Shows") for the routed folder views. */
 export function libraryKindLabel(kind: LibraryKind): string {
   return kind === "movies" ? "Movies" : "TV Shows";
+}
+
+// ---------------------------------------------- configurable media libraries
+// MEDIA_LIBRARIES_PLAN Phase 4: folder-scoped view model over the
+// /api/library/folders + /folders/{id}/items shapes. Pure + shared by the
+// sidebar (Libraries group) and the folder page.
+
+/** Sidebar icon for a library by its server collection type. */
+export function libraryIconFor(collectionType: string): "film" | "tv" | "folder" {
+  const t = String(collectionType || "").toLowerCase();
+  if (t === "movies") return "film";
+  if (t === "tvshows" || t === "tv") return "tv";
+  return "folder";
+}
+
+/** Find the sidebar library whose folder_id matches (for the folder page). */
+export function libraryByFolderId(
+  libraries: ConfiguredLibraryShape[],
+  folderId: string | null | undefined,
+): ConfiguredLibraryShape | null {
+  if (!folderId) return null;
+  return (libraries ?? []).find((l) => l.folder_id === folderId) ?? null;
+}
+
+/** Human count line for a folder page ("6 titles" / "1 title"). */
+export function folderCountLabel(n: number): string {
+  return `${n} title${n === 1 ? "" : "s"}`;
 }
 
 // ---------------------------------------------- Library & discovery (roadmap item 4)

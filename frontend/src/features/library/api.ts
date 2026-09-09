@@ -5,6 +5,25 @@ export function useLibraryItems() {
   return useQuery({ queryKey: ["library", "items"], queryFn: api.getLibraryItems });
 }
 
+/** Configured libraries + server folders — sidebar Libraries group. */
+export function useLibraryFolders() {
+  return useQuery({
+    queryKey: ["library", "folders"],
+    queryFn: api.getLibraryFolders,
+    staleTime: 60_000,
+  });
+}
+
+/** One library folder's Movie+Series rows (folder-scoped poster wall). */
+export function useFolderItems(folderId: string | null) {
+  return useQuery({
+    queryKey: ["library", "folder-items", folderId],
+    queryFn: () => api.getFolderItems(folderId as string),
+    enabled: Boolean(folderId),
+    staleTime: 30_000,
+  });
+}
+
 /** Recently-added titles (GET /api/library) — the Home view's added row. */
 export function useLibraryRecent() {
   return useQuery({ queryKey: ["library", "recent"], queryFn: api.getLibraryRecent });

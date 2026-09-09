@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import type { DetailPlay, MediaItem } from "../../lib/api/client";
+import type { ConfiguredLibraryShape, DetailPlay, MediaItem } from "../../lib/api/client";
 import {
   addedTime,
   artTone,
@@ -10,12 +10,15 @@ import {
   filterLibraryItems,
   filterLibraryRows,
   fmtRuntime,
+  folderCountLabel,
   isContinueWatching,
   isEpisodeItem,
   isSeries,
+  libraryByFolderId,
   libraryFilterFromParams,
   libraryFilterToParams,
   libraryGenres,
+  libraryIconFor,
   libraryItemsByType,
   libraryKindLabel,
   libraryViewFromParams,
@@ -459,5 +462,37 @@ describe("home hero + artwork tone (NEW_UX)", () => {
   it("ignores finished rows when picking the hero", () => {
     const done = { ...movie("d", 0), played: true };
     expect(pickHomeHero([done], [], [])).toBeNull();
+  });
+});
+
+// ---------------------------------------------- configurable media libraries
+// MEDIA_LIBRARIES_PLAN Phase 4: folder-scoped view-model helpers.
+describe("configurable media libraries", () => {
+  const libs: ConfiguredLibraryShape[] = [
+    { name: "Movies", path: "/data/media/_movie", folder_id: "f-movies",
+      collection_type: "movies", ok: true, warning: "" },
+    { name: "My Anime", path: "F:/Media/Anime", folder_id: null,
+      collection_type: "", ok: false, warning: "does not match" },
+  ];
+
+  it("maps collection type to a sidebar icon", () => {
+    expect(libraryIconFor("movies")).toBe("film");
+    expect(libraryIconFor("tvshows")).toBe("tv");
+    expect(libraryIconFor("tv")).toBe("tv");
+    expect(libraryIconFor("mixed")).toBe("folder");
+    expect(libraryIconFor("")).toBe("folder");
+  });
+
+  it("finds a library by its resolved folder id", () => {
+    expect(libraryByFolderId(libs, "f-movies")?.name).toBe("Movies");
+    expect(libraryByFolderId(libs, "nope")).toBeNull();
+    expect(libraryByFolderId(libs, null)).toBeNull();
+    expect(libraryByFolderId([], "f-movies")).toBeNull();
+  });
+
+  it("formats the folder count label", () => {
+    expect(folderCountLabel(0)).toBe("0 titles");
+    expect(folderCountLabel(1)).toBe("1 title");
+    expect(folderCountLabel(6)).toBe("6 titles");
   });
 });

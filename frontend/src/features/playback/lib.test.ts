@@ -1,7 +1,8 @@
 import { describe, it, expect, afterEach, beforeEach } from "vitest";
 import type { EpisodeShape } from "../../lib/api/client";
 import {
-  episodeQueue, groupBySeason, nextEpisode, playLabel, startPosition,
+  episodeQueue, groupBySeason, nextEpisode, prevEpisode, queueEntryCode,
+  playLabel, startPosition,
   nextPlayableEpisode, episodeCode,
   PLAYBACK_RATES, QUALITY_OPTIONS, qualityFor, AUTOPLAY_DELAY_MS,
   audioCodecNeedsTranscode, fmtTime, barTotal, isFiniteDuration, clampSeek,
@@ -44,6 +45,28 @@ describe("nextEpisode", () => {
     const queue = episodeQueue([ep("e1", 1, 1)]);
     expect(nextEpisode(queue, "e1")).toBeNull();
     expect(nextEpisode(queue, "nope")).toBeNull();
+  });
+  it("queue entries carry S/E facts and code cleanly", () => {
+    const queue = episodeQueue([ep("e1", 1, 4), ep("e2", 1, 5)]);
+    expect(queue[0]).toMatchObject({ id: "e1", season: 1, episode: 4 });
+    expect(queueEntryCode(queue[0])).toBe("S1E4");
+    expect(queueEntryCode(queue[1])).toBe("S1E5");
+    expect(queueEntryCode(null)).toBe("");
+    expect(queueEntryCode({ id: "m", name: "Movie", position: 0 })).toBe(""); // non-episode
+  });
+});
+
+describe("prevEpisode (player tail)", () => {
+  it("returns the previous entry in the queue", () => {
+    const queue = episodeQueue([ep("e1", 1, 1), ep("e2", 1, 2), ep("e3", 1, 3)]);
+    expect(prevEpisode(queue, "e2")).toMatchObject({ id: "e1" });
+    expect(prevEpisode(queue, "e3")).toMatchObject({ id: "e2" });
+  });
+  it("null at the start or for an unknown id", () => {
+    const queue = episodeQueue([ep("e1", 1, 1)]);
+    expect(prevEpisode(queue, "e1")).toBeNull();
+    expect(prevEpisode(queue, "nope")).toBeNull();
+    expect(prevEpisode([], "x")).toBeNull();
   });
 });
 

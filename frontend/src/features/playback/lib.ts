@@ -14,6 +14,10 @@ export interface QueueEntry {
   /** Episode runtime in seconds (API metadata) — lets the player show a
    *  correct total even before the browser resolves stream duration. */
   runtime?: number;
+  /** Series position facts (when the entry is an episode) — the player shows
+   *  "S1E4" context and prev/next episode controls from them. */
+  season?: number;
+  episode?: number;
 }
 
 /** Episode poster thumbnail proxy URL (keeps the token server-side). */
@@ -358,11 +362,13 @@ export function groupBySeason(episodes: EpisodeShape[]): { season: number; episo
     .map(([season, list]) => ({ season, episodes: list }));
 }
 
-/** Build the ordered queue (id/name/position/runtime) used for "Up Next". */
+/** Build the ordered queue (id/name/position/runtime/S-E) used for "Up Next"
+ *  and prev/next episode navigation. */
 export function episodeQueue(episodes: EpisodeShape[]): QueueEntry[] {
   return episodes.map((e) => ({
     id: e.id, name: e.name, position: e.playback_position || 0,
     runtime: e.runtime || 0,
+    season: e.season, episode: e.episode,
   }));
 }
 
@@ -370,6 +376,19 @@ export function episodeQueue(episodes: EpisodeShape[]): QueueEntry[] {
 export function nextEpisode(queue: QueueEntry[], curId: string): QueueEntry | null {
   const i = queue.findIndex((x) => x.id === curId);
   return i >= 0 && i + 1 < queue.length ? queue[i + 1] : null;
+}
+
+/** The episode before *curId*, or ``null`` at the start of the queue. */
+export function prevEpisode(queue: QueueEntry[], curId: string): QueueEntry | null {
+  const i = queue.findIndex((x) => x.id === curId);
+  return i > 0 ? queue[i - 1] : null;
+}
+
+/** "S1E4" code for a queue entry ("" when it isn't an episode). */
+export function queueEntryCode(entry: QueueEntry | null | undefined): string {
+  if (!entry) return "";
+  if (typeof entry.season !== "number" || typeof entry.episode !== "number") return "";
+  return `S${entry.season}E${entry.episode}`;
 }
 
 /** Legacy play/resume/replay label + start position for an episode row. */

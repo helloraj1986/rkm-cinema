@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RKM Cinema — Premium Media Library</title>
+<style>
+:root{
+  --bg:#08090B; --surface:#101216; --secondary:#15171C; --elevated:#1B1E24;
+  --card:#17191E; --border:rgba(255,255,255,.08); --text:#F5F5F7;
+  --secondary-text:#A7AAB2; --muted:#70747E; --accent:#FFC400;
+  --accent-hover:#FFD43B; --success:#35D07F; --danger:#FF5B5B;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",sans-serif}
+body{min-height:100vh}
+button,input{font:inherit}
+button{cursor:pointer}
+.app{display:flex;min-height:100vh}
+.sidebar{width:240px;background:rgba(16,18,22,.96);border-right:1px solid var(--border);padding:22px 14px;position:fixed;inset:0 auto 0 0;z-index:20}
+.logo{font-size:21px;font-weight:800;padding:8px 12px 26px;letter-spacing:-.5px}
+.logo span{color:var(--accent)}
+.nav-section{margin:15px 0 7px;padding:0 12px;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:1px}
+.nav button{width:100%;background:none;border:0;color:var(--secondary-text);padding:11px 12px;border-radius:9px;text-align:left;display:flex;gap:12px;align-items:center;margin:2px 0;position:relative}
+.nav button:hover,.nav button.active{background:var(--secondary);color:var(--text)}
+.nav button.active:before{content:"";width:3px;height:18px;background:var(--accent);border-radius:3px;position:absolute;left:0}
+.icon{width:20px;text-align:center;font-size:16px}
+.main{margin-left:240px;width:calc(100% - 240px)}
+.topbar{height:64px;display:flex;align-items:center;gap:16px;padding:0 30px;border-bottom:1px solid var(--border);background:rgba(8,9,11,.82);backdrop-filter:blur(16px);position:sticky;top:0;z-index:20}
+.search{flex:1;max-width:460px;position:relative}
+.search input{width:100%;background:var(--secondary);border:1px solid transparent;color:var(--text);padding:10px 42px;border-radius:9px;outline:none}
+.search input:focus{border-color:rgba(255,196,0,.35)}
+.search .glass{position:absolute;left:14px;top:9px;color:var(--muted)}
+.kbd{position:absolute;right:10px;top:7px;color:var(--muted);font-size:11px;border:1px solid var(--border);border-radius:5px;padding:3px 6px}
+.top-actions{margin-left:auto;display:flex;align-items:center;gap:10px}
+.avatar{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:var(--elevated);border:1px solid var(--border);font-weight:700}
+.content{padding:0 30px 50px}
+.hero{min-height:455px;margin:0 -30px 34px;padding:70px 52px 45px;display:flex;align-items:end;position:relative;overflow:hidden;background:
+linear-gradient(90deg,rgba(8,9,11,1) 0%,rgba(8,9,11,.82) 34%,rgba(8,9,11,.22) 72%,rgba(8,9,11,.95) 100%),
+linear-gradient(0deg,#08090B 0%,transparent 35%),
+radial-gradient(circle at 72% 28%,#57411d 0,#241c13 18%,#101114 45%,#08090B 72%);
+}
+.hero-art{position:absolute;inset:0;z-index:-1;background:
+radial-gradient(ellipse at 68% 43%,rgba(255,196,0,.22),transparent 23%),
+radial-gradient(ellipse at 78% 40%,rgba(120,140,180,.18),transparent 25%);
+filter:saturate(.85)}
+.hero-copy{max-width:620px}
+.eyebrow{color:var(--accent);font-size:12px;font-weight:700;letter-spacing:1.4px;text-transform:uppercase}
+.hero h1{font-size:54px;line-height:1;margin:12px 0 15px;letter-spacing:-2px}
+.meta{display:flex;gap:12px;align-items:center;color:var(--secondary-text);font-size:13px;flex-wrap:wrap}
+.dot{width:4px;height:4px;background:var(--muted);border-radius:50%}
+.hero p{color:#c4c6cc;line-height:1.6;max-width:570px;margin:17px 0 22px}
+.actions{display:flex;gap:10px}
+.btn{border:0;border-radius:8px;padding:11px 17px;font-weight:700}
+.btn.primary{background:var(--accent);color:#0b0b0b}
+.btn.primary:hover{background:var(--accent-hover)}
+.btn.secondary{background:rgba(255,255,255,.09);color:var(--text);border:1px solid var(--border)}
+.btn.secondary:hover{background:rgba(255,255,255,.14)}
+.section{margin:0 0 34px}
+.section-head{display:flex;justify-content:space-between;align-items:end;margin-bottom:15px}
+.section h2{font-size:21px;margin:0;letter-spacing:-.4px}
+.section-head a{font-size:12px;color:var(--secondary-text);text-decoration:none}
+.section-head a:hover{color:var(--accent)}
+.rail{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(285px,1fr);gap:15px;overflow-x:auto;padding-bottom:5px}
+.rail::-webkit-scrollbar{height:5px}.rail::-webkit-scrollbar-thumb{background:#2a2d34;border-radius:8px}
+.continue-card{background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;min-width:0}
+.landscape{aspect-ratio:16/9;position:relative;overflow:hidden;background:linear-gradient(135deg,#242831,#101216)}
+.poster-art{position:absolute;inset:0;background:radial-gradient(circle at 72% 30%,rgba(255,196,0,.4),transparent 18%),linear-gradient(130deg,#1c2330,#453621 50%,#0d1014)}
+.poster-art.alt{background:radial-gradient(circle at 30% 35%,#49616e,transparent 23%),linear-gradient(130deg,#171b21,#34353b 50%,#090a0c)}
+.poster-art.blue{background:radial-gradient(circle at 65% 38%,#38617d,transparent 23%),linear-gradient(130deg,#10141b,#263f50 50%,#08090b)}
+.poster-art.red{background:radial-gradient(circle at 65% 40%,#8c4137,transparent 20%),linear-gradient(130deg,#201417,#55302b 50%,#09090b)}
+.card-title-overlay{position:absolute;left:15px;bottom:14px;font-size:17px;font-weight:800;text-shadow:0 2px 15px #000}
+.play{position:absolute;right:13px;bottom:12px;width:36px;height:36px;border-radius:50%;background:var(--accent);color:#111;border:0;font-size:14px}
+.progress{height:3px;background:#30333a}.progress i{display:block;height:100%;background:var(--accent)}
+.card-info{padding:11px 13px 13px}
+.card-info strong{font-size:13px}.card-info small{display:block;color:var(--muted);margin-top:5px;font-size:11px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(155px,1fr));gap:17px}
+.movie{min-width:0}
+.movie-poster{aspect-ratio:2/3;border-radius:8px;overflow:hidden;position:relative;background:linear-gradient(145deg,#272a31,#0e1014);border:1px solid var(--border);transition:.2s transform,.2s box-shadow}
+.movie:hover .movie-poster{transform:translateY(-4px);box-shadow:0 12px 30px rgba(0,0,0,.35)}
+.movie-poster .label{position:absolute;top:8px;left:8px;background:rgba(0,0,0,.7);backdrop-filter:blur(8px);font-size:9px;padding:4px 6px;border-radius:4px;color:#ddd}
+.movie-poster .hover{position:absolute;inset:auto 0 0;padding:32px 10px 10px;background:linear-gradient(transparent,rgba(0,0,0,.9));opacity:0;transition:.2s}
+.movie:hover .hover{opacity:1}
+.movie-name{font-size:12px;font-weight:700;margin-top:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.movie-meta{font-size:10px;color:var(--muted);margin-top:4px}
+.poster-1{background:radial-gradient(circle at 50% 25%,#d5a84b,transparent 20%),linear-gradient(160deg,#263341,#745a2d 50%,#0b0d11)}
+.poster-2{background:radial-gradient(circle at 30% 32%,#668ca4,transparent 18%),linear-gradient(150deg,#151d27,#3a5666 52%,#090b0e)}
+.poster-3{background:radial-gradient(circle at 65% 30%,#9d4d43,transparent 20%),linear-gradient(145deg,#241418,#66362f 55%,#090a0c)}
+.poster-4{background:radial-gradient(circle at 42% 35%,#7c718f,transparent 20%),linear-gradient(145deg,#181621,#484053 55%,#090a0c)}
+.poster-5{background:radial-gradient(circle at 55% 28%,#8f9b68,transparent 18%),linear-gradient(145deg,#172018,#4e593c 55%,#080b09)}
+.poster-6{background:radial-gradient(circle at 50% 30%,#c18b63,transparent 18%),linear-gradient(145deg,#2a1a17,#704634 55%,#090a0c)}
+.filters{display:flex;gap:8px;flex-wrap:wrap;margin:17px 0}
+.pill{border:1px solid var(--border);background:var(--secondary);color:var(--secondary-text);border-radius:20px;padding:7px 12px;font-size:11px}
+.pill.active{background:rgba(255,196,0,.12);border-color:rgba(255,196,0,.35);color:var(--accent)}
+.page-header{padding:32px 0 8px}.page-header h1{font-size:36px;margin:0 0 7px;letter-spacing:-1px}.page-header p{margin:0;color:var(--secondary-text);font-size:13px}
+.tabs{display:flex;gap:5px;border-bottom:1px solid var(--border);margin-bottom:25px}.tab{border:0;background:none;color:var(--muted);padding:12px 14px;border-bottom:2px solid transparent}.tab.active{color:var(--text);border-color:var(--accent)}
+.episode-list{background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden}
+.episode{display:flex;gap:16px;padding:14px;border-bottom:1px solid var(--border);align-items:center}.episode:last-child{border-bottom:0}
+.ep-thumb{width:150px;aspect-ratio:16/9;border-radius:6px;background:linear-gradient(135deg,#303640,#15171b);flex:none}
+.ep-copy{flex:1}.ep-copy strong{font-size:13px}.ep-copy p{font-size:11px;color:var(--muted);line-height:1.5;margin:6px 0}
+.hidden{display:none!important}
+.toast{position:fixed;right:22px;bottom:22px;background:var(--elevated);border:1px solid var(--border);padding:12px 15px;border-radius:9px;box-shadow:0 15px 40px #0008;z-index:400;display:none;font-size:12px}
+@media(max-width:900px){
+ .sidebar{width:72px}.logo{font-size:0;text-align:center;padding-left:0;padding-right:0}.logo:after{content:"R";font-size:22px;color:var(--accent)}
+ .nav-section{display:none}.nav button{justify-content:center}.nav button span:last-child{display:none}
+ .main{margin-left:72px;width:calc(100% - 72px)}.topbar{padding:0 18px}.content{padding:0 18px 40px}
+ .hero{margin-left:-18px;margin-right:-18px;padding:55px 28px 38px}.hero h1{font-size:42px}
+}
+@media(max-width:620px){
+ .topbar{height:58px}.search{max-width:none}.top-actions .hide-mobile{display:none}
+ .hero{min-height:430px}.hero h1{font-size:36px}.hero p{font-size:12px}
+ .grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+ .rail{grid-auto-columns:82vw}.page-header h1{font-size:29px}
+ .episode{align-items:flex-start}.ep-thumb{width:110px}.episode .btn{display:none}
+}
+</style>
+</head>
+<body>
+<div class="app">
+<aside class="sidebar">
+  <div class="logo">RKM <span>CINEMA</span></div>
+  <div class="nav">
+    <div class="nav-section">Browse</div>
+    <button class="active" onclick="showPage('home',this)"><span class="icon">⌂</span><span>Home</span></button>
+    <button onclick="showPage('movies',this)"><span class="icon">▣</span><span>Movies</span></button>
+    <button onclick="showPage('shows',this)"><span class="icon">▤</span><span>TV Shows</span></button>
+    <button onclick="showPage('watchlist',this)"><span class="icon">＋</span><span>Watchlist</span></button>
+    <div class="nav-section">Library</div>
+    <button onclick="toast('Discover is ready for your library')"><span class="icon">✦</span><span>Discover</span></button>
+    <button onclick="toast('Library scan started')"><span class="icon">↻</span><span>Scan Library</span></button>
+  </div>
+</aside>
+
+<main class="main">
+<header class="topbar">
+  <div class="search"><span class="glass">⌕</span><input id="globalSearch" placeholder="Search your library..." oninput="filterCards()"><span class="kbd">⌘ K</span></div>
+  <div class="top-actions"><button class="btn secondary hide-mobile" onclick="toast('No new activity')">Activity</button><div class="avatar">R</div></div>
+</header>
+
+<div class="content">
+<section id="home" class="page">
+  <div class="hero">
+    <div class="hero-art"></div>
+    <div class="hero-copy">
+      <div class="eyebrow">Continue Watching</div>
+      <h1>Interstellar</h1>
+      <div class="meta"><span>2014</span><span class="dot"></span><span>2h 49m</span><span class="dot"></span><span>Sci-Fi</span><span class="dot"></span><span>4K HDR</span></div>
+      <p>Humanity's future depends on a journey beyond our galaxy. Continue your cinematic journey exactly where you left off.</p>
+      <div class="actions"><button class="btn primary" onclick="toast('▶ Resume playback')">▶ Resume</button><button class="btn secondary" onclick="toast('+ Added to Watchlist')">＋ Watchlist</button></div>
+    </div>
+  </div>
+
+  <section class="section">
+    <div class="section-head"><h2>Continue Watching</h2><a href="#" onclick="return false">View all</a></div>
+    <div class="rail">
+      <div class="continue-card"><div class="landscape"><div class="poster-art"></div><div class="card-title-overlay">Interstellar</div><button class="play" onclick="toast('▶ Playing Interstellar')">▶</button></div><div class="progress"><i style="width:68%"></i></div><div class="card-info"><strong>1h 54m remaining</strong><small>68% watched · Resume</small></div></div>
+      <div class="continue-card"><div class="landscape"><div class="poster-art alt"></div><div class="card-title-overlay">The Last of Us</div><button class="play" onclick="toast('▶ Playing The Last of Us')">▶</button></div><div class="progress"><i style="width:42%"></i></div><div class="card-info"><strong>S1 · E4 · 31m remaining</strong><small>42% watched · Continue episode</small></div></div>
+      <div class="continue-card"><div class="landscape"><div class="poster-art blue"></div><div class="card-title-overlay">Dune: Part Two</div><button class="play" onclick="toast('▶ Playing Dune: Part Two')">▶</button></div><div class="progress"><i style="width:27%"></i></div><div class="card-info"><strong>2h 02m remaining</strong><small>27% watched · Resume</small></div></div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="section-head"><h2>Recently Added</h2><a href="#" onclick="showPage('movies');return false">See library</a></div>
+    <div class="grid">
+      <div class="movie" data-title="Oppenheimer"><div class="movie-poster poster-1"><span class="label">4K HDR</span><div class="hover"><button class="btn primary" onclick="toast('▶ Playing Oppenheimer')">▶ Play</button></div></div><div class="movie-name">Oppenheimer</div><div class="movie-meta">2023 · Drama</div></div>
+      <div class="movie" data-title="Blade Runner 2049"><div class="movie-poster poster-2"><span class="label">4K</span><div class="hover"><button class="btn primary" onclick="toast('▶ Playing Blade Runner 2049')">▶ Play</button></div></div><div class="movie-name">Blade Runner 2049</div><div class="movie-meta">2017 · Sci-Fi</div></div>
+      <div class="movie" data-title="The Batman"><div class="movie-poster poster-3"><span class="label">NEW</span><div class="hover"><button class="btn primary" onclick="toast('▶ Playing The Batman')">▶ Play</button></div></div><div class="movie-name">The Batman</div><div class="movie-meta">2022 · Action</div></div>
+      <div class="movie" data-title="Poor Things"><div class="movie-poster poster-4"><div class="hover"><button class="btn primary" onclick="toast('▶ Playing Poor Things')">▶ Play</button></div></div><div class="movie-name">Poor Things</div><div class="movie-meta">2023 · Comedy</div></div>
+      <div class="movie" data-title="The Creator"><div class="movie-poster poster-5"><span class="label">4K HDR</span><div class="hover"><button class="btn primary" onclick="toast('▶ Playing The Creator')">▶ Play</button></div></div><div class="movie-name">The Creator</div><div class="movie-meta">2023 · Sci-Fi</div></div>
+      <div class="movie" data-title="Killers of the Flower Moon"><div class="movie-poster poster-6"><div class="hover"><button class="btn primary" onclick="toast('▶ Playing Killers of the Flower Moon')">▶ Play</button></div></div><div class="movie-name">Killers of the Flower Moon</div><div class="movie-meta">2023 · Crime</div></div>
+    </div>
+  </section>
+</section>
+
+<section id="movies" class="page hidden">
+  <div class="page-header"><h1>Movies</h1><p>Your personal cinematic library.</p></div>
+  <div class="filters"><button class="pill active">All</button><button class="pill">Unwatched</button><button class="pill">Watched</button><button class="pill">4K</button><button class="pill">HDR</button><button class="pill">Action</button><button class="pill">Sci-Fi</button><button class="pill">Drama</button></div>
+  <div class="tabs"><button class="tab active">Grid</button><button class="tab">Compact</button><button class="tab">Recently Added</button><button class="tab">A–Z</button></div>
+  <div class="grid">
+    <div class="movie" data-title="Oppenheimer"><div class="movie-poster poster-1"><span class="label">4K HDR</span><div class="hover"><button class="btn primary" onclick="toast('▶ Playing Oppenheimer')">▶ Play</button></div></div><div class="movie-name">Oppenheimer</div><div class="movie-meta">2023 · 3h · Drama</div></div>
+    <div class="movie" data-title="Blade Runner 2049"><div class="movie-poster poster-2"><span class="label">4K</span><div class="hover"><button class="btn primary" onclick="toast('▶ Playing Blade Runner 2049')">▶ Play</button></div></div><div class="movie-name">Blade Runner 2049</div><div class="movie-meta">2017 · 2h 44m · Sci-Fi</div></div>
+    <div class="movie" data-title="The Batman"><div class="movie-poster poster-3"><div class="hover"><button class="btn primary" onclick="toast('▶ Playing The Batman')">▶ Play</button></div></div><div class="movie-name">The Batman</div><div class="movie-meta">2022 · 2h 56m · Action</div></div>
+    <div class="movie" data-title="Poor Things"><div class="movie-poster poster-4"><div class="hover"><button class="btn primary" onclick="toast('▶ Playing Poor Things')">▶ Play</button></div></div><div class="movie-name">Poor Things</div><div class="movie-meta">2023 · 2h 21m · Comedy</div></div>
+    <div class="movie" data-title="The Creator"><div class="movie-poster poster-5"><span class="label">4K HDR</span><div class="hover"><button class="btn primary" onclick="toast('▶ Playing The Creator')">▶ Play</button></div></div><div class="movie-name">The Creator</div><div class="movie-meta">2023 · 2h 13m · Sci-Fi</div></div>
+    <div class="movie" data-title="Killers of the Flower Moon"><div class="movie-poster poster-6"><div class="hover"><button class="btn primary" onclick="toast('▶ Playing Killers of the Flower Moon')">▶ Play</button></div></div><div class="movie-name">Killers of the Flower Moon</div><div class="movie-meta">2023 · 3h 26m · Crime</div></div>
+  </div>
+</section>
+
+<section id="shows" class="page hidden">
+  <div class="page-header"><h1>TV Shows</h1><p>Continue seasons and discover your next episode.</p></div>
+  <div class="grid">
+    <div class="movie" data-title="The Last of Us"><div class="movie-poster poster-2"><span class="label">S1 · 4K</span></div><div class="movie-name">The Last of Us</div><div class="movie-meta">1 season · 9 episodes</div></div>
+    <div class="movie" data-title="Severance"><div class="movie-poster poster-4"><span class="label">S2</span></div><div class="movie-name">Severance</div><div class="movie-meta">2 seasons · 19 episodes</div></div>
+    <div class="movie" data-title="Fallout"><div class="movie-poster poster-5"><span class="label">4K HDR</span></div><div class="movie-name">Fallout</div><div class="movie-meta">1 season · 8 episodes</div></div>
+    <div class="movie" data-title="Shogun"><div class="movie-poster poster-6"></div><div class="movie-name">Shōgun</div><div class="movie-meta">1 season · 10 episodes</div></div>
+  </div>
+  <div class="section" style="margin-top:34px">
+    <div class="section-head"><h2>Next Episode</h2></div>
+    <div class="episode-list">
+      <div class="episode"><div class="ep-thumb"></div><div class="ep-copy"><strong>The Last of Us — S01E05</strong><p>After reaching a new settlement, Joel and Ellie face an unexpected threat.</p><small class="movie-meta">42% watched · 31m remaining</small></div><button class="btn primary" onclick="toast('▶ Playing S01E05')">▶ Play</button></div>
+      <div class="episode"><div class="ep-thumb"></div><div class="ep-copy"><strong>Severance — S02E03</strong><p>The team discovers another layer of the severed floor.</p><small class="movie-meta">Not started · 48m</small></div><button class="btn primary" onclick="toast('▶ Playing S02E03')">▶ Play</button></div>
+    </div>
+  </div>
+</section>
+
+<section id="watchlist" class="page hidden">
+  <div class="page-header"><h1>Watchlist</h1><p>Films and shows you want to watch next.</p></div>
+  <div class="grid">
+    <div class="movie"><div class="movie-poster poster-3"></div><div class="movie-name">The Batman</div><div class="movie-meta">Action · 2022</div></div>
+    <div class="movie"><div class="movie-poster poster-4"></div><div class="movie-name">Poor Things</div><div class="movie-meta">Comedy · 2023</div></div>
+  </div>
+</section>
+</div>
+</main>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+function showPage(id,btn){
+  document.querySelectorAll('.page').forEach(p=>p.classList.add('hidden'));
+  document.getElementById(id).classList.remove('hidden');
+  document.querySelectorAll('.nav button').forEach(b=>b.classList.remove('active'));
+  if(btn) btn.classList.add('active');
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+function toast(msg){
+  const el=document.getElementById('toast');el.textContent=msg;el.style.display='block';
+  clearTimeout(window.t);window.t=setTimeout(()=>el.style.display='none',2200);
+}
+function filterCards(){
+  const q=document.getElementById('globalSearch').value.toLowerCase().trim();
+  document.querySelectorAll('.movie').forEach(c=>{
+    c.style.display=(!q || (c.dataset.title||'').toLowerCase().includes(q))?'':'none';
+  });
+}
+document.addEventListener('keydown',e=>{
+  if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){e.preventDefault();document.getElementById('globalSearch').focus()}
+  if(e.key==='/'){if(document.activeElement.tagName!=='INPUT'){e.preventDefault();document.getElementById('globalSearch').focus()}}
+});
+</script>
+</body>
+</html>

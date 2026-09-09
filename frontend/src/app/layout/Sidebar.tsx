@@ -1,64 +1,132 @@
 import { NavLink } from "react-router-dom";
+import { Icon, type IconName } from "../../components/ui/Icon";
 
-const NAV: { to: string; label: string; end?: boolean }[] = [
-  { to: "/settings", label: "Settings", end: true },
+/**
+ * Premium sidebar (design spec §5–6): brand lockup, grouped navigation,
+ * selected-pill active state with the tiny yellow indicator, and a CSS-driven
+ * collapse — full 240px on desktop (≥xl), icon rail on tablet (md–xl), hidden
+ * below md where the MobileNav bottom bar takes over.
+ */
+type NavItem = { to: string; label: string; icon: IconName; end?: boolean };
+
+const GROUPS: { title: string; items: NavItem[] }[] = [
+  {
+    title: "Browse",
+    items: [
+      { to: "/library/home", label: "Home", icon: "home", end: true },
+      { to: "/library/movies", label: "Movies", icon: "film" },
+      { to: "/library/shows", label: "TV Shows", icon: "tv" },
+    ],
+  },
+  {
+    title: "Collections",
+    items: [
+      { to: "/watchlist", label: "Watchlist", icon: "heart" },
+      { to: "/discover", label: "Discover", icon: "compass" },
+    ],
+  },
+  {
+    title: "Tools",
+    items: [
+      { to: "/search", label: "Search", icon: "search" },
+      { to: "/suggest", label: "Suggest", icon: "sparkles" },
+    ],
+  },
 ];
 
-/** Plex-style library group — the sidebar "folders" (PLEX_VIEWS_PLAN Phase 0). */
-const LIBRARY: { to: string; label: string; end?: boolean }[] = [
-  { to: "/library/home", label: "Home", end: true },
-  { to: "/library/movies", label: "Movies" },
-  { to: "/library/shows", label: "TV Shows" },
-];
-
-const REST: { to: string; label: string }[] = [
-  { to: "/discover", label: "Discover" },
-  { to: "/watchlist", label: "Watchlist" },
-  { to: "/search", label: "Search" },
-  { to: "/suggest", label: "Suggest" },
-];
-
-function linkCls(isActive: boolean): string {
-  return `rounded-md px-3 py-1.5 text-sm transition ${
-    isActive ? "bg-zinc-800 text-white" : "text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-200"
-  }`;
+function BrandLockup() {
+  return (
+    <div
+      title="RKM Cinema"
+      className="flex items-center gap-3 pb-6 pt-2 md:justify-center md:px-0 xl:justify-start xl:px-3"
+    >
+      <div className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] bg-gradient-to-br from-surface-2 to-surface-3 text-accent ring-1 ring-white/10">
+        <Icon name="play" size={15} filled />
+      </div>
+      <div className="hidden min-w-0 leading-none xl:block">
+        <div className="truncate text-[15px] font-extrabold tracking-tight text-zinc-100">RKM</div>
+        <div className="text-[9.5px] font-bold uppercase tracking-[0.22em] text-accent">Cinema</div>
+      </div>
+    </div>
+  );
 }
 
-function FolderHeading({ children }: { children: string }) {
+function GroupHeading({ children }: { children: string }) {
   return (
-    <div className="px-3 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-widest text-zinc-600">
+    <div className="hidden px-3 pb-1.5 pt-5 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500 xl:block">
       {children}
     </div>
   );
 }
 
+function linkCls(isActive: boolean): string {
+  const state = isActive
+    ? "bg-white/[.08] text-zinc-50 ring-1 ring-white/[.04] hover:bg-white/[.09] hover:text-white"
+    : "text-zinc-400 hover:bg-white/[.06] hover:text-zinc-100";
+  return `relative flex items-center gap-3 rounded-[10px] py-2.5 text-[13.5px] font-medium transition-colors duration-150 md:justify-center md:px-0 xl:justify-start xl:px-3 ${state}`;
+}
+
+function NavIndicator({ active }: { active: boolean }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={`absolute left-0 hidden h-[18px] w-[3px] rounded-r-full bg-accent transition-opacity xl:block ${
+        active ? "opacity-100" : "opacity-0"
+      }`}
+    />
+  );
+}
+
 export function Sidebar() {
   return (
-    <aside className="flex w-52 shrink-0 flex-col border-r border-zinc-800 p-4">
-      <div className="mb-4 text-lg font-semibold tracking-tight text-white">RKM Cinema</div>
-      <nav className="flex flex-col gap-0.5">
-        {NAV.map((item) => (
-          <NavLink key={item.to} to={item.to} end={item.end} className={({ isActive }) => linkCls(isActive)}>
-            {item.label}
-          </NavLink>
-        ))}
+    <aside className="sticky top-0 hidden h-dvh w-[76px] shrink-0 flex-col self-start border-r border-white/[.06] bg-[#0B0C0F] py-5 md:flex xl:w-60">
+      <BrandLockup />
 
-        <FolderHeading>Library</FolderHeading>
-        {LIBRARY.map((item) => (
-          <NavLink key={item.to} to={item.to} end={item.end} className={({ isActive }) => linkCls(isActive)}>
-            {item.label}
-          </NavLink>
-        ))}
-
-        <FolderHeading>More</FolderHeading>
-        {REST.map((item) => (
-          <NavLink key={item.to} to={item.to} className={({ isActive }) => linkCls(isActive)}>
-            {item.label}
-          </NavLink>
+      <nav aria-label="Primary" className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-2.5">
+        {GROUPS.map((group) => (
+          <div key={group.title}>
+            <GroupHeading>{group.title}</GroupHeading>
+            {group.items.map((item) => (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                end={item.end}
+                title={item.label}
+                className={({ isActive }) => linkCls(isActive)}
+              >
+                {({ isActive }) => (
+                  <>
+                    <NavIndicator active={isActive} />
+                    <Icon name={item.icon} size={19} className="shrink-0" />
+                    <span className="hidden truncate xl:inline">{item.label}</span>
+                  </>
+                )}
+              </NavLink>
+            ))}
+          </div>
         ))}
       </nav>
-      <div className="mt-auto border-t border-zinc-800 pt-3 text-[11px] leading-relaxed text-zinc-500">
-        React shell — all views ported, fed by the live /api contract.
+
+      <div className="px-2.5 pt-2">
+        <NavLink to="/settings" end title="Settings" className={({ isActive }) => linkCls(isActive)}>
+          {({ isActive }) => (
+            <>
+              <NavIndicator active={isActive} />
+              <Icon name="settings" size={19} className="shrink-0" />
+              <span className="hidden truncate xl:inline">Settings</span>
+            </>
+          )}
+        </NavLink>
+      </div>
+
+      <div className="mt-3 hidden items-center gap-2.5 border-t border-white/[.06] px-3 pt-4 xl:flex">
+        <div className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-surface-3 text-[11px] font-bold text-accent ring-1 ring-white/10">
+          R
+        </div>
+        <div className="min-w-0 text-xs">
+          <div className="truncate font-semibold text-zinc-200">Rajeev</div>
+          <div className="truncate text-[10.5px] text-zinc-500">Personal library</div>
+        </div>
       </div>
     </aside>
   );

@@ -753,3 +753,108 @@ def test_library_service_item_detail_collapses_to_first_provider_with_result():
     assert svc.item_detail("a1") == detail
     # No provider with a result -> graceful None.
     assert LibraryService(providers=[plex]).item_detail("a1") is None
+
+
+# ------------------------------------------------- configurable media libraries
+# MEDIA_LIBRARIES_PLAN Phase 2: library_folders() reads /Library/VirtualFolders
+# (a TOP-LEVEL list, not {"Items": [...]}); items_in_folder() scopes the usual
+# /Users/{uid}/Items by ParentId=<folder ItemId>.
+
+
+def test_library_folders_lists_server_virtual_folders():
+    """library_folders() maps the VirtualFolders payload to display rows."""
+    from services.library.jellyfin import JellyfinLibraryProvider
+
+    def side_effect(url, *args, **kwargs):
+        u = url if isinstance(url, str) else getattr(url, "full_url", "")
+        if "/Library/VirtualFolders" in u:
+            return _FakeJson([
+                {"Name": "Movies", "CollectionType": "movies",
+                 "Locations": ["/data/media/_movie"], "ItemId": "f137a2"},
+                {"Name": "TV Shows", "CollectionType": "tvshows",
+                 "Locations": ["/data/media/_tv"], "ItemId": "767bfe"},
+                {"Name": "NoPathLib", "CollectionType": "movies", "ItemId": "x1"},
+            ])
+        return _FakeJson({"Items": []})
+
+    with patch("urllib.request.urlopen", side_effect=side_effect):
+        prov = JellyfinLibraryProvider(config=_cfg())
+        folders = prov.library_folders()
+    assert len(folders) == 2  # folder without a location is skipped
+    assert folders[0]["name"] == "Movies"
+    assert folders[0]["collection_type"] == "movies"
+    assert folders[0]["path"] == "/data/media/_movie"
+    assert folders[0]["locations"] == ["/data/media/_movie"]
+    assert folders[1]["id"] == "767bfe"
+
+
+def test_library_folders_empty_when_not_configured_or_server_down():
+    from services.library.jellyfin import JellyfinLibraryProvider
+    import urllib.error
+
+    # Not configured → no network call.
+    assert JellyfinLibraryProvider(config=_cfg(JELLYFIN_API_KEY="")).library_folders() == []
+
+    def boom(url, *a, **kw):
+        raise urllib.error.URLError("down")
+
+    with patch("urllib.request.urlopen", side_effect=boom):
+        assert JellyfinLibraryProvider(config=_cfg()).library_folders() == []
+
+
+def test_items_in_folder_scopes_by_parent_id_and_maps_movies_and_series():
+    """items_in_folder() asks for Movie+Series inside the folder (ParentId)."""
+    from services.library.jellyfin import JellyfinLibraryProvider
+
+    def side_effect(url, *args, **kwargs):
+        u = url if isinstance(url, str) else getattr(url, "full_url", "")
+        if "/System/Info/Public" in u:
+            return _FakeJson({"Id": "srv-abc", "ServerName": "rkm-jf", "Version": "10.10"})
+        if u.endswith("/Users?api_key=jkey"):
+            return _FakeJson([{"Id": "user-1", "Name": "admin"}])
+        if "ParentId=folder-1" in u:
+            assert "IncludeItemTypes=Movie,Series" in u
+            return _FakeJson({"Items": [
+                {"Id": "m1", "Name": "M1", "Type": "Movie", "ProductionYear": 2020,
+                 "RunTimeTicks": 60_000_000_000,
+                 "UserData": {"Played": False, "PlaybackPositionTicks": 0, "PlayCount": 0}},
+                {"Id": "s1", "Name": "S1", "Type": "Series", "ProductionYear": 2021,
+                 "RunTimeTicks": 0,
+                 "UserData": {"Played": True, "PlaybackPositionTicks": 0, "PlayCount": 3}},
+            ]})
+        return _FakeJson({"Items": []})
+
+    with patch("urllib.request.urlopen", side_effect=side_effect):
+        prov = JellyfinLibraryProvider(config=_cfg())
+        prov._item_web = lambda iid: "http://jf/x#/details?id=" + iid
+        items = prov.items_in_folder("folder-1")
+    by_id = {x["item_id"]: x for x in items}
+    assert set(by_id) == {"m1", "s1"}
+    assert by_id["m1"]["type"] == "movie"
+    assert by_id["s1"]["type"] == "tv"
+    assert by_id["m1"]["runtime"] == 6000
+    assert by_id["s1"]["played"] is True
+
+
+def test_items_in_folder_empty_when_not_configured_or_bad_id():
+    from services.library.jellyfin import JellyfinLibraryProvider
+    assert JellyfinLibraryProvider(config=_cfg(JELLYFIN_API_KEY="")).items_in_folder("f") == []
+    assert JellyfinLibraryProvider(config=_cfg()).items_in_folder("") == []
+
+
+def test_library_service_folders_and_items_collapse_to_first_provider():
+    """LibraryService aggregates the new folder surface like all_items."""
+    from services.library.service import LibraryService
+    folders = [{"id": "f1", "name": "Movies", "collection_type": "movies",
+                "path": "/data/media/_movie", "locations": ["/data/media/_movie"]}]
+    items = [{"item_id": "m1", "type": "movie", "title": "M1"}]
+    plex = SimpleNamespace(name="plex", library_folders=lambda: [], items_in_folder=lambda f, limit=None: [])
+    jellyfin = SimpleNamespace(name="jellyfin", library_folders=lambda: folders,
+                               items_in_folder=lambda f, limit=None: items)
+    svc = LibraryService(providers=[plex, jellyfin])
+    assert svc.library_folders() == {"provider": "jellyfin", "folders": folders}
+    assert svc.items_in_folder("f1") == {"provider": "jellyfin", "folder_id": "f1", "items": items}
+    # All providers without folders → graceful empty.
+    empty = LibraryService(providers=[plex])
+    assert empty.library_folders() == {"provider": None, "folders": []}
+    assert empty.items_in_folder("f1") == {"provider": None, "folder_id": "f1", "items": []}

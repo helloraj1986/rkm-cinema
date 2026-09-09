@@ -126,6 +126,26 @@ class LibraryProvider(ABC):
         """Recently *finished* titles (most-recently-played first). Default ``[]``."""
         return []
 
+    def library_folders(self) -> list[dict]:
+        """The media server's OWN library folders (MEDIA_LIBRARIES_PLAN).
+
+        Returns rows ``[{id, name, collection_type, path, locations}]`` where
+        ``id`` is the folder's stable item id on the server (usable as a
+        ``ParentId`` scope for :meth:`items_in_folder`), ``path`` is the first
+        (primary) location and ``locations`` carries every path the folder
+        covers. Default ``[]`` — providers that cannot enumerate folders (or are
+        not configured) degrade to the empty state rather than fabricating one.
+        """
+        return []
+
+    def items_in_folder(self, folder_id: str, limit: Optional[int] = None) -> list[dict]:
+        """Titles inside ONE server library folder (movies + series).
+
+        Rows use the same public item shape as :meth:`all_items` so cards/rows/
+        player wiring reuse unchanged. Default ``[]`` (not supported).
+        """
+        return []
+
     def search_items(self, q: str, limit: int = 12) -> dict:
         """Global-search owned media (GLOBAL_SEARCH_PLAN Phase 1).
 
@@ -442,6 +462,34 @@ class LibraryService:
             if items:
                 return {"provider": p.name, "items": items}
         return {"provider": None, "items": []}
+
+    def library_folders(self) -> dict:
+        """Server library folders (MEDIA_LIBRARIES_PLAN).
+
+        ``{"provider": str|None, "folders": [...]}`` — first provider able to
+        enumerate real folders wins (mirrors ``all_items`` aggregation).
+        """
+        for p in self._providers:
+            try:
+                folders = p.library_folders() or []
+            except Exception as e:
+                logger.warning("library_folders failed for %s: %s", p.name, e)
+                continue
+            if folders:
+                return {"provider": p.name, "folders": folders}
+        return {"provider": None, "folders": []}
+
+    def items_in_folder(self, folder_id: str, limit: Optional[int] = None) -> dict:
+        """One folder's titles: ``{"provider": str|None, "folder_id": str, "items": [...]}``."""
+        for p in self._providers:
+            try:
+                items = p.items_in_folder(folder_id, limit=limit) or []
+            except Exception as e:
+                logger.warning("items_in_folder failed for %s: %s", p.name, e)
+                continue
+            if items or p.library_folders():
+                return {"provider": p.name, "folder_id": folder_id, "items": items}
+        return {"provider": None, "folder_id": folder_id, "items": []}
 
     def mark_state(self, item_id: str, watched: bool) -> dict:
         """Mark watched/unwatched via the first provider that supports it."""

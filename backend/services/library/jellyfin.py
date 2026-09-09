@@ -76,6 +76,8 @@ class JellyfinLibraryProvider(LibraryProvider):
         self._tmdb_service = tmdb  # injected TMDB client (tests); lazy default
         self._item_cache: Optional[dict] = None      # {"Movie": [...], "Series": [...]}
         self._item_cache_expiry: dict = {}           # per-type expiry (item_type -> epoch)
+        self._folders_cache: Optional[list] = None   # library_folders() result
+        self._folders_expiry: float = 0              # epoch
         self._server_id_value: str = ""
         self._user_id_value: str = ""
 
@@ -165,6 +167,87 @@ class JellyfinLibraryProvider(LibraryProvider):
                 out.append(self._item_public(item))
                 if limit and len(out) >= limit:
                     return out
+        return out
+
+    # ------------------------------------------------- configurable libraries
+    # MEDIA_LIBRARIES_PLAN Phase 2: the server's OWN library folders (Virtual
+    # Folders) are the source of truth for configured MEDIA_LIBRARY_N_PATH.
+    # Live-verified 2026-09-10 on Jellyfin 10.11 — /Library/VirtualFolders
+    # (admin) returns [{Name, CollectionType, Locations, ItemId,
+    # PrimaryImageItemId}]; a folder's titles come from /Users/{uid}/Items with
+    # ParentId=<folder ItemId>&Recursive=true&IncludeItemTypes=Movie,Series.
+    def library_folders(self) -> list[dict]:
+        """The server's media folders (Virtual Folders) as display rows.
+
+        ``[{id, name, collection_type, path, locations}]`` where ``id`` is the
+        folder ItemId (the ParentId scope used by :meth:`items_in_folder`),
+        ``path`` is the first location and ``locations`` every reported one.
+        Uses the SAME admin api_key the app already holds for every call (the
+        bundled provisioner installs an admin AccessToken as the api key).
+        """
+        import time
+        now = time.time()
+        if self._folders_cache is not None and now < self._folders_expiry:
+            return self._folders_cache
+        if not self._configured():
+            return []
+        url = (f"{self.config.JELLYFIN_URL}/Library/VirtualFolders"
+               f"?api_key={self.config.JELLYFIN_API_KEY}")
+        try:
+            raw = self._fetch_list_or_items(url)
+        except Exception as e:
+            logger.warning("Jellyfin library_folders failed: %s", e)
+            return []
+        rows = []
+        for vf in raw:
+            vf_id = str(vf.get("ItemId") or "")
+            if not vf_id:
+                continue
+            locations = [str(p) for p in (vf.get("Locations") or []) if str(p or "").strip()]
+            if not locations:
+                continue
+            rows.append({
+                "id": vf_id,
+                "name": str(vf.get("Name") or ""),
+                "collection_type": str(vf.get("CollectionType") or ""),
+                "path": locations[0],
+                "locations": locations,
+            })
+        self._folders_cache = rows
+        self._folders_expiry = now + self.JELLYFIN_SCAN_TTL
+        return rows
+
+    def items_in_folder(self, folder_id: str, limit: Optional[int] = None) -> list[dict]:
+        """Every Movie + Series inside ONE server library folder.
+
+        Folder-scoped via ``ParentId=<folder ItemId>`` (live-verified). Rows use
+        the same public item shape as :meth:`all_items`, so existing cards /
+        toolbar / player wiring reuse unchanged.
+        """
+        if not self._configured() or not folder_id:
+            return []
+        user_id = self._user_id()
+        if not user_id:
+            return []
+        url = (f"{self.config.JELLYFIN_URL}/Users/{user_id}/Items"
+               f"?api_key={self.config.JELLYFIN_API_KEY}"
+               f"&ParentId={urllib.parse.quote(str(folder_id))}&Recursive=true"
+               f"&IncludeItemTypes=Movie,Series"
+               f"&Fields=PrimaryImageAspectRatio,ProductionYear,ProviderIds,UserData,Genres,DateCreated")
+        try:
+            raw = self._fetch_raw(url)
+        except Exception as e:
+            logger.warning("Jellyfin items_in_folder(%s) failed: %s", folder_id, e)
+            return []
+        out = []
+        for it in raw:
+            typ = str(it.get("Type") or "")
+            if typ not in ("Movie", "Series"):
+                continue
+            item = self._parse_item(it, typ)
+            out.append(self._item_public(item))
+            if limit and len(out) >= limit:
+                break
         return out
 
     def continue_watching(self, limit: int = 12) -> list[dict]:
@@ -472,6 +555,19 @@ class JellyfinLibraryProvider(LibraryProvider):
         import json
         with urllib.request.urlopen(url, timeout=10) as r:
             d = json.load(r)
+        return (d or {}).get("Items", []) or []
+
+    def _fetch_list_or_items(self, url: str) -> list[dict]:
+        """Fetch a Jellyfin payload that may be a bare list OR ``{"Items": [...]}``.
+
+        ``/Library/VirtualFolders`` returns a top-level list; item listings wrap
+        in ``Items``. Normalise both so callers always iterate rows.
+        """
+        import json
+        with urllib.request.urlopen(url, timeout=10) as r:
+            d = json.load(r)
+        if isinstance(d, list):
+            return d
         return (d or {}).get("Items", []) or []
 
     @staticmethod
@@ -850,6 +946,8 @@ class JellyfinLibraryProvider(LibraryProvider):
     def invalidate(self) -> None:
         self._item_cache = None
         self._item_cache_expiry = {}
+        self._folders_cache = None
+        self._folders_expiry = 0
         self._server_id_value = ""
         self._user_id_value = ""
 

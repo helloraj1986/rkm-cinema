@@ -486,3 +486,50 @@ export function warmDelete(id: string): void {
 export function warmClear(): void {
   WARM_STORE.clear();
 }
+
+// ------------------------------------------------------------------ preferences
+/** Persisted player preferences — global (not per-item): volume/mute, speed and
+ *  the quality cap. Resume position and audio/subtitle tracks stay server/per-
+ *  item and are deliberately NOT persisted here. */
+export interface PlayerPrefs {
+  volume: number; // 0..1
+  muted: boolean;
+  rate: number;
+  quality: string; // a QUALITY_OPTIONS label
+}
+
+export const PLAYER_PREFS_KEY = "rkm.playerPrefs.v1";
+
+/** Load preferences through an injected getter (localStorage in the browser,
+ *  a fake in tests). Corrupt/partial JSON falls back per-field to defaults. */
+export function loadPlayerPrefs(get: (key: string) => string | null): PlayerPrefs {
+  const dflt: PlayerPrefs = {
+    volume: 1,
+    muted: false,
+    rate: 1,
+    quality: QUALITY_OPTIONS[0].label,
+  };
+  try {
+    const raw = get(PLAYER_PREFS_KEY);
+    if (!raw) return dflt;
+    const p = JSON.parse(raw) as Partial<PlayerPrefs>;
+    const rates = PLAYBACK_RATES as readonly number[];
+    return {
+      volume: typeof p.volume === "number" && p.volume >= 0 && p.volume <= 1 ? p.volume : dflt.volume,
+      muted: typeof p.muted === "boolean" ? p.muted : dflt.muted,
+      rate: typeof p.rate === "number" && rates.includes(p.rate) ? p.rate : dflt.rate,
+      quality: QUALITY_OPTIONS.some((q) => q.label === p.quality) ? String(p.quality) : dflt.quality,
+    };
+  } catch {
+    return dflt;
+  }
+}
+
+/** Persist preferences through an injected setter; never throws. */
+export function savePlayerPrefs(prefs: PlayerPrefs, set: (key: string, value: string) => void): void {
+  try {
+    set(PLAYER_PREFS_KEY, JSON.stringify(prefs));
+  } catch {
+    /* storage unavailable (private mode etc.) — prefs just don't persist */
+  }
+}

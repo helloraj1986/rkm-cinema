@@ -7,7 +7,8 @@ import {
   fmtTime, isFiniteDuration, clampSeek, pickStreamMode, hlsModeLabel,
   playMethodForMode, usesHls, hlsEngineFor, nextHlsMode, hlsConfigFor,
   abrBadgeLabel, shouldAutoHideChrome, warmGet, warmPut, warmDelete,
-  WARM_AHEAD_SEC, type AbrLevelFacts, type HlsEngine,
+  WARM_AHEAD_SEC, loadPlayerPrefs, savePlayerPrefs, PLAYER_PREFS_KEY,
+  type AbrLevelFacts, type HlsEngine, type PlayerPrefs,
   parseVtt, activeCueText, type VttCue, type QueueEntry,
   type StreamMode,
 } from "./lib";
@@ -34,6 +35,21 @@ function prefetchMasterFor(id: string, info: PlaybackInfo): void {
   if (!usesHls(mode)) return;
   void fetch(api.hlsMasterUrl(id, { mode }), { cache: "no-store" }).catch(() => {});
 }
+
+const readStored = (key: string): string | null => {
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+};
+const writeStored = (key: string, value: string): void => {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    /* private mode / quota — prefs just don't persist */
+  }
+};
 
 /**
  * In-app player with Plex-style transport (HLS/MSE plan):
@@ -117,6 +133,9 @@ export function Player({
   const lastActRef = useRef<number>(Date.now());
   const hoverChromeRef = useRef(false);
   const hideTimerRef = useRef<number | null>(null);
+  // Persisted prefs (volume/mute/speed/quality cap) — loaded once per mount.
+  const prefsRef = useRef<PlayerPrefs>(loadPlayerPrefs(readStored));
+  const [isPip, setIsPip] = useState(false);
 
   // Custom control bar state.
   const [playing, setPlaying] = useState(false);
@@ -307,7 +326,7 @@ export function Player({
     setInfo(null);
     setAudioIndex(0);
     setSubIndex(null);
-    setQuality("Original");
+    setQuality(prefsRef.current.quality); // persisted cap, not a hardcoded reset
     setMode("direct");
     setMediaDur(0);
     srcKeyRef.current = "";
@@ -337,6 +356,36 @@ export function Player({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [item.item_id]);
+
+  // Apply persisted preferences once per Player mount (volume/mute/speed/
+  // quality cap carry across episodes AND browser sessions).
+  useEffect(() => {
+    const p = prefsRef.current;
+    const v = videoRef.current;
+    setVolume(p.volume);
+    setMuted(p.muted);
+    setRate(p.rate);
+    setQuality(p.quality);
+    if (v) {
+      v.volume = p.volume;
+      v.muted = p.muted;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Picture-in-Picture: track enter/leave on the single <video> element.
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v || typeof HTMLVideoElement === "undefined" || !("requestPictureInPicture" in HTMLVideoElement.prototype)) return;
+    const onEnter = () => setIsPip(true);
+    const onLeave = () => setIsPip(false);
+    v.addEventListener("enterpictureinpicture", onEnter);
+    v.addEventListener("leavepictureinpicture", onLeave);
+    return () => {
+      v.removeEventListener("enterpictureinpicture", onEnter);
+      v.removeEventListener("leavepictureinpicture", onLeave);
+    };
+  }, []);
 
   // Fetch + parse the selected subtitle stream as item-time cues. Native
   // <track> doesn't survive engine switches reliably, so the overlay renders
@@ -534,6 +583,7 @@ export function Player({
     if (!v) return;
     v.muted = !v.muted;
     setMuted(v.muted);
+    persistPrefs({ muted: v.muted });
   };
 
   const toggleFullscreen = () => {
@@ -541,6 +591,20 @@ export function Player({
     if (!el) return;
     if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
     else void el.requestFullscreen().catch(() => {});
+  };
+
+  // --- Persisted prefs + Picture-in-Picture --------------------------------
+  const persistPrefs = (patch: Partial<PlayerPrefs>) => {
+    prefsRef.current = { ...prefsRef.current, ...patch };
+    savePlayerPrefs(prefsRef.current, writeStored);
+  };
+  const pipSupported =
+    typeof document !== "undefined" && "pictureInPictureEnabled" in document && Boolean(document.pictureInPictureEnabled);
+  const togglePip = () => {
+    const v = videoRef.current;
+    if (!v) return;
+    if (document.pictureInPictureElement) void document.exitPictureInPicture().catch(() => {});
+    else void v.requestPictureInPicture().catch(() => {});
   };
 
   const reportNow = (event: ProgressPayload["event"]) => {
@@ -633,6 +697,17 @@ export function Player({
       const now = Date.now();
       if (now - lastReportRef.current < 5000) return;
       lastReportRef.current = now;
+      // Keep the OS/PiP position state honest on the report cadence.
+      try {
+        const ms = navigator.mediaSession;
+        const dur = totalRef.current;
+        const pos = v.currentTime || 0;
+        if (ms && typeof ms.setPositionState === "function" && dur > 0 && pos >= 0) {
+          ms.setPositionState({ duration: dur, playbackRate: rateRef.current, position: Math.min(pos, dur) });
+        }
+      } catch {
+        /* transient / unsupported */
+      }
       report("timeupdate");
     };
     const onWaiting = () => setSwitching(true);
@@ -743,6 +818,79 @@ export function Player({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playing, switching, error, upNext]);
+
+  // Media Session: makes the PiP window + OS media keys control playback and
+  // shows the item title. Best-effort; unsupported actions are skipped.
+  useEffect(() => {
+    if (typeof navigator === "undefined" || !("mediaSession" in navigator)) return;
+    const ms = navigator.mediaSession;
+    try {
+      ms.metadata = new MediaMetadata({ title: item.title, artist: "RKM Cinema", album: item.title });
+    } catch {
+      /* metadata is optional */
+    }
+    const onPlay = () => {
+      const v = videoRef.current;
+      if (v?.paused) void v.play().catch(() => {});
+    };
+    const onPause = () => {
+      videoRef.current?.pause();
+    };
+    const onSeekTo = (d: MediaSessionActionDetails) => {
+      const v = videoRef.current;
+      if (!v || typeof d.seekTime !== "number") return;
+      const total = totalRef.current;
+      const target = clampSeek(d.seekTime, total > 0 ? total : d.seekTime);
+      try {
+        v.currentTime = target;
+        paint(target);
+      } catch {
+        /* not seekable yet */
+      }
+    };
+    const onSeek = (delta: number) => () => {
+      const v = videoRef.current;
+      if (!v) return;
+      const pos = (v.currentTime || 0) + delta;
+      const total = totalRef.current;
+      const target = clampSeek(pos, total > 0 ? total : pos);
+      try {
+        v.currentTime = target;
+        paint(target);
+      } catch {
+        /* ignore */
+      }
+    };
+    const onNext = () => {
+      const next = nextEpisode(queueRef.current, item.item_id);
+      if (next) onSwitchRef.current?.(next);
+    };
+    const handlers: [MediaSessionAction, MediaSessionActionHandler | null][] = [
+      ["play", onPlay],
+      ["pause", onPause],
+      ["seekto", onSeekTo],
+      ["seekforward", onSeek(SEEK_STEP)],
+      ["seekbackward", onSeek(-SEEK_STEP)],
+      ["nexttrack", onNext],
+    ];
+    for (const [action, handler] of handlers) {
+      try {
+        ms.setActionHandler(action, handler);
+      } catch {
+        /* action unsupported in this browser */
+      }
+    }
+    return () => {
+      for (const [action] of handlers) {
+        try {
+          ms.setActionHandler(action, null);
+        } catch {
+          /* ignore */
+        }
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [item.item_id, item.title]);
 
   const playNext = () => {
     clearAuto();
@@ -969,6 +1117,7 @@ export function Player({
                   v.muted = val === 0;
                   setVolume(val);
                   setMuted(val === 0);
+                  persistPrefs({ volume: val, muted: val === 0 });
                 }}
                 aria-label="Volume"
                 className="h-1 w-16 cursor-pointer accent-[var(--accent)] sm:w-20"
@@ -982,6 +1131,16 @@ export function Player({
                 <Icon name="clock" size={12} className="text-zinc-500" />
                 {fmtTime(cur)}
               </span>
+              {pipSupported ? (
+                <button
+                  onClick={() => void togglePip()}
+                  aria-label={isPip ? "Exit picture-in-picture" : "Picture in picture"}
+                  title={isPip ? "Exit picture-in-picture" : "Picture in picture"}
+                  className={`${ctrlBtn} px-2.5`}
+                >
+                  <span className={`text-[10px] font-extrabold tracking-wider ${isPip ? "text-accent" : ""}`}>PIP</span>
+                </button>
+              ) : null}
               <button
                 onClick={toggleFullscreen}
                 aria-label={isFs ? "Exit fullscreen" : "Fullscreen"}
@@ -997,7 +1156,15 @@ export function Player({
         <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2.5 rounded-2xl border border-white/[.06] bg-surface-2/70 px-4 py-3 backdrop-blur-sm">
           <label className="flex items-center gap-2 text-xs font-medium text-zinc-400">
             Speed
-            <select value={rate} onChange={(e) => setRate(Number(e.target.value))} className={selectCls}>
+            <select
+              value={rate}
+              onChange={(e) => {
+                const r = Number(e.target.value);
+                setRate(r);
+                persistPrefs({ rate: r });
+              }}
+              className={selectCls}
+            >
               {PLAYBACK_RATES.map((r) => (
                 <option key={r} value={r}>{r}×</option>
               ))}
@@ -1006,7 +1173,14 @@ export function Player({
 
           <label className="flex items-center gap-2 text-xs font-medium text-zinc-400">
             Quality
-            <select value={quality} onChange={(e) => setQuality(e.target.value)} className={selectCls}>
+            <select
+              value={quality}
+              onChange={(e) => {
+                setQuality(e.target.value);
+                persistPrefs({ quality: e.target.value });
+              }}
+              className={selectCls}
+            >
               {QUALITY_OPTIONS.map((q) => (
                 <option key={q.label} value={q.label}>{q.label}</option>
               ))}

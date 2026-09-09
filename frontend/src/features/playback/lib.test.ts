@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, beforeEach } from "vitest";
 import type { EpisodeShape } from "../../lib/api/client";
 import {
   episodeQueue, groupBySeason, nextEpisode, playLabel, startPosition,
@@ -12,6 +12,7 @@ import {
   HLS_ABR_DEFAULT_ESTIMATE_BPS, shouldAutoHideChrome, CHROME_HIDE_MS,
   warmGet, warmPut, warmDelete, warmClear, WARM_TTL_MS, WARM_MAX_ITEMS,
   WARM_AHEAD_SEC, type WarmEntry,
+  loadPlayerPrefs, savePlayerPrefs, PLAYER_PREFS_KEY, type PlayerPrefs,
 } from "./lib";
 
 const ep = (id: string, season: number, episode: number, played = false, position = 0): EpisodeShape => ({
@@ -295,6 +296,42 @@ describe("warm-start cache (player tail)", () => {
   });
   it("warms 45 s before the end", () => {
     expect(WARM_AHEAD_SEC).toBe(45);
+  });
+});
+
+describe("player preference persistence (player tail)", () => {
+  const store = new Map<string, string>();
+  const get = (k: string) => store.get(k) ?? null;
+  const set = (k: string, v: string) => {
+    store.set(k, v);
+  };
+  const defaults = { volume: 1, muted: false, rate: 1, quality: "Original" } as PlayerPrefs;
+  beforeEach(() => store.clear());
+  it("round-trips a full prefs object through the injected storage", () => {
+    const prefs: PlayerPrefs = { volume: 0.4, muted: false, rate: 1.5, quality: "720p" };
+    savePlayerPrefs(prefs, set);
+    expect(store.get(PLAYER_PREFS_KEY)).toBe(JSON.stringify(prefs));
+    expect(loadPlayerPrefs(get)).toEqual(prefs);
+  });
+  it("falls back to defaults when nothing is stored or JSON is corrupt", () => {
+    expect(loadPlayerPrefs(() => null)).toEqual(defaults);
+    store.set(PLAYER_PREFS_KEY, "{not json");
+    expect(loadPlayerPrefs(get)).toEqual(defaults);
+  });
+  it("sanitises bad fields individually", () => {
+    store.set(PLAYER_PREFS_KEY, JSON.stringify({ volume: 9, muted: "yes", rate: 3.7, quality: "8K Ultra" }));
+    expect(loadPlayerPrefs(get)).toEqual(defaults);
+    store.set(PLAYER_PREFS_KEY, JSON.stringify({ volume: 0.3 }));
+    expect(loadPlayerPrefs(get).volume).toBe(0.3);
+    expect(loadPlayerPrefs(get).rate).toBe(1); // absent fields default
+    expect(loadPlayerPrefs(get).quality).toBe("Original");
+  });
+  it("savePlayerPrefs never throws on storage failure", () => {
+    expect(() =>
+      savePlayerPrefs(defaults, () => {
+        throw new Error("quota");
+      }),
+    ).not.toThrow();
   });
 });
 

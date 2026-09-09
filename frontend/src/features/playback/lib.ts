@@ -4,6 +4,7 @@
  * unit-testable without a DOM.
  */
 import type { EpisodeShape } from "../../lib/api/client";
+import type { HlsConfig } from "hls.js";
 
 /** Ordered "Up Next" queue entry derived from an episode list. */
 export interface QueueEntry {
@@ -223,6 +224,65 @@ export function hlsModeLabel(mode: StreamMode): string {
   if (mode === "transcode_audio") return "Transcode (audio)";
   if (mode === "transcode") return "Transcode";
   return "Remux (HLS)";
+}
+
+// ------------------------------------------------------------------ HLS tuning
+/** Seconds of media hls.js keeps buffered ahead of the playhead (LAN-friendly;
+ *  the hls.js default of 30 s is on the low side for fast local links). */
+export const HLS_MAX_BUFFER_SEC = 60;
+/** Hard ceiling the buffer can grow to on very fast links. */
+export const HLS_MAX_MAX_BUFFER_SEC = 180;
+/** Initial ABR bandwidth estimate (bps). hls.js defaults to ~500 kbps, so the
+ *  first seconds of a transcode open blurry and only sharpen once real samples
+ *  arrive — on a LAN we seed the estimator high enough to start at a sane level
+ *  while still letting the ABR controller adapt downwards if it must. */
+export const HLS_ABR_DEFAULT_ESTIMATE_BPS = 5_000_000;
+/** ABR up-switch eagerness: switch up when estimate * factor > next level
+ *  bitrate (hls.js default 0.7 → waits for a 1.4× cushion). 1.2 climbs the
+ *  ladder sooner on a LAN without thrashing. */
+export const HLS_ABR_BANDWIDTH_UP_FACTOR = 1.2;
+/** ABR down-switch responsiveness (`abrBandWidthFactor`; hls.js default 0.95).
+ *  0.85 still drops a level promptly when bandwidth genuinely falls while
+ *  smoothing jitter. */
+export const HLS_ABR_BANDWIDTH_DOWN_FACTOR = 0.85;
+
+/**
+ * hls.js config for one playback build — the buffer + ABR policy lives here in
+ * one place. Quality caps ride the master URL (`max_bitrate`); hls.js adapts
+ * WITHIN the ladder by measured bandwidth. Never caps to the element size.
+ */
+export function hlsConfigFor(opts: { startPosition?: number } = {}): Partial<HlsConfig> {
+  return {
+    ...(opts.startPosition && opts.startPosition > 0 ? { startPosition: opts.startPosition } : {}),
+    maxBufferLength: HLS_MAX_BUFFER_SEC,
+    maxMaxBufferLength: HLS_MAX_MAX_BUFFER_SEC,
+    abrEwmaDefaultEstimate: HLS_ABR_DEFAULT_ESTIMATE_BPS,
+    abrBandWidthUpFactor: HLS_ABR_BANDWIDTH_UP_FACTOR,
+    abrBandWidthFactor: HLS_ABR_BANDWIDTH_DOWN_FACTOR,
+    capLevelToPlayerSize: false,
+  };
+}
+
+/** Facts about the live ABR level (from hls.js `LEVEL_SWITCHED`). */
+export interface AbrLevelFacts {
+  height?: number;
+  bitrate?: number;
+}
+
+/** Coarse resolution label for a live ABR level (informational badge only). */
+export function resolutionLabel(height: number | null | undefined): string {
+  if (!height || height <= 0) return "Auto";
+  if (height >= 2100) return "4K";
+  if (height >= 1000) return "1080p";
+  if (height >= 700) return "720p";
+  if (height >= 400) return "480p";
+  return `${Math.round(height)}p`;
+}
+
+/** Passive "Auto · 1080p" badge text — shown only while a live level exists. */
+export function abrBadgeLabel(level: AbrLevelFacts | null | undefined): string {
+  if (!level || !level.height) return "Auto";
+  return `Auto · ${resolutionLabel(level.height)}`;
 }
 
 /** One parsed subtitle cue (item-time seconds). */

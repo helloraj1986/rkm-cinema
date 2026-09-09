@@ -8,6 +8,8 @@ import {
   videoNeedsTranscode, pickStreamMode, streamModeLabel, playMethodForMode,
   parseVtt, parseVttTime, activeCueText,
   usesHls, nextHlsMode, hlsEngineFor, hlsModeLabel, HLS_LADDER,
+  hlsConfigFor, resolutionLabel, abrBadgeLabel, HLS_MAX_BUFFER_SEC,
+  HLS_ABR_DEFAULT_ESTIMATE_BPS,
 } from "./lib";
 
 const ep = (id: string, season: number, episode: number, played = false, position = 0): EpisodeShape => ({
@@ -203,6 +205,39 @@ Last`;
     expect(activeCueText(cues, 8)).toBeNull();
     expect(activeCueText(cues, 422)).toBe("mid");
     expect(activeCueText(cues, 9)).toBeNull();
+  });
+});
+
+describe("HLS ABR/buffer policy (player tail)", () => {
+  it("hlsConfigFor sets the LAN-first buffer + ABR policy", () => {
+    const c = hlsConfigFor();
+    expect(c.maxBufferLength).toBe(HLS_MAX_BUFFER_SEC);
+    expect(c.maxMaxBufferLength).toBeGreaterThan(HLS_MAX_BUFFER_SEC);
+    expect(c.abrEwmaDefaultEstimate).toBe(HLS_ABR_DEFAULT_ESTIMATE_BPS);
+    expect(c.capLevelToPlayerSize).toBe(false); // never downscale to element size
+    expect(c.abrBandWidthUpFactor).toBeGreaterThan(1);
+    expect(c.abrBandWidthFactor).toBeLessThan(1);
+  });
+  it("hlsConfigFor honours a positive startPosition only", () => {
+    expect(hlsConfigFor().startPosition).toBeUndefined();
+    expect(hlsConfigFor({ startPosition: 0 }).startPosition).toBeUndefined();
+    expect(hlsConfigFor({ startPosition: 421 }).startPosition).toBe(421);
+  });
+  it("resolutionLabel buckets heights honestly", () => {
+    expect(resolutionLabel(2160)).toBe("4K");
+    expect(resolutionLabel(1088)).toBe("1080p");
+    expect(resolutionLabel(1080)).toBe("1080p");
+    expect(resolutionLabel(720)).toBe("720p");
+    expect(resolutionLabel(480)).toBe("480p");
+    expect(resolutionLabel(240)).toBe("240p");
+    expect(resolutionLabel(0)).toBe("Auto");
+    expect(resolutionLabel(undefined)).toBe("Auto");
+  });
+  it("abrBadgeLabel reads Auto until a live level exists", () => {
+    expect(abrBadgeLabel(null)).toBe("Auto");
+    expect(abrBadgeLabel({})).toBe("Auto");
+    expect(abrBadgeLabel({ height: 2160, bitrate: 40_000_000 })).toBe("Auto · 4K");
+    expect(abrBadgeLabel({ height: 1080 })).toBe("Auto · 1080p");
   });
 });
 

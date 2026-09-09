@@ -5,7 +5,8 @@ import { Icon } from "../../components/ui/Icon";
 import {
   nextEpisode, qualityFor, AUTOPLAY_DELAY_MS, QUALITY_OPTIONS, PLAYBACK_RATES,
   fmtTime, isFiniteDuration, clampSeek, pickStreamMode, hlsModeLabel,
-  playMethodForMode, usesHls, hlsEngineFor, nextHlsMode, type HlsEngine,
+  playMethodForMode, usesHls, hlsEngineFor, nextHlsMode, hlsConfigFor,
+  abrBadgeLabel, type AbrLevelFacts, type HlsEngine,
   parseVtt, activeCueText, type VttCue, type QueueEntry,
   type StreamMode,
 } from "./lib";
@@ -88,6 +89,9 @@ export function Player({
   // How Jellyfin serves it: direct (progressive) or an HLS mode (remux /
   // transcode_audio / transcode). The mode chip shows the label.
   const [mode, setMode] = useState<StreamMode>("direct");
+  // Live ABR level from hls.js (LEVEL_SWITCHED) — powers the passive
+  // "Auto · 1080p" badge. Null until an HLS level actually switches.
+  const [lvl, setLvl] = useState<AbrLevelFacts | null>(null);
 
   // Custom control bar state.
   const [playing, setPlaying] = useState(false);
@@ -210,6 +214,7 @@ export function Player({
         hlsRef.current.destroy();
         hlsRef.current = null;
       }
+      setLvl(null);
       v.removeAttribute("src");
       try {
         v.load();
@@ -246,13 +251,16 @@ export function Player({
     }
 
     if (engineType === "hlsjs") {
-      const hls = new Hls({
-        ...(start > 0 ? { startPosition: start } : {}),
-        maxBufferLength: 30,
-      });
+      const hls = new Hls(hlsConfigFor({ startPosition: start }));
       hlsRef.current = hls;
       hls.loadSource(engineKey);
       hls.attachMedia(v);
+      // Track the live ABR level so the badge shows the REAL playing ladder
+      // rung (informational only — the Quality select remains a cap).
+      hls.on(Hls.Events.LEVEL_SWITCHED, (_evt, data) => {
+        const level = hls.levels[data.level];
+        setLvl(level ? { height: level.height, bitrate: level.bitrate } : null);
+      });
       hls.on(Hls.Events.ERROR, (_evt, data) => {
         if (data.fatal) escalateHls();
       });
@@ -860,6 +868,15 @@ export function Player({
               ))}
             </select>
           </label>
+
+          {usesHls(mode) && lvl ? (
+            <span
+              title={lvl.bitrate ? `${Math.round(lvl.bitrate / 1e6)} Mbps live` : "Live ABR level"}
+              className="inline-flex items-center rounded-full bg-white/[.06] px-2 py-0.5 text-[10px] font-semibold tabular-nums text-zinc-300"
+            >
+              {abrBadgeLabel(lvl)}
+            </span>
+          ) : null}
 
           {info && info.audio.length > 0 && (
             <label className="flex items-center gap-2 text-xs font-medium text-zinc-400">

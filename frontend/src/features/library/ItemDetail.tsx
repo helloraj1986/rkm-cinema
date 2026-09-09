@@ -31,6 +31,7 @@ import {
   ratingText,
 } from "./lib";
 import { Icon } from "../../components/ui/Icon";
+import { PopupMenu } from "../../components/ui/PopupMenu";
 
 function EpisodeRow({
   ep,
@@ -432,17 +433,35 @@ export function ItemDetailContent({
                       {played ? "Watched" : "Mark watched"}
                     </ActionButton>
                   ) : null}
-                  {item?.jellyfin_url ? (
-                    <a
-                      href={item.jellyfin_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex h-10 items-center gap-2 rounded-[10px] px-3 text-sm font-semibold text-zinc-400 transition hover:text-white"
-                    >
-                      Open in Jellyfin
-                      <Icon name="external" size={14} />
-                    </a>
-                  ) : null}
+                  <PopupMenu
+                    label={`More actions for ${title}`}
+                    triggerClassName="inline-flex h-10 w-10 items-center justify-center rounded-[10px] border border-white/10 bg-white/[.07] text-zinc-300 transition hover:bg-white/[.12] hover:text-white"
+                    items={[
+                      ...(onToggleWatched && item && item.played
+                        ? [
+                            {
+                              key: "untoggle",
+                              label: "Mark as unplayed",
+                              icon: "check" as const,
+                              onSelect: () => onToggleWatched({ ...item, played }),
+                            },
+                          ]
+                        : []),
+                      ...(item?.jellyfin_url
+                        ? [
+                            {
+                              key: "jellyfin",
+                              label: "Open in Jellyfin",
+                              icon: "external" as const,
+                              onSelect: () =>
+                                window.open(item.jellyfin_url as string, "_blank", "noopener,noreferrer"),
+                            },
+                          ]
+                        : []),
+                    ]}
+                  >
+                    <Icon name="more" size={16} />
+                  </PopupMenu>
                 </div>
 
                 {/* Resume progress under the actions when mid-play */}

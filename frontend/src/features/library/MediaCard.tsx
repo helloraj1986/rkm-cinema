@@ -11,6 +11,7 @@ import {
   type Marker,
 } from "./lib";
 import { Icon } from "../../components/ui/Icon";
+import { PopupMenu } from "../../components/ui/PopupMenu";
 
 /** Watched ✓ (success green) — top-right, small. */
 function WatchedTick() {
@@ -91,15 +92,20 @@ export function MediaCard({
       className={`group relative rounded-[10px] ${fluid ? "w-full min-w-0" : "w-44 shrink-0"}`}
       data-testid="media-card"
     >
-      {/* Transparent whole-card button — clicking anywhere opens the item page. */}
+      {/* Transparent whole-card button — clicking anywhere opens the item page.
+          z-auto on purpose: the poster wrapper (z-[1], pointer-events-none)
+          paints ABOVE it, so interactive poster children only need to re-enable
+          pointer-events when visible; everywhere else the button receives the
+          click (its own transform on hover would otherwise trap the action
+          rows in a stacking context below this button). */}
       <button
         type="button"
         aria-label={`Open details for ${item.title}`}
         onClick={() => onOpenDetail(item)}
-        className="absolute inset-0 z-[1] cursor-pointer rounded-[10px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+        className="absolute inset-0 cursor-pointer rounded-[10px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
       />
 
-      <div className="pointer-events-none relative aspect-[2/3] w-full overflow-hidden rounded-[10px] border border-white/[.06] bg-surface-2 transition-[transform,box-shadow,border-color] duration-200 ease-out group-hover:-translate-y-1 group-hover:scale-[1.02] group-hover:border-white/10 group-hover:shadow-card-hover">
+      <div className="pointer-events-none relative z-[1] aspect-[2/3] w-full overflow-hidden rounded-[10px] border border-white/[.06] bg-surface-2 transition-[transform,box-shadow,border-color] duration-200 ease-out group-hover:-translate-y-1 group-hover:scale-[1.02] group-hover:border-white/10 group-hover:shadow-card-hover">
         {/* Seeded gradient art fallback under the poster (§58). */}
         <div aria-hidden="true" className={`absolute inset-0 art-${tone}`} />
         {src ? (
@@ -132,13 +138,14 @@ export function MediaCard({
         <ResumeBar percent={percent} />
 
         {/* Centered primary hover action: ▶ (movies) / Episodes (series).
-            pointer-events-auto: the poster wrapper is pointer-events-none so
-            without it these clicks fall through to the card's open button. */}
+            pointer-events are gated to the VISIBLE state (group-hover /
+            focus-within) — an invisible row must never intercept the whole
+            card button, and tabbing into a poster action reveals it. */}
         <button
           type="button"
           onClick={() => onQuickPlay(item)}
           aria-label={tv ? `Episodes for ${item.title}` : `Play ${item.title}`}
-          className="pointer-events-auto absolute left-1/2 top-[42%] z-[2] -translate-x-1/2 -translate-y-1/2 opacity-0 transition group-hover:opacity-100"
+          className="pointer-events-none absolute left-1/2 top-[42%] z-[2] -translate-x-1/2 -translate-y-1/2 opacity-0 transition group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100"
         >
           <span
             className={`grid place-items-center rounded-full bg-accent text-black shadow-lg transition hover:scale-105 hover:bg-accent-hover ${
@@ -150,8 +157,10 @@ export function MediaCard({
           </span>
         </button>
 
-        {/* Bottom hover row: watched toggle (+ Jellyfin deep link when present). */}
-        <div className="pointer-events-auto absolute inset-x-2 bottom-2 z-[2] flex items-center justify-between opacity-0 transition group-hover:opacity-100">
+        {/* Bottom hover row: watched toggle + ⋯ context menu (§46). The
+            jellyfin deep link now lives in the menu so the row stays calm.
+            pointer-events gated to the visible state, as the centre action. */}
+        <div className="pointer-events-none absolute inset-x-2 bottom-2 z-[2] flex items-center justify-between gap-1 opacity-0 transition group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
           {onToggleWatched ? (
             <button
               type="button"
@@ -169,19 +178,44 @@ export function MediaCard({
           ) : (
             <span />
           )}
-          {item.jellyfin_url ? (
-            <a
-              href={item.jellyfin_url}
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label="Open in Jellyfin"
-              title="Open in Jellyfin"
-              onClick={(e) => e.stopPropagation()}
-              className="grid h-7 w-7 place-items-center rounded-full bg-black/60 text-zinc-200 ring-1 ring-white/25 transition hover:bg-surface-3 hover:text-white"
-            >
-              <Icon name="external" size={13} />
-            </a>
-          ) : null}
+          <PopupMenu
+            label={`More actions for ${item.title}`}
+            items={[
+              {
+                key: "play",
+                label: tv ? "Episodes" : item.played && item.playback_position ? "Replay" : "Play",
+                icon: "play",
+                onSelect: () => onQuickPlay(item),
+              },
+              ...(onToggleWatched
+                ? [
+                    {
+                      key: "toggle",
+                      label: item.played ? "Mark as unplayed" : "Mark as watched",
+                      icon: "check" as const,
+                      onSelect: () => onToggleWatched(item),
+                    },
+                  ]
+                : []),
+              {
+                key: "details",
+                label: "View details",
+                icon: "external" as const,
+                onSelect: () => onOpenDetail(item),
+              },
+              ...(item.jellyfin_url
+                ? [
+                    {
+                      key: "jellyfin",
+                      label: "Open in Jellyfin",
+                      icon: "external" as const,
+                      onSelect: () => window.open(item.jellyfin_url as string, "_blank", "noopener,noreferrer"),
+                    },
+                  ]
+                : []),
+            ]}
+            triggerClassName="grid h-7 w-7 place-items-center rounded-full bg-black/60 text-zinc-200 ring-1 ring-white/25 transition hover:bg-surface-3 hover:text-white"
+          />
         </div>
       </div>
 

@@ -92,10 +92,10 @@ export function SuggestCard({
           ) : null}
         </div>
 
-        {/* hover actions — pointer-events-auto: the poster wrapper is
-            pointer-events-none, so without this clicks fall through to the
-            card and open the detail instead of pressing the button. */}
-        <div className="pointer-events-auto absolute inset-x-2 bottom-2 z-[2] flex flex-col items-stretch gap-1.5 opacity-0 transition group-hover:opacity-100">
+        {/* hover actions — gated to the visible state so invisible chips can
+            never intercept card taps; group-focus-within keeps them on
+            keyboard/touch. */}
+        <div className="pointer-events-none absolute inset-x-2 bottom-2 z-[2] flex flex-col items-stretch gap-1.5 opacity-0 transition group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
           <button
             type="button"
             onClick={onAdd}

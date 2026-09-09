@@ -4,6 +4,8 @@ from pathlib import Path
 from typing import Optional
 from functools import lru_cache
 
+from config.media_libraries import parse_media_libraries
+
 
 class Config:
     """Single source of truth for all environment configuration."""
@@ -51,6 +53,12 @@ class Config:
     AUTO_ADD_ENABLED: bool          # gate the autonomous daily recommendation auto-add
     RECONCILE_INTERVAL_MIN: int     # frequent reconcile cadence (default 10 min)
     DAILY_JOB_HOUR: int             # daily recommendation job hour (24h, default 18)
+
+    # --- Media libraries (MEDIA_LIBRARIES_PLAN) ---
+    # Parsed from MEDIA_LIBRARY_N_NAME/PATH .env keys. Empty when the user has
+    # not configured any — the UI then falls back to the server's own folders.
+    media_libraries: list        # list[MediaLibrary]
+    media_library_warnings: list # list[str] — config problems worth surfacing
 
     # --- Internal ---
     _loaded: bool = False
@@ -101,7 +109,7 @@ class Config:
 
         # 2. Real environment variables override .env
         for key in os.environ:
-            if key in self._get_all_keys():
+            if key in self._get_all_keys() or key.startswith("MEDIA_LIBRARY_"):
                 env[key] = os.environ[key]
 
         # Assign with validation
@@ -169,6 +177,10 @@ class Config:
             self.DAILY_JOB_HOUR = int(env.get("DAILY_JOB_HOUR") or 18)
         except ValueError:
             self.DAILY_JOB_HOUR = 18
+
+        # Media libraries (MEDIA_LIBRARIES_PLAN Phase 1): parsed here in the
+        # dedicated settings layer — never read MEDIA_LIBRARY_* anywhere else.
+        self.media_libraries, self.media_library_warnings = parse_media_libraries(env)
 
     def _normalize_url(self, url: str) -> str:
         """Ensure URL has no trailing slash."""

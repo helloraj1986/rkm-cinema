@@ -7,6 +7,7 @@ import { toast } from "../watchlist/toast";
 import { acquisitionToast, errorMessage } from "../watchlist/actions";
 import { EmptyState } from "../watchlist/CardRow";
 import { SuggestDetailModal } from "./SuggestDetailModal";
+import { Icon } from "../../components/ui/Icon";
 
 const HISTORY_KEY = "rkm_suggest_history";
 
@@ -161,14 +162,14 @@ export function SuggestView() {
   const counts = useMemo(() => results.length, [results]);
 
   return (
-    <div className="flex flex-col gap-5">
-      <div>
-        <h1 className="text-2xl font-bold text-white">Suggest</h1>
-        <div className="text-sm text-zinc-500">Discover movies & series by your taste</div>
+    <div className="flex flex-col gap-6 pb-8">
+      <div className="pt-2">
+        <h1 className="text-[32px] font-bold leading-none tracking-[-0.02em] text-zinc-50">Suggest</h1>
+        <p className="mt-2 text-[13px] text-zinc-500">Discover movies & series by your taste — then add or download.</p>
       </div>
 
       {/* filters */}
-      <div className="flex flex-col gap-3 rounded-2xl border border-zinc-800 bg-zinc-900/40 p-4">
+      <div className="flex flex-col gap-4 rounded-2xl border border-white/[.06] bg-surface-2/70 p-4 sm:p-5">
         <FilterRow label="Type">
           {(["all", "movie", "tv"] as const).map((t) => (
             <Chip key={t} active={filters.media_type === t} onClick={() => setFilters((f) => ({ ...f, media_type: t }))}>
@@ -189,12 +190,12 @@ export function SuggestView() {
           <NumberField label="Year from" value={filters.year_from?.toString() ?? ""} placeholder="e.g. 2020" onChange={(v) => setFilters((f) => ({ ...f, year_from: v ? Number(v) : null }))} />
           <NumberField label="Year to" value={filters.year_to?.toString() ?? ""} placeholder="e.g. 2025" onChange={(v) => setFilters((f) => ({ ...f, year_to: v ? Number(v) : null }))} />
           <NumberField label="Min TMDB rating" value={filters.min_rating?.toString() ?? ""} placeholder="6.0" onChange={(v) => setFilters((f) => ({ ...f, min_rating: v ? Number(v) : 0 }))} />
-          <label className="flex flex-col gap-1 text-xs font-semibold text-zinc-400">
+          <label className="flex flex-col gap-1.5 text-xs font-semibold text-zinc-400">
             Sort by
             <select
               value={filters.sort_by}
               onChange={(e) => setFilters((f) => ({ ...f, sort_by: e.target.value }))}
-              className="rounded-lg border border-zinc-800 bg-zinc-900 px-2 py-1.5 text-xs text-zinc-200"
+              className="rounded-[8px] border border-white/[.08] bg-surface-2 px-2.5 py-2 text-xs font-medium text-zinc-200 outline-none transition focus:border-accent/50"
             >
               <option value="popularity.desc">Popularity</option>
               <option value="vote_average.desc">Rating</option>
@@ -203,16 +204,21 @@ export function SuggestView() {
           </label>
           <NumberField label="Results" value={String(filters.count ?? 20)} placeholder="20" onChange={(v) => setFilters((f) => ({ ...f, count: v ? Number(v) : 20 }))} />
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2.5">
           <button
             type="button"
             onClick={() => search(readInputs())}
             disabled={run.isPending}
-            className="rounded-full bg-amber-400 px-5 py-1.5 text-sm font-bold text-black hover:bg-amber-300 disabled:opacity-60"
+            className="inline-flex h-10 items-center gap-2 rounded-[10px] bg-accent px-5 text-sm font-bold text-black transition hover:bg-accent-hover disabled:opacity-60"
           >
-            {run.isPending ? "Searching…" : "⌕ Search"}
+            <Icon name="search" size={15} />
+            {run.isPending ? "Searching…" : "Search"}
           </button>
-          <button type="button" onClick={clear} className="rounded-full bg-zinc-800 px-4 py-1.5 text-sm font-semibold text-zinc-300 hover:bg-zinc-700">
+          <button
+            type="button"
+            onClick={clear}
+            className="inline-flex h-10 items-center gap-2 rounded-[10px] border border-white/10 bg-white/[.07] px-4 text-sm font-semibold text-zinc-200 transition hover:bg-white/[.12]"
+          >
             Clear filters
           </button>
           {counts ? <span className="text-xs text-zinc-500">{counts} result{counts === 1 ? "" : "s"}</span> : null}
@@ -231,9 +237,13 @@ export function SuggestView() {
       </div>
 
       {/* results */}
-      <div className="flex flex-wrap gap-3">
+      <div className="flex flex-wrap gap-3.5">
         {run.isPending ? (
-          <div className="py-8 text-sm text-zinc-500">Searching TMDB…</div>
+          <div className="flex w-full flex-wrap gap-3.5" role="status" aria-label="Searching TMDB">
+            {Array.from({ length: 10 }).map((_, i) => (
+              <div key={i} className="skeleton h-[248px] w-40 rounded-[10px]" />
+            ))}
+          </div>
         ) : results.length ? (
           results.map((item) => (
             <SuggestCard
@@ -249,8 +259,16 @@ export function SuggestView() {
         ) : run.isError ? (
           <EmptyState title="Search failed" sub="Could not reach TMDB through the API. Try again shortly." />
         ) : (
-          <div className="py-6 text-sm text-zinc-500">
-            Set your filters and hit <b>Search</b> to discover movies and series.
+          <div className="flex w-full flex-col items-center gap-2 rounded-2xl border border-dashed border-white/[.08] px-6 py-14 text-center">
+            <div className="grid h-12 w-12 place-items-center rounded-2xl bg-surface-2 text-zinc-500">
+              <Icon name="sparkles" size={22} />
+            </div>
+            <div className="max-w-md">
+              <h3 className="font-semibold text-zinc-200">Nothing here yet</h3>
+              <p className="mt-1 text-sm leading-relaxed text-zinc-500">
+                Set your filters and hit Search to discover movies and series.
+              </p>
+            </div>
           </div>
         )}
       </div>
@@ -296,7 +314,7 @@ export function Chip({
       title={title}
       aria-pressed={active}
       className={`rounded-full px-2.5 py-1 text-xs font-semibold transition ${
-        active ? "bg-amber-400 text-black" : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
+        active ? "bg-accent text-black hover:bg-accent-hover" : "border border-white/[.08] bg-white/[.06] text-zinc-300 hover:bg-white/[.1] hover:text-white"
       }`}
     >
       {children}
@@ -316,14 +334,14 @@ function NumberField({
   onChange: (v: string) => void;
 }) {
   return (
-    <label className="flex flex-col gap-1 text-xs font-semibold text-zinc-400">
+    <label className="flex flex-col gap-1.5 text-xs font-semibold text-zinc-400">
       {label}
       <input
         type="number"
         value={value}
         placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
-        className="rounded-lg border border-zinc-800 bg-zinc-900 px-2 py-1.5 text-xs text-zinc-200"
+        className="rounded-[8px] border border-white/[.08] bg-surface-2 px-2.5 py-2 text-xs font-medium text-zinc-200 outline-none transition placeholder:text-zinc-600 focus:border-accent/50"
       />
     </label>
   );

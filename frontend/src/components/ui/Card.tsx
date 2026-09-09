@@ -1,5 +1,6 @@
-export function Card({ children }: { children: React.ReactNode }) {
+/** Premium surface card (design spec §52): layered surface, hairline border. */
+export function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-4">{children}</div>
+    <div className={`rounded-xl border border-white/[.06] bg-surface-2/70 ${className}`}>{children}</div>
   );
 }

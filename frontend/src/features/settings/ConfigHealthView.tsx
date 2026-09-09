@@ -1,45 +1,93 @@
 import { useConfig, useHealth } from "./api";
 import { Card } from "../../components/ui/Card";
 import { Badge } from "../../components/ui/Badge";
+import { Icon, type IconName } from "../../components/ui/Icon";
+import { artTone } from "../library/lib";
 
 const SERVICES = ["radarr", "sonarr", "tmdb", "plex", "jellyfin", "emby"] as const;
 
+const SERVICE_ICON: Record<(typeof SERVICES)[number], IconName> = {
+  radarr: "film",
+  sonarr: "tv",
+  tmdb: "star",
+  plex: "play",
+  jellyfin: "play",
+  emby: "play",
+};
+
+/**
+ * Settings (design spec §5/§82 polish): page header with the live status
+ * summary, then per-service health cards. Premium states — skeleton while the
+ * backend answers, EmptyState-style error when it can't, human copy only.
+ */
 export function ConfigHealthView() {
   const config = useConfig();
   const health = useHealth();
 
   if (config.isLoading || health.isLoading) {
-    return <div className="text-sm text-zinc-400">Loading backend status…</div>;
+    return (
+      <div className="flex flex-col gap-6 pb-8" aria-busy="true" aria-label="Loading settings">
+        <div>
+          <div className="skeleton h-8 w-40 rounded-lg" />
+          <div className="skeleton mt-2 h-4 w-72 rounded" />
+        </div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {SERVICES.map((name) => (
+            <div key={name} className="flex items-center justify-between rounded-xl border border-white/[.06] bg-surface-2/70 p-4">
+              <div className="flex items-center gap-3">
+                <span className="grid h-9 w-9 place-items-center rounded-lg bg-surface-3 text-zinc-500">
+                  <Icon name={SERVICE_ICON[name]} size={16} />
+                </span>
+                <span className="capitalize text-zinc-400">{name}</span>
+              </div>
+              <div className="skeleton h-5 w-20 rounded-full" />
+            </div>
+          ))}
+        </div>
+      </div>
+    );
   }
   if (config.isError || health.isError) {
     return (
-      <Card>
-        <p className="text-sm text-red-400">
-          Couldn&apos;t reach the backend. Run{" "}
-          <code className="rounded bg-zinc-800 px-1">npm run dev</code> (dev proxy → :8000) or
-          serve the built shell against a running api.
-        </p>
-      </Card>
+      <div className="flex flex-col items-center gap-4 rounded-2xl border border-dashed border-white/[.08] py-20 text-center">
+        <div className="grid h-14 w-14 place-items-center rounded-2xl bg-surface-2 text-zinc-500">
+          <Icon name="settings" size={24} />
+        </div>
+        <div className="max-w-sm">
+          <h2 className="font-semibold text-zinc-200">Couldn't reach the backend</h2>
+          <p className="mt-1 text-sm leading-relaxed text-zinc-500">
+            Settings read the live /api/config + /api/health contract. Check the api container, then reload.
+          </p>
+        </div>
+      </div>
     );
   }
 
   const services = config.data?.services;
   const detail = health.data?.serviceDetail ?? {};
+  const degraded = Boolean(health.data?.degraded);
+  const tone = artTone("settings");
 
   return (
-    <div className="flex max-w-3xl flex-col gap-6">
-      <div>
-        <h2 className="text-base font-semibold text-white">Backend status</h2>
-        <p className="mt-1 text-xs text-zinc-500">
-          Read from the frozen <code className="rounded bg-zinc-800 px-1">/api/config</code> +{" "}
-          <code className="rounded bg-zinc-800 px-1">/api/health</code> contract. Watchlist updated{" "}
-          {config.data?.updated || "—"} · {health.data?.titleCount ?? 0} titles.
-        </p>
-        {health.data?.degraded && (
-          <p className="mt-2 inline-block rounded bg-amber-900/30 px-2 py-1 text-xs text-amber-300 ring-1 ring-amber-700">
-            ⚠ Degraded — at least one service is unhealthy.
+    <div className="flex flex-col gap-7 pb-8">
+      <div className="flex flex-wrap items-end justify-between gap-4 pt-2">
+        <div>
+          <h1 className="text-[32px] font-bold leading-none tracking-[-0.02em] text-zinc-50">Settings</h1>
+          <p className="mt-2 text-[13px] text-zinc-500">
+            Backend status & services — watchlist updated {config.data?.updated || "—"} · {health.data?.titleCount ?? 0} titles.
           </p>
-        )}
+        </div>
+        <div
+          className={`inline-flex items-center gap-2 rounded-full px-3.5 py-1.5 text-xs font-semibold ring-1 ${
+            degraded
+              ? "bg-amber-900/30 text-amber-300 ring-amber-700"
+              : "bg-emerald-900/30 text-emerald-300 ring-emerald-700"
+          }`}
+          role="status"
+        >
+          <span aria-hidden="true" className={`h-1.5 w-1.5 rounded-full ${degraded ? "bg-amber-400" : "bg-emerald-400"}`} />
+          {degraded ? "Degraded — a service needs attention" : "All services healthy"}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -47,16 +95,38 @@ export function ConfigHealthView() {
           const enabled = Boolean(services?.[name]);
           const d = detail[name];
           return (
-            <Card key={name}>
-              <div className="flex items-center justify-between">
-                <span className="text-sm capitalize text-zinc-300">{name}</span>
-                <div className="flex items-center gap-2">
+            <Card key={name} className="p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex min-w-0 items-center gap-3">
+                  <span
+                    aria-hidden="true"
+                    className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg art-${tone} text-white/70 ring-1 ring-white/10`}
+                  >
+                    <Icon name={SERVICE_ICON[name]} size={16} />
+                  </span>
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold capitalize text-zinc-100">{name}</div>
+                    {d?.detail ? <div className="truncate text-[11px] text-zinc-500">{d.detail}</div> : null}
+                  </div>
+                </div>
+                <div className="flex shrink-0 items-center gap-1.5">
                   {d && <Badge ok={d.ok} label={d.ok ? "ok" : "down"} />}
-                  <Badge ok={enabled} label={enabled ? "configured" : "unconfigured"} />
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ${
+                      enabled
+                        ? "bg-white/[.04] text-zinc-400 ring-white/10"
+                        : "bg-white/[.02] text-zinc-600 ring-white/5"
+                    }`}
+                  >
+                    {enabled ? "configured" : "not set"}
+                  </span>
                 </div>
               </div>
-              {d?.error && <p className="mt-2 text-xs text-red-400">{d.error}</p>}
-              {d?.detail && <p className="mt-2 text-xs text-zinc-500">{d.detail}</p>}
+              {d?.error ? (
+                <p className="mt-2.5 rounded-lg border border-red-500/20 bg-red-500/[.07] px-2.5 py-1.5 text-xs text-red-300">
+                  {d.error}
+                </p>
+              ) : null}
             </Card>
           );
         })}

@@ -53,7 +53,7 @@ def match_libraries(
             "name": lib.name,
             "path": lib.path,
             "folder_id": None,
-            "collection_type": None,
+            "collection_type": "",
             "ok": False,
             "warning": "",
         }

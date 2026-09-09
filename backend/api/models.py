@@ -180,6 +180,51 @@ class LibraryResponse(BaseModel):
     urls: Optional[Dict[str, str]] = None
 
 
+class LibraryFolder(BaseModel):
+    """One library folder the media server actually exposes (MEDIA_LIBRARIES_PLAN)."""
+
+    id: str                       # server ItemId — the ParentId scope for items
+    name: str                     # server folder name (display fallback only)
+    collection_type: str = ""     # movies | tvshows | mixed | …
+    path: str = ""                # primary (first) location
+
+
+class ConfiguredLibrary(BaseModel):
+    """One sidebar library — the user-facing view of a configured library.
+
+    ``name`` is ALWAYS the configured value (never the MEDIA_LIBRARY_N_ key);
+    ``folder_id`` is set when the configured PATH resolved to a real server
+    folder; ``ok``/``warning`` tell the UI whether this library is live.
+    """
+
+    name: str
+    path: str = ""
+    folder_id: Optional[str] = None
+    collection_type: str = ""
+    ok: bool = False
+    warning: str = ""
+
+
+class LibrariesResponse(BaseModel):
+    """GET /api/library/folders — the sidebar's libraries + server folders."""
+
+    provider: Optional[str] = None
+    folders: List[LibraryFolder] = Field(default_factory=list)
+    #: Sidebar list: resolved configured libraries when MEDIA_LIBRARY_N_* are
+    #: present, otherwise the server's own folders (no hardcoded names).
+    libraries: List[ConfiguredLibrary] = Field(default_factory=list)
+    #: Config-level structural warnings (empty/duplicate entries).
+    warnings: List[str] = Field(default_factory=list)
+
+
+class FolderItemsResponse(BaseModel):
+    """GET /api/library/folders/{folder_id}/items — one folder's poster wall."""
+
+    provider: Optional[str] = None
+    folder_id: str
+    items: List[Dict[str, Any]] = Field(default_factory=list)
+
+
 class QualityProfileResponse(BaseModel):
     id: int
     name: str

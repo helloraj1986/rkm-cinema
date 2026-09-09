@@ -186,6 +186,65 @@
         }
       }
     },
+    "/api/library/folders": {
+      "get": {
+        "summary": "Get Library Folders",
+        "description": "Configured media libraries + the server folders they resolve to.\n\nMEDIA_LIBRARIES_PLAN: the sidebar's Libraries group is built from\n``libraries`` \u2014 the resolved MEDIA_LIBRARY_N_* list when any are configured\n(names shown as-is, never the env keys), otherwise the server's OWN folder\nnames (no hardcoded Movies/TV Shows). ``folders`` carries every server\nfolder for reference; ``warnings`` surfaces config problems.",
+        "operationId": "get_library_folders_api_library_folders_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibrariesResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/library/folders/{folder_id}/items": {
+      "get": {
+        "summary": "Get Folder Items",
+        "description": "Every Movie + Series inside ONE library folder (folder-scoped poster wall).",
+        "operationId": "get_folder_items_api_library_folders__folder_id__items_get",
+        "parameters": [
+          {
+            "name": "folder_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Folder Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FolderItemsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/library": {
       "get": {
         "summary": "Get Library",
@@ -1542,6 +1601,51 @@
         ],
         "title": "ConfigResponse"
       },
+      "ConfiguredLibrary": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "path": {
+            "type": "string",
+            "title": "Path",
+            "default": ""
+          },
+          "folder_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Folder Id"
+          },
+          "collection_type": {
+            "type": "string",
+            "title": "Collection Type",
+            "default": ""
+          },
+          "ok": {
+            "type": "boolean",
+            "title": "Ok",
+            "default": false
+          },
+          "warning": {
+            "type": "string",
+            "title": "Warning",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "ConfiguredLibrary",
+        "description": "One sidebar library \u2014 the user-facing view of a configured library.\n\n``name`` is ALWAYS the configured value (never the MEDIA_LIBRARY_N_ key);\n``folder_id`` is set when the configured PATH resolved to a real server\nfolder; ``ok``/``warning`` tell the UI whether this library is live."
+      },
       "DownloadRequest": {
         "properties": {
           "imdbId": {
@@ -1623,6 +1727,39 @@
           "service"
         ],
         "title": "DownloadResponse"
+      },
+      "FolderItemsResponse": {
+        "properties": {
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "folder_id": {
+            "type": "string",
+            "title": "Folder Id"
+          },
+          "items": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "folder_id"
+        ],
+        "title": "FolderItemsResponse",
+        "description": "GET /api/library/folders/{folder_id}/items \u2014 one folder's poster wall."
       },
       "GlobalDiscoveryRow": {
         "properties": {
@@ -2068,6 +2205,74 @@
         ],
         "title": "JobsResponse",
         "description": "GET /api/jobs \u2014 recent job_runs most-recent-first."
+      },
+      "LibrariesResponse": {
+        "properties": {
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "folders": {
+            "items": {
+              "$ref": "#/components/schemas/LibraryFolder"
+            },
+            "type": "array",
+            "title": "Folders"
+          },
+          "libraries": {
+            "items": {
+              "$ref": "#/components/schemas/ConfiguredLibrary"
+            },
+            "type": "array",
+            "title": "Libraries"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          }
+        },
+        "type": "object",
+        "title": "LibrariesResponse",
+        "description": "GET /api/library/folders \u2014 the sidebar's libraries + server folders."
+      },
+      "LibraryFolder": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "collection_type": {
+            "type": "string",
+            "title": "Collection Type",
+            "default": ""
+          },
+          "path": {
+            "type": "string",
+            "title": "Path",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "LibraryFolder",
+        "description": "One library folder the media server actually exposes (MEDIA_LIBRARIES_PLAN)."
       },
       "LibraryResponse": {
         "properties": {

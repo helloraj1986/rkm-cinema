@@ -11,12 +11,92 @@ providers, not duplicated.
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from api.models import LibraryResponse
+from api.models import (
+    ConfiguredLibrary,
+    FolderItemsResponse,
+    LibrariesResponse,
+    LibraryFolder,
+    LibraryResponse,
+)
 from config.settings import get_config
 from services.library import build_library_service
+from services.library.media_libraries import match_libraries, server_default_libraries
 
 
 router = APIRouter()
+
+
+def _provider_folders(service) -> tuple:
+    """Server folders from the first provider able to enumerate them.
+
+    Returns ``(provider_name, [folder dicts])``; empty when the backend is not
+    configured / reachable / enumerable (never raises — routes degrade).
+    """
+    if service is None:
+        return None, []
+    try:
+        payload = service.library_folders() or {}
+    except Exception:
+        return None, []
+    folders = payload.get("folders") or []
+    return (payload.get("provider") or None), folders
+
+
+def _to_public_folder(f: dict) -> LibraryFolder:
+    return LibraryFolder(
+        id=str(f.get("id") or ""),
+        name=str(f.get("name") or ""),
+        collection_type=str(f.get("collection_type") or ""),
+        path=str(f.get("path") or ""),
+    )
+
+
+@router.get("/library/folders", response_model=LibrariesResponse)
+def get_library_folders():
+    """Configured media libraries + the server folders they resolve to.
+
+    MEDIA_LIBRARIES_PLAN: the sidebar's Libraries group is built from
+    ``libraries`` — the resolved MEDIA_LIBRARY_N_* list when any are configured
+    (names shown as-is, never the env keys), otherwise the server's OWN folder
+    names (no hardcoded Movies/TV Shows). ``folders`` carries every server
+    folder for reference; ``warnings`` surfaces config problems.
+    """
+    cfg = get_config()
+    service = build_library_service(cfg)
+    provider, server_folders = _provider_folders(service)
+
+    configured = list(getattr(cfg, "media_libraries", None) or [])
+    if configured:
+        resolved = match_libraries(configured, server_folders)
+    else:
+        resolved = server_default_libraries(server_folders)
+
+    return LibrariesResponse(
+        provider=provider,
+        folders=[_to_public_folder(f) for f in server_folders],
+        libraries=[ConfiguredLibrary(**r) for r in resolved],
+        warnings=list(getattr(cfg, "media_library_warnings", None) or []),
+    )
+
+
+@router.get("/library/folders/{folder_id}/items", response_model=FolderItemsResponse)
+def get_folder_items(folder_id: str):
+    """Every Movie + Series inside ONE library folder (folder-scoped poster wall)."""
+    cfg = get_config()
+    service = build_library_service(cfg)
+    if service is None:
+        return FolderItemsResponse(provider=None, folder_id=folder_id, items=[])
+    try:
+        payload = service.items_in_folder(folder_id)
+    except Exception:
+        payload = None
+    if not payload:
+        return FolderItemsResponse(provider=None, folder_id=folder_id, items=[])
+    return FolderItemsResponse(
+        provider=payload.get("provider"),
+        folder_id=folder_id,
+        items=payload.get("items") or [],
+    )
 
 
 def _counts(provider) -> dict:

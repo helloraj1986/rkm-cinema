@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import type { SearchHit, WatchlistEntry } from "../../lib/api/client";
 import { useCardActions } from "../watchlist/actions";
 import { useSearch, useWatchlist } from "../watchlist/api";
@@ -9,24 +10,41 @@ import { EmptyState } from "../watchlist/CardRow";
 const DEBOUNCE_MS = 180;
 
 /**
- * Search (LEGACY_PARITY_PLAN): dedicated page replacing the legacy header
- * combobox — same API (GET /api/search: watchlist + TMDB groups), debounced
- * input, ArrowUp/Down/Enter/Escape selection, per-row Download, row click →
- * the rich entry's detail modal (live hits open an ad-hoc stub entry).
+ * Search (LEGACY_PARITY_PLAN + NEW_UX §36/§63): dedicated page replacing the
+ * legacy header combobox — same API (GET /api/search: watchlist + TMDB
+ * groups), debounced input, ArrowUp/Down/Enter/Escape selection, per-row
+ * Download, row click → the rich entry's detail modal. The query lives in the
+ * URL (/search?q=…) so the global top-bar search, refresh and Back all work
+ * and views are shareable.
  */
 export function SearchView() {
   const { entries, stateFor } = useWatchlist();
-  const [q, setQ] = useState("");
-  const [debounced, setDebounced] = useState("");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlQ = searchParams.get("q") ?? "";
+  // Local input mirror; the URL is the source of truth for the query.
+  const [q, setQ] = useState(urlQ);
+  const [debounced, setDebounced] = useState(urlQ);
   const inputRef = useRef<HTMLInputElement>(null);
   const actions = useCardActions();
   const { data, isFetching, isError } = useSearch(debounced);
   const [sel, setSel] = useState(-1);
   const [detail, setDetail] = useState<{ entry: WatchlistEntry; state: ResolvedState } | null>(null);
 
+  // Follow external navigation (top-bar search, Back, deep links).
   useEffect(() => {
-    const t = setTimeout(() => setDebounced(q.trim()), DEBOUNCE_MS);
+    if (urlQ !== q) setQ(urlQ);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlQ]);
+
+  // Debounce typing → run the query and keep the URL in sync (§63).
+  useEffect(() => {
+    const t = setTimeout(() => {
+      const next = q.trim();
+      setDebounced(next);
+      if (next !== urlQ) setSearchParams(next ? { q: next } : {}, { replace: true });
+    }, DEBOUNCE_MS);
     return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [q]);
 
   useEffect(() => setSel(-1), [data]);

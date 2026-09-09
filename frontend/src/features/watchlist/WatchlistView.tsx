@@ -137,7 +137,7 @@ export function WatchlistView() {
         <button
           type="button"
           onClick={() => setShown((n) => n + PAGE)}
-          className="mx-auto rounded-full bg-zinc-800 px-6 py-2 text-sm font-semibold text-zinc-200 hover:bg-zinc-700"
+          className="mx-auto inline-flex h-10 items-center gap-2 rounded-full border border-white/10 bg-white/[.07] px-6 text-sm font-semibold text-zinc-200 transition hover:bg-white/[.12]"
         >
           Load more ({list.length - shown} remaining)
         </button>
@@ -177,13 +177,17 @@ function LibraryStripFooter({
 }) {
   if (!available) return null;
   return (
-    <div className="mt-2 flex items-center justify-between rounded-xl border border-zinc-800 bg-zinc-900/50 px-5 py-3">
-      <div className="text-sm text-zinc-400">
+    <div className="mt-2 flex items-center justify-between gap-4 rounded-xl border border-white/[.06] bg-surface-2/70 px-5 py-3.5">
+      <div className="min-w-0 truncate text-sm text-zinc-400">
         <span className="font-semibold text-zinc-200">My Library</span> · {server || "Media server"} —{" "}
         {counts?.movie || 0} films · {counts?.show || 0} shows
       </div>
-      <button type="button" onClick={onOpen} className="text-xs font-semibold text-amber-300 hover:text-amber-200">
-        Open ›
+      <button
+        type="button"
+        onClick={onOpen}
+        className="shrink-0 text-xs font-semibold text-accent transition hover:text-accent-hover"
+      >
+        Open
       </button>
     </div>
   );

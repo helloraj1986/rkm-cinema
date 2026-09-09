@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Icon } from "../../components/ui/Icon";
 
 /**
  * Horizontal card row with a heading (legacy `rowMarkup` parity): section-style
@@ -34,9 +35,7 @@ export function CardRow({
             aria-label={`See all in ${title}`}
           >
             See all
-            <span aria-hidden="true" className="translate-y-[-1px]">
-              →
-            </span>
+            <Icon name="arrow-right" size={13} className="translate-y-[-1px]" />
           </button>
         ) : null}
       </div>
@@ -48,14 +47,14 @@ export function CardRow({
 /** Shared empty-state block (legacy emptyState parity, NEW_UX §33 copy rules). */
 export function EmptyState({ title, sub }: { title: string; sub: string }) {
   return (
-    <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-white/[.08] px-6 py-14 text-center">
+    <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-white/[.08] px-6 py-14 text-center">
       <div className="grid h-12 w-12 place-items-center rounded-2xl bg-surface-2 text-zinc-500">
-        <span className="text-xl" aria-hidden="true">
-          🎞️
-        </span>
+        <Icon name="film" size={22} />
       </div>
-      <h3 className="mt-1 font-semibold text-zinc-200">{title}</h3>
-      <p className="mx-auto max-w-md text-sm leading-relaxed text-zinc-500">{sub}</p>
+      <div className="max-w-md">
+        <h3 className="font-semibold text-zinc-200">{title}</h3>
+        <p className="mt-1 text-sm leading-relaxed text-zinc-500">{sub}</p>
+      </div>
     </div>
   );
 }

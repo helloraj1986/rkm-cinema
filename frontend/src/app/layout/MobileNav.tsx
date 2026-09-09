@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { Icon, type IconName } from "../../components/ui/Icon";
 
@@ -31,11 +31,27 @@ function tabCls(active: boolean) {
 export function MobileNav() {
   const location = useLocation();
   const [moreOpen, setMoreOpen] = useState(false);
+  const sheetRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
 
   // Close the More sheet on navigation.
   useEffect(() => {
     setMoreOpen(false);
   }, [location.pathname]);
+
+  // Esc closes the sheet; when it closes, focus returns to the More button.
+  useEffect(() => {
+    if (!moreOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setMoreOpen(false);
+        buttonRef.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [moreOpen]);
 
   const moreActive = MORE.some((m) =>
     m.to === "/watchlist" ? location.pathname.startsWith("/watchlist") : location.pathname.startsWith(m.to),
@@ -47,11 +63,17 @@ export function MobileNav() {
       className="fixed inset-x-0 bottom-0 z-[var(--z-drawer)] border-t border-white/[.07] bg-[#0B0C0F]/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl md:hidden"
     >
       {moreOpen && (
-        <div className="absolute bottom-full left-0 right-0 mx-3 mb-2 overflow-hidden rounded-2xl border border-white/10 bg-surface-3 shadow-modal">
+        <div
+          ref={sheetRef}
+          role="menu"
+          aria-label="More destinations"
+          className="absolute bottom-full left-0 right-0 mx-3 mb-2 overflow-hidden rounded-2xl border border-white/10 bg-surface-3 shadow-modal"
+        >
           {MORE.map((m) => (
             <NavLink
               key={m.to}
               to={m.to}
+              role="menuitem"
               className={({ isActive }) =>
                 `flex items-center gap-3 px-4 py-3 text-sm font-medium transition-colors ${
                   isActive ? "bg-white/[.07] text-white" : "text-zinc-400 hover:bg-white/[.05] hover:text-zinc-100"
@@ -72,9 +94,11 @@ export function MobileNav() {
           </NavLink>
         ))}
         <button
+          ref={buttonRef}
           type="button"
           onClick={() => setMoreOpen((o) => !o)}
           aria-expanded={moreOpen}
+          aria-haspopup="menu"
           aria-label={moreOpen ? "Close more menu" : "More"}
           className={tabCls(moreActive)}
         >

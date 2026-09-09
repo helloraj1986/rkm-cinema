@@ -175,6 +175,13 @@ export function SearchView() {
         </div>
       ) : null}
 
+      {!debounced && !hits.length ? (
+        <EmptyState
+          title="Search your library"
+          sub="Try a title, actor, director, or year — matches come from your watchlist and live TMDB."
+        />
+      ) : null}
+
       {data && !data.tmdbKey && data.tmdb.length === 0 ? (
         <div className="text-xs text-zinc-600">
           Live TMDB search is off (no TMDB key) — results below are from your watchlist.

@@ -4,6 +4,7 @@ import { useConfig } from "../settings/api";
 import { useContinueWatching, useLibraryRecent } from "../library/api";
 import { isContinueWatching } from "../library/lib";
 import { MediaCard } from "../library/MediaCard";
+import { Icon } from "../../components/ui/Icon";
 import { EmptyState, CardRow } from "../watchlist/CardRow";
 import { WatchCard } from "../watchlist/WatchCard";
 import { WatchlistDetail } from "../watchlist/WatchlistDetail";
@@ -55,12 +56,12 @@ export function DiscoverView() {
 
   if (isLoading && !entries.length) {
     return (
-      <div className="flex flex-col gap-6" data-testid="discover-loading">
-        <div className="h-72 animate-pulse rounded-2xl bg-zinc-900" />
+      <div className="flex flex-col gap-6" data-testid="discover-loading" aria-busy="true" aria-label="Loading Discover">
+        <div className="skeleton h-72 rounded-2xl" />
         {[0, 1, 2].map((i) => (
-          <div key={i} className="flex gap-3">
+          <div key={i} className="flex gap-3.5">
             {[0, 1, 2, 3, 4].map((j) => (
-              <div key={j} className="h-56 w-40 animate-pulse rounded-lg bg-zinc-900" />
+              <div key={j} className="skeleton h-60 w-44 shrink-0 rounded-[10px]" />
             ))}
           </div>
         ))}
@@ -73,6 +74,7 @@ export function DiscoverView() {
 
   return (
     <div className="flex flex-col gap-8">
+      <h1 className="sr-only">Discover</h1>
       {!entries.length ? (
         <EmptyState
           title="Your watchlist is empty"
@@ -304,51 +306,56 @@ function LibraryStrip({
 }) {
   if (!lib?.available) {
     return (
-      <section className="flex flex-col gap-2">
-        <h2 className="flex items-center gap-2 text-base font-semibold text-zinc-100">
-          <span className="inline-block h-4 w-1 rounded-full bg-amber-400" aria-hidden="true" />
-          My Library
-        </h2>
-        <div className="rounded-xl border border-dashed border-zinc-800 px-6 py-8 text-center">
-          <div className="text-3xl" aria-hidden="true">
-            📚
+      <section className="flex flex-col gap-2.5">
+        <SectionHeading title="My Library" />
+        <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-white/[.08] px-6 py-12 text-center">
+          <div className="grid h-12 w-12 place-items-center rounded-2xl bg-surface-2 text-zinc-500">
+            <Icon name="film" size={22} />
           </div>
-          <h3 className="mt-2 font-semibold text-zinc-200">Library preview</h3>
-          <p className="mx-auto mt-1 max-w-md text-sm text-zinc-500">
-            Connect a library backend (PLEX_URL/PLEX_TOKEN, EMBY_URL/EMBY_API_KEY, or JELLYFIN_URL/JELLYFIN_API_KEY) and
-            your library counts and recent additions appear here.
-          </p>
+          <div className="max-w-md">
+            <h3 className="font-semibold text-zinc-200">Library preview</h3>
+            <p className="mt-1 text-sm leading-relaxed text-zinc-500">
+              Connect a library backend (PLEX_URL/PLEX_TOKEN, EMBY_URL/EMBY_API_KEY, or JELLYFIN_URL/JELLYFIN_API_KEY) and your
+              library counts and recent additions appear here.
+            </p>
+          </div>
         </div>
       </section>
     );
   }
   const counts = lib.counts ?? {};
   return (
-    <section className="flex flex-col gap-2">
+    <section className="flex flex-col gap-2.5">
       <div className="flex items-end justify-between pr-1">
-        <h2 className="flex items-center gap-2 text-base font-semibold text-zinc-100">
-          <span className="inline-block h-4 w-1 rounded-full bg-amber-400" aria-hidden="true" />
-          My Library · {lib.server || "Media server"}
-        </h2>
+        <SectionHeading title={`My Library · ${lib.server || "Media server"}`} />
         <button
           type="button"
           onClick={onOpen}
-          className="text-xs font-semibold text-zinc-400 hover:text-amber-300"
+          className="text-xs font-semibold text-zinc-400 transition-colors hover:text-accent"
           aria-label="Open My Library"
         >
           Open › <span className="text-zinc-500">{counts.movie || 0} films · {counts.show || 0} shows</span>
         </button>
       </div>
       <div className="flex gap-3">
-        <div className="flex-1 rounded-xl border border-zinc-800 bg-zinc-900/60 px-5 py-4">
+        <div className="flex-1 rounded-xl border border-white/[.06] bg-surface-2/70 px-5 py-4">
           <div className="text-2xl font-black text-white">{counts.movie || 0}</div>
-          <div className="text-xs uppercase tracking-wide text-zinc-500">Films</div>
+          <div className="mt-0.5 text-xs uppercase tracking-wide text-zinc-500">Films</div>
         </div>
-        <div className="flex-1 rounded-xl border border-zinc-800 bg-zinc-900/60 px-5 py-4">
+        <div className="flex-1 rounded-xl border border-white/[.06] bg-surface-2/70 px-5 py-4">
           <div className="text-2xl font-black text-white">{counts.show || 0}</div>
-          <div className="text-xs uppercase tracking-wide text-zinc-500">Series</div>
+          <div className="mt-0.5 text-xs uppercase tracking-wide text-zinc-500">Series</div>
         </div>
       </div>
     </section>
+  );
+}
+
+function SectionHeading({ title }: { title: string }) {
+  return (
+    <h2 className="flex items-center gap-2 text-[20px] font-semibold tracking-[-0.02em] text-zinc-100">
+      <span className="inline-block h-4 w-1 rounded-full bg-accent" aria-hidden="true" />
+      {title}
+    </h2>
   );
 }

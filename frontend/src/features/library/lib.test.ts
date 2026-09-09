@@ -131,20 +131,23 @@ describe("libraryGenres", () => {
 });
 
 describe("libraryFilterFromParams / libraryFilterToParams (URL state §63)", () => {
-  it("parses q + genre + sort from the query string", () => {
+  it("parses genre + sort from the query string (q= is ignored — global search owns text)", () => {
     const p = new URLSearchParams("q=mad%20max&genre=Action&sort=title");
-    expect(libraryFilterFromParams(p)).toEqual({ q: "mad max", genre: "Action", sort: "title" });
+    expect(libraryFilterFromParams(p)).toEqual({ q: "", genre: "Action", sort: "title" });
   });
   it("defaults when params are missing or unknown", () => {
     expect(libraryFilterFromParams(new URLSearchParams())).toEqual({ q: "", genre: "", sort: "recent" });
-    expect(libraryFilterFromParams(new URLSearchParams("q=+" ))).toEqual({ q: "", genre: "", sort: "recent" });
+    expect(libraryFilterFromParams(new URLSearchParams("q=+"))).toEqual({ q: "", genre: "", sort: "recent" });
     // A bogus/removed sort key is never trusted → recent.
     expect(libraryFilterFromParams(new URLSearchParams("sort=rating"))).toEqual({ q: "", genre: "", sort: "recent" });
   });
-  it("round-trips state through the URL", () => {
-    const f = { q: "mad max", genre: "Action", sort: "title" as const };
+  it("round-trips state through the URL (without q)", () => {
+    const f = { q: "", genre: "Action", sort: "title" as const };
     const out = libraryFilterToParams(f).toString();
     expect(libraryFilterFromParams(new URLSearchParams(out))).toEqual(f);
+    // Free-text no longer round-trips — it is dropped from the URL on write.
+    const stale = libraryFilterToParams({ q: "mad max", genre: "Action", sort: "recent" }).toString();
+    expect(stale).not.toContain("q=");
   });
   it("drops empty values so a clean view has no query string", () => {
     expect(libraryFilterToParams({ q: "", genre: "", sort: "recent" }).toString()).toBe("");

@@ -23,12 +23,6 @@ const GROUPS: { title: string; items: NavItem[] }[] = [
     items: [
       { to: "/watchlist", label: "Watchlist", icon: "heart" },
       { to: "/discover", label: "Discover", icon: "compass" },
-    ],
-  },
-  {
-    title: "Tools",
-    items: [
-      { to: "/search", label: "Search", icon: "search" },
       { to: "/suggest", label: "Suggest", icon: "sparkles" },
     ],
   },

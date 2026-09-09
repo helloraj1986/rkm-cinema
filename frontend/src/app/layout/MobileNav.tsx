@@ -12,7 +12,6 @@ const TABS: { to: string; label: string; icon: IconName; end?: boolean }[] = [
   { to: "/library/home", label: "Home", icon: "home", end: true },
   { to: "/library/movies", label: "Movies", icon: "film" },
   { to: "/library/shows", label: "Shows", icon: "tv" },
-  { to: "/search", label: "Search", icon: "search" },
 ];
 
 const MORE: { to: string; label: string; icon: IconName }[] = [

@@ -7,7 +7,6 @@ import { LibraryFolderView } from "../features/library/LibraryFolderView";
 import { ItemDetailPage } from "../features/library/ItemDetailPage";
 import { DiscoverView } from "../features/discover/DiscoverView";
 import { WatchlistView } from "../features/watchlist/WatchlistView";
-import { SearchView } from "../features/search/SearchView";
 import { SuggestView } from "../features/suggest/SuggestView";
 
 /**
@@ -41,8 +40,10 @@ export const router = createBrowserRouter([
       },
       { path: "discover", element: <DiscoverView /> },
       { path: "watchlist", element: <WatchlistView /> },
-      { path: "search", element: <SearchView /> },
       { path: "suggest", element: <SuggestView /> },
+      // Global search lives in the top bar (GLOBAL_SEARCH_PLAN) — the old
+      // standalone /search results page was removed; deep links land Home.
+      { path: "search", element: <Navigate to="/library/home" replace /> },
     ],
   },
 ]);

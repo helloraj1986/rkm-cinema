@@ -15,7 +15,6 @@ import { Icon } from "../../components/ui/Icon";
 export function LibraryToolbar({
   label,
   genres,
-  query,
   genre,
   sort,
   view,
@@ -26,37 +25,22 @@ export function LibraryToolbar({
 }: {
   label: string;
   genres: string[];
-  query: string;
   genre: string;
   sort: LibrarySort;
   view: LibraryViewMode;
   resultCount: number;
   totalCount: number;
-  onChange: (patch: { q?: string; genre?: string; sort?: LibrarySort }) => void;
+  onChange: (patch: { genre?: string; sort?: LibrarySort }) => void;
   onViewChange: (view: LibraryViewMode) => void;
 }) {
   const pillOn = "bg-accent text-black hover:bg-accent-hover";
   const pillOff =
     "border border-white/[.08] bg-white/[.06] text-zinc-300 hover:bg-white/[.1] hover:text-white";
-  const filtered = query.trim() !== "" || genre !== "";
+  const filtered = genre !== "";
 
   return (
     <div className="flex flex-col gap-3.5">
       <div className="flex flex-wrap items-center gap-2.5">
-        <div className="relative">
-          <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500">
-            <Icon name="search" size={15} />
-          </span>
-          <input
-            type="search"
-            value={query}
-            onChange={(e) => onChange({ q: e.target.value })}
-            placeholder={`Search ${label.toLowerCase()}…`}
-            aria-label={`Search ${label}`}
-            className="w-64 rounded-[10px] border border-white/[.06] bg-surface-2 py-2 pl-9 pr-3 text-sm text-zinc-100 outline-none transition placeholder:text-zinc-500 focus:border-accent/50 focus:shadow-glow"
-          />
-        </div>
-
         <label className="flex items-center gap-2 text-xs text-zinc-500">
           <span className="sr-only">Sort by</span>
           <Icon name="clock" size={14} className="text-zinc-500" />

@@ -1,4 +1,3 @@
-import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useLibraryItems, useScanLibrary } from "./api";
 import {
@@ -9,7 +8,6 @@ import {
   libraryItemsByType,
   libraryKindLabel,
   libraryViewFromParams,
-  type LibraryFilter,
   type LibraryKind,
   type LibrarySort,
   type LibraryViewMode,
@@ -21,18 +19,15 @@ import { useLibraryOutlet } from "./LibraryLayout";
 import { toast } from "../watchlist/toast";
 import { Icon } from "../../components/ui/Icon";
 
-/** How long after the user stops typing before the URL q= param updates. */
-const QUERY_DEBOUNCE_MS = 220;
-
 /**
  * /library/movies + /library/shows — the premium library folders (NEW_UX spec
- * §11–§19): a clean page header with human counts, a search + genre-pill +
- * sort toolbar, and a responsive auto-fill poster grid. Everything runs
- * client-side over the shared useLibraryItems cache — no extra fetches.
+ * §11–§19): a clean page header with human counts, a genre-pill + sort
+ * toolbar, and a responsive auto-fill poster grid. Everything runs client-side
+ * over the shared useLibraryItems cache — no extra fetches.
  *
- * URL state (§60/§63): q / genre / sort live in the URL
- * (/library/movies?q=…&genre=…&sort=…), so filters survive refresh, Back and
- * deep links, and the browser's scroll restoration returns to the same place.
+ * URL state (§60/§63): genre / sort live in the URL so filters survive
+ * refresh, Back and deep links. Free-text search is deliberately NOT here —
+ * global search is the one search surface, in the top bar (GLOBAL_SEARCH_PLAN).
  */
 export function LibraryFolderView({ kind }: { kind: LibraryKind }) {
   const items = useLibraryItems();
@@ -42,39 +37,16 @@ export function LibraryFolderView({ kind }: { kind: LibraryKind }) {
 
   const parsed = libraryFilterFromParams(searchParams);
   const view = libraryViewFromParams(searchParams);
-  // The search box mirrors the URL q (typing is instant); the URL is the
-  // source of truth after the debounce.
-  const [query, setQuery] = useState(parsed.q);
-  const queryRef = useRef(parsed.q);
-  queryRef.current = parsed.q;
 
-  // External navigation (Back, deep link, header search) re-syncs the box.
-  useEffect(() => {
-    setQuery(parsed.q);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [parsed.q]);
-
-  // Debounced write of the typed query back to the URL (replace — typing a
-  // query shouldn't create a history entry per keystroke).
-  useEffect(() => {
-    const raw = query.trim();
-    if (raw === queryRef.current) return;
-    const t = window.setTimeout(() => {
-      setSearchParams(libraryFilterToParams({ ...parsed, q: raw }), { replace: true });
-    }, QUERY_DEBOUNCE_MS);
-    return () => window.clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query]);
-
-  const apply = (patch: LibraryFilter) => {
-    // Always carry the current box text — a genre/sort click while the query
-    // is still inside its debounce must not drop it from the URL.
-    const next = { ...parsed, q: query.trim(), ...patch };
-    setSearchParams(libraryFilterToParams(next), { replace: true });
+  const apply = (patch: { genre?: string; sort?: LibrarySort }) => {
+    setSearchParams(
+      libraryFilterToParams({ genre: parsed.genre, sort: parsed.sort, ...patch }),
+      { replace: true },
+    );
   };
 
   const setView = (next: LibraryViewMode) => {
-    const p = libraryFilterToParams({ ...parsed, q: query.trim() });
+    const p = libraryFilterToParams({ genre: parsed.genre, sort: parsed.sort });
     if (next !== "grid") p.set("view", next);
     setSearchParams(p, { replace: true });
   };
@@ -83,8 +55,8 @@ export function LibraryFolderView({ kind }: { kind: LibraryKind }) {
   const noun = label === "TV Shows" ? "show" : "movie";
   const kindItems = libraryItemsByType(items.data?.items ?? [], kind);
   const genres = libraryGenres(kindItems);
-  const list = filterLibraryItems(kindItems, { q: query, genre: parsed.genre, sort: parsed.sort });
-  const filtered = query.trim() !== "" || parsed.genre !== "";
+  const list = filterLibraryItems(kindItems, { genre: parsed.genre, sort: parsed.sort });
+  const filtered = parsed.genre !== "";
   const provider = items.data?.provider ?? null;
 
   const nounLabel = (n: number) => `${n} ${noun}${n === 1 ? "" : "s"}`;
@@ -97,8 +69,7 @@ export function LibraryFolderView({ kind }: { kind: LibraryKind }) {
   };
 
   const clear = () => {
-    setQuery("");
-    apply({ q: "", genre: "" });
+    apply({ genre: "" });
   };
 
   return (
@@ -119,17 +90,15 @@ export function LibraryFolderView({ kind }: { kind: LibraryKind }) {
         <LibraryToolbar
           label={label}
           genres={genres}
-          query={query}
           genre={parsed.genre}
           sort={parsed.sort}
           view={view}
           resultCount={list.length}
           totalCount={kindItems.length}
-          onChange={({ q, genre: g, sort: s }) => {
-            if (q !== undefined) setQuery(q);
-            const patch: LibraryFilter = {};
+          onChange={({ genre: g, sort: s }) => {
+            const patch: { genre?: string; sort?: LibrarySort } = {};
             if (g !== undefined) patch.genre = g;
-            if (s !== undefined) patch.sort = s as LibrarySort;
+            if (s !== undefined) patch.sort = s;
             if (g !== undefined || s !== undefined) apply(patch);
           }}
           onViewChange={setView}
@@ -180,10 +149,9 @@ export function LibraryFolderView({ kind }: { kind: LibraryKind }) {
       ) : list.length === 0 ? (
         <div className="flex flex-col items-start gap-3 rounded-2xl border border-dashed border-white/[.08] px-8 py-14">
           <h2 className="font-semibold text-zinc-200">
-            No {label.toLowerCase()} match{query.trim() ? ` “${query.trim()}”` : ""}
-            {parsed.genre ? ` in ${parsed.genre}` : ""}
+            No {label.toLowerCase()} match{parsed.genre ? ` in ${parsed.genre}` : ""}
           </h2>
-          <p className="text-sm text-zinc-500">Try another title or genre.</p>
+          <p className="text-sm text-zinc-500">Try another genre.</p>
           <button
             type="button"
             onClick={clear}

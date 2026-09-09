@@ -122,7 +122,9 @@ export interface LibraryFilter {
 export function libraryFilterFromParams(
   params: URLSearchParams,
 ): Required<Omit<LibraryFilter, "q">> & { q: string } {
-  const q = (params.get("q") ?? "").trim();
+  // Free-text search was removed from the folders (GLOBAL_SEARCH_PLAN) — the
+  // URL q= param is ignored so stale deep links don't silently filter.
+  const q = "";
   const genre = (params.get("genre") ?? "").trim();
   const rawSort = (params.get("sort") ?? "").trim();
   const sort = (LIBRARY_SORT_KEYS as string[]).includes(rawSort) ? (rawSort as LibrarySort) : "recent";
@@ -141,7 +143,7 @@ export function libraryViewFromParams(params: URLSearchParams): LibraryViewMode 
  */
 export function libraryFilterToParams(f: LibraryFilter): URLSearchParams {
   const p = new URLSearchParams();
-  if (f.q && f.q.trim()) p.set("q", f.q.trim());
+  // Free-text q= is never written (GLOBAL_SEARCH_PLAN — global search owns text).
   if (f.genre && f.genre.trim()) p.set("genre", f.genre.trim());
   if (f.sort && f.sort !== "recent") p.set("sort", f.sort);
   return p;

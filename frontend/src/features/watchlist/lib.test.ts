@@ -9,6 +9,8 @@ import {
   fmtEta,
   fmtRating,
   fmtRuntimeMin,
+  isSameWatchlistTitle,
+  upsertWatchlistEntries,
   jellyfinMarker,
   mediaIdOf,
   persistedToEntry,
@@ -244,6 +246,33 @@ describe("pickHero (legacy parity)", () => {
   });
   it("null on empty", () => {
     expect(pickHero([], "auto")).toBeNull();
+  });
+});
+
+describe("watchlist upsert dedupe (regression: overlay adds wiping the cache)", () => {
+  const tmdbOnly = (id: number, title = "T") => ({ ...movie, imdbId: "", tmdbId: id, title });
+  it("isSameWatchlistTitle matches only on REAL ids", () => {
+    expect(isSameWatchlistTitle({ tmdbId: 603, imdbId: "" }, { tmdbId: 603, imdbId: "" })).toBe(true);
+    expect(isSameWatchlistTitle({ tmdbId: null, imdbId: "tt0133093" }, { tmdbId: null, imdbId: "tt0133093" })).toBe(true);
+    // Two different empty-imdb titles are NOT the same — the bug that dropped
+    // every previously-added TMDB-only entry on each new add.
+    expect(isSameWatchlistTitle({ tmdbId: 1756365, imdbId: "" }, { tmdbId: 1723854, imdbId: "" })).toBe(false);
+    expect(isSameWatchlistTitle({ tmdbId: null, imdbId: "" }, { tmdbId: null, imdbId: "" })).toBe(false);
+  });
+  it("upsertWatchlistEntries prepends and never drops unrelated empty-imdb titles", () => {
+    const ironMan = tmdbOnly(1723854, "Iron Man");
+    const prior = [tmdbOnly(1756365, "Sappho's Tale"), movie];
+    const next = upsertWatchlistEntries(prior, ironMan);
+    expect(next).toHaveLength(3);
+    expect(next[0].title).toBe("Iron Man");
+    expect(next.map((e) => e.title)).toContain("Sappho's Tale");
+  });
+  it("upsertWatchlistEntries drops the SAME title only", () => {
+    const same = { ...movie }; // same tmdb+imdb as `movie`
+    const next = upsertWatchlistEntries([movie, tmdbOnly(1756365, "Sappho's Tale")], same);
+    expect(next).toHaveLength(2); // duplicate `movie` dropped, Sappho kept
+    expect(next.filter((e) => e.title === "The Matrix")).toHaveLength(1);
+    expect(next.map((e) => e.title)).toContain("Sappho's Tale");
   });
 });
 

@@ -335,6 +335,28 @@ export function buildWatchlistRows(entries: WatchlistEntry[]): WatchlistRow[] {
 }
 
 // ---------------------------------------------------------------- watchlist grid
+/** True when two watchlist entries are the SAME title (dedupe). Only REAL ids
+ *  count — an empty/absent id never matches another empty id, so TMDB-only
+ *  entries (imdbId "") can never wipe each other out of the local cache. */
+export function isSameWatchlistTitle(
+  a: Pick<WatchlistEntry, "tmdbId" | "imdbId">,
+  b: Pick<WatchlistEntry, "tmdbId" | "imdbId">,
+): boolean {
+  const ta = Number(a.tmdbId);
+  const tb = Number(b.tmdbId);
+  if (ta > 0 && tb > 0 && ta === tb) return true;
+  if (a.imdbId && b.imdbId && a.imdbId === b.imdbId) return true;
+  return false;
+}
+
+/** Prepend *entry*, dropping only existing rows that are genuinely the same
+ *  title (by a real tmdbId/imdbId) — the optimistic watchlist update source. */
+export function upsertWatchlistEntries(
+  existing: WatchlistEntry[],
+  entry: WatchlistEntry,
+): WatchlistEntry[] {
+  return [entry, ...existing.filter((e) => !isSameWatchlistTitle(e, entry))];
+}
 export type WatchlistChip = "all" | "movie" | "tv" | "downloaded" | "not";
 export type WatchlistSort = "recent" | "rating" | "release" | "title";
 

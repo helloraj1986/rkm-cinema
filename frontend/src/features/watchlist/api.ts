@@ -12,6 +12,7 @@ import {
   resourceMap,
   resolveState,
   suggestItemToEntry,
+  upsertWatchlistEntries,
   type ResolvedState,
 } from "./lib";
 
@@ -88,14 +89,14 @@ export function useAddToWatchlist() {
           in_watchlist: true,
           in_library: false,
         });
-      // Upsert by tmdbId (dedupe) — mirrors legacy pushSuggestEntryToApp.
-      const next = [
-        entry,
-        ...existing.filter(
-          (e) => Number(e.tmdbId) !== Number(entry.tmdbId) && e.imdbId !== entry.imdbId,
-        ),
-      ];
+      // Upsert by REAL ids only (legacy pushSuggestEntryToApp) — entries with
+      // an empty imdbId must never dedupe against each other, or every add
+      // would wipe previously-added TMDB-only titles from the local cache.
+      // The optimistic list is then reconciled against the server in the
+      // background so a cold cache can't show a partial watchlist.
+      const next = upsertWatchlistEntries(existing, entry);
       qc.setQueryData(["watchlist", "entries"], { updated: "", entries: next });
+      void qc.invalidateQueries({ queryKey: ["watchlist", "entries"] });
       void qc.invalidateQueries({ queryKey: ["watchlist", "resources"] });
     },
   });

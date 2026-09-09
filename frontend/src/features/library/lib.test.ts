@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import type { DetailPlay, MediaItem } from "../../lib/api/client";
 import {
   addedTime,
+  artTone,
   detailInProgress,
   detailPrimaryLabel,
   detailResumePercent,
@@ -16,9 +17,11 @@ import {
   libraryItemsByType,
   libraryKindLabel,
   personHeadshotUrl,
+  pickHomeHero,
   playbackMarker,
   posterUrl,
   ratingText,
+  resumePercent,
   seriesTargetForEpisode,
   similarItemToResult,
 } from "./lib";
@@ -326,5 +329,62 @@ describe("Continue-Watching episode helpers (episode facet)", () => {
   it("passes non-episode items through untouched", () => {
     expect(seriesTargetForEpisode({ ...base, kind: "movie" })).toBeNull();
     expect(seriesTargetForEpisode({ ...base, kind: "episode" })).toBeNull(); // no series_id
+  });
+});
+describe("home hero + artwork tone (NEW_UX)", () => {
+  const movie = (id: string, pos = 0, rt = 6000): MediaItem => ({
+    ...base,
+    item_id: id,
+    title: `Movie ${id}`,
+    type: "movie",
+    playback_position: pos,
+    runtime: rt,
+  });
+  const show = (id: string): MediaItem => ({ ...base, item_id: id, title: `Show ${id}`, type: "tv" });
+  const episode = (id: string, seriesId: string): MediaItem => ({
+    ...base,
+    item_id: id,
+    title: "Ep",
+    type: "episode",
+    kind: "episode",
+    episode: { number: 2, season: 1, series_id: seriesId, series_name: "Show" },
+    playback_position: 120,
+    runtime: 2400,
+  });
+
+  it("artTone is deterministic, in range and differs across titles", () => {
+    expect(artTone("Interstellar")).toBe(artTone("Interstellar"));
+    expect(artTone(undefined)).toBeGreaterThanOrEqual(0);
+    expect(artTone("Interstellar")).toBeGreaterThanOrEqual(0);
+    expect(artTone("Interstellar")).toBeLessThan(6);
+    const tones = new Set(["Mad Max", "Prisoners", "The Batman", "Dune", "Arrival", "Shōgun"].map(artTone));
+    expect(tones.size).toBeGreaterThan(1); // palette variety, not one flat colour
+  });
+
+  it("resumePercent clamps to 0..100 and ignores finished items", () => {
+    expect(resumePercent(movie("m", 0, 6000))).toBe(0);
+    expect(resumePercent(movie("m", 3000, 6000))).toBe(50);
+    expect(resumePercent(movie("m", 999999, 6000))).toBe(100);
+    expect(resumePercent({ ...base, played: true })).toBe(0);
+  });
+
+  it("prefers an in-progress movie, then any in-progress item, then recent, then library", () => {
+    const ep = episode("e1", "s1");
+    const recent = [movie("r1")];
+    // episode in progress is the ONLY in-progress row → hero falls back to it
+    expect(pickHomeHero([ep], [], [show("x")])?.item_id).toBe("e1");
+    // in-progress movie wins over an episode + recents
+    expect(pickHomeHero([ep, movie("m1", 100)], recent, [show("x")])?.item_id).toBe("m1");
+    // nothing in progress → most recently added first
+    expect(pickHomeHero([], recent, [movie("m0")])?.item_id).toBe("r1");
+    // empty everywhere except the library → first library item
+    expect(pickHomeHero([], [], [show("x"), movie("m0")])?.item_id).toBe("m0"); // movie preferred
+    expect(pickHomeHero([], [], [show("x")])?.item_id).toBe("x");
+    expect(pickHomeHero([], [], [])).toBeNull();
+  });
+
+  it("ignores finished rows when picking the hero", () => {
+    const done = { ...movie("d", 0), played: true };
+    expect(pickHomeHero([done], [], [])).toBeNull();
   });
 });

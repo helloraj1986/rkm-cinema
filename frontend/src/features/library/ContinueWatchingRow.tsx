@@ -1,39 +1,37 @@
 import type { MediaItem } from "../../lib/api/client";
 import { isContinueWatching, seriesTargetForEpisode } from "./lib";
-import { MediaCard } from "./MediaCard";
+import { ContinueWatchingCard } from "./ContinueWatchingCard";
+import { SectionHeader } from "../../components/ui/SectionHeader";
 
+/**
+ * Continue Watching rail (design spec §10): landscape backdrop-first cards that
+ * are larger than ordinary library cards. Episode cards resume the EPISODE on
+ * ▶ (quickPlay keeps the episode id/position) and open the SERIES page on a
+ * whole-card click so context + the episode list are visible.
+ */
 export function ContinueWatchingRow({
   items,
   onQuickPlay,
   onOpenDetail,
-  onToggleWatched,
 }: {
   items: MediaItem[];
   onQuickPlay: (item: MediaItem) => void;
   onOpenDetail: (item: MediaItem) => void;
-  onToggleWatched?: (item: MediaItem) => void;
 }) {
-  const watch = items.filter(isContinueWatching);
+  const watch = (items ?? []).filter(isContinueWatching);
   if (watch.length === 0) return null;
-  // Episode cards: hover ▶ resumes the EPISODE instantly (quickPlay keeps the
-  // episode id/position); a whole-card click opens the SERIES page so context
-  // + the episode list are visible (CONTINUE_WATCHING_EPISODES_PLAN Phase 2).
   const openDetailFor = (item: MediaItem) =>
     onOpenDetail(seriesTargetForEpisode(item) ?? item);
   return (
-    <section>
-      <h2 className="mb-3 text-base font-semibold text-white">
-        <span className="mr-2 inline-block h-3 w-1.5 rounded bg-amber-400 align-middle" />
-        Continue Watching
-      </h2>
-      <div className="flex gap-3 overflow-x-auto pb-2">
+    <section aria-label="Continue watching">
+      <SectionHeader title="Continue Watching" />
+      <div className="no-scrollbar snap-rail flex gap-3.5 overflow-x-auto pb-1.5">
         {watch.map((item) => (
-          <MediaCard
+          <ContinueWatchingCard
             key={item.item_id}
             item={item}
             onQuickPlay={onQuickPlay}
             onOpenDetail={openDetailFor}
-            onToggleWatched={onToggleWatched}
           />
         ))}
       </div>

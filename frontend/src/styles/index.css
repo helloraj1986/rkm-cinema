@@ -151,4 +151,44 @@
       linear-gradient(90deg, #08090b 0%, rgba(8, 9, 11, 0.85) 35%, rgba(8, 9, 11, 0.2) 75%, rgba(8, 9, 11, 0.85) 100%),
       linear-gradient(0deg, #08090b 0%, transparent 60%);
   }
+
+  /* Seeded gradient artwork used when an item has no image (spec §58:
+     "dark neutral placeholder… never a broken-image icon"). Picked via the
+     deterministic artTone() index so the same title always gets the same art. */
+  .art-0 {
+    background:
+      radial-gradient(circle at 72% 28%, rgba(255, 196, 0, 0.5), transparent 16%),
+      radial-gradient(circle at 30% 78%, rgba(120, 140, 180, 0.22), transparent 34%),
+      linear-gradient(140deg, #1c2330, #453621 52%, #0d1014);
+  }
+  .art-1 {
+    background:
+      radial-gradient(circle at 30% 32%, rgba(102, 140, 164, 0.6), transparent 24%),
+      radial-gradient(circle at 78% 80%, rgba(20, 30, 40, 0.9), transparent 40%),
+      linear-gradient(150deg, #151d27, #3a5666 52%, #090b0e);
+  }
+  .art-2 {
+    background:
+      radial-gradient(circle at 62% 28%, rgba(157, 77, 67, 0.62), transparent 22%),
+      radial-gradient(circle at 30% 85%, rgba(40, 20, 24, 0.8), transparent 36%),
+      linear-gradient(145deg, #241418, #66362f 55%, #090a0c);
+  }
+  .art-3 {
+    background:
+      radial-gradient(circle at 42% 32%, rgba(124, 113, 143, 0.6), transparent 22%),
+      radial-gradient(circle at 80% 82%, rgba(20, 20, 30, 0.9), transparent 38%),
+      linear-gradient(145deg, #181621, #484053 55%, #090a0c);
+  }
+  .art-4 {
+    background:
+      radial-gradient(circle at 55% 28%, rgba(143, 155, 104, 0.6), transparent 20%),
+      radial-gradient(circle at 25% 80%, rgba(20, 30, 20, 0.8), transparent 36%),
+      linear-gradient(145deg, #172018, #4e593c 55%, #080b09);
+  }
+  .art-5 {
+    background:
+      radial-gradient(circle at 50% 30%, rgba(193, 139, 99, 0.6), transparent 20%),
+      radial-gradient(circle at 82% 78%, rgba(30, 20, 16, 0.9), transparent 38%),
+      linear-gradient(145deg, #2a1a17, #704634 55%, #090a0c);
+  }
 }

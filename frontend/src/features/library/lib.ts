@@ -290,3 +290,48 @@ export function seriesTargetForEpisode(item: MediaItem): MediaItem | null {
     runtime: 0,
   };
 }
+
+// ---------------------------------------- Home hero & artwork tone (NEW_UX spec)
+/**
+ * Deterministic 0..5 tone index for an item title — picks one of the seeded
+ * gradient palettes used as poster/landscape artwork fallback (never a broken
+ * image state; spec §58). Stable across renders for the same title.
+ */
+export function artTone(title: string | null | undefined): number {
+  const t = String(title ?? "");
+  let h = 0;
+  for (let i = 0; i < t.length; i += 1) h = (h * 31 + t.charCodeAt(i)) >>> 0;
+  return h % 6;
+}
+
+/** Resume percent for a continue-watching item (0 when nothing to show). */
+export function resumePercent(item: MediaItem): number {
+  const pos = Number(item.playback_position || 0);
+  const rt = Number(item.runtime || 0);
+  if (pos <= 0 || rt <= 0) return 0;
+  return Math.min(100, Math.round((pos / rt) * 100));
+}
+
+/**
+ * The Home hero pick (NEW_UX spec §9/§64): prefer a continue-watching MOVIE
+ * (clean "Resume" hero), then any in-progress item (episodes included), then
+ * the most recently added title, then the first library item. Null when the
+ * library is empty — the view renders an empty state instead of a hero.
+ */
+export function pickHomeHero(
+  cw: MediaItem[],
+  recent: MediaItem[],
+  all: MediaItem[],
+): MediaItem | null {
+  // Resume candidates only — finished rows never take the hero's spotlight.
+  const resume = (cw ?? []).filter(
+    (i) => Boolean(i.item_id) && !i.played && Number(i.playback_position || 0) > 0,
+  );
+  const movie = resume.find((i) => !isSeries(i) && !isEpisodeItem(i));
+  if (movie) return movie;
+  if (resume[0]) return resume[0];
+  const added = (recent ?? []).filter((i) => Boolean(i.item_id));
+  if (added[0]) return added[0];
+  const anyMovie = (all ?? []).find((i) => !isSeries(i));
+  return anyMovie ?? (all ?? [])[0] ?? null;
+}

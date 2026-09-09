@@ -1,4 +1,5 @@
-import { useState, type ButtonHTMLAttributes, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   api,
   type DetailPeople,
@@ -239,6 +240,32 @@ export function ItemDetailContent({
   // Cold deep link to an unknown id: the detail probe 404s soft and the library
   // list has no match — render the grid-style fallback instead of a blank page.
   const notFound = !isLoading && isError && !item && !d;
+
+  // Global-search deep link (?play=1[&episode={id}]): start playback as soon as
+  // the data this item needs is ready, then clear the params so Back/refresh
+  // don't replay it. Fires once per mount (remounts on item change via key).
+  const [searchParams, setSearchParams] = useSearchParams();
+  const autoPlayedRef = useRef(false);
+  useEffect(() => {
+    if (searchParams.get("play") !== "1" || autoPlayedRef.current) return;
+    if (tv) {
+      const epId = searchParams.get("episode");
+      const targetEp = epId ? episodes.find((e) => e.id === epId) ?? null : seriesPlayEp;
+      if (!targetEp) return; // wait for the episode list
+      autoPlayedRef.current = true;
+      onPlayEpisode(targetEp, queue);
+    } else if (d) {
+      autoPlayedRef.current = true;
+      onPlayMovie(itemId, d.name ?? title, detailInProgress(d?.play) ? resumeSec : 0, runtimeSec);
+    } else {
+      return; // wait for the detail probe
+    }
+    const next = new URLSearchParams(searchParams);
+    next.delete("play");
+    next.delete("episode");
+    setSearchParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, tv, d, episodes, itemId, title, resumeSec, runtimeSec, seriesPlayEp]);
 
   if (isLoading && !d && !item) {
     return (

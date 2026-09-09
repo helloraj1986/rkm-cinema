@@ -150,6 +150,9 @@ class GlobalDiscoveryRow(BaseModel):
     year: Optional[int] = None
     poster: str = ""
     overview: str = ""
+    #: True when the title is already on the watchlist (server truth — the UI
+    #: then offers Download/Details instead of "Add to watchlist").
+    in_watchlist: bool = False
 
 
 class SearchGlobalResponse(BaseModel):

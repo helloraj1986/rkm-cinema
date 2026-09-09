@@ -107,6 +107,20 @@ def search_global(q: str = Query(default="", min_length=1)):
     # TMDB discovery ONLY when there is no strong owned match — and never a row
     # that is already owned (tmdb-id or normalised title+year).
     if cfg.has_tmdb() and not payload["strong_match"]:
+        # Watchlist membership so the overlay can offer Download (not Add) for
+        # titles already on the watchlist — matches the Suggest card contract.
+        watchlist_tmdb: set[int] = set()
+        try:
+            from services.watchlist import WatchlistService
+            data = WatchlistService().load()
+            for e in data.pending + data.recommended:
+                try:
+                    if getattr(e, "tmdbId", None):
+                        watchlist_tmdb.add(int(e.tmdbId))
+                except (TypeError, ValueError):
+                    continue
+        except Exception as e:  # noqa: BLE001
+            logger.warning("watchlist membership lookup failed: %s", e)
         try:
             for res in TMDBService(config=cfg).search_multi(query)[:6]:
                 mtype = res.get("media_type")
@@ -121,6 +135,7 @@ def search_global(q: str = Query(default="", min_length=1)):
                     "poster": ("https://image.tmdb.org/t/p/w342" + res["poster_path"])
                               if res.get("poster_path") else "",
                     "overview": str(res.get("overview") or ""),
+                    "in_watchlist": int(res.get("id") or 0) in watchlist_tmdb,
                 }
                 if candidate["tmdb_id"] and not is_duplicate_discovery(candidate, owned_raw):
                     payload["discovery"].append(GlobalDiscoveryRow(**candidate))

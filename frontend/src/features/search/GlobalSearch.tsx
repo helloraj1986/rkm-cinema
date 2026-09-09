@@ -1,14 +1,64 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import type { GlobalDiscoveryRow, GlobalHint, GlobalOwnedRow } from "../../lib/api/client";
+import type { GlobalDiscoveryRow, GlobalHint, GlobalOwnedRow, SuggestResult, WatchlistEntry } from "../../lib/api/client";
 import { Icon } from "../../components/ui/Icon";
 import { useAddToWatchlist } from "../watchlist/api";
+import { useCardActions } from "../watchlist/actions";
 import { toast } from "../watchlist/toast";
+import { SuggestDetailModal } from "../suggest/SuggestDetailModal";
 import { useGlobalSearch } from "./api";
 import { actionLabel, artUrl, detailsTarget, metaLine, playTarget } from "./lib";
 
 const DEBOUNCE_MS = 200;
 const KIND_TEXT: Record<string, string> = { movie: "Movie", tv: "TV Show" };
+
+/** Adapt a discovery row for the shared Suggest detail modal/card language. */
+function toSuggestItem(disc: GlobalDiscoveryRow, inWatchlist: boolean): SuggestResult {
+  return {
+    tmdb_id: disc.tmdb_id,
+    media_type: disc.media_type,
+    title: disc.title,
+    year: disc.year ?? null,
+    tmdb_score: 0,
+    vote_count: 0,
+    genres: [],
+    overview: disc.overview,
+    poster: disc.poster,
+    backdrop: "",
+    in_watchlist: inWatchlist,
+    in_library: false,
+  };
+}
+
+/** A WatchlistEntry stub so Download requests the canonical media id. */
+function entryStubFor(disc: GlobalDiscoveryRow): WatchlistEntry {
+  return {
+    imdbId: "",
+    tmdbId: disc.tmdb_id,
+    tvdbId: null,
+    title: disc.title,
+    year: disc.year ?? 0,
+    type: disc.media_type === "tv" ? "tv" : "movie",
+    category: "Other",
+    genres: [],
+    lang: "",
+    cert: "",
+    rt: null,
+    imdb: null,
+    tmdbScore: null,
+    overview: disc.overview,
+    cast: [],
+    director: "",
+    runtime: null,
+    poster: disc.poster,
+    backdrop: "",
+    trailerId: "",
+    trailerTitle: "",
+    trailerUrl: "",
+    added: "",
+    source: "search",
+  };
+}
 
 type Selectable =
   | { kind: "owned"; row: GlobalOwnedRow }
@@ -20,18 +70,23 @@ type Selectable =
  * The ONE global search (GLOBAL_SEARCH_PLAN Phase 3): a command-palette
  * dropdown owned by the top bar. Library results first with state-aware
  * actions; TMDB DISCOVER only appears when the API reports no strong owned
- * match. `/` and ⌘K focus it from anywhere.
+ * match. Discovery rows act like Suggest cards: clicking a row (or Enter)
+ * opens the full metadata modal; the row offers Add-to-Watchlist → Download/
+ * Details once added. `/` and ⌘K focus it from anywhere.
  */
 export function GlobalSearch() {
   const navigate = useNavigate();
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const add = useAddToWatchlist();
+  const cardActions = useCardActions();
   const [text, setText] = useState("");
   const [debounced, setDebounced] = useState("");
   const [open, setOpen] = useState(false);
   const [sel, setSel] = useState(0);
   const [addingId, setAddingId] = useState<number | null>(null);
+  const [added, setAdded] = useState<Record<number, boolean>>({}); // local, post-add
+  const [detailDisc, setDetailDisc] = useState<GlobalDiscoveryRow | null>(null);
 
   // Debounce typing (fast, visually responsive).
   useEffect(() => {
@@ -103,6 +158,9 @@ export function GlobalSearch() {
     navigate(path);
   };
 
+  const inWatchlist = (disc: GlobalDiscoveryRow) =>
+    added[disc.tmdb_id] ?? disc.in_watchlist ?? false;
+
   const addDisc = (disc: GlobalDiscoveryRow) => {
     setAddingId(disc.tmdb_id);
     add.mutate(
@@ -111,7 +169,8 @@ export function GlobalSearch() {
         onSettled: () => setAddingId(null),
         onSuccess: (r) => {
           if (r.ok) {
-            toast("Added to library", `${disc.title} is now in your watchlist.`);
+            setAdded((m) => ({ ...m, [disc.tmdb_id]: true }));
+            toast("Added to watchlist", `${disc.title} is on your watchlist.`);
           } else {
             toast("Couldn't add", String((r as { message?: string }).message ?? "Unknown error"), "err");
           }
@@ -119,6 +178,19 @@ export function GlobalSearch() {
         onError: () => toast("Couldn't add", "Check the backend connection.", "err"),
       },
     );
+  };
+
+  const downloadDisc = (disc: GlobalDiscoveryRow) => {
+    cardActions.download(entryStubFor(disc));
+  };
+
+  /** Row click / Enter → the full Suggest-style metadata modal. */
+  const openDetail = (disc: GlobalDiscoveryRow) => {
+    setOpen(false);
+    setSel(0);
+    setText("");
+    setDebounced("");
+    setDetailDisc(disc);
   };
 
   const activate = (s: Selectable) => {
@@ -135,7 +207,7 @@ export function GlobalSearch() {
       goto(`/library/item/${encodeURIComponent(s.hint.id)}`);
       return;
     }
-    addDisc(s.disc);
+    openDetail(s.disc);
   };
 
   const onKeyDown = (e: React.KeyboardEvent) => {
@@ -233,9 +305,12 @@ export function GlobalSearch() {
                         key={`d-${disc.tmdb_id}`}
                         disc={disc}
                         selected={sel === idx}
-                        adding={addingId === disc.tmdb_id}
+                        added={inWatchlist(disc)}
+                        busy={addingId === disc.tmdb_id}
                         onSelect={() => setSel(idx)}
                         onAdd={() => addDisc(disc)}
+                        onDownload={() => downloadDisc(disc)}
+                        onOpen={() => openDetail(disc)}
                       />
                     );
                   })
@@ -244,10 +319,23 @@ export function GlobalSearch() {
           ) : null}
 
           <div className="flex items-center gap-4 border-t border-white/[.06] px-4 py-2 text-[10px] font-medium text-zinc-500">
-            <span>↑↓ navigate · Enter select · Esc close</span>
+            <span>↑↓ navigate · Enter details · Esc close</span>
             {!data?.tmdb_key && !data?.strong_match ? <span className="ml-auto">TMDB discovery off — library only</span> : null}
           </div>
         </div>
+      ) : null}
+
+      {/* Full metadata modal for DISCOVER rows (Suggest-style: backdrop,
+          scores, synopsis, cast — with Add/Download that match the row). */}
+      {detailDisc ? (
+        <SuggestDetailModal
+          item={toSuggestItem(detailDisc, inWatchlist(detailDisc))}
+          busyAdd={addingId === detailDisc.tmdb_id}
+          busyDownload={false}
+          onAdd={() => addDisc(detailDisc)}
+          onDownload={() => downloadDisc(detailDisc)}
+          onClose={() => setDetailDisc(null)}
+        />
       ) : null}
     </div>
   );
@@ -341,20 +429,25 @@ function HintRow({
 }
 
 function DiscoveryRow({
-  disc, selected, adding, onSelect, onAdd,
+  disc, selected, added, busy, onSelect, onAdd, onDownload, onOpen,
 }: {
   disc: GlobalDiscoveryRow;
   selected: boolean;
-  adding: boolean;
+  added: boolean;
+  busy: boolean;
   onSelect: () => void;
   onAdd: () => void;
+  onDownload: () => void;
+  onOpen: () => void;
 }) {
+  const ghost =
+    "inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-white/12 bg-white/[.06] px-3 text-[11px] font-bold text-zinc-100 transition hover:bg-white/[.12] disabled:opacity-60";
   return (
     <div
       role="option"
       aria-selected={selected}
       onMouseEnter={onSelect}
-      onClick={onAdd}
+      onClick={onOpen}
       className={`mx-2 flex cursor-pointer items-center gap-3 rounded-xl px-2 py-2 transition ${
         selected ? "bg-white/[.08]" : "hover:bg-white/[.04]"
       }`}
@@ -370,17 +463,42 @@ function DiscoveryRow({
         <div className="truncate text-[13px] font-semibold text-zinc-100">{disc.title}</div>
         <div className="truncate text-[11px] text-zinc-500">
           {KIND_TEXT[disc.media_type] ?? "Title"}
-          {disc.year ? ` · ${disc.year}` : ""} · <span className="text-amber-300/90">not in your library</span>
+          {disc.year ? ` · ${disc.year}` : ""}
+          {added ? (
+            <span className="ml-1.5 inline-flex items-center gap-1 rounded bg-emerald-500/15 px-1 py-px text-[10px] font-bold text-emerald-400">
+              <Icon name="check" size={9} strokeWidth={3} /> In watchlist
+            </span>
+          ) : (
+            <span className="ml-1.5 text-amber-300/90">not in your library</span>
+          )}
         </div>
       </div>
+      {added ? (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onDownload(); }}
+          className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg bg-accent px-3 text-[11px] font-bold text-black transition hover:bg-accent-hover"
+        >
+          <Icon name="download" size={12} />
+          Download
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onAdd(); }}
+          disabled={busy}
+          className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg bg-accent px-3 text-[11px] font-bold text-black transition hover:bg-accent-hover disabled:opacity-60"
+        >
+          <Icon name="plus" size={12} />
+          {busy ? "Adding…" : "Add to watchlist"}
+        </button>
+      )}
       <button
         type="button"
-        onClick={(e) => { e.stopPropagation(); onAdd(); }}
-        disabled={adding}
-        className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-white/15 bg-white/[.06] px-3 text-[11px] font-bold text-zinc-100 transition hover:bg-white/[.12] disabled:opacity-60"
+        onClick={(e) => { e.stopPropagation(); onOpen(); }}
+        className={ghost}
       >
-        <Icon name="plus" size={12} />
-        {adding ? "Adding…" : "Add to library"}
+        Details
       </button>
     </div>
   );

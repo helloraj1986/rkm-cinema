@@ -230,6 +230,7 @@ def test_route_no_owned_match_returns_discovery():
     assert len(resp.discovery) == 1
     d = resp.discovery[0]
     assert d.tmdb_id == 603 and d.year == 1999 and d.media_type == "movie"
+    assert d.in_watchlist is False
 
 
 def test_route_person_drilldown_rows():

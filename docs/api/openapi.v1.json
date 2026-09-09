@@ -1658,6 +1658,11 @@
             "type": "string",
             "title": "Overview",
             "default": ""
+          },
+          "in_watchlist": {
+            "type": "boolean",
+            "title": "In Watchlist",
+            "default": false
           }
         },
         "type": "object",

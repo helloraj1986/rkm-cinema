@@ -416,6 +416,8 @@ export interface GlobalDiscoveryRow {
   year?: number | null;
   poster: string;
   overview: string;
+  /** True when already on the watchlist (server truth → Download/Details). */
+  in_watchlist?: boolean;
 }
 
 /** GET /api/search/global?q= response. */

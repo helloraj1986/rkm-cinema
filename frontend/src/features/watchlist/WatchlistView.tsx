@@ -45,11 +45,13 @@ export function WatchlistView() {
       : `${list.length} of ${entries.length} titles`;
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-end justify-between gap-3">
+    <div className="flex flex-col gap-7 pb-8">
+      <div className="flex flex-wrap items-end justify-between gap-4 pt-2">
         <div>
-          <h1 className="text-2xl font-bold text-white">Watchlist</h1>
-          <div className="text-sm text-zinc-500">{isLoading ? "Loading…" : sub}</div>
+          <h1 className="text-[32px] font-bold leading-none tracking-[-0.02em] text-zinc-50">Watchlist</h1>
+          <div className="mt-2 text-[13px] text-zinc-500">
+            {isLoading ? "Loading…" : `${list.length} ${list.length === 1 ? "title" : "titles"}${sub.includes(" of ") ? ` · ${sub}` : ""}`}
+          </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {WATCHLIST_CHIPS.map((c) => (
@@ -61,10 +63,10 @@ export function WatchlistView() {
                 setShown(PAGE);
               }}
               aria-pressed={type === c.key}
-              className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
+              className={`shrink-0 rounded-full px-3.5 py-1.5 text-xs font-semibold transition ${
                 type === c.key
-                  ? "bg-amber-400 text-black"
-                  : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
+                  ? "bg-accent text-black hover:bg-accent-hover"
+                  : "border border-white/[.08] bg-white/[.06] text-zinc-300 hover:bg-white/[.1] hover:text-white"
               }`}
             >
               {c.label}
@@ -77,7 +79,7 @@ export function WatchlistView() {
               setShown(PAGE);
             }}
             aria-label="Sort by"
-            className="rounded-lg border border-zinc-800 bg-zinc-900 px-2 py-1 text-xs text-zinc-300 focus:outline-amber-400"
+            className="rounded-[8px] border border-white/[.08] bg-surface-2 px-2.5 py-2 text-xs font-medium text-zinc-200 outline-none transition focus:border-accent/50"
           >
             {WATCHLIST_SORTS.map((s) => (
               <option key={s.key} value={s.key}>
@@ -89,18 +91,23 @@ export function WatchlistView() {
       </div>
 
       {isLoading && !entries.length ? (
-        <div className="flex flex-wrap gap-3" data-testid="watchlist-loading">
+        <div
+          className="grid grid-cols-[repeat(auto-fill,minmax(158px,1fr))] gap-x-4 gap-y-7"
+          data-testid="watchlist-loading"
+          aria-hidden="true"
+        >
           {Array.from({ length: 12 }).map((_, i) => (
-            <div key={i} className="h-60 w-40 animate-pulse rounded-lg bg-zinc-900" />
+            <div key={i} className="skeleton aspect-[2/3] rounded-[10px]" />
           ))}
         </div>
       ) : list.length ? (
-        <div className="flex flex-wrap gap-3">
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(158px,1fr))] gap-x-4 gap-y-7">
           {page.map((e) => (
             <WatchCard
               key={String(e.tmdbId ?? e.imdbId)}
               entry={e}
               state={stateFor(e)}
+              fluid
               onOpen={openEntry}
               onDownload={actions.download}
               onPlayInRkm={actions.playInRkm}

@@ -3,7 +3,8 @@ import Hls from "hls.js";
 import { api, type PlaybackInfo, type ProgressPayload } from "../../lib/api/client";
 import { Icon } from "../../components/ui/Icon";
 import {
-  nextEpisode, qualityFor, AUTOPLAY_DELAY_MS, QUALITY_OPTIONS, PLAYBACK_RATES,
+  nextEpisode, prevEpisode, queueEntryCode, qualityFor, AUTOPLAY_DELAY_MS,
+  QUALITY_OPTIONS, PLAYBACK_RATES,
   fmtTime, isFiniteDuration, clampSeek, pickStreamMode, hlsModeLabel,
   playMethodForMode, usesHls, hlsEngineFor, nextHlsMode, hlsConfigFor,
   abrBadgeLabel, shouldAutoHideChrome, warmGet, warmPut, warmDelete,
@@ -136,6 +137,10 @@ export function Player({
   // Persisted prefs (volume/mute/speed/quality cap) — loaded once per mount.
   const prefsRef = useRef<PlayerPrefs>(loadPlayerPrefs(readStored));
   const [isPip, setIsPip] = useState(false);
+  // Plex-style settings overlay (speed/quality/tracks) — extra controls live
+  // here; only playback essentials stay on the transport bar.
+  const [showSettings, setShowSettings] = useState(false);
+  const showSettingsRef = useRef(false);
 
   // Custom control bar state.
   const [playing, setPlaying] = useState(false);
@@ -157,6 +162,7 @@ export function Player({
 
   modeRef.current = mode;
   rateRef.current = rate;
+  showSettingsRef.current = showSettings;
 
   const activeAudioCodec =
     (audioIndex > 0
@@ -200,6 +206,14 @@ export function Player({
 
   const posNow = () => (videoRef.current ? videoRef.current.currentTime || 0 : 0);
   totalRef.current = total;
+
+  // Series context from the riding queue (movies ride an empty queue): the
+  // current entry's S/E code + its position in the season + prev/next entries.
+  const curIdx = queue.findIndex((q) => q.id === item.item_id);
+  const curEntry = curIdx >= 0 ? queue[curIdx] : null;
+  const prevEntry = curEntry ? prevEpisode(queue, item.item_id) : null;
+  const nextEntry = curEntry ? nextEpisode(queue, item.item_id) : null;
+  const curCode = queueEntryCode(curEntry);
   // Where the NEXT engine load should start: the live position once anything
   // has played, otherwise the mount resume point.
   const currentTarget = () => (hasStartedRef.current ? posNow() : resumeRef.current);
@@ -777,7 +791,12 @@ export function Player({
           toggleFullscreen();
           break;
         case "Escape":
-          if (!document.fullscreenElement) onClose();
+          if (showSettingsRef.current) {
+            setShowSettings(false);
+            markActivity();
+          } else if (!document.fullscreenElement) {
+            onClose();
+          }
           break;
       }
     };
@@ -787,9 +806,9 @@ export function Player({
   }, [onClose]);
 
   // Cinema auto-hide timer: armed ONLY while actively playing with nothing
-  // loading/error/up-next; hidden chrome is revealed by any activity above.
+  // loading/error/up-next/settings open; hidden chrome is revealed by activity.
   useEffect(() => {
-    const busy = !playing || switching || Boolean(error) || Boolean(upNext);
+    const busy = !playing || switching || Boolean(error) || Boolean(upNext) || showSettings;
     if (busy) {
       if (hideTimerRef.current != null) window.clearInterval(hideTimerRef.current);
       hideTimerRef.current = null;
@@ -817,7 +836,7 @@ export function Player({
       hideTimerRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [playing, switching, error, upNext]);
+  }, [playing, switching, error, upNext, showSettings]);
 
   // Media Session: makes the PiP window + OS media keys control playback and
   // shows the item title. Best-effort; unsupported actions are skipped.
@@ -901,10 +920,25 @@ export function Player({
     setUpNext(null);
   };
 
-  const selectCls =
-    "rounded-[8px] border border-white/[.08] bg-surface-2/90 px-2.5 py-2 text-xs font-medium text-zinc-100 outline-none transition backdrop-blur-sm focus:border-accent/50";
+  /** Manual prev/next episode skip: report stopped, then switch the entry. */
+  const skipToEntry = (entry: QueueEntry) => {
+    clearAuto();
+    reportNow("stopped");
+    onSwitchRef.current?.(entry);
+  };
+
+  // Premium control chrome — one coherent scale across the whole player.
   const ctrlBtn =
-    "grid h-10 w-10 place-items-center rounded-full bg-white/10 text-zinc-50 ring-1 ring-white/10 backdrop-blur-sm transition hover:bg-white/20";
+    "grid h-10 w-10 shrink-0 place-items-center rounded-full bg-white/10 text-zinc-50 ring-1 ring-white/10 backdrop-blur-sm transition hover:bg-white/20";
+  const panelLabel = "text-[10px] font-bold uppercase tracking-[0.18em] text-zinc-500";
+  const overlaySelect =
+    "h-9 min-w-0 flex-1 rounded-[10px] border border-white/[.08] bg-black/30 px-2.5 text-xs font-medium text-zinc-100 outline-none transition hover:border-white/15 focus:border-accent/50";
+  const chipBtn = (active: boolean) =>
+    `inline-flex h-7 shrink-0 items-center justify-center rounded-lg px-2.5 text-[11px] font-semibold transition ${
+      active
+        ? "bg-accent text-black shadow-[0_0_18px_rgba(255,196,0,.22)]"
+        : "bg-white/[.06] text-zinc-300 hover:bg-white/[.12]"
+    }`;
 
   return (
     <div
@@ -936,27 +970,29 @@ export function Player({
           chromeHidden ? "pointer-events-none opacity-0" : "opacity-100"
         }`}
       >
-        <div className="flex min-w-0 items-center gap-2.5">
+        <div className="flex min-w-0 items-center gap-3">
           <button
             onClick={onClose}
             aria-label="Close player"
-            className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-black/50 text-zinc-100 ring-1 ring-white/15 backdrop-blur-sm transition hover:bg-black/80 hover:text-white"
+            className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-black/50 text-zinc-100 ring-1 ring-white/15 backdrop-blur-sm transition hover:bg-black/80 hover:text-white"
           >
-            <Icon name="back" size={17} />
+            <Icon name="back" size={18} />
           </button>
-          <div className="min-w-0 truncate text-sm font-semibold text-zinc-50">{item.title}</div>
-          {desiredMode && (
-            <span
-              className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold tracking-wide ${
-                mode !== "direct" ? "bg-accent/15 text-accent" : "bg-white/10 text-zinc-300"
-              }`}
-            >
-              {hlsModeLabel(mode)}
-            </span>
-          )}
-        </div>
-        <div className="shrink-0 text-right text-[11px] font-medium tabular-nums text-zinc-400">
-          {fmtTime(cur)} / {total > 0 ? fmtTime(total) : "--:--"}
+          <div className="min-w-0">
+            <div className="truncate text-[15px] font-semibold leading-tight tracking-[-0.01em] text-zinc-50">
+              {item.title}
+            </div>
+            {curEntry ? (
+              <div className="mt-1 flex items-center gap-2">
+                <span className="shrink-0 rounded-md bg-white/[.08] px-1.5 py-px text-[10px] font-bold uppercase tracking-[0.12em] text-zinc-300">
+                  {curCode}
+                </span>
+                <span className="truncate text-[11px] font-medium text-zinc-500">
+                  {curIdx + 1} of {queue.length}
+                </span>
+              </div>
+            ) : null}
+          </div>
         </div>
       </div>
 
@@ -1012,7 +1048,14 @@ export function Player({
                   <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">
                     Up next {autoSecs > 0 ? `· auto in ${autoSecs}s` : ""}
                   </div>
-                  <div className="truncate text-sm font-semibold text-white">{upNext.name}</div>
+                  <div className="mt-0.5 flex items-center gap-1.5">
+                    {queueEntryCode(upNext) ? (
+                      <span className="shrink-0 rounded bg-accent/15 px-1 py-px text-[10px] font-bold text-accent">
+                        {queueEntryCode(upNext)}
+                      </span>
+                    ) : null}
+                    <span className="truncate text-sm font-semibold text-white">{upNext.name}</span>
+                  </div>
                 </div>
               </div>
               <div className="flex gap-2 border-t border-white/[.06] px-4 py-3">
@@ -1039,6 +1082,142 @@ export function Player({
             <div className="pointer-events-none absolute inset-x-0 bottom-24 z-[5] flex justify-center px-6">
               <div className="max-w-[85%] whitespace-pre-line rounded-lg bg-black/70 px-3.5 py-1.5 text-center text-base text-white shadow-lg backdrop-blur-[2px] [text-shadow:0_1px_3px_rgba(0,0,0,0.95)]">
                 {subText}
+              </div>
+            </div>
+          )}
+
+          {/* Settings overlay (Plex-style): click anywhere outside to dismiss;
+              Esc / the ✕ close it too. Panel hovers over the top of the stage. */}
+          {showSettings && (
+            <div
+              className="absolute inset-0 z-[15]"
+              onPointerDown={() => setShowSettings(false)}
+              aria-hidden="true"
+            />
+          )}
+
+          {showSettings && (
+            <div
+              role="dialog"
+              aria-label="Player settings"
+              onPointerDown={(e) => e.stopPropagation()}
+              onPointerEnter={onChromeEnter}
+              onPointerLeave={onChromeLeave}
+              className="absolute right-4 top-4 z-[20] w-[340px] max-w-[calc(100%-2rem)] overflow-hidden rounded-2xl border border-white/10 bg-surface-2/90 shadow-[0_24px_80px_rgba(0,0,0,0.6)] backdrop-blur-2xl"
+            >
+              <div className="flex items-center justify-between border-b border-white/[.06] px-4 py-3">
+                <span className={panelLabel}>Player settings</span>
+                <button
+                  type="button"
+                  onClick={() => setShowSettings(false)}
+                  aria-label="Close settings"
+                  className="grid h-7 w-7 place-items-center rounded-full text-zinc-400 transition hover:bg-white/10 hover:text-white"
+                >
+                  <Icon name="close" size={14} />
+                </button>
+              </div>
+
+              <div className="max-h-[min(62vh,420px)] space-y-4 overflow-y-auto px-4 py-4">
+                <section className="space-y-2">
+                  <div className={panelLabel}>Speed</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {PLAYBACK_RATES.map((r) => (
+                      <button
+                        key={r}
+                        type="button"
+                        aria-pressed={rate === r}
+                        onClick={() => {
+                          setRate(r);
+                          persistPrefs({ rate: r });
+                        }}
+                        className={chipBtn(rate === r)}
+                      >
+                        {r}×
+                      </button>
+                    ))}
+                  </div>
+                </section>
+
+                <section className="space-y-2">
+                  <div className={panelLabel}>Quality</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {QUALITY_OPTIONS.map((q) => (
+                      <button
+                        key={q.label}
+                        type="button"
+                        aria-pressed={quality === q.label}
+                        onClick={() => {
+                          setQuality(q.label);
+                          persistPrefs({ quality: q.label });
+                        }}
+                        className={chipBtn(quality === q.label)}
+                      >
+                        {q.label}
+                      </button>
+                    ))}
+                  </div>
+                  {usesHls(mode) ? (
+                    <p className="text-[10px] font-medium tabular-nums text-zinc-500">
+                      Live: {abrBadgeLabel(lvl)}
+                      {lvl?.bitrate ? ` · ${Math.round(lvl.bitrate / 1e6)} Mbps` : ""}
+                    </p>
+                  ) : null}
+                </section>
+
+                {info && info.audio.length > 0 ? (
+                  <section className="space-y-1.5">
+                    <div className={panelLabel}>Audio track</div>
+                    <select
+                      value={audioIndex}
+                      onChange={(e) => setAudioIndex(Number(e.target.value))}
+                      className={overlaySelect}
+                    >
+                      <option value={0}>Default</option>
+                      {info.audio.map((a) => (
+                        <option key={a.index} value={a.index}>
+                          {a.name}
+                          {a.language ? ` (${a.language})` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </section>
+                ) : null}
+
+                {info && info.subtitles.length > 0 ? (
+                  <section className="space-y-1.5">
+                    <div className={panelLabel}>Subtitles</div>
+                    <select
+                      value={subIndex == null ? "" : String(subIndex)}
+                      onChange={(e) => setSubIndex(e.target.value === "" ? null : Number(e.target.value))}
+                      className={overlaySelect}
+                    >
+                      <option value="">Off</option>
+                      {info.subtitles.map((s) => (
+                        <option key={s.index} value={s.index}>
+                          {s.name}
+                          {s.language ? ` (${s.language})` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </section>
+                ) : null}
+              </div>
+
+              <div className="flex items-center justify-between border-t border-white/[.06] px-4 py-2.5">
+                <span
+                  className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                    mode !== "direct" ? "bg-accent/15 text-accent" : "bg-white/[.07] text-zinc-400"
+                  }`}
+                >
+                  <span
+                    className={`h-1.5 w-1.5 rounded-full ${mode !== "direct" ? "bg-accent" : "bg-zinc-500"}`}
+                    aria-hidden="true"
+                  />
+                  {desiredMode ? hlsModeLabel(mode) : "Loading…"}
+                </span>
+                <span className="text-[10px] font-medium text-zinc-500">
+                  {info ? `${info.audio.length} audio · ${info.subtitles.length} sub` : "no track info"}
+                </span>
               </div>
             </div>
           )}
@@ -1096,6 +1275,26 @@ export function Player({
               <button onClick={togglePlay} aria-label={playing ? "Pause" : "Play"} className={ctrlBtn}>
                 <Icon name={playing ? "pause" : "play"} size={17} filled={!playing} />
               </button>
+              {prevEntry ? (
+                <button
+                  onClick={() => skipToEntry(prevEntry)}
+                  aria-label={`Previous episode ${queueEntryCode(prevEntry)}`}
+                  title={`Previous episode — ${prevEntry.name}`}
+                  className={ctrlBtn}
+                >
+                  <Icon name="chevron-left" size={18} />
+                </button>
+              ) : null}
+              {nextEntry ? (
+                <button
+                  onClick={() => skipToEntry(nextEntry)}
+                  aria-label={`Next episode ${queueEntryCode(nextEntry)}`}
+                  title={`Next episode — ${nextEntry.name}`}
+                  className={ctrlBtn}
+                >
+                  <Icon name="chevron-right" size={18} />
+                </button>
+              ) : null}
               <button
                 onClick={toggleMute}
                 aria-label={muted || volume === 0 ? "Unmute" : "Mute"}
@@ -1122,15 +1321,30 @@ export function Player({
                 aria-label="Volume"
                 className="h-1 w-16 cursor-pointer accent-[var(--accent)] sm:w-20"
               />
-              {mode !== "direct" && (
-                <span className="hidden rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-semibold text-accent sm:inline">
+              {desiredMode ? (
+                <span
+                  className={`hidden rounded-full px-2 py-0.5 text-[10px] font-semibold tracking-wide sm:inline ${
+                    mode !== "direct" ? "bg-accent/15 text-accent" : "bg-white/[.07] text-zinc-400"
+                  }`}
+                >
                   {hlsModeLabel(mode)}
                 </span>
-              )}
-              <span className="ml-auto flex items-center gap-1 tabular-nums text-zinc-300">
-                <Icon name="clock" size={12} className="text-zinc-500" />
-                {fmtTime(cur)}
+              ) : null}
+              <span className="ml-auto flex items-baseline gap-1 tabular-nums text-zinc-300">
+                <span className="text-[12px] font-semibold">{fmtTime(cur)}</span>
+                {total > 0 ? (
+                  <span className="text-[11px] font-medium text-zinc-500">/ {fmtTime(total)}</span>
+                ) : null}
               </span>
+              <button
+                onClick={() => setShowSettings((s) => !s)}
+                aria-label={showSettings ? "Close settings" : "Settings"}
+                aria-expanded={showSettings}
+                title="Settings"
+                className={`${ctrlBtn} ${showSettings ? "bg-white/20 ring-white/30" : ""}`}
+              >
+                <Icon name="settings" size={17} />
+              </button>
               {pipSupported ? (
                 <button
                   onClick={() => void togglePip()}
@@ -1150,92 +1364,6 @@ export function Player({
               </button>
             </div>
           </div>
-        </div>
-
-        {/* Item-3 player controls */}
-        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2.5 rounded-2xl border border-white/[.06] bg-surface-2/70 px-4 py-3 backdrop-blur-sm">
-          <label className="flex items-center gap-2 text-xs font-medium text-zinc-400">
-            Speed
-            <select
-              value={rate}
-              onChange={(e) => {
-                const r = Number(e.target.value);
-                setRate(r);
-                persistPrefs({ rate: r });
-              }}
-              className={selectCls}
-            >
-              {PLAYBACK_RATES.map((r) => (
-                <option key={r} value={r}>{r}×</option>
-              ))}
-            </select>
-          </label>
-
-          <label className="flex items-center gap-2 text-xs font-medium text-zinc-400">
-            Quality
-            <select
-              value={quality}
-              onChange={(e) => {
-                setQuality(e.target.value);
-                persistPrefs({ quality: e.target.value });
-              }}
-              className={selectCls}
-            >
-              {QUALITY_OPTIONS.map((q) => (
-                <option key={q.label} value={q.label}>{q.label}</option>
-              ))}
-            </select>
-          </label>
-
-          {usesHls(mode) && lvl ? (
-            <span
-              title={lvl.bitrate ? `${Math.round(lvl.bitrate / 1e6)} Mbps live` : "Live ABR level"}
-              className="inline-flex items-center rounded-full bg-white/[.06] px-2 py-0.5 text-[10px] font-semibold tabular-nums text-zinc-300"
-            >
-              {abrBadgeLabel(lvl)}
-            </span>
-          ) : null}
-
-          {info && info.audio.length > 0 && (
-            <label className="flex items-center gap-2 text-xs font-medium text-zinc-400">
-              Audio
-              <select
-                value={audioIndex}
-                onChange={(e) => setAudioIndex(Number(e.target.value))}
-                className={selectCls}
-              >
-                <option value={0}>Default</option>
-                {info.audio.map((a) => (
-                  <option key={a.index} value={a.index}>
-                    {a.name} {a.language ? `(${a.language})` : ""}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
-
-          {info && info.subtitles.length > 0 && (
-            <label className="flex items-center gap-2 text-xs font-medium text-zinc-400">
-              Subs
-              <select
-                value={subIndex == null ? "" : String(subIndex)}
-                onChange={(e) => setSubIndex(e.target.value === "" ? null : Number(e.target.value))}
-                className={selectCls}
-              >
-                <option value="">Off</option>
-                {info.subtitles.map((s) => (
-                  <option key={s.index} value={s.index}>
-                    {s.name} {s.language ? `(${s.language})` : ""}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
-
-          <span className="ml-auto text-[11px] text-zinc-500">
-            {info ? `${info.audio.length} audio · ${info.subtitles.length} sub tracks` : "tracks unavailable"}
-            {mode === "transcode_audio" ? " · ⚠ audio transcoding" : ""}
-          </span>
         </div>
       </div>
     </div>

@@ -244,6 +244,11 @@ def build_api_vars(env: dict) -> dict:
     for k in ("RADARR_API_KEY", "SONARR_API_KEY", "PROWLARR_API_KEY",
               "RADARR_QUALITY_PROFILE_ID", "SONARR_QUALITY_PROFILE_ID"):
         api[k] = str(env.get(k) or "").strip()
+    # Media libraries (MEDIA_LIBRARIES_PLAN): pass every MEDIA_LIBRARY_N_NAME /
+    # PATH key through to the api container so config.settings can parse them.
+    for k, v in env.items():
+        if k.startswith("MEDIA_LIBRARY_"):
+            api[k] = str(v).strip()
     return api
 
 

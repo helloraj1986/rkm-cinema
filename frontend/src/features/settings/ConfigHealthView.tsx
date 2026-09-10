@@ -1,4 +1,6 @@
 import { useConfig, useHealth } from "./api";
+import { useLibraryFolders } from "../library/api";
+import { libraryIconFor } from "../library/lib";
 import { Card } from "../../components/ui/Card";
 import { Badge } from "../../components/ui/Badge";
 import { Icon, type IconName } from "../../components/ui/Icon";
@@ -23,6 +25,7 @@ const SERVICE_ICON: Record<(typeof SERVICES)[number], IconName> = {
 export function ConfigHealthView() {
   const config = useConfig();
   const health = useHealth();
+  const folders = useLibraryFolders();
 
   if (config.isLoading || health.isLoading) {
     return (
@@ -131,6 +134,42 @@ export function ConfigHealthView() {
           );
         })}
       </div>
+
+      {/* Media libraries (MEDIA_LIBRARIES_PLAN): what the sidebar shows + why.
+          Configured MEDIA_LIBRARY_N_NAME values; warnings make a misconfigured
+          path visible here as well as on the folder page. */}
+      {(folders.data?.libraries?.length ?? 0) > 0 || (folders.data?.warnings?.length ?? 0) > 0 ? (
+        <section aria-label="Media libraries">
+          <h2 className="mb-2 text-[11px] font-bold uppercase tracking-[0.14em] text-zinc-500">
+            Media libraries
+          </h2>
+          <div className="flex flex-col gap-2">
+            {(folders.data?.warnings ?? []).map((w) => (
+              <p
+                key={w}
+                className="rounded-lg border border-amber-500/20 bg-amber-500/[.06] px-3 py-2 text-xs text-amber-300"
+              >
+                ⚠ {w}
+              </p>
+            ))}
+            {(folders.data?.libraries ?? []).map((lib) => (
+              <div
+                key={lib.name}
+                className="flex items-center gap-3 rounded-xl border border-white/[.06] bg-surface-2/70 px-3.5 py-2.5"
+              >
+                <Icon name={libraryIconFor(lib.collection_type)} size={16} className="shrink-0 text-zinc-400" />
+                <span className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-100">{lib.name}</span>
+                <span className="hidden truncate text-[11px] text-zinc-600 sm:block">{lib.path}</span>
+                {lib.ok ? (
+                  <Badge ok label="ok" />
+                ) : (
+                  <Badge ok={false} label="unresolved" />
+                )}
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
     </div>
   );
 }

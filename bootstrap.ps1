@@ -1,12 +1,19 @@
 # ============================================================================
 # RKM bundled stack - one-command bootstrap (Windows PowerShell)
-#   run:  .\bootstrap.ps1
+#   run:  .\bootstrap.ps1            (add -NoBackup to skip the state backup)
 # Reads the SINGLE repo-level .env (copy .env.example and fill it in),
 # renders .rkm.env for the api container, starts the isolated stack
 # (api+web+jellyfin), runs the Jellyfin provisioner, then restarts api so it
 # picks up the freshly-created Jellyfin API key.
 # ASCII only - PowerShell 5.1 misreads UTF-8 without BOM.
 # ============================================================================
+[CmdletBinding()]
+param(
+    # Skip the pre-rebuild archive of the state held in Docker volumes
+    # (scripts\backup-rkm-state.ps1). Only useful on a first run.
+    [switch]$NoBackup
+)
+
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 
@@ -24,6 +31,21 @@ docker version --format "x" | Out-Null
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Docker is not running/installed. Start Docker Desktop, then re-run." -ForegroundColor Red
     exit 1
+}
+
+# --- Safety net: archive the state held in the Docker volumes --------------
+# Rebuilding cannot delete jellyfin-config / rkm_shared (they are named volumes),
+# but this makes an accidental `down -v` or a project-name change recoverable.
+# A failure here never blocks the bootstrap: it usually just means a first run.
+if (!$NoBackup) {
+    Write-Host "Backing up stack state before rebuilding ..." -ForegroundColor Cyan
+    & (Join-Path $PSScriptRoot "scripts\backup-rkm-state.ps1")
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "State backup skipped or failed (see above) - continuing with the rebuild." -ForegroundColor Yellow
+    }
+}
+else {
+    Write-Host "Skipping the pre-rebuild state backup (-NoBackup)." -ForegroundColor Yellow
 }
 
 # --- Render config (repo .env -> .rkm.env for the api container) ---

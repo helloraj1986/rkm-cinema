@@ -160,7 +160,11 @@ services:
 
   # --- One-shot provisioner: wires Jellyfin + (fullstack) *arr automatically --
   provisioner:
-    build: ./backend/provisioner
+    build:
+      # Context = ./backend so the image can COPY the SHARED config parser
+      # (config/media_libraries.py) — one source of truth for MEDIA_LIBRARY_*.
+      context: ./backend
+      dockerfile: provisioner/Dockerfile
     image: rkm-bundled-provisioner:latest
     restart: "no"
     profiles: ["provision"]
@@ -173,6 +177,13 @@ services:
       JELLYFIN_ADMIN_PASSWORD: "${RKM_JELLYFIN_ADMIN_PASSWORD:?set JELLYFIN_ADMIN_PASSWORD in the repo .env (render_config auto-generates it on first run)}"
       JELLYFIN_BROWSER_URL: "${RKM_JELLYFIN_BROWSER:-http://localhost:8098}"
       TZ: "${RKM_TIMEZONE:-Australia/Melbourne}"
+      # Media libraries (MEDIA_LIBRARIES_PLAN): the provisioner wires every
+      # configured entry into Jellyfin. Compose cannot enumerate arbitrary N,
+      # so the rendered .rkm.env (which carries MEDIA_LIBRARY_* +
+      # RKM_MEDIA_PATH) is passed and the shared parser picks out the keys.
+      RKM_MEDIA_PATH: "${RKM_MEDIA_PATH:-./data}"
+    env_file:
+      - .rkm.env
     depends_on:
       - jellyfin
     networks:

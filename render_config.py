@@ -184,10 +184,66 @@ def resolve_data_path(env: dict) -> Path:
     return p
 
 
-def ensure_storage(data: Path) -> None:
-    for sub in ("media/_movie", "media/_tv", "downloads", "rkm"):
-        (data / sub).mkdir(parents=True, exist_ok=True)
-    print(f"storage tree ready at: {data}")
+def ensure_storage(data: Path, env: dict | None = None) -> None:
+    """Create the storage tree and validate configured media libraries.
+
+    Rules:
+    - the app's own dirs (downloads/, rkm/) are always ensured under the media
+      root — that is where the stack keeps qBittorrent output + the watchlist DB;
+    - SAMPLE media dirs (media/_movie, media/_tv) are created ONLY when the root
+      is the repo-local default (``./data``) — never inside a real media drive
+      the user pointed us at, and never when libraries are configured;
+    - with MEDIA_LIBRARY_N_* configured each library folder is existence-checked
+      here (earliest, clearest warning); with none configured we simply note
+      that the provisioner will auto-discover the root's subfolders.
+    """
+    env = env or {}
+    (data / "downloads").mkdir(parents=True, exist_ok=True)
+    (data / "rkm").mkdir(parents=True, exist_ok=True)
+
+    libraries = []
+    try:
+        import sys as _sys
+        if str(ROOT / "backend") not in _sys.path:
+            _sys.path.insert(0, str(ROOT / "backend"))
+        from config.media_libraries import parse_media_libraries
+
+        libraries, warnings = parse_media_libraries(env)
+        for w in warnings:
+            print(f"[env] WARN: {w}")
+    except Exception as e:  # pragma: no cover - imported lazily for safety
+        print(f"[env] WARN: could not parse media libraries ({e})")
+        libraries = []
+
+    # A relative root means the repo-local sample tree; an absolute one is the
+    # user's own drive and must not be seeded with sample folders.
+    raw_root = str(env.get("RKM_MEDIA_PATH") or "./data").strip()
+    is_default_root = not Path(raw_root).expanduser().is_absolute()
+
+    if libraries:
+        for lib in libraries:
+            # container path (/data/...) → host path under the media root
+            rel = lib.path[len("/data"):].lstrip("/") if lib.path.startswith("/data") else ""
+            host = data / rel if rel else data
+            if host.exists() and host.is_dir():
+                state = "ok"
+            elif host.exists():
+                state = "NOT A FOLDER"
+            else:
+                state = "MISSING (create it, or fix the PATH in .env)"
+            print(f"[env] library '{lib.name}' → {host} [{state}]")
+        print(f"storage tree ready at: {data} "
+              f"({len(libraries)} configured librar{'y' if len(libraries) == 1 else 'ies'})")
+        return
+
+    if is_default_root:
+        for sub in ("media/_movie", "media/_tv"):
+            (data / sub).mkdir(parents=True, exist_ok=True)
+        print(f"storage tree ready at: {data} (default sample libraries)")
+        return
+
+    print(f"storage tree ready at: {data} — no MEDIA_LIBRARY_N_* configured; the "
+          "provisioner will auto-discover this folder's subfolders as libraries")
 
 
 def build_api_vars(env: dict) -> dict:
@@ -245,7 +301,10 @@ def build_api_vars(env: dict) -> dict:
               "RADARR_QUALITY_PROFILE_ID", "SONARR_QUALITY_PROFILE_ID"):
         api[k] = str(env.get(k) or "").strip()
     # Media libraries (MEDIA_LIBRARIES_PLAN): pass every MEDIA_LIBRARY_N_NAME /
-    # PATH key through to the api container so config.settings can parse them.
+    # PATH / TYPE key through to the api container so config.settings can parse
+    # them, plus the host media root RKM_MEDIA_PATH so a host-style PATH
+    # (D:/RKM_MEDIA/Movies Kids) can be translated to the container path.
+    api["RKM_MEDIA_PATH"] = str(env.get("RKM_MEDIA_PATH") or "./data").strip()
     for k, v in env.items():
         if k.startswith("MEDIA_LIBRARY_"):
             api[k] = str(v).strip()
@@ -273,7 +332,7 @@ def render(env: dict, data: Path) -> dict:
 def main() -> None:
     env = ensure_defaults()
     data = resolve_data_path(env)
-    ensure_storage(data)
+    ensure_storage(data, env)
     api = render(env, data)
     print(f"\nConfig rendered from {ENV_PATH.name} (single source). Next: run bootstrap.sh "
           f"(or .\\bootstrap.ps1).")

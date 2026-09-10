@@ -27,7 +27,7 @@ from typing import Dict, List, Tuple
 
 #: Any positive index is allowed; scanning stops at the first N with no keys,
 #: so the list stays free-form and extra trailing blank lines are harmless.
-_MEDIA_LIBRARY_KEY = re.compile(r"^MEDIA_LIBRARY_(\d+)_(NAME|PATH)$")
+_MEDIA_LIBRARY_KEY = re.compile(r"^MEDIA_LIBRARY_(\d+)_(NAME|PATH|TYPE)$")
 
 
 @dataclass(frozen=True)
@@ -36,8 +36,68 @@ class MediaLibrary:
 
     #: User-facing library name (what the sidebar shows). NEVER the env key.
     name: str
-    #: Media folder path on the server (Jellyfin-style), spaces/drives allowed.
+    #: Media folder path as the MEDIA SERVER sees it (Jellyfin container path,
+    #: e.g. ``/data/Movies Kids``). Host-style paths (``D:/RKM_MEDIA/Movies``)
+    #: are translated against ``RKM_MEDIA_PATH`` at parse time.
     path: str
+    #: Optional Jellyfin collection type hint: movies | tvshows | mixed.
+    #: Defaults to ``mixed`` (Jellyfin's neutral type) so the simple
+    #: name+path model works without extra config.
+    collection_type: str = "mixed"
+
+
+#: Allowed collection types (Jellyfin), normalised. Anything else → ``mixed``.
+_COLLECTION_TYPES = {
+    "movie": "movies",
+    "movies": "movies",
+    "tv": "tvshows",
+    "show": "tvshows",
+    "shows": "tvshows",
+    "tvshows": "tvshows",
+    "series": "tvshows",
+    "mixed": "mixed",
+    "homevideos": "homevideos",
+    "music": "music",
+}
+
+
+def normalize_collection_type(raw: str) -> str:
+    """Normalise a MEDIA_LIBRARY_N_TYPE value (unknown/blank → ``mixed``)."""
+    return _COLLECTION_TYPES.get(str(raw or "").strip().lower(), "mixed")
+
+
+def translate_media_path(path: str, media_root: str = "") -> Tuple[str, str]:
+    """Return ``(container_path, warning)`` for a configured PATH.
+
+    The api + Jellyfin containers see the host media root (``RKM_MEDIA_PATH``)
+    at ``/data``. So a PATH may be written EITHER way:
+
+    - already container-style (``/data/Movies Kids``) → used as-is;
+    - host-style under the media root (``D:/RKM_MEDIA/Movies Kids`` with
+      ``RKM_MEDIA_PATH=D:/RKM_MEDIA``) → translated to ``/data/Movies Kids``.
+
+    A host path OUTSIDE the media root cannot be mounted by the stack; it is
+    returned unchanged with a clear warning (the directory+server match will
+    then surface it as unresolved rather than pretending it works).
+    """
+    p = normalize_media_path(path)
+    if not p:
+        return "", ""
+    if p.startswith("/"):
+        return p, ""
+
+    root = normalize_media_path(media_root)
+    if not root:
+        return p, ("PATH looks like a host path but RKM_MEDIA_PATH is not set — "
+                   "cannot translate it to the container path Jellyfin uses")
+    if p.casefold() == root.casefold():
+        return "/data", ""
+    prefix = root.casefold() + "/"
+    if p.casefold().startswith(prefix):
+        rel = p[len(root):].lstrip("/")
+        return f"/data/{rel}", ""
+    return p, (f"'{path}' is outside RKM_MEDIA_PATH ('{media_root}') — it cannot be "
+               "mounted into the media containers, so Jellyfin cannot scan it")
 
 
 def parse_media_libraries(env: Dict[str, str]) -> Tuple[List[MediaLibrary], List[str]]:
@@ -46,10 +106,14 @@ def parse_media_libraries(env: Dict[str, str]) -> Tuple[List[MediaLibrary], List
     Returns ``(libraries, warnings)`` ordered by ascending N. Entries missing a
     NAME or a PATH are skipped with a clear warning (never silently dropped).
     Duplicate display names / duplicate paths also warn — the sidebar keys off
-    the folder id, but humans expect unique names. A library WITHOUT a warning
-    is structurally valid; whether its path resolves to a real server folder is
-    decided at runtime against the provider's folder list (the server is the
-    source of truth for "exists", see services/library + /api/library/folders).
+    the folder id, but humans expect unique names.
+
+    ``PATH`` may be written as the media server's own container path
+    (``/data/...``) or as a host path under ``RKM_MEDIA_PATH`` — both are
+    normalised to the container path here, in the ONE config layer, so the api
+    and the provisioner always agree. ``MEDIA_LIBRARY_N_TYPE`` (movies |
+    tvshows | mixed) is an optional hint used when Jellyfin creates the
+    library; it defaults to ``mixed``.
     """
     libraries: List[MediaLibrary] = []
     warnings: List[str] = []
@@ -65,6 +129,8 @@ def parse_media_libraries(env: Dict[str, str]) -> Tuple[List[MediaLibrary], List
     if not by_index:
         return [], []
 
+    media_root = str((env or {}).get("RKM_MEDIA_PATH") or "")
+
     for idx in sorted(by_index):
         pair = by_index[idx]
         name = pair.get("NAME", "")
@@ -78,7 +144,14 @@ def parse_media_libraries(env: Dict[str, str]) -> Tuple[List[MediaLibrary], List
         if not path:
             warnings.append(f"MEDIA_LIBRARY_{idx} ({name}): PATH is empty — library skipped")
             continue
-        libraries.append(MediaLibrary(name=name, path=path))
+        container_path, path_warning = translate_media_path(path, media_root)
+        if path_warning:
+            warnings.append(f"MEDIA_LIBRARY_{idx} ({name}): {path_warning}")
+        libraries.append(MediaLibrary(
+            name=name,
+            path=container_path,
+            collection_type=normalize_collection_type(pair.get("TYPE", "")),
+        ))
 
     seen_names = set()
     for lib in libraries:

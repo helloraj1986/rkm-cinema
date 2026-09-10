@@ -192,21 +192,125 @@ def _is_bogus_default(vf) -> bool:
     return not locs or all(p.strip("/").startswith("config/root/default") for p in locs)
 
 
-# Target libraries we want: name -> (collectionType, container path)
-TARGET_LIBRARIES = [
+# Configured media libraries (MEDIA_LIBRARIES_PLAN): bootstrap wires EVERY
+# MEDIA_LIBRARY_N_* entry in .env into Jellyfin at startup. The SAME shared
+# parser the api uses (config/media_libraries.py) guarantees both agree on the
+# container path. When NOTHING is configured we keep the historical sample pair
+# so a fresh checkout still works out of the box.
+LEGACY_TARGET_LIBRARIES = [
     ("Movies", "movies", "/data/media/_movie"),
     ("TV Shows", "tvshows", "/data/media/_tv"),
 ]
 
 
-def ensure_libraries(admin_token):
-    """Guarantee exactly the two media libraries exist pointing at /data/media/{_movie,_tv}.
+def discover_media_root_libraries(root: str = "/data") -> list[tuple[str, str, str]]:
+    """Auto-detect libraries from the mounted media root (zero-config path).
 
-    Cleans bogus wizard defaults (which point at /config/root/default), deletes any
-    target-named library with the WRONG path, re-creates via the `paths=` QUERY form
-    (the body PathInfos form silently 204s without setting a path on 10.11), then
-    verifies each library's Locations and triggers a library scan.
+    When no MEDIA_LIBRARY_N_* is configured, every immediate subfolder of the
+    media root except the stack's own bookkeeping dirs becomes a library, named
+    after the folder and typed by simple name heuristics (movie/tv/mixed). This
+    is what makes ``RKM_MEDIA_PATH=D:/RKM_MEDIA`` "just work": all the user's
+    folders appear in the sidebar without hand-writing an entry per folder.
     """
+    denylist = {"downloads", "rkm", "media", "_movie", "_tv",
+                "@eadir", "system volume information", "$recycle.bin",
+                "lost+found", "config", "cache"}
+    try:
+        entries = sorted(os.listdir(root))
+    except OSError:
+        return []
+    out = []
+    for name in entries:
+        if name.startswith(".") or name.casefold() in denylist:
+            continue
+        if not os.path.isdir(os.path.join(root, name)):
+            continue
+        out.append((name, _guess_collection_type(name), f"/data/{name}"))
+    return out
+
+
+def _guess_collection_type(name: str) -> str:
+    """Best-effort Jellyfin collection type from a folder name (never a guess
+    about CONTENT — just routing the scanner; unknown → mixed)."""
+    n = name.casefold()
+    if any(t in n for t in ("tv", "show", "series", "episode")):
+        return "tvshows"
+    if any(t in n for t in ("movie", "film", "cinema")):
+        return "movies"
+    return "mixed"
+
+
+def configured_target_libraries() -> list[tuple[str, str, str]]:
+    """``[(name, collection_type, container_path), …]`` the provisioner wires.
+
+    Priority:
+      1. explicit MEDIA_LIBRARY_N_* entries from .env (full control of names/
+         order/types; PATHs are container-normalised by the shared parser);
+      2. otherwise AUTO-DISCOVER every subfolder of the mounted media root, so
+         pointing RKM_MEDIA_PATH at a real media drive needs no per-folder
+         config;
+      3. otherwise the historical Movies/TV Shows sample pair (fresh checkout).
+    """
+    try:
+        from config.media_libraries import parse_media_libraries
+    except Exception as e:  # pragma: no cover - packaging sanity
+        print(f"[jellyfin] WARN: shared config parser unavailable ({e}) — "
+              "falling back to the default sample libraries")
+        return list(LEGACY_TARGET_LIBRARIES)
+
+    env = {k: v for k, v in os.environ.items()}
+    libraries, warnings = parse_media_libraries(env)
+    for w in warnings:
+        print(f"[jellyfin] WARN config: {w}")
+    if libraries:
+        return [(lib.name, lib.collection_type, lib.path) for lib in libraries]
+
+    discovered = discover_media_root_libraries()
+    if discovered:
+        print(f"[jellyfin] no MEDIA_LIBRARY_N_* configured — auto-discovered "
+              f"{len(discovered)} folder(s) under {os.environ.get('RKM_MEDIA_PATH', '/data')}")
+        return discovered
+
+    print("[jellyfin] no configured or discoverable libraries — using the default sample libraries")
+    return list(LEGACY_TARGET_LIBRARIES)
+
+
+def _folder_check(container_path: str) -> tuple[bool, str]:
+    """``(wireable, message)`` for a configured folder INSIDE this container.
+
+    The provisioner mounts the same media root at /data as Jellyfin, so this is
+    a REAL accessibility check: a missing/unreadable folder is reported here at
+    bootstrap instead of silently producing a broken empty library. An EMPTY
+    folder is wireable (a brand-new library is scanned as files arrive).
+    """
+    if not container_path.startswith("/"):
+        return False, ("not a container path — check RKM_MEDIA_PATH / MEDIA_LIBRARY PATH "
+                       "(a host path must sit under RKM_MEDIA_PATH to be mounted)")
+    p = container_path
+    if not os.path.exists(p):
+        return False, f"MISSING at {p} (no such folder on the mounted media root)"
+    if not os.path.isdir(p):
+        return False, f"NOT A FOLDER at {p}"
+    try:
+        entries = os.listdir(p)
+    except PermissionError:
+        return False, f"NOT READABLE at {p} (permission denied)"
+    if not entries:
+        return True, f"EMPTY at {p} (wired anyway — will index as files arrive)"
+    return True, "ok"
+
+
+def ensure_libraries(admin_token):
+    """Wire every configured media library into Jellyfin (idempotent).
+
+    Targets come from MEDIA_LIBRARY_N_* in .env (see configured_target_libraries);
+    a missing/unreadable folder is reported loudly and SKIPPED (never a broken
+    empty library). Cleans bogus wizard defaults, deletes + re-creates a
+    target-named library whose path is wrong, verifies Locations, then scans.
+    """
+    targets = configured_target_libraries()
+    print(f"[jellyfin] libraries to wire: {[t[0] for t in targets]}")
+
     existing = _existing_libraries(admin_token)
     for vf in existing:
         name = vf.get("Name")
@@ -215,7 +319,14 @@ def ensure_libraries(admin_token):
                                token=admin_token, q={"name": name, "refreshLibrary": "false"})
             print(f"[jellyfin] deleted bogus library '{name}' (default path) -> {code}")
 
-    for target_name, ctype, path in TARGET_LIBRARIES:
+    for target_name, ctype, path in targets:
+        wireable, status = _folder_check(path)
+        if not wireable:
+            print(f"[jellyfin] SKIP '{target_name}' ({path}) — {status}")
+            continue
+        if status != "ok":
+            print(f"[jellyfin] note '{target_name}': {status}")
+
         vfs = _existing_libraries(admin_token)
         match = next((v for v in vfs if v.get("Name") == target_name), None)
         if match and path in _locations_of(match):

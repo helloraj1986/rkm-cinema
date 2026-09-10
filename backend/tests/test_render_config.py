@@ -90,6 +90,14 @@ def test_ensure_storage_reports_a_library_on_the_second_drive(rc, tmp_path, caps
     assert "MISSING (create it" not in out   # never checked against the primary root
 
 
+def test_prune_setting_passed_through(rc):
+    """The provisioner reads .rkm.env — the prune switch must reach it."""
+    api = rc.build_api_vars(dict(BASE, RKM_PRUNE_LIBRARIES="false"))
+    assert api["RKM_PRUNE_LIBRARIES"] == "false"
+    # absent → blank, and the provisioner's own default (ON) applies
+    assert rc.build_api_vars(dict(BASE))["RKM_PRUNE_LIBRARIES"] == ""
+
+
 def test_ensure_storage_seeds_samples_only_for_the_repo_default(rc, tmp_path):
     rc.ensure_storage(tmp_path, {})
     assert (tmp_path / "media/_movie").is_dir()

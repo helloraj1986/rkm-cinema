@@ -353,6 +353,10 @@ def build_api_vars(env: dict) -> dict:
             api[k] = str(v).strip()
         elif k.startswith("RKM_MEDIA_PATH_"):
             api[k] = str(v).strip()
+    # Provisioner behaviour: prune Jellyfin libraries that are not targets. The
+    # bundled Jellyfin is app-managed, so this defaults ON (blank = on); set
+    # RKM_PRUNE_LIBRARIES=false to keep libraries the app does not declare.
+    api["RKM_PRUNE_LIBRARIES"] = str(env.get("RKM_PRUNE_LIBRARIES") or "").strip()
     return api
 
 

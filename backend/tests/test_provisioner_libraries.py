@@ -132,6 +132,134 @@ class TestDiscoverAllMediaRoots:
         assert "MEDIA_LIBRARY_N_NAME" in out
 
 
+class TestPruneUntargetedLibraries:
+    """Leftover libraries are removed — but never at the cost of real ones."""
+
+    def _fake_jellyfin(self, monkeypatch, libraries):
+        state = {"folders": [dict(f) for f in libraries]}
+        calls = []
+
+        def fake_request(method, path, *, token=None, body=None, q=None, timeout=15):
+            calls.append((method, path, dict(q or {})))
+            if method == "GET" and path == "/Library/VirtualFolders":
+                return 200, [dict(f) for f in state["folders"]]
+            if method == "DELETE" and path == "/Library/VirtualFolders":
+                name = (q or {}).get("name")
+                state["folders"] = [f for f in state["folders"] if f.get("Name") != name]
+                return 204, None
+            if method == "POST" and path == "/Library/VirtualFolders":
+                state["folders"].append({"Name": (q or {}).get("name"),
+                                         "CollectionType": (q or {}).get("collectionType"),
+                                         "Locations": [(q or {}).get("paths")],
+                                         "ItemId": "new"})
+                return 204, None
+            return 204, None
+
+        monkeypatch.setattr(provision, "_request", fake_request)
+        return state, calls
+
+    def test_removes_leftover_inside_our_mount_and_keeps_targets_and_internals(self, monkeypatch):
+        state, calls = self._fake_jellyfin(monkeypatch, [
+            {"Name": "Movies", "CollectionType": "movies", "Locations": ["/data/media/_movie"], "ItemId": "1"},
+            {"Name": "TV Shows", "CollectionType": "tvshows", "Locations": ["/data/media/_tv"], "ItemId": "2"},
+            {"Name": "Movies Kids", "CollectionType": "movies", "Locations": ["/data/Movies Kids"], "ItemId": "3"},
+            # Jellyfin-internal library OUTSIDE our mounts — must survive.
+            {"Name": "Playlists", "CollectionType": "playlists", "Locations": ["/config/data/playlists"], "ItemId": "4"},
+        ])
+        deleted = provision.prune_untargeted_libraries(
+            "tok", [("Movies Kids", "movies", "/data/Movies Kids")],
+            source=provision.SOURCE_DISCOVERED, mounts=["/data", "/media2"])
+        assert sorted(deleted) == ["Movies", "TV Shows"]
+        left = {f["Name"] for f in state["folders"]}
+        assert left == {"Movies Kids", "Playlists"}
+        assert not any(c[2].get("name") == "Movies Kids" for c in calls if c[0] == "DELETE")
+
+    def test_never_prunes_targets_by_name_case_insensitively(self, monkeypatch):
+        state, _ = self._fake_jellyfin(monkeypatch, [
+            {"Name": "movies kids", "Locations": ["/data/Movies Kids"], "ItemId": "3"}])
+        deleted = provision.prune_untargeted_libraries(
+            "tok", [("Movies Kids", "movies", "/data/Movies Kids")],
+            source=provision.SOURCE_CONFIGURED, mounts=["/data"])
+        assert deleted == []
+
+    def test_refuses_when_nothing_was_configured_or_discovered(self, monkeypatch, capsys):
+        """The failed-mount case: pruning here would delete the user's real libraries."""
+        state, calls = self._fake_jellyfin(monkeypatch, [
+            {"Name": "Movies Kids", "Locations": ["/data/Movies Kids"], "ItemId": "3"}])
+        deleted = provision.prune_untargeted_libraries(
+            "tok", provision.LEGACY_TARGET_LIBRARIES,
+            source=provision.SOURCE_SAMPLE, mounts=["/data"])
+        assert deleted == []
+        assert not any(c[0] == "DELETE" for c in calls)
+        assert "must never delete your libraries" in capsys.readouterr().out
+
+    def test_disabled_by_env_is_a_strict_no_op(self, monkeypatch, capsys):
+        state, calls = self._fake_jellyfin(monkeypatch, [
+            {"Name": "Movies", "Locations": ["/data/media/_movie"], "ItemId": "1"}])
+        deleted = provision.prune_untargeted_libraries(
+            "tok", [("Movies Kids", "movies", "/data/Movies Kids")],
+            source=provision.SOURCE_DISCOVERED, mounts=["/data"], enabled=False)
+        assert deleted == [] and state["folders"]
+        assert not any(c[0] == "DELETE" for c in calls)
+        assert "pruning disabled" in capsys.readouterr().out
+
+    def test_library_outside_our_mounts_is_never_touched(self, monkeypatch):
+        state, _ = self._fake_jellyfin(monkeypatch, [
+            {"Name": "Somewhere Else", "Locations": ["E:/Other"], "ItemId": "9"}])
+        assert provision.prune_untargeted_libraries(
+            "tok", [("Movies", "movies", "/data/Movies")],
+            source=provision.SOURCE_DISCOVERED, mounts=["/data", "/media2"]) == []
+        assert state["folders"]
+
+    def test_prune_enabled_defaults_on_and_honours_env(self):
+        assert provision._prune_enabled({}) is True
+        assert provision._prune_enabled({"RKM_PRUNE_LIBRARIES": "true"}) is True
+        for off in ("0", "false", "FALSE", "no", "off"):
+            assert provision._prune_enabled({"RKM_PRUNE_LIBRARIES": off}) is False
+
+    def test_under_mount_matches_exactly_and_by_prefix(self):
+        assert provision._under_mount("/data", ["/data"])
+        assert provision._under_mount("/data/Movies Kids", ["/data"])
+        assert provision._under_mount("/media2/TV Shows", ["/data", "/media2"])
+        assert not provision._under_mount("/datax/Movies", ["/data"])
+        assert not provision._under_mount("/config/data/playlists", ["/data", "/media2"])
+        assert not provision._under_mount("", ["/data"])
+
+
+class TestTargetLibrariesSource:
+    def test_reports_configured_source(self, monkeypatch):
+        monkeypatch.setenv("RKM_MEDIA_PATH", "D:/RKM_MEDIA")
+        monkeypatch.setenv("MEDIA_LIBRARY_1_NAME", "Movies")
+        monkeypatch.setenv("MEDIA_LIBRARY_1_PATH", "/data/Movies")
+        targets, source = provision.target_libraries_with_source()
+        assert source == provision.SOURCE_CONFIGURED
+        assert targets == [("Movies", "mixed", "/data/Movies")]
+
+    def test_reports_discovered_source(self, monkeypatch):
+        for k in list(os.environ):
+            if k.startswith("MEDIA_LIBRARY_"):
+                monkeypatch.delenv(k, raising=False)
+        monkeypatch.setattr(provision, "discover_all_media_roots",
+                            lambda: [("Movies Kids", "movies", "/data/Movies Kids")])
+        targets, source = provision.target_libraries_with_source()
+        assert source == provision.SOURCE_DISCOVERED
+        assert targets == [("Movies Kids", "movies", "/data/Movies Kids")]
+
+    def test_reports_sample_source_when_nothing_found(self, monkeypatch):
+        for k in list(os.environ):
+            if k.startswith("MEDIA_LIBRARY_"):
+                monkeypatch.delenv(k, raising=False)
+        monkeypatch.setattr(provision, "discover_all_media_roots", lambda: [])
+        targets, source = provision.target_libraries_with_source()
+        assert source == provision.SOURCE_SAMPLE
+        assert targets == provision.LEGACY_TARGET_LIBRARIES
+
+    def test_configured_target_libraries_is_the_targets_only(self, monkeypatch):
+        monkeypatch.setenv("MEDIA_LIBRARY_1_NAME", "Movies")
+        monkeypatch.setenv("MEDIA_LIBRARY_1_PATH", "/data/Movies")
+        assert provision.configured_target_libraries() == [("Movies", "mixed", "/data/Movies")]
+
+
 class TestDiscoverMediaRootLibraries:
     def test_discovers_real_folders_and_skips_bookkeeping(self, tmp_path):
         for d in ("Movies Kids", "TV Shows", "downloads", "rkm", "media", ".hidden"):

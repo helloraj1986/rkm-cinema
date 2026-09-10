@@ -192,6 +192,11 @@ def _is_bogus_default(vf) -> bool:
     return not locs or all(p.strip("/").startswith("config/root/default") for p in locs)
 
 
+#: Where the target list came from — what makes pruning safe to gate on.
+SOURCE_CONFIGURED = "configured"
+SOURCE_DISCOVERED = "discovered"
+SOURCE_SAMPLE = "sample"
+
 # Configured media libraries (MEDIA_LIBRARIES_PLAN): bootstrap wires EVERY
 # MEDIA_LIBRARY_N_* entry in .env into Jellyfin at startup. The SAME shared
 # parser the api uses (config/media_libraries.py) guarantees both agree on the
@@ -295,39 +300,43 @@ def _guess_collection_type(name: str) -> str:
 
 
 def configured_target_libraries() -> list[tuple[str, str, str]]:
-    """``[(name, collection_type, container_path), …]`` the provisioner wires.
+    """``[(name, collection_type, container_path), …]`` the provisioner wires."""
+    return target_libraries_with_source()[0]
 
-    Priority:
-      1. explicit MEDIA_LIBRARY_N_* entries from .env (full control of names/
-         order/types; PATHs are container-normalised by the shared parser);
-      2. otherwise AUTO-DISCOVER every subfolder of EVERY mounted media root
-         (``RKM_MEDIA_PATH`` + ``RKM_MEDIA_PATH_2`` …), so pointing those at
-         real media drives needs no per-folder config;
-      3. otherwise the historical Movies/TV Shows sample pair (fresh checkout).
+
+def target_libraries_with_source() -> tuple[list[tuple[str, str, str]], str]:
+    """``(targets, source)`` — the source is what makes PRUNING safe to gate on.
+
+    ``source`` is one of ``"configured"`` (explicit MEDIA_LIBRARY_N_*),
+    ``"discovered"`` (real folders found under a mounted media root) or
+    ``"sample"`` (the fresh-checkout fallback, i.e. NOTHING was configured and
+    NOTHING was discovered — typically a drive that failed to mount). Pruning is
+    refused for ``"sample"``: see :func:`prune_untargeted_libraries`.
     """
     try:
         from config.media_libraries import parse_media_libraries
     except Exception as e:  # pragma: no cover - packaging sanity
         print(f"[jellyfin] WARN: shared config parser unavailable ({e}) — "
               "falling back to the default sample libraries")
-        return list(LEGACY_TARGET_LIBRARIES)
+        return list(LEGACY_TARGET_LIBRARIES), SOURCE_SAMPLE
 
     env = {k: v for k, v in os.environ.items()}
     libraries, warnings = parse_media_libraries(env)
     for w in warnings:
         print(f"[jellyfin] WARN config: {w}")
     if libraries:
-        return [(lib.name, lib.collection_type, lib.path) for lib in libraries]
+        return ([(lib.name, lib.collection_type, lib.path) for lib in libraries],
+                SOURCE_CONFIGURED)
 
     discovered = discover_all_media_roots()
     if discovered:
         mounts = ", ".join(m for m, _ in _media_root_mounts())
         print(f"[jellyfin] no MEDIA_LIBRARY_N_* configured — auto-discovered "
               f"{len(discovered)} folder(s) across {mounts}")
-        return discovered
+        return discovered, SOURCE_DISCOVERED
 
     print("[jellyfin] no configured or discoverable libraries — using the default sample libraries")
-    return list(LEGACY_TARGET_LIBRARIES)
+    return list(LEGACY_TARGET_LIBRARIES), SOURCE_SAMPLE
 
 
 def _folder_check(container_path: str) -> tuple[bool, str]:
@@ -355,16 +364,80 @@ def _folder_check(container_path: str) -> tuple[bool, str]:
     return True, "ok"
 
 
-def ensure_libraries(admin_token):
-    """Wire every configured media library into Jellyfin (idempotent).
+def prune_untargeted_libraries(admin_token, targets, *, source, mounts, enabled=True) -> list[str]:
+    """Delete Jellyfin libraries that live in OUR media mounts but are not targets.
 
-    Targets come from MEDIA_LIBRARY_N_* in .env (see configured_target_libraries);
-    a missing/unreadable folder is reported loudly and SKIPPED (never a broken
-    empty library). Cleans bogus wizard defaults, deletes + re-creates a
-    target-named library whose path is wrong, verifies Locations, then scans.
+    The bundled Jellyfin is app-managed, so its library list should mirror what
+    ``.env`` declares (or what discovery found) — anything else is a leftover
+    from an earlier configuration: stray rows in the sidebar, inflated counts and
+    artwork that 404s. Returns the deleted names.
+
+    SAFETY RAILS (this deletes things, so each one matters):
+    - ``enabled=False`` (``RKM_PRUNE_LIBRARIES=false``) → strict no-op;
+    - ``source == "sample"`` → REFUSED. That source means nothing was configured
+      AND nothing was discovered, which is what a failed drive mount looks like —
+      pruning there would delete the user's real libraries because a mount was
+      briefly missing. Never trade their library list for a debug convenience;
+    - a target NAME is never deleted (that is what we just wired/repaired);
+    - only libraries with a Location under one of our own container mounts are
+      considered, so Jellyfin's internal collections and anything pointing
+      outside the media roots are left alone.
     """
-    targets = configured_target_libraries()
-    print(f"[jellyfin] libraries to wire: {[t[0] for t in targets]}")
+    if not enabled:
+        print("[jellyfin] library pruning disabled (RKM_PRUNE_LIBRARIES=false) — "
+              "leaving existing libraries untouched")
+        return []
+    if source == SOURCE_SAMPLE:
+        print("[jellyfin] NOT pruning: no library was configured or discovered, so existing "
+              "libraries are left untouched (a missing drive must never delete your libraries)")
+        return []
+
+    keep = {name.casefold() for name, _, _ in targets}
+    deleted: list[str] = []
+    for vf in _existing_libraries(admin_token):
+        name = vf.get("Name") or ""
+        if not name or name.casefold() in keep:
+            continue
+        locs = _locations_of(vf)
+        if not any(_under_mount(loc, mounts) for loc in locs):
+            continue
+        code, _ = _request("DELETE", "/Library/VirtualFolders", token=admin_token,
+                           q={"name": name, "refreshLibrary": "false"})
+        print(f"[jellyfin] removed stale library '{name}' "
+              f"({', '.join(locs) or 'no path'}) -> {code}")
+        deleted.append(name)
+    if not deleted:
+        print("[jellyfin] no stale libraries to remove")
+    return deleted
+
+
+def _under_mount(location: str, mounts) -> bool:
+    """True when ``location`` IS or sits under one of our container mounts."""
+    loc = (location or "").strip().rstrip("/")
+    for m in mounts:
+        root = m.strip().rstrip("/")
+        if root and (loc == root or loc.startswith(root + "/")):
+            return True
+    return False
+
+
+def _prune_enabled(env: dict | None = None) -> bool:
+    """``RKM_PRUNE_LIBRARIES`` — on by default (the bundled Jellyfin is ours)."""
+    raw = str((env or os.environ).get("RKM_PRUNE_LIBRARIES", "") or "").strip().lower()
+    return raw not in ("0", "false", "no", "off")
+
+
+def ensure_libraries(admin_token):
+    """Wire every configured media library into Jellyfin (idempotent) and prune leftovers.
+
+    Targets come from MEDIA_LIBRARY_N_* in .env or from discovery
+    (see target_libraries_with_source); a missing/unreadable folder is reported
+    loudly and SKIPPED (never a broken empty library). Cleans bogus wizard
+    defaults, deletes + re-creates a target-named library whose path is wrong,
+    verifies Locations, removes libraries that are no longer targets, then scans.
+    """
+    targets, source = target_libraries_with_source()
+    print(f"[jellyfin] libraries to wire: {[t[0] for t in targets]} (source: {source})")
 
     existing = _existing_libraries(admin_token)
     for vf in existing:
@@ -403,6 +476,12 @@ def ensure_libraries(admin_token):
         if m2 and path in _locations_of(m2):
             ok = True
         print(f"[jellyfin]   verified '{target_name}' at {path}: {ok}")
+
+    # Remove libraries that are no longer targets (leftovers from an earlier
+    # configuration: stray sidebar rows, inflated counts, 404'd artwork).
+    prune_untargeted_libraries(admin_token, targets, source=source,
+                               mounts=[m for m, _ in _media_root_mounts()],
+                               enabled=_prune_enabled())
 
     # Scan now so newly-attached folders index automatically (no manual Jellyfin scan).
     code, _ = _request("POST", "/Library/Refresh", token=admin_token)

@@ -165,11 +165,14 @@ cannot desync from the layout.
 - **Body scroll lock** while the player is open (the `Dialog` component already does
   exactly this): without it, iOS rubber-band scrolling drags the page behind the
   fixed layer and a phone user sees the player visually detached/misaligned.
-- **`viewport-fit=cover`** in `index.html` — the app already prints
-  `env(safe-area-inset-*)` (MobileNav) but the insets are always 0 without it, so the
-  existing "safe-area aware" code is currently dead. Enabling it is what makes §2.4's
-  insets real, and it is what makes the player use the whole screen on a notched
-  iPhone rather than a letterboxed browser viewport.
+- **`viewport-fit=cover` — deliberately NOT enabled in this pass.** The app already
+  prints `env(safe-area-inset-*)` (MobileNav) but the insets are always 0 without it.
+  Enabling it also makes the WHOLE app full-bleed, so the sticky 64px header would
+  need its own top-inset handling — and notched-device geometry cannot be verified in
+  this sandbox (Chromium emulation does not emulate safe-area insets). The player is
+  already correct without it (a `fixed` + `100dvh` shell fits the inset viewport
+  exactly), and its `env()` padding is written to light up for free if cover is ever
+  turned on. Revisit only with a device in hand.
 - **No page-level scrollbars/scroll chains**: `overflow: hidden` on the shell,
   `touch-none` stays on the seek bar (already), `overscroll-behavior: none` so a
   drag at the end of a swipe cannot bounce the shell.

@@ -11,6 +11,7 @@ import {
   usesHls, nextHlsMode, hlsEngineFor, hlsModeLabel, HLS_LADDER,
   hlsConfigFor, resolutionLabel, abrBadgeLabel, HLS_MAX_BUFFER_SEC,
   HLS_ABR_DEFAULT_ESTIMATE_BPS, shouldAutoHideChrome, CHROME_HIDE_MS,
+  fullscreenPlan, playerChromeFor,
   warmGet, warmPut, warmDelete, warmClear, WARM_TTL_MS, WARM_MAX_ITEMS,
   WARM_AHEAD_SEC, type WarmEntry,
   loadPlayerPrefs, savePlayerPrefs, PLAYER_PREFS_KEY, type PlayerPrefs,
@@ -283,6 +284,31 @@ describe("auto-hide chrome (player tail)", () => {
   it("threshold is a sane 2–4 s", () => {
     expect(CHROME_HIDE_MS).toBeGreaterThanOrEqual(2000);
     expect(CHROME_HIDE_MS).toBeLessThanOrEqual(4000);
+  });
+});
+
+describe("player layout policy (fit / orientation / fullscreen)", () => {
+  it("uses element fullscreen wherever the API exists", () => {
+    expect(fullscreenPlan({ elementFullscreen: true, videoFullscreen: true })).toBe("element");
+    expect(fullscreenPlan({ elementFullscreen: true, videoFullscreen: false })).toBe("element");
+  });
+
+  it("falls back to the video's own fullscreen on iOS (no Element API there)", () => {
+    // iPhone Safari: requestFullscreen does not exist, webkitEnterFullscreen does —
+    // without this branch the fullscreen button is a silent no-op on an iPhone.
+    expect(fullscreenPlan({ elementFullscreen: false, videoFullscreen: true })).toBe("video");
+  });
+
+  it("reports 'none' so the button can be hidden instead of doing nothing", () => {
+    expect(fullscreenPlan({ elementFullscreen: false, videoFullscreen: false })).toBe("none");
+  });
+
+  it("collapses the header only on a short viewport, never on a laptop window", () => {
+    expect(playerChromeFor({ vw: 844, vh: 390 }).compactHeader).toBe(true); // landscape phone
+    expect(playerChromeFor({ vw: 1280, vh: 500 }).compactHeader).toBe(false); // short desktop
+    expect(playerChromeFor({ vw: 390, vh: 844 }).compactHeader).toBe(false); // portrait phone
+    expect(playerChromeFor({ vw: 1920, vh: 1080 }).compactHeader).toBe(false);
+    expect(playerChromeFor({ vw: 0, vh: 0 }).compactHeader).toBe(false); // not measured yet
   });
 });
 

@@ -89,6 +89,7 @@
           var de = document.documentElement;
           var root = document.querySelector('[role="dialog"][aria-modal="true"]');
           var video = document.querySelector("video");
+          var top = document.querySelector(".rkm-player__top");
           var seek = document.querySelector('[role="slider"][aria-label="Seek"]');
           // The dock carries a stable class; the seek bar now rides the progress row
           // with the clock, so the transport row is the dock's last child.
@@ -160,6 +161,7 @@
             dockRow: rectOf(row),
             dockH: dock ? +dock.getBoundingClientRect().height.toFixed(1) : null,
             dockRowScroll: row ? { scrollW: row.scrollWidth, clientW: row.clientWidth } : null,
+            headerText: top ? top.textContent : null,
             buttons: buttons,
             minButtonH: buttons.length ? Math.min.apply(null, buttons.map(function (b) { return b.h; })) : null,
             overflowCount: bad.length,

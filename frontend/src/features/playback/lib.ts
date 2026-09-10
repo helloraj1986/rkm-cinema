@@ -444,6 +444,50 @@ export function shouldAutoHideChrome(f: {
   return f.idleMs >= CHROME_HIDE_MS;
 }
 
+// ------------------------------------------------------------------ layout policy
+/**
+ * How the fullscreen button should behave in THIS browser.
+ *
+ * `element` — the whole player shell goes fullscreen (Chrome/Edge/Firefox/Safari on
+ * desktop and iPadOS): the dock, subtitles and top chrome come with it.
+ * `video` — iPhone Safari has no `Element.requestFullscreen` at all, so the only
+ * fullscreen that exists there is the `<video>`'s own `webkitEnterFullscreen`
+ * (the native iOS player takes over, custom chrome included). Without this branch
+ * the button is a silent no-op on an iPhone.
+ * `none` — no path: the button must not be rendered rather than do nothing.
+ */
+export type FullscreenPlan = "element" | "video" | "none";
+
+export function fullscreenPlan(facts: {
+  /** `document.fullscreenEnabled` — the Element Fullscreen API is available. */
+  elementFullscreen: boolean;
+  /** The media element exposes `webkitEnterFullscreen` (iOS Safari). */
+  videoFullscreen: boolean;
+}): FullscreenPlan {
+  if (facts.elementFullscreen) return "element";
+  if (facts.videoFullscreen) return "video";
+  return "none";
+}
+
+/** iOS Safari's non-standard video fullscreen surface (type-only, DOM lib can't
+ *  know about it). */
+export interface WebkitFullscreenVideo extends HTMLVideoElement {
+  webkitEnterFullscreen?: () => void;
+  webkitExitFullscreen?: () => void;
+  webkitDisplayingFullscreen?: boolean;
+}
+
+/**
+ * Chrome policy for the current viewport. A SHORT viewport (landscape phone, or a
+ * short desktop window) has to spend its pixels on picture, so the top chrome
+ * collapses to one row: the way out and the title stay, the "S1E2 · 3 of 10"
+ * context line goes. Never hide the close button — a player you cannot leave is
+ * not a player.
+ */
+export function playerChromeFor(facts: { vw: number; vh: number }): { compactHeader: boolean } {
+  return { compactHeader: facts.vh > 0 && facts.vh <= 480 };
+}
+
 // ------------------------------------------------------------------ warm-start
 /** One warm-cache slot: the in-flight (or resolved) playback-info fetch for an
  *  item, plus an optional HLS master pre-warm. `at` is the stamp used for TTL +

@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from dataclasses import dataclass, asdict
 from pathlib import Path
@@ -106,6 +107,17 @@ def verdict(p: dict | None, err: str | None) -> list[str]:
             notes.append(f"control '{b['label']}' is below a 32px touch target ({b['w']}x{b['h']})")
         if b["right"] > vw + 0.5:
             notes.append(f"control '{b['label']}' ends at {b['right']} (viewport {vw})")
+    # Chrome policy: a SHORT viewport collapses the header's second line ("S1E2 · n of
+    # m") so the picture keeps the pixels — and a tall one must keep it.
+    header = p.get("headerText") or ""
+    has_context = re.search(r"\bof \d+", header) is not None
+    want_context = (vh or 0) > 480
+    if has_context != want_context:
+        notes.append(
+            "header context line "
+            + ("should be present" if want_context else "should be collapsed")
+            + f" at vh={vh} (text: {header[:60]!r})"
+        )
     if p.get("overflowCount"):
         first = (p.get("overflow") or [{}])[0]
         notes.append(

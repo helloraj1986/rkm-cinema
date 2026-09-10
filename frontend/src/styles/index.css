@@ -220,6 +220,12 @@
     overflow: hidden;
     overscroll-behavior: none;
     background: #000;
+    /* A drag on the timeline (or a long press on a control) must not raise iOS's
+       text-selection loupe or flash the grey tap highlight over the chrome. */
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    -webkit-tap-highlight-color: transparent;
     --rkm-dock-h: 96px;
     --rkm-safe-top: env(safe-area-inset-top, 0px);
     --rkm-safe-bottom: env(safe-area-inset-bottom, 0px);

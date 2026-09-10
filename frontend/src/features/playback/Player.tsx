@@ -9,7 +9,9 @@ import {
   playMethodForMode, usesHls, hlsEngineFor, nextHlsMode, hlsConfigFor,
   abrBadgeLabel, shouldAutoHideChrome, warmGet, warmPut, warmDelete,
   WARM_AHEAD_SEC, loadPlayerPrefs, savePlayerPrefs, PLAYER_PREFS_KEY,
-  type AbrLevelFacts, type HlsEngine, type PlayerPrefs,
+  fullscreenPlan, playerChromeFor,
+  type AbrLevelFacts, type HlsEngine, type PlayerPrefs, type FullscreenPlan,
+  type WebkitFullscreenVideo,
   parseVtt, activeCueText, type VttCue, type QueueEntry,
   type StreamMode,
 } from "./lib";
@@ -112,6 +114,39 @@ export function Player({
     onSwitchRef.current = onSwitch;
   }, [queue, onSwitch]);
 
+  // Viewport facts for the chrome policy (a SHORT viewport — landscape phone, or a
+  // short desktop window — collapses the header to one row). Rotation, a mobile URL
+  // bar sliding away and entering/leaving fullscreen all arrive as one of these
+  // events, so a single re-measure keeps every band honest.
+  const [viewport, setViewport] = useState(() => ({
+    vw: typeof window === "undefined" ? 0 : window.innerWidth,
+    vh: typeof window === "undefined" ? 0 : window.innerHeight,
+  }));
+  useEffect(() => {
+    const measure = () => setViewport({ vw: window.innerWidth, vh: window.innerHeight });
+    measure();
+    window.addEventListener("resize", measure);
+    window.addEventListener("orientationchange", measure);
+    window.visualViewport?.addEventListener("resize", measure);
+    return () => {
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("orientationchange", measure);
+      window.visualViewport?.removeEventListener("resize", measure);
+    };
+  }, []);
+  const chromeLayout = playerChromeFor(viewport);
+
+  // Lock the page behind the player (the pattern Dialog already uses): without it,
+  // iOS rubber-band scrolling drags the document under the fixed shell, which reads
+  // as the player itself being misaligned.
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, []);
+
   const [error, setError] = useState<string | null>(null);
   const [switching, setSwitching] = useState(true); // engine (re)loading
   const [upNext, setUpNext] = useState<QueueEntry | null>(null);
@@ -149,6 +184,9 @@ export function Player({
   const [muted, setMuted] = useState(false);
   const [volume, setVolume] = useState(1);
   const [isFs, setIsFs] = useState(false);
+  // iOS native video fullscreen (iPhone has no Element fullscreen at all): tracked so
+  // the button flips to "exit" there instead of lying about the state.
+  const [isVideoFs, setIsVideoFs] = useState(false);
   const barRef = useRef<HTMLDivElement>(null);
   const dockRef = useRef<HTMLDivElement>(null);
   const [scrub, setScrub] = useState<number | null>(null);
@@ -622,11 +660,33 @@ export function Player({
     persistPrefs({ muted: v.muted });
   };
 
+  // Fullscreen capability for THIS browser: the whole shell goes fullscreen where the
+  // Element API exists (so the dock, subtitles and chrome travel with it), the video's
+  // own fullscreen is the iOS fallback, and when neither exists the button is hidden
+  // rather than rendering as a no-op.
+  const fsPlan: FullscreenPlan = fullscreenPlan({
+    elementFullscreen: typeof document !== "undefined" && document.fullscreenEnabled === true,
+    videoFullscreen:
+      typeof HTMLVideoElement !== "undefined" &&
+      typeof (HTMLVideoElement.prototype as WebkitFullscreenVideo).webkitEnterFullscreen === "function",
+  });
+  const fullscreenActive = isFs || isVideoFs;
+
   const toggleFullscreen = () => {
-    const el = rootRef.current;
-    if (!el) return;
-    if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
-    else void el.requestFullscreen().catch(() => {});
+    if (fsPlan === "element") {
+      const el = rootRef.current;
+      if (!el) return;
+      if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
+      else void el.requestFullscreen().catch(() => {});
+      return;
+    }
+    if (fsPlan === "video") {
+      // iPhone Safari: the <video>'s own fullscreen is the only one that exists.
+      const v = videoRef.current as WebkitFullscreenVideo | null;
+      if (!v) return;
+      if (v.webkitDisplayingFullscreen) v.webkitExitFullscreen?.();
+      else v.webkitEnterFullscreen?.();
+    }
   };
 
   // --- Persisted prefs + Picture-in-Picture --------------------------------
@@ -769,6 +829,11 @@ export function Player({
     v.addEventListener("error", onError);
     const onFs = () => setIsFs(Boolean(document.fullscreenElement));
     document.addEventListener("fullscreenchange", onFs);
+    // iOS reports its own native player fullscreen through non-standard events.
+    const onWkFs = () => setIsVideoFs(true);
+    const onWkFsEnd = () => setIsVideoFs(false);
+    v.addEventListener("webkitbeginfullscreen", onWkFs);
+    v.addEventListener("webkitendfullscreen", onWkFsEnd);
     return () => {
       v.removeEventListener("loadedmetadata", onMeta);
       v.removeEventListener("durationchange", onDur);
@@ -781,6 +846,8 @@ export function Player({
       v.removeEventListener("ended", onEnded);
       v.removeEventListener("error", onError);
       document.removeEventListener("fullscreenchange", onFs);
+      v.removeEventListener("webkitbeginfullscreen", onWkFs);
+      v.removeEventListener("webkitendfullscreen", onWkFsEnd);
       clearAuto();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1386,13 +1453,15 @@ export function Player({
                 <span className={`text-[10px] font-extrabold tracking-wider ${isPip ? "text-accent" : ""}`}>PIP</span>
               </button>
             ) : null}
-            <button
-              onClick={toggleFullscreen}
-              aria-label={isFs ? "Exit fullscreen" : "Fullscreen"}
-              className={ctrlBtn}
-            >
-              <Icon name={isFs ? "minimize" : "maximize"} size={17} />
-            </button>
+            {fsPlan !== "none" ? (
+              <button
+                onClick={toggleFullscreen}
+                aria-label={fullscreenActive ? "Exit fullscreen" : "Fullscreen"}
+                className={ctrlBtn}
+              >
+                <Icon name={fullscreenActive ? "minimize" : "maximize"} size={17} />
+              </button>
+            ) : null}
           </div>
         </div>
       </div>
@@ -1416,7 +1485,7 @@ export function Player({
           <button
             onClick={onClose}
             aria-label="Close player"
-            className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-black/50 text-zinc-100 ring-1 ring-white/15 backdrop-blur-sm transition hover:bg-black/80 hover:text-white"
+            className="grid h-10 w-10 shrink-0 touch-manipulation place-items-center rounded-full bg-black/50 text-zinc-100 ring-1 ring-white/15 backdrop-blur-sm transition hover:bg-black/80 hover:text-white"
           >
             <Icon name="back" size={18} />
           </button>
@@ -1424,7 +1493,9 @@ export function Player({
             <div className="truncate text-[15px] font-semibold leading-tight tracking-[-0.01em] text-zinc-50">
               {item.title}
             </div>
-            {curEntry ? (
+            {/* On a short viewport (landscape phone) the header gives its second line
+                back to the picture — the close button and title always stay. */}
+            {curEntry && !chromeLayout.compactHeader ? (
               <div className="mt-1 flex items-center gap-2">
                 <span className="shrink-0 rounded-md bg-white/[.08] px-1.5 py-px text-[10px] font-bold uppercase tracking-[0.12em] text-zinc-300">
                   {curCode}

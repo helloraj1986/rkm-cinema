@@ -22,6 +22,15 @@
 # nested list; Compose requires each volume item to be a string.)
 x-media: &media "${RKM_MEDIA_PATH:-./data}:/data"
 
+# EXTRA media roots — a second (or third) physical drive. Movies on one drive,
+# TV on another is normal, and a container can only see what is bind-mounted, so
+# RKM_MEDIA_PATH_2 -> /media2 (RKM_MEDIA_PATH_3 -> /media3). Declare them in
+# .env and MEDIA_LIBRARY_N_PATH may then use host paths from ANY of them.
+# Unset → the extra mount points back at ./data; the provisioner ignores an
+# undeclared root, so no library is ever discovered twice.
+x-media2: &media2 "${RKM_MEDIA_PATH_2:-./data}:/media2"
+x-media3: &media3 "${RKM_MEDIA_PATH_3:-./data}:/media3"
+
 x-lsio: &lsio
   # Common linuxserver env for *arr containers (host user map).
   environment:
@@ -44,6 +53,8 @@ services:
     volumes:
       - rkm_shared:/shared
       - *media
+      - *media2
+      - *media3
     networks:
       - rkm-exp
     depends_on:
@@ -85,6 +96,8 @@ services:
       - jellyfin-config:/config
       - jellyfin-cache:/cache
       - *media
+      - *media2
+      - *media3
     environment:
       TZ: "${RKM_TIMEZONE:-Australia/Melbourne}"
       # Optional Intel QSV / AMD VAAPI hardware transcoding (free on Jellyfin).
@@ -108,6 +121,8 @@ services:
     volumes:
       - radarr-config:/config
       - *media
+      - *media2
+      - *media3
       - ${RKM_MEDIA_PATH:-./data}/downloads:/data/downloads
     <<: *lsio
     networks:
@@ -122,6 +137,8 @@ services:
     volumes:
       - sonarr-config:/config
       - *media
+      - *media2
+      - *media3
     <<: *lsio
     networks:
       - rkm-exp
@@ -171,6 +188,8 @@ services:
     volumes:
       - rkm_shared:/shared
       - *media
+      - *media2
+      - *media3
     environment:
       JELLYFIN_URL: "http://jellyfin:8096"
       JELLYFIN_ADMIN_USER: "${RKM_JELLYFIN_ADMIN_USER:-admin}"
@@ -180,7 +199,8 @@ services:
       # Media libraries (MEDIA_LIBRARIES_PLAN): the provisioner wires every
       # configured entry into Jellyfin. Compose cannot enumerate arbitrary N,
       # so the rendered .rkm.env (which carries MEDIA_LIBRARY_* +
-      # RKM_MEDIA_PATH) is passed and the shared parser picks out the keys.
+      # RKM_MEDIA_PATH + RKM_MEDIA_PATH_2/3) is passed and the shared parser
+      # picks out the keys.
       RKM_MEDIA_PATH: "${RKM_MEDIA_PATH:-./data}"
     env_file:
       - .rkm.env

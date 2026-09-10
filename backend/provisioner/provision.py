@@ -65,11 +65,20 @@ def _request(method, path, *, token=None, body=None, q=None, timeout=15):
         return 0, {"error": str(e)}
 
 
-def wait_ready(retries=60, delay=2.0) -> None:
+def wait_ready(retries=120, delay=2.0) -> None:
+    """Wait until Jellyfin is past its BOOT page, not merely listening.
+
+    A brand-new /config volume serves an HTML "Jellyfin Startup" page (HTTP 503)
+    while it initialises, and /System/Info/Public can already answer 200 in that
+    window — so readiness must mean "the API answers JSON", not "the port is
+    open". 2026-09-10: the provisioner called the port ready on a fresh volume,
+    failed to authenticate, died BEFORE writing the API key, and every library in
+    the UI then showed as disabled.
+    """
     print(f"[jellyfin] waiting for {JELLYFIN_URL} ...")
-    for i in range(retries):
-        code, _ = _request("GET", "/System/Info/Public", timeout=5)
-        if code == 200:
+    for _ in range(retries):
+        code, data = _request("GET", "/System/Info/Public", timeout=5)
+        if code == 200 and isinstance(data, dict) and data.get("Version"):
             print("[jellyfin] reachable")
             return
         time.sleep(delay)
@@ -77,21 +86,29 @@ def wait_ready(retries=60, delay=2.0) -> None:
     sys.exit(1)
 
 
-def wizard_pending() -> bool:
-    """True if StartupWizardCompleted is false (no admin yet)."""
+def wizard_pending() -> bool | None:
+    """True/False for StartupWizardCompleted, or None while Jellyfin still boots.
+
+    The tri-state matters: the boot page is HTML (or a 503), which is NOT evidence
+    that the wizard is done. Treating "can't tell" as "done" is what made the
+    provisioner skip creating the admin user altogether.
+    """
     code, data = _request("GET", "/System/Info/Public", timeout=6)
     if code == 200 and isinstance(data, dict):
-        return data.get("StartupWizardCompleted") is False
-    return False  # if we can't tell, assume set up and let auth decide
+        val = data.get("StartupWizardCompleted")
+        if val is not None:
+            return not bool(val)
+    return None
 
 
-def authenticate():
+def authenticate(quiet: bool = False):
     code, data = _request("POST", "/Users/AuthenticateByName",
                           body={"Username": ADMIN_USER, "Pw": ADMIN_PASSWORD})
     if code == 200 and isinstance(data, dict):
         return data.get("AccessToken")
-    err = data.get("error") if isinstance(data, dict) else data
-    print(f"[jellyfin] authenticate {ADMIN_USER} -> HTTP {code} {str(err)[:120]}")
+    if not quiet:
+        err = data.get("error") if isinstance(data, dict) else data
+        print(f"[jellyfin] authenticate {ADMIN_USER} -> HTTP {code} {str(err)[:120]}")
     return None
 
 
@@ -117,19 +134,43 @@ def run_startup() -> bool:
     return code in (200, 204)
 
 
-def ensure_admin() -> str | None:
-    token = authenticate()
-    if token:
-        print(f"[jellyfin] authenticated existing admin '{ADMIN_USER}'")
-        return token
-    if wizard_pending():
-        if run_startup():
-            token = authenticate()
-            if token:
-                print(f"[jellyfin] admin created + authenticated '{ADMIN_USER}'")
-                return token
-            print("[jellyfin] created user but could not authenticate "
-                  "(password hash mismatch?)")
+def ensure_admin(retries=40, delay=3.0) -> str | None:
+    """Create or authenticate the admin user, waiting out a fresh install.
+
+    A brand-new /config volume needs time: authentication can keep returning 503
+    (the HTML startup page) for a minute or more AFTER /System/Info/Public starts
+    answering JSON. Only give up early when Jellyfin says the wizard is COMPLETE
+    and auth STILL fails — that is a credentials problem, and retrying will not
+    fix it.
+    """
+    for attempt in range(1, retries + 1):
+        token = authenticate(quiet=attempt > 1)
+        if token:
+            print(f"[jellyfin] authenticated existing admin '{ADMIN_USER}'")
+            return token
+
+        pending = wizard_pending()
+        if pending is True:
+            if run_startup():
+                token = authenticate(quiet=True)
+                if token:
+                    print(f"[jellyfin] admin created + authenticated '{ADMIN_USER}'")
+                    return token
+                print("[jellyfin] created user but could not authenticate "
+                      "(password hash mismatch?)")
+        elif pending is False:
+            print(f"[jellyfin] the startup wizard is COMPLETE but '{ADMIN_USER}' could "
+                  "not authenticate — check RKM_JELLYFIN_ADMIN_PASSWORD in .env "
+                  "(it must match the password Jellyfin was set up with)")
+            return None
+
+        if attempt < retries:
+            if attempt in (1, 5, 20):
+                print(f"[jellyfin] not ready yet (attempt {attempt}/{retries}) — "
+                      "waiting for Jellyfin to finish starting up")
+            time.sleep(delay)
+
+    print(f"[jellyfin] gave up waiting for '{ADMIN_USER}' after {retries} attempts")
     return None
 
 
@@ -496,9 +537,11 @@ def main():
 
     token = ensure_admin()
     if not token:
-        print("[jellyfin] ERROR: could not create or authenticate the admin user.")
-        print("          Complete the one-time wizard at "
-              f"{BROWSER_URL}/web (username '{ADMIN_USER}'), then re-run bootstrap.")
+        print(f"[jellyfin] ERROR: could not create or authenticate the admin user "
+              f"'{ADMIN_USER}'.")
+        print("          If Jellyfin is sitting on its first-run wizard, complete it at "
+              f"{BROWSER_URL}/web with username '{ADMIN_USER}' and the password from "
+              ".env (RKM_JELLYFIN_ADMIN_PASSWORD), then re-run bootstrap.")
         sys.exit(1)
 
     api_key = ensure_api_key(token)

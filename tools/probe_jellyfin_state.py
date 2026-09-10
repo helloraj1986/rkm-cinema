@@ -20,6 +20,9 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import rkm_common as rc  # noqa: E402  (shared env + URL resolution)
+
 REPO = Path(__file__).resolve().parent.parent
 socket.setdefaulttimeout(30)
 
@@ -81,7 +84,7 @@ def main() -> int:
 
     env = load_env()
     jf = Jellyfin(
-        f"http://host.docker.internal:{env.get('RKM_JELLYFIN_PORT') or '8098'}",
+        rc.jellyfin_base(env),
         env.get("RKM_JELLYFIN_ADMIN_USER") or "admin",
         env.get("RKM_JELLYFIN_ADMIN_PASSWORD") or "",
     )

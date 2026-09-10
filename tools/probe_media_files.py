@@ -22,6 +22,9 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import rkm_common as rc  # noqa: E402  (shared env + URL resolution)
+
 REPO = Path(__file__).resolve().parent.parent
 socket.setdefaulttimeout(30)
 
@@ -56,7 +59,7 @@ def main() -> int:
     args = ap.parse_args()
 
     env = load_env()
-    base = f"http://host.docker.internal:{env.get('RKM_JELLYFIN_PORT') or '8098'}"
+    base = rc.jellyfin_base(env)
     hdr = 'MediaBrowser Client="rkm-files", Device="sandbox", DeviceId="rkm-files-1", Version="1.0.0"'
     req = urllib.request.Request(
         base + "/Users/AuthenticateByName",

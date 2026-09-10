@@ -25,6 +25,9 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import rkm_common as rc  # noqa: E402  (shared env + URL resolution)
+
 REPO = Path(__file__).resolve().parent.parent
 socket.setdefaulttimeout(30)
 
@@ -56,11 +59,12 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--library", default="TV Shows")
     ap.add_argument("--show-empty", type=int, default=15, help="how many empty series to list")
-    ap.add_argument("--app", default="http://host.docker.internal:8124")
+    ap.add_argument("--app", default=None,
+                    help="app base URL (auto-detected from here if omitted)")
     args = ap.parse_args()
 
     env = load_env()
-    base = f"http://host.docker.internal:{env.get('RKM_JELLYFIN_PORT') or '8098'}"
+    base = rc.jellyfin_base(env)
 
     # auth
     hdr = 'MediaBrowser Client="rkm-diagnose", Device="sandbox", DeviceId="rkm-diag-1", Version="1.0.0"'
@@ -160,7 +164,8 @@ def main() -> int:
 
     # what does OUR api report for the same folder?
     print("\n=== our api's view of the same folder ===")
-    folders = get(args.app, "/api/library/folders")
+    app = args.app or rc.app_base(env)
+    folders = get(app, "/api/library/folders")
     if isinstance(folders, dict) and "libraries" in folders:
         row = next((l for l in folders["libraries"] if l.get("name") == args.library), None)
         print(f"  library row: {row}")

@@ -15,6 +15,11 @@ from config.media_libraries import parse_media_libraries
 #: sidebar greyed out every one of them while Jellyfin's own folders were correct.
 MEDIA_CONFIG_KEY_PREFIXES = ("MEDIA_LIBRARY_", "RKM_MEDIA_PATH")
 
+#: Keys that are READ from the environment but never annotated on the class, so
+#: the derived key set in :meth:`Config._get_all_keys` cannot see them. Keep this
+#: list empty if possible — annotating the attribute is the better fix.
+_EXTRA_ENV_KEYS = {"TMDB_CACHE_TTL", "PLEX_SCAN_TTL"}
+
 
 def is_env_passthrough_key(key: str) -> bool:
     """True when a real environment variable must reach the config env.
@@ -212,21 +217,23 @@ class Config:
         return {k: v for k, v in environ.items()
                 if k in self._get_all_keys() or is_env_passthrough_key(k)}
 
+    def _get_all_keys(self) -> set:
+        """Every env key this config reads.
+
+        DERIVED from the class annotations rather than hand-listed: a setting
+        declared on the class can no longer be added and then silently dropped
+        from the real-env passthrough. That is not hypothetical — on 2026-09-10
+        ``RKM_MEDIA_PATH`` was absent from the hand-written list, so the api had no
+        media roots and every configured library went unresolved, while
+        ``EMBY_URL``/``EMBY_API_KEY``/``YOUTUBE_API_KEY`` were quietly missing from
+        it in exactly the same way.
+        """
+        annotated = {name for name in getattr(type(self), "__annotations__", {})
+                     if name.isupper() and not name.startswith("_")}
+        return annotated | _EXTRA_ENV_KEYS
     def _normalize_url(self, url: str) -> str:
         """Ensure URL has no trailing slash."""
         return url.rstrip("/")
-
-    def _get_all_keys(self) -> set:
-        return {
-            "MEDIA_HOST", "RADARR_URL", "RADARR_API_KEY", "SONARR_URL", "SONARR_API_KEY",
-            "PLEX_URL", "PLEX_TOKEN", "MEDIA_SERVER", "TMDB_API_KEY", "TVDB_API_KEY", "JELLYFIN_URL",
-            "JELLYFIN_API_KEY", "JELLYFIN_BROWSER_URL", "PROWLARR_URL", "PROWLARR_API_KEY", "QBITTORRENT_URL",
-            "RADARR_QUALITY_PROFILE_ID", "SONARR_QUALITY_PROFILE_ID",
-            "PLEX_BROWSER_URL", "EMBY_BROWSER_URL",
-            "WATCHLIST_STORE", "WATCHLIST_DB_PATH",
-            "WATCHLIST_SCHEDULER", "AUTO_ADD_ENABLED", "RECONCILE_INTERVAL_MIN", "DAILY_JOB_HOUR",
-            "TMDB_CACHE_TTL", "PLEX_SCAN_TTL",
-        }
 
     def validate_required(self) -> list[str]:
         """Return list of missing required configuration."""

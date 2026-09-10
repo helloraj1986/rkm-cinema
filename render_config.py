@@ -82,6 +82,19 @@ def fail(msg: str) -> None:
     sys.exit(2)
 
 
+def _strip_inline_comment(value: str) -> str:
+    """Drop a trailing ``␣#…`` comment from an UNQUOTED .env value.
+
+    Matches how Docker Compose / godotenv read the same file (a ``#`` only starts
+    a comment when preceded by whitespace, so ``D:/a#b`` survives). Quoted values
+    never reach here, so a legitimate ``' #'`` is still expressible as "value #x".
+    2026-09-10: this parser used to keep the comment while Compose stripped it —
+    two readings of one file, which is how a value silently picks up stray text.
+    """
+    idx = value.find(" #")
+    return (value[:idx] if idx != -1 else value).rstrip()
+
+
 def parse_env_file(path: Path) -> dict:
     """Parse a .env file (comments, blank lines, `export`, quotes)."""
     parsed: dict = {}
@@ -95,7 +108,11 @@ def parse_env_file(path: Path) -> dict:
             continue
         k, _, v = line.partition("=")
         k = k.strip().lstrip("export").strip()
-        v = v.strip().strip('"').strip("'")
+        v = v.strip()
+        if len(v) >= 2 and v[0] == v[-1] and v[0] in "\"'":
+            v = v[1:-1]                      # quoted → verbatim between the quotes
+        else:
+            v = _strip_inline_comment(v)
         if k:
             parsed[k] = v
     return parsed

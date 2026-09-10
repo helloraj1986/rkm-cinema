@@ -90,6 +90,46 @@ def test_ensure_storage_reports_a_library_on_the_second_drive(rc, tmp_path, caps
     assert "MISSING (create it" not in out   # never checked against the primary root
 
 
+def test_env_file_inline_comment_is_stripped_like_compose_does(rc, tmp_path):
+    """RKM's parser and Docker Compose must read the same value from one file."""
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "# a comment line\n"
+        "RKM_MEDIA_PATH=D:/RKM_MEDIA\n"
+        "RKM_MEDIA_PATH_2=B:/RKM_MEDIA   # B: = the TV drive\n"
+        "PLAIN=a#b\n"
+        "QUOTED=\"keeps #hash and spaces\"\n"
+        "export EXPORTED=yes\n"
+        "EMPTY=\n",
+        encoding="utf-8",
+    )
+    parsed = rc.parse_env_file(env_file)
+    assert parsed["RKM_MEDIA_PATH"] == "D:/RKM_MEDIA"
+    assert parsed["RKM_MEDIA_PATH_2"] == "B:/RKM_MEDIA"   # comment gone
+    assert parsed["PLAIN"] == "a#b"                       # no space → not a comment
+    assert parsed["QUOTED"] == "keeps #hash and spaces"   # quoted → verbatim
+    assert parsed["EXPORTED"] == "yes"
+    assert parsed["EMPTY"] == ""
+
+
+def test_stripping_an_inline_comment_matches_the_library_path_it_serves(rc, tmp_path):
+    """The whole point: the parsed root must match the libraries written beside it."""
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "RKM_MEDIA_PATH_2=B:/RKM_MEDIA  # the TV drive (mounted at /media2)\n"
+        "MEDIA_LIBRARY_1_NAME=TV Shows\n"
+        "MEDIA_LIBRARY_1_PATH=B:/RKM_MEDIA/TV Shows\n",
+        encoding="utf-8",
+    )
+    import sys
+    sys.path.insert(0, str(rc.ROOT / "backend"))
+    from config.media_libraries import parse_media_libraries
+
+    libs, warnings = parse_media_libraries(rc.parse_env_file(env_file))
+    assert warnings == []
+    assert libs[0].path == "/media2/TV Shows"
+
+
 def test_prune_setting_passed_through(rc):
     """The provisioner reads .rkm.env — the prune switch must reach it."""
     api = rc.build_api_vars(dict(BASE, RKM_PRUNE_LIBRARIES="false"))

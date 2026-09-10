@@ -15,6 +15,44 @@ from config.media_libraries import parse_media_libraries
 from config.settings import Config, is_env_passthrough_key
 
 
+class TestConfigKeysCoverage:
+    """The hand-written key list is gone — every declared setting must pass through."""
+
+    #: Snapshot of the keys the app is known to read (2026-09-10). If a setting is
+    #: renamed/removed this test should be updated deliberately, never silently.
+    KNOWN_KEYS = {
+        "MEDIA_HOST", "RADARR_URL", "RADARR_API_KEY", "SONARR_URL", "SONARR_API_KEY",
+        "PLEX_URL", "PLEX_TOKEN", "MEDIA_SERVER", "TMDB_API_KEY", "TVDB_API_KEY",
+        "JELLYFIN_URL", "JELLYFIN_API_KEY", "JELLYFIN_BROWSER_URL", "PROWLARR_URL",
+        "PROWLARR_API_KEY", "QBITTORRENT_URL", "RADARR_QUALITY_PROFILE_ID",
+        "SONARR_QUALITY_PROFILE_ID", "PLEX_BROWSER_URL", "EMBY_BROWSER_URL",
+        "WATCHLIST_STORE", "WATCHLIST_DB_PATH", "WATCHLIST_SCHEDULER",
+        "AUTO_ADD_ENABLED", "RECONCILE_INTERVAL_MIN", "DAILY_JOB_HOUR",
+        "TMDB_CACHE_TTL", "PLEX_SCAN_TTL",
+        # these three were declared on the class yet MISSING from the old
+        # hand-written list — they were being silently dropped:
+        "EMBY_URL", "EMBY_API_KEY", "YOUTUBE_API_KEY",
+    }
+
+    def test_every_known_key_is_covered(self):
+        missing = sorted(self.KNOWN_KEYS - Config()._get_all_keys())
+        assert missing == [], f"keys dropped from the passthrough: {missing}"
+
+    def test_previously_dropped_keys_now_pass_through(self):
+        passed = Config()._env_passthrough({
+            "EMBY_URL": "http://emby:8096", "EMBY_API_KEY": "k",
+            "YOUTUBE_API_KEY": "y", "TMDB_CACHE_TTL": "3600",
+        })
+        assert passed == {"EMBY_URL": "http://emby:8096", "EMBY_API_KEY": "k",
+                          "YOUTUBE_API_KEY": "y", "TMDB_CACHE_TTL": "3600"}
+
+    def test_derived_set_ignores_internal_attributes(self):
+        keys = Config()._get_all_keys()
+        assert "media_libraries" not in keys
+        assert "media_library_warnings" not in keys
+        assert not any(k.startswith("_") for k in keys)
+
+
 class TestEnvPassthroughPredicate:
     def test_media_roots_are_covered(self):
         for key in ("RKM_MEDIA_PATH", "RKM_MEDIA_PATH_2", "RKM_MEDIA_PATH_3"):

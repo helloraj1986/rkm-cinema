@@ -1,12 +1,12 @@
 # RKM Watchlist — Architecture
 
-> ⚠ **2026-09-08:** repo restructured into a monorepo (`docs/REPO_STRUCTURE_PLAN.md`)
+> ⚠ **2026-09-08:** repo restructured into a monorepo (`REPO_STRUCTURE_PLAN.md`)
 > and the legacy vanilla app removed (branch `chore/remove-legacy-app`):
 > **`backend/`** holds the FastAPI app + tests, **`frontend/`** the React/TS shell
 > (renamed from `web/`) — now the only UI; the `/legacy` route, `frontend/legacy/`
 > and the `rebuild_dashboard.py` static dashboard generator are gone (archived in
 > `tools/archive/`). Deploy/infra + docs stay at the root. The authoritative
-> project tree + commands live in `README.md`.
+> project tree + commands live in `../README.md`.
 
 > **Single codebase.** The monolithic `api.py` has been archived
 > (`tools/archive/api_legacy_monolith.py`) and the production backend is now the
@@ -60,7 +60,7 @@ Access is private over **Tailscale**. The browser talks to nginx on :8123; nginx
 ## 3. Repository layout
 
 ```
-rkm-cinema/                       (full annotated tree in README.md)
+rkm-cinema/                       (full annotated tree in ../README.md)
 ├── backend/                      FastAPI app + pytest suite + Dockerfile
 │   ├── api/                      main.py app factory + routes/ (thin routers)
 │   ├── services/                 external integrations + app services
@@ -73,8 +73,11 @@ rkm-cinema/                       (full annotated tree in README.md)
 │   ├── provisioner/              bundled-stack Jellyfin provisioner
 │   └── tests/                    unit + API tests (mockable, no live LAN)
 ├── frontend/                     React 18 + TS + Vite shell (the only UI)
-├── docs/  nginx/  tools/archive/  docker-compose.yml  bootstrap.*  render_config.py
-└── .env (single config)          .env.example (committed template)
+├── docs/                         architecture, plans, ADRs, API contract,
+│                                 OPERATIONS.md, PROGRESS.md, ARCHITECTURE.md
+├── nginx/  scripts/  tools/      web config; backup/restore; diagnostics
+├── docker-compose.yml  bootstrap.ps1  bootstrap.sh  render_config.py  rkm.ps1
+└── README.md  .env (single config)  .env.example (committed template)
 ```
 
 Run everything from the subdirs: `cd backend && python -m pytest tests/ -q`,

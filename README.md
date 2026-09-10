@@ -204,8 +204,8 @@ frontend/         React + TypeScript UI (features: library, playback, watchlist,
 nginx/            web container config (routing + artwork cache policy)
 scripts/          backup / restore / scheduled-task PowerShell
 tools/            status + diagnostics (Python, work on Windows and in containers)
-docs/             architecture, plans, ADRs, frozen API contract (docs/api/openapi.v1.json)
-PROGRESS.md       session-by-session project history
+docs/             architecture, plans, ADRs, frozen API contract (docs/api/openapi.v1.json),
+                  OPERATIONS.md, PROGRESS.md (session history)
 rkm.ps1           single entry point for running and operating the stack
 ```
 
@@ -237,7 +237,8 @@ types from it rather than hand-writing request/response shapes.
 | Doc | Contents |
 |---|---|
 | [`docs/OPERATIONS.md`](docs/OPERATIONS.md) | Runbook: commands, rules, fresh install, recovery, what survives what |
-| [`ARCHITECTURE.md`](ARCHITECTURE.md) | System and module architecture |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | System and module architecture |
 | [`docs/api/openapi.v1.json`](docs/api/openapi.v1.json) | Frozen API contract |
-| [`PROGRESS.md`](PROGRESS.md) | What changed, session by session |
+| [`docs/PROGRESS.md`](docs/PROGRESS.md) | What changed, session by session |
+| [`docs/TAILSCALE_HOSTING.md`](docs/TAILSCALE_HOSTING.md) | Remote/phone access over Tailscale |
 | [`docs/adr/`](docs/adr/) | Architecture decision records |

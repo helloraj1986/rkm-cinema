@@ -36,7 +36,7 @@ class TestConfiguredTargetLibraries:
             if k.startswith("MEDIA_LIBRARY_"):
                 monkeypatch.delenv(k, raising=False)
         # No auto-discoverable subfolders in the test environment → sample pair.
-        monkeypatch.setattr(provision, "discover_media_root_libraries", lambda: [])
+        monkeypatch.setattr(provision, "discover_all_media_roots", lambda: [])
         targets = provision.configured_target_libraries()
         assert targets == provision.LEGACY_TARGET_LIBRARIES
 
@@ -45,7 +45,7 @@ class TestConfiguredTargetLibraries:
             if k.startswith("MEDIA_LIBRARY_"):
                 monkeypatch.delenv(k, raising=False)
         monkeypatch.setenv("RKM_MEDIA_PATH", "D:/RKM_MEDIA")
-        monkeypatch.setattr(provision, "discover_media_root_libraries", lambda: [])
+        monkeypatch.setattr(provision, "discover_all_media_roots", lambda: [])
         assert provision.configured_target_libraries() == provision.LEGACY_TARGET_LIBRARIES
 
     def test_auto_discovers_media_root_subfolders_when_unconfigured(self, monkeypatch):
@@ -53,12 +53,83 @@ class TestConfiguredTargetLibraries:
         for k in list(os.environ):
             if k.startswith("MEDIA_LIBRARY_"):
                 monkeypatch.delenv(k, raising=False)
-        monkeypatch.setattr(provision, "discover_media_root_libraries",
+        monkeypatch.setattr(provision, "discover_all_media_roots",
                             lambda: [("Movies Kids", "movies", "/data/Movies Kids"),
                                      ("TV Shows", "tvshows", "/data/TV Shows")])
         targets = provision.configured_target_libraries()
         assert targets == [("Movies Kids", "movies", "/data/Movies Kids"),
                            ("TV Shows", "tvshows", "/data/TV Shows")]
+
+    def test_explicit_libraries_on_two_drives(self, monkeypatch):
+        """A library declared on the second drive wires to /media2, not /data."""
+        monkeypatch.setenv("RKM_MEDIA_PATH", "D:/RKM_MEDIA")
+        monkeypatch.setenv("RKM_MEDIA_PATH_2", "B:/RKM_MEDIA")
+        monkeypatch.setenv("MEDIA_LIBRARY_1_NAME", "Movies")
+        monkeypatch.setenv("MEDIA_LIBRARY_1_PATH", "D:/RKM_MEDIA/Movies")
+        monkeypatch.setenv("MEDIA_LIBRARY_1_TYPE", "movie")
+        monkeypatch.setenv("MEDIA_LIBRARY_2_NAME", "TV Shows")
+        monkeypatch.setenv("MEDIA_LIBRARY_2_PATH", "B:/RKM_MEDIA/TV Shows")
+        monkeypatch.setenv("MEDIA_LIBRARY_2_TYPE", "tv")
+        assert provision.configured_target_libraries() == [
+            ("Movies", "movies", "/data/Movies"),
+            ("TV Shows", "tvshows", "/media2/TV Shows"),
+        ]
+
+
+class TestMediaRootMounts:
+    def test_env_drives_the_mount_list(self, monkeypatch):
+        monkeypatch.setenv("RKM_MEDIA_PATH", "D:/RKM_MEDIA")
+        monkeypatch.setenv("RKM_MEDIA_PATH_2", "B:/RKM_MEDIA")
+        assert provision._media_root_mounts() == [("/data", "D:/RKM_MEDIA"),
+                                                  ("/media2", "B:/RKM_MEDIA")]
+
+    def test_undeclared_extra_root_is_not_in_the_list(self, monkeypatch):
+        """compose mounts /media2 regardless — an unset _2 must NOT be discovered."""
+        monkeypatch.setenv("RKM_MEDIA_PATH", "D:/RKM_MEDIA")
+        monkeypatch.delenv("RKM_MEDIA_PATH_2", raising=False)
+        assert provision._media_root_mounts() == [("/data", "D:/RKM_MEDIA")]
+
+    def test_no_root_at_all_falls_back_to_data(self, monkeypatch):
+        monkeypatch.delenv("RKM_MEDIA_PATH", raising=False)
+        monkeypatch.delenv("RKM_MEDIA_PATH_2", raising=False)
+        assert provision._media_root_mounts() == [("/data", "/data")]
+
+
+class TestDiscoverAllMediaRoots:
+    def test_discovers_folders_on_both_drives(self, monkeypatch, tmp_path):
+        a = tmp_path / "a"
+        b = tmp_path / "b"
+        (a / "Movies").mkdir(parents=True)
+        (b / "TV Shows").mkdir(parents=True)
+        monkeypatch.setattr(provision, "_media_root_mounts",
+                            lambda: [(str(a), "D:/RKM_MEDIA"), (str(b), "B:/RKM_MEDIA")])
+        assert provision.discover_all_media_roots() == [
+            ("Movies", "movies", f"{a}/Movies"),
+            ("TV Shows", "tvshows", f"{b}/TV Shows"),
+        ]
+
+    def test_missing_root_contributes_nothing(self, monkeypatch, tmp_path):
+        a = tmp_path / "a"
+        (a / "Movies").mkdir(parents=True)
+        monkeypatch.setattr(provision, "_media_root_mounts",
+                            lambda: [(str(a), "D:/RKM_MEDIA"),
+                                     (str(tmp_path / "gone"), "B:/RKM_MEDIA")])
+        assert provision.discover_all_media_roots() == [("Movies", "movies", f"{a}/Movies")]
+
+    def test_same_folder_name_on_two_roots_kept_once_with_a_note(
+        self, monkeypatch, tmp_path, capsys
+    ):
+        a = tmp_path / "a"
+        b = tmp_path / "b"
+        (a / "Movies").mkdir(parents=True)
+        (b / "Movies").mkdir(parents=True)
+        monkeypatch.setattr(provision, "_media_root_mounts",
+                            lambda: [(str(a), "D:/RKM_MEDIA"), (str(b), "B:/RKM_MEDIA")])
+        found = provision.discover_all_media_roots()
+        assert found == [("Movies", "movies", f"{a}/Movies")]
+        out = capsys.readouterr().out
+        assert "exists on more than one media root" in out
+        assert "MEDIA_LIBRARY_N_NAME" in out
 
 
 class TestDiscoverMediaRootLibraries:
@@ -69,8 +140,18 @@ class TestDiscoverMediaRootLibraries:
         found = provision.discover_media_root_libraries(root=str(tmp_path))
         names = [t[0] for t in found]
         assert names == ["Movies Kids", "TV Shows"]
-        assert ("Movies Kids", "movies", "/data/Movies Kids") in found
-        assert ("TV Shows", "tvshows", "/data/TV Shows") in found
+        # the returned path is rooted at the mount that was scanned
+        assert ("Movies Kids", "movies", f"{tmp_path}/Movies Kids") in found
+        assert ("TV Shows", "tvshows", f"{tmp_path}/TV Shows") in found
+
+    def test_returned_path_uses_the_scanned_mount_not_a_hardcoded_data(self, monkeypatch, tmp_path):
+        """A second-drive mount must yield paths under THAT mount, never /data."""
+        (tmp_path / "TV Shows").mkdir()
+        monkeypatch.setattr(provision, "_media_root_mounts",
+                            lambda: [(str(tmp_path), "B:/RKM_MEDIA")])
+        found = provision.discover_all_media_roots()
+        assert found == [("TV Shows", "tvshows", f"{tmp_path}/TV Shows")]
+        assert all("/data/" not in p for _, _, p in found)
 
     def test_missing_root_returns_empty(self):
         assert provision.discover_media_root_libraries(root="/definitely/not/here") == []

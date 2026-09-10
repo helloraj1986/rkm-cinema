@@ -203,18 +203,45 @@ LEGACY_TARGET_LIBRARIES = [
 ]
 
 
+def _media_root_mounts() -> list[tuple[str, str]]:
+    """``[(container_mount, host_path), …]`` — one entry per CONFIGURED root.
+
+    Driven by the env keys themselves (the shared parser), not by guesswork:
+    ``RKM_MEDIA_PATH`` → ``/data``, ``RKM_MEDIA_PATH_2`` → ``/media2`` … An
+    extra root that is not declared in .env is simply not in the list, so the
+    folder is never discovered twice (compose mounts /media2 unconditionally,
+    pointed at the primary root when unset — that mount is ignored here).
+    With no root configured at all we fall back to the historical ``/data``.
+    """
+    try:
+        from config.media_libraries import media_roots
+    except Exception as e:  # pragma: no cover - packaging sanity
+        print(f"[jellyfin] WARN: shared config parser unavailable ({e})")
+        return [("/data", os.environ.get("RKM_MEDIA_PATH") or "/data")]
+
+    roots, warnings = media_roots({k: v for k, v in os.environ.items()})
+    for w in warnings:
+        print(f"[jellyfin] WARN config: {w}")
+    if not roots:
+        return [("/data", os.environ.get("RKM_MEDIA_PATH") or "/data")]
+    return [(r.container, r.host) for r in roots]
+
+
 def discover_media_root_libraries(root: str = "/data") -> list[tuple[str, str, str]]:
-    """Auto-detect libraries from the mounted media root (zero-config path).
+    """Auto-detect libraries from ONE mounted media root (zero-config path).
 
     When no MEDIA_LIBRARY_N_* is configured, every immediate subfolder of the
     media root except the stack's own bookkeeping dirs becomes a library, named
     after the folder and typed by simple name heuristics (movie/tv/mixed). This
     is what makes ``RKM_MEDIA_PATH=D:/RKM_MEDIA`` "just work": all the user's
     folders appear in the sidebar without hand-writing an entry per folder.
+    ``root`` is the CONTAINER mount (``/data``, ``/media2``) and is also the
+    path prefix of every returned library.
     """
     denylist = {"downloads", "rkm", "media", "_movie", "_tv",
                 "@eadir", "system volume information", "$recycle.bin",
                 "lost+found", "config", "cache"}
+    mount = root.rstrip("/") or "/"
     try:
         entries = sorted(os.listdir(root))
     except OSError:
@@ -225,7 +252,34 @@ def discover_media_root_libraries(root: str = "/data") -> list[tuple[str, str, s
             continue
         if not os.path.isdir(os.path.join(root, name)):
             continue
-        out.append((name, _guess_collection_type(name), f"/data/{name}"))
+        out.append((name, _guess_collection_type(name), f"{mount}/{name}"))
+    return out
+
+
+def discover_all_media_roots() -> list[tuple[str, str, str]]:
+    """Union of :func:`discover_media_root_libraries` over EVERY root.
+
+    Two drives (movies on D:, TV on B:) each contribute their own folders. A
+    folder NAME that appears on two roots cannot become two Jellyfin libraries
+    (sidebar names must be unique), so the first wins and the clash is reported
+    with the fix — declare explicit ``MEDIA_LIBRARY_N_*`` entries to choose.
+    """
+    out: list[tuple[str, str, str]] = []
+    seen: set[str] = set()
+    for mount, host in _media_root_mounts():
+        found = discover_media_root_libraries(mount)
+        if found:
+            print(f"[jellyfin] auto-discovered {len(found)} folder(s) under "
+                  f"{mount} ({host})")
+        for name, ctype, path in found:
+            key = name.casefold()
+            if key in seen:
+                print(f"[jellyfin] note: a '{name}' folder exists on more than one "
+                      f"media root — keeping {path}; declare MEDIA_LIBRARY_N_NAME/"
+                      f"PATH in .env to include the other one")
+                continue
+            seen.add(key)
+            out.append((name, ctype, path))
     return out
 
 
@@ -246,9 +300,9 @@ def configured_target_libraries() -> list[tuple[str, str, str]]:
     Priority:
       1. explicit MEDIA_LIBRARY_N_* entries from .env (full control of names/
          order/types; PATHs are container-normalised by the shared parser);
-      2. otherwise AUTO-DISCOVER every subfolder of the mounted media root, so
-         pointing RKM_MEDIA_PATH at a real media drive needs no per-folder
-         config;
+      2. otherwise AUTO-DISCOVER every subfolder of EVERY mounted media root
+         (``RKM_MEDIA_PATH`` + ``RKM_MEDIA_PATH_2`` …), so pointing those at
+         real media drives needs no per-folder config;
       3. otherwise the historical Movies/TV Shows sample pair (fresh checkout).
     """
     try:
@@ -265,10 +319,11 @@ def configured_target_libraries() -> list[tuple[str, str, str]]:
     if libraries:
         return [(lib.name, lib.collection_type, lib.path) for lib in libraries]
 
-    discovered = discover_media_root_libraries()
+    discovered = discover_all_media_roots()
     if discovered:
+        mounts = ", ".join(m for m, _ in _media_root_mounts())
         print(f"[jellyfin] no MEDIA_LIBRARY_N_* configured — auto-discovered "
-              f"{len(discovered)} folder(s) under {os.environ.get('RKM_MEDIA_PATH', '/data')}")
+              f"{len(discovered)} folder(s) across {mounts}")
         return discovered
 
     print("[jellyfin] no configured or discoverable libraries — using the default sample libraries")

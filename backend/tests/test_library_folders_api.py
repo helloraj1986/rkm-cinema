@@ -66,7 +66,12 @@ def test_folders_returns_configured_names_not_keys():
     anime = libs[1]
     assert anime["ok"] is False
     assert anime["folder_id"] is None
-    assert "does not match" in anime["warning"]
+    # F:/… is a host path on a drive this stack does not mount, and the server
+    # reports container paths — so the warning must name the FIX, not merely say
+    # "no match" (2026-09-10: a same-named folder used to be accepted by name,
+    # which showed a wrong-path library as ok=True).
+    assert "RKM_MEDIA_PATH_2" in anime["warning"]
+    assert "F:/Media/Anime" in anime["warning"]
 
 
 def test_folders_without_config_falls_back_to_server_folder_names():

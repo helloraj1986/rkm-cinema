@@ -57,19 +57,39 @@ def match_libraries(
             "ok": False,
             "warning": "",
         }
+        # Style check (2026-09-10): the name fallback below must NOT rescue a
+        # configured HOST path when the server itself reports CONTAINER paths.
+        # Those two can never be the same folder — the configured path failed to
+        # translate (its drive is not declared as a media root), so a same-named
+        # server folder is a coincidence. That is how 'TV Shows' showed as ok=True
+        # in the sidebar while still pointing at the stale /data/media/_tv, with
+        # B:/RKM_MEDIA never declared. Deployments whose server reports host paths
+        # itself (Plex/Emby on Windows) keep the fallback: there the styles agree.
+        host_style_path = bool(lib.path) and not normalize_media_path(lib.path).startswith("/")
+        server_uses_container_paths = any(
+            p.startswith("/") for f in folders for p in _paths_of(f)
+        )
+        untranslatable = host_style_path and server_uses_container_paths
+
         target_path = normalize_media_path(lib.path).casefold()
         match = None
         for f in folders:
             if target_path and target_path in _paths_of(f):
                 match = f
                 break
-        if match is None and lib.name:
+        if match is None and lib.name and not untranslatable:
             lname = lib.name.casefold()
             match = next((f for f in folders if str(f.get("name") or "").casefold() == lname), None)
         if match is not None:
             row["folder_id"] = str(match.get("id") or "")
             row["collection_type"] = str(match.get("collection_type") or "")
             row["ok"] = True
+        elif untranslatable:
+            row["warning"] = (
+                f"'{lib.path}' is a host path that is not mounted into the media "
+                "containers — declare its drive as RKM_MEDIA_PATH_2 (or _3) in .env "
+                "so it can be translated, or write the container path directly"
+            )
         else:
             if not folders:
                 row["warning"] = (

@@ -55,6 +55,43 @@ class TestMatchLibraries:
         assert rows[0]["ok"] is True
         assert rows[0]["folder_id"] == "an1"
 
+    def test_host_path_on_undeclared_drive_is_not_rescued_by_name(self):
+        """The exact 2026-09-10 bug: 'TV Shows' on an unmounted B: looked ok.
+
+        A host-style configured path can never equal a container-style server
+        path, so a same-named folder is a coincidence — report it unresolved with
+        the fix naming the missing media root.
+        """
+        rows = match_libraries(
+            [MediaLibrary(name="TV Shows", path="B:/RKM_MEDIA/TV Shows")],
+            SERVER_FOLDERS,
+        )
+        assert rows[0]["ok"] is False
+        assert rows[0]["folder_id"] is None
+        assert "RKM_MEDIA_PATH_2" in rows[0]["warning"]
+        assert "B:/RKM_MEDIA/TV Shows" in rows[0]["warning"]
+
+    def test_host_path_still_resolves_by_name_when_the_server_reports_host_paths(self):
+        """Plex/Emby on Windows report host paths themselves → fallback is valid."""
+        rows = match_libraries(
+            [MediaLibrary(name="TV Shows", path=r"B:\RKM_MEDIA\TV")],
+            [{"id": "p1", "name": "TV Shows", "collection_type": "show",
+              "path": r"B:\RKM_MEDIA\TV Shows",
+              "locations": [r"B:\RKM_MEDIA\TV Shows"]}],
+        )
+        assert rows[0]["ok"] is True
+        assert rows[0]["folder_id"] == "p1"
+
+    def test_host_path_that_path_matches_still_resolves(self):
+        """A Plex server reporting the identical Windows path is a real match."""
+        rows = match_libraries(
+            [MediaLibrary(name="Movies", path=r"D:\rkm-media\movies")],
+            [{"id": "p2", "name": "Whatever", "collection_type": "movie",
+              "path": r"D:\rkm-media\movies", "locations": [r"D:\rkm-media\movies"]}],
+        )
+        assert rows[0]["ok"] is True
+        assert rows[0]["folder_id"] == "p2"
+
     def test_unmatched_path_warns(self):
         rows = match_libraries(
             [MediaLibrary(name="4K Movies", path="/data/media/_4k")],

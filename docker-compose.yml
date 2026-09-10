@@ -200,8 +200,13 @@ services:
       # configured entry into Jellyfin. Compose cannot enumerate arbitrary N,
       # so the rendered .rkm.env (which carries MEDIA_LIBRARY_* +
       # RKM_MEDIA_PATH + RKM_MEDIA_PATH_2/3) is passed and the shared parser
-      # picks out the keys.
+      # picks out the keys. The media roots are ALSO set here explicitly: .rkm.env
+      # is only as fresh as the last render, and an asymmetric env (provisioner
+      # translating D: paths while the api cannot) is exactly how a library ends
+      # up wired in one place and invisible in the other.
       RKM_MEDIA_PATH: "${RKM_MEDIA_PATH:-./data}"
+      RKM_MEDIA_PATH_2: "${RKM_MEDIA_PATH_2:-}"
+      RKM_MEDIA_PATH_3: "${RKM_MEDIA_PATH_3:-}"
     env_file:
       - .rkm.env
     depends_on:

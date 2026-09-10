@@ -95,6 +95,17 @@ def verdict(p: dict | None, err: str | None) -> list[str]:
         notes.append(f"control row right {row['right']} past viewport {vw}")
     if row and row["w"] > vw + 0.5:
         notes.append(f"control row wider than viewport ({row['w']})")
+    grow = p.get("dockRowScroll") or {}
+    if grow and grow.get("scrollW", 0) > grow.get("clientW", 0) + 1:
+        notes.append(
+            f"transport row clips its own content ({grow['scrollW']} > {grow['clientW']})"
+        )
+    # Every rendered control must stay a usable touch target and stay on screen.
+    for b in p.get("buttons") or []:
+        if b["h"] < 32 or b["w"] < 32:
+            notes.append(f"control '{b['label']}' is below a 32px touch target ({b['w']}x{b['h']})")
+        if b["right"] > vw + 0.5:
+            notes.append(f"control '{b['label']}' ends at {b['right']} (viewport {vw})")
     if p.get("overflowCount"):
         first = (p.get("overflow") or [{}])[0]
         notes.append(
@@ -169,6 +180,7 @@ def main() -> int:
             detail += (
                 f" | video {p.get('video', {}).get('w')}x{p.get('video', {}).get('h')}"
                 f" dock {p.get('dockH')}px"
+                f" | {len(p.get('buttons') or [])} controls, min {p.get('minButtonH')}px"
             )
         print(f"{r.label.ljust(width)} {size:<11} {state:<8} {detail}")
     failed = [r for r in results if not r.ok]

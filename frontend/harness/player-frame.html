@@ -90,7 +90,9 @@
           var root = document.querySelector('[role="dialog"][aria-modal="true"]');
           var video = document.querySelector("video");
           var seek = document.querySelector('[role="slider"][aria-label="Seek"]');
-          var dock = seek ? seek.parentElement : null;
+          // The dock carries a stable class; the seek bar now rides the progress row
+          // with the clock, so the transport row is the dock's last child.
+          var dock = document.querySelector(".rkm-player__dock");
           var row = dock ? dock.lastElementChild : null;
 
           // How tall 100dvh really is in THIS viewport.
@@ -124,6 +126,22 @@
             }
           }
 
+          // Buttons actually rendered in the transport (hidden tiers excluded).
+          var buttons = [];
+          if (dock) {
+            var btns = dock.querySelectorAll("button");
+            for (var bi = 0; bi < btns.length; bi++) {
+              var bb = btns[bi].getBoundingClientRect();
+              if (bb.width < 1 || bb.height < 1) continue;
+              buttons.push({
+                label: btns[bi].getAttribute("aria-label") || btns[bi].textContent || "button",
+                w: +bb.width.toFixed(1),
+                h: +bb.height.toFixed(1),
+                right: +bb.right.toFixed(1),
+              });
+            }
+          }
+
           return {
             vw: vw,
             vh: vh,
@@ -141,6 +159,9 @@
             dock: rectOf(dock),
             dockRow: rectOf(row),
             dockH: dock ? +dock.getBoundingClientRect().height.toFixed(1) : null,
+            dockRowScroll: row ? { scrollW: row.scrollWidth, clientW: row.clientWidth } : null,
+            buttons: buttons,
+            minButtonH: buttons.length ? Math.min.apply(null, buttons.map(function (b) { return b.h; })) : null,
             overflowCount: bad.length,
             overflow: bad.slice(0, 20),
           };

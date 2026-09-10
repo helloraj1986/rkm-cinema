@@ -150,6 +150,7 @@ export function Player({
   const [volume, setVolume] = useState(1);
   const [isFs, setIsFs] = useState(false);
   const barRef = useRef<HTMLDivElement>(null);
+  const dockRef = useRef<HTMLDivElement>(null);
   const [scrub, setScrub] = useState<number | null>(null);
   const scrubbingRef = useRef(false);
   // Auto-play after the next engine (re)build — preserved through mode/quality
@@ -434,6 +435,27 @@ export function Player({
     if (!v) return;
     v.playbackRate = rate;
   }, [rate]);
+
+  // Publish the transport dock's REAL height as --rkm-dock-h, so every overlay
+  // (subtitles, Up-Next card, settings panel) clears it instead of guessing a
+  // bottom offset — and so it stays correct when the dock reflows (tier change on
+  // rotate, a wrapped transport row, safe-area insets appearing).
+  useEffect(() => {
+    const dock = dockRef.current;
+    const root = rootRef.current;
+    if (!dock || !root || typeof ResizeObserver === "undefined") return;
+    let last = -1;
+    const publish = () => {
+      const h = Math.round(dock.getBoundingClientRect().height);
+      if (h === last) return;
+      last = h;
+      root.style.setProperty("--rkm-dock-h", `${h}px`);
+    };
+    publish();
+    const ro = new ResizeObserver(publish);
+    ro.observe(dock);
+    return () => ro.disconnect();
+  }, []);
 
   const clearAuto = () => {
     if (autoTimerRef.current != null) window.clearInterval(autoTimerRef.current);
@@ -927,9 +949,12 @@ export function Player({
     onSwitchRef.current?.(entry);
   };
 
-  // Premium control chrome — one coherent scale across the whole player.
+  // Premium control chrome — one coherent scale across the whole player. Below
+  // `sm` the dock drops a tier (36px targets + `touch-manipulation`, so a fast
+  // double tap on play/pause is two taps and not a page zoom) which is what lets a
+  // 320px phone fit the whole transport without hiding anything essential.
   const ctrlBtn =
-    "grid h-10 w-10 shrink-0 place-items-center rounded-full bg-white/10 text-zinc-50 ring-1 ring-white/10 backdrop-blur-sm transition hover:bg-white/20";
+    "grid h-9 w-9 shrink-0 touch-manipulation place-items-center rounded-full bg-white/10 text-zinc-50 ring-1 ring-white/10 backdrop-blur-sm transition hover:bg-white/20 sm:h-10 sm:w-10";
   const panelLabel = "text-[10px] font-bold uppercase tracking-[0.18em] text-zinc-500";
   const overlaySelect =
     "h-9 min-w-0 flex-1 rounded-[10px] border border-white/[.08] bg-black/30 px-2.5 text-xs font-medium text-zinc-100 outline-none transition hover:border-white/15 focus:border-accent/50";
@@ -1204,62 +1229,95 @@ export function Player({
         {/* TRANSPORT DOCK — pinned to the SHELL's bottom edge (never to the stage's),
             so its position cannot depend on how tall the picture happens to be, and
             it can never sit below the visible screen. Safe-area padding for the home
-            indicator / browser toolbar lives in .rkm-player__dock. */}
+            indicator / browser toolbar lives in .rkm-player__dock.
+            Two rows on purpose: the clock rides WITH the seek bar and the transport
+            row holds only buttons, which is what lets the whole transport fit a 320px
+            phone. The row may wrap as a last resort — the dock is bottom-anchored, so
+            wrapping grows it UPWARD over the picture instead of off-screen. */}
         <div
+          ref={dockRef}
           className={`rkm-player__dock pointer-events-none absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-black/95 via-black/70 to-transparent transition-opacity duration-300 ${
             chromeHidden ? "opacity-0" : "opacity-100"
           }`}
         >
           <div
-            ref={barRef}
-            role="slider"
-            tabIndex={0}
-            aria-label="Seek"
-            aria-valuemin={0}
-            aria-valuemax={total > 0 ? Math.round(total) : 0}
-            aria-valuenow={Math.round(barPos)}
-            aria-disabled={total <= 0}
-            onClick={(e) => e.stopPropagation()}
-            onPointerDown={(e) => {
-              markActivity();
-              onBarPointerDown(e);
-            }}
-            onPointerMove={(e) => {
-              markActivity();
-              onBarPointerMove(e);
-            }}
-            onPointerUp={onBarPointerUp}
-            onPointerCancel={onBarPointerCancel}
-            onKeyDown={onBarKeyDown}
             onPointerEnter={onChromeEnter}
             onPointerLeave={onChromeLeave}
-            className={`${chromeHidden ? "pointer-events-none" : "pointer-events-auto"} group relative flex h-5 w-full cursor-pointer touch-none items-center outline-none ${total <= 0 ? "opacity-40" : ""}`}
+            className={`${chromeHidden ? "pointer-events-none" : "pointer-events-auto"} flex items-center gap-2 sm:gap-3`}
           >
-            <div className="relative h-1 w-full overflow-visible rounded-full bg-white/20">
+            <span className="shrink-0 tabular-nums text-[11px] font-semibold text-zinc-100 sm:text-[12px]">
+              {fmtTime(cur)}
+            </span>
+            <div
+              ref={barRef}
+              role="slider"
+              tabIndex={0}
+              aria-label="Seek"
+              aria-valuemin={0}
+              aria-valuemax={total > 0 ? Math.round(total) : 0}
+              aria-valuenow={Math.round(barPos)}
+              aria-disabled={total <= 0}
+              onClick={(e) => e.stopPropagation()}
+              onPointerDown={(e) => {
+                markActivity();
+                onBarPointerDown(e);
+              }}
+              onPointerMove={(e) => {
+                markActivity();
+                onBarPointerMove(e);
+              }}
+              onPointerUp={onBarPointerUp}
+              onPointerCancel={onBarPointerCancel}
+              onKeyDown={onBarKeyDown}
+              onPointerEnter={onChromeEnter}
+              onPointerLeave={onChromeLeave}
+              className={`${chromeHidden ? "pointer-events-none" : "pointer-events-auto"} group relative flex h-6 min-w-0 flex-1 cursor-pointer touch-none items-center outline-none sm:h-5 ${total <= 0 ? "opacity-40" : ""}`}
+            >
+              <div className="relative h-1 w-full overflow-visible rounded-full bg-white/20">
+                <div
+                  className="absolute inset-y-0 left-0 rounded-full bg-accent"
+                  style={{ width: `${barPct}%` }}
+                />
+              </div>
               <div
-                className="absolute inset-y-0 left-0 rounded-full bg-accent"
-                style={{ width: `${barPct}%` }}
+                className="pointer-events-none absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-accent shadow-[0_0_0_4px_rgba(255,196,0,.25)] transition-opacity group-hover:shadow-[0_0_0_5px_rgba(255,196,0,.3)]"
+                style={{ left: `${barPct}%` }}
               />
             </div>
-            <div
-              className="pointer-events-none absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-accent shadow-[0_0_0_4px_rgba(255,196,0,.25)] transition-opacity group-hover:shadow-[0_0_0_5px_rgba(255,196,0,.3)]"
-              style={{ left: `${barPct}%` }}
-            />
+            <span className="shrink-0 tabular-nums text-[11px] font-medium text-zinc-500 sm:text-[12px]">
+              {total > 0 ? fmtTime(total) : "--:--"}
+            </span>
           </div>
           <div
             onPointerEnter={onChromeEnter}
             onPointerLeave={onChromeLeave}
-            className={`${chromeHidden ? "pointer-events-none" : "pointer-events-auto"} mt-2 flex items-center gap-2.5 text-[11px] text-zinc-100 sm:gap-3`}
+            className={`${chromeHidden ? "pointer-events-none" : "pointer-events-auto"} mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-zinc-100 sm:gap-2.5`}
           >
             <button onClick={togglePlay} aria-label={playing ? "Pause" : "Play"} className={ctrlBtn}>
               <Icon name={playing ? "pause" : "play"} size={17} filled={!playing} />
+            </button>
+            <button
+              onClick={() => seekTo(posNow() - SEEK_STEP)}
+              aria-label={`Back ${SEEK_STEP} seconds`}
+              title={`Back ${SEEK_STEP} seconds`}
+              className={ctrlBtn}
+            >
+              <Icon name="skip-back-10" size={19} />
+            </button>
+            <button
+              onClick={() => seekTo(posNow() + SEEK_STEP)}
+              aria-label={`Forward ${SEEK_STEP} seconds`}
+              title={`Forward ${SEEK_STEP} seconds`}
+              className={ctrlBtn}
+            >
+              <Icon name="skip-forward-10" size={19} />
             </button>
             {prevEntry ? (
               <button
                 onClick={() => skipToEntry(prevEntry)}
                 aria-label={`Previous episode ${queueEntryCode(prevEntry)}`}
                 title={`Previous episode — ${prevEntry.name}`}
-                className={ctrlBtn}
+                className={`${ctrlBtn} hidden sm:grid`}
               >
                 <Icon name="chevron-left" size={18} />
               </button>
@@ -1269,7 +1327,7 @@ export function Player({
                 onClick={() => skipToEntry(nextEntry)}
                 aria-label={`Next episode ${queueEntryCode(nextEntry)}`}
                 title={`Next episode — ${nextEntry.name}`}
-                className={ctrlBtn}
+                className={`${ctrlBtn} hidden sm:grid`}
               >
                 <Icon name="chevron-right" size={18} />
               </button>
@@ -1298,7 +1356,7 @@ export function Player({
                 persistPrefs({ volume: val, muted: val === 0 });
               }}
               aria-label="Volume"
-              className="h-1 w-16 cursor-pointer accent-[var(--accent)] sm:w-20"
+              className="hidden h-1 w-16 cursor-pointer accent-[var(--accent)] sm:block sm:w-20"
             />
             {desiredMode ? (
               <span
@@ -1309,18 +1367,12 @@ export function Player({
                 {hlsModeLabel(mode)}
               </span>
             ) : null}
-            <span className="ml-auto flex items-baseline gap-1 tabular-nums text-zinc-300">
-              <span className="text-[12px] font-semibold">{fmtTime(cur)}</span>
-              {total > 0 ? (
-                <span className="text-[11px] font-medium text-zinc-500">/ {fmtTime(total)}</span>
-              ) : null}
-            </span>
             <button
               onClick={() => setShowSettings((s) => !s)}
               aria-label={showSettings ? "Close settings" : "Settings"}
               aria-expanded={showSettings}
               title="Settings"
-              className={`${ctrlBtn} ${showSettings ? "bg-white/20 ring-white/30" : ""}`}
+              className={`ml-auto ${ctrlBtn} ${showSettings ? "bg-white/20 ring-white/30" : ""}`}
             >
               <Icon name="settings" size={17} />
             </button>
@@ -1329,7 +1381,7 @@ export function Player({
                 onClick={() => void togglePip()}
                 aria-label={isPip ? "Exit picture-in-picture" : "Picture in picture"}
                 title={isPip ? "Exit picture-in-picture" : "Picture in picture"}
-                className={`${ctrlBtn} px-2.5`}
+                className={`${ctrlBtn} hidden px-2.5 sm:grid sm:w-auto`}
               >
                 <span className={`text-[10px] font-extrabold tracking-wider ${isPip ? "text-accent" : ""}`}>PIP</span>
               </button>

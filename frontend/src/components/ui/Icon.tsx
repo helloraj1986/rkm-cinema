@@ -29,6 +29,8 @@ export type IconName =
   | "clock"
   | "volume"
   | "volume-x"
+  | "skip-back-10"
+  | "skip-forward-10"
   | "maximize"
   | "minimize"
   | "external"
@@ -65,6 +67,13 @@ const OUTLINE: Record<string, string> = {
   volume: '<path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/>',
   "volume-x":
     '<path d="M11 5 6 9H2v6h4l5 4z"/><path d="m16 9 6 6M22 9l-6 6"/>',
+  // ±10s transport skips (Lucide rotate-ccw/cw arcs with the step in the middle):
+  // the one control a phone needs and the bar alone cannot give (a thumb drag on a
+  // 320px-wide bar is 3-minute granularity).
+  "skip-back-10":
+    '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><text x="12" y="15.4" text-anchor="middle" font-size="7.5" font-weight="700" fill="currentColor" stroke="none">10</text>',
+  "skip-forward-10":
+    '<path d="M21 12a9 9 0 1 1-9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><text x="12" y="15.4" text-anchor="middle" font-size="7.5" font-weight="700" fill="currentColor" stroke="none">10</text>',
   maximize: '<path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"/>',
   minimize: '<path d="M5 12h14"/>',
   external: '<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6"/><path d="M10 14 21 3"/>',

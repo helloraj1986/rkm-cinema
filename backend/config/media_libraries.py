@@ -29,6 +29,87 @@ from typing import Dict, List, Tuple
 #: so the list stays free-form and extra trailing blank lines are harmless.
 _MEDIA_LIBRARY_KEY = re.compile(r"^MEDIA_LIBRARY_(\d+)_(NAME|PATH|TYPE)$")
 
+#: ``RKM_MEDIA_PATH`` (index 1) + optional extra roots ``RKM_MEDIA_PATH_2``, ``_3``…
+_MEDIA_ROOT_KEY = re.compile(r"^RKM_MEDIA_PATH(?:_(\d+))?$")
+
+#: Where the PRIMARY media root (``RKM_MEDIA_PATH``) is mounted in the media
+#: containers — the historical path every service already uses.
+PRIMARY_CONTAINER_ROOT = "/data"
+
+
+def container_mount_for(index: int) -> str:
+    """Container mount point for media-root index (1 → ``/data``, 2 → ``/media2``…)."""
+    return PRIMARY_CONTAINER_ROOT if index <= 1 else f"/media{index}"
+
+
+@dataclass(frozen=True)
+class MediaRoot:
+    """One host folder exposed to the media containers.
+
+    ``host`` is the path AS WRITTEN in ``.env`` (``D:/RKM_MEDIA``); ``container``
+    is where the containers see it (``/data``). More than one root is normal —
+    a second physical drive (movies on one, TV on another) is mounted at
+    ``/media2`` and declared as ``RKM_MEDIA_PATH_2``.
+    """
+
+    host: str
+    container: str
+
+    @property
+    def label(self) -> str:
+        return f"{self.host} → {self.container}"
+
+
+def media_roots(env: Dict[str, str]) -> Tuple[List["MediaRoot"], List[str]]:
+    """``(roots, warnings)`` — every configured media root, primary first.
+
+    ``RKM_MEDIA_PATH`` → ``/data``; ``RKM_MEDIA_PATH_2`` → ``/media2``;
+    ``RKM_MEDIA_PATH_3`` → ``/media3`` … (the compose file mounts exactly these
+    container paths). Blank keys are ignored. A host path configured twice keeps
+    its FIRST mount and warns — the duplicate mount would only expose the same
+    folders a second time (and would produce duplicate libraries).
+    """
+    entries: List[Tuple[int, str, str]] = []
+    for key, value in (env or {}).items():
+        m = _MEDIA_ROOT_KEY.match(str(key).strip())
+        if not m:
+            continue
+        idx = int(m.group(1) or 1)
+        host = normalize_media_path(str(value or ""))
+        if not host:
+            continue
+        entries.append((idx, str(key).strip(), host))
+    entries.sort(key=lambda t: t[0])
+
+    roots: List[MediaRoot] = []
+    warnings: List[str] = []
+    seen: Dict[str, str] = {}
+    for idx, key, host in entries:
+        k = host.casefold()
+        if k in seen:
+            warnings.append(f"{key}: '{host}' is already mounted at {seen[k]} — "
+                            "the duplicate media root is ignored")
+            continue
+        mount = container_mount_for(idx)
+        seen[k] = mount
+        roots.append(MediaRoot(host=host, container=mount))
+    return roots, warnings
+
+
+def _roots_from(arg: object) -> List[MediaRoot]:
+    """Accept the historical single-root string OR a ``MediaRoot`` list."""
+    if isinstance(arg, str):
+        s = normalize_media_path(arg)
+        return [MediaRoot(host=s, container=PRIMARY_CONTAINER_ROOT)] if s else []
+    if not arg:
+        return []
+    return [
+        r if isinstance(r, MediaRoot) else MediaRoot(host=normalize_media_path(str(r)),
+                                                     container=PRIMARY_CONTAINER_ROOT)
+        for r in arg  # type: ignore[union-attr]
+    ]
+
+
 
 @dataclass(frozen=True)
 class MediaLibrary:
@@ -66,18 +147,27 @@ def normalize_collection_type(raw: str) -> str:
     return _COLLECTION_TYPES.get(str(raw or "").strip().lower(), "mixed")
 
 
-def translate_media_path(path: str, media_root: str = "") -> Tuple[str, str]:
+def translate_media_path(
+    path: str, media_root: object = ""
+) -> Tuple[str, str]:
     """Return ``(container_path, warning)`` for a configured PATH.
 
-    The api + Jellyfin containers see the host media root (``RKM_MEDIA_PATH``)
-    at ``/data``. So a PATH may be written EITHER way:
+    The media containers see each host media root at a FIXED container path:
+    ``RKM_MEDIA_PATH`` at ``/data``, ``RKM_MEDIA_PATH_2`` at ``/media2`` … So a
+    PATH may be written EITHER way:
 
-    - already container-style (``/data/Movies Kids``) → used as-is;
-    - host-style under the media root (``D:/RKM_MEDIA/Movies Kids`` with
-      ``RKM_MEDIA_PATH=D:/RKM_MEDIA``) → translated to ``/data/Movies Kids``.
+    - already container-style (``/data/Movies Kids``, ``/media2/TV Shows``) →
+      used as-is;
+    - host-style under ANY configured root (``D:/RKM_MEDIA/Movies Kids`` with
+      ``RKM_MEDIA_PATH=D:/RKM_MEDIA``, ``B:/RKM_MEDIA/TV Shows`` with
+      ``RKM_MEDIA_PATH_2=B:/RKM_MEDIA``) → translated to that root's container
+      path. When roots nest, the LONGEST matching host path wins.
 
-    A host path OUTSIDE the media root cannot be mounted by the stack; it is
-    returned unchanged with a clear warning (the directory+server match will
+    ``media_root`` accepts either the historical single host-path string (mapped
+    to ``/data``) or the ``MediaRoot`` list from :func:`media_roots`.
+
+    A host path OUTSIDE every configured root cannot be mounted by the stack; it
+    is returned unchanged with a clear warning (the directory+server match will
     then surface it as unresolved rather than pretending it works).
     """
     p = normalize_media_path(path)
@@ -86,18 +176,36 @@ def translate_media_path(path: str, media_root: str = "") -> Tuple[str, str]:
     if p.startswith("/"):
         return p, ""
 
-    root = normalize_media_path(media_root)
-    if not root:
+    roots = _roots_from(media_root)
+    if not roots:
         return p, ("PATH looks like a host path but RKM_MEDIA_PATH is not set — "
                    "cannot translate it to the container path Jellyfin uses")
-    if p.casefold() == root.casefold():
-        return "/data", ""
-    prefix = root.casefold() + "/"
-    if p.casefold().startswith(prefix):
-        rel = p[len(root):].lstrip("/")
-        return f"/data/{rel}", ""
-    return p, (f"'{path}' is outside RKM_MEDIA_PATH ('{media_root}') — it cannot be "
-               "mounted into the media containers, so Jellyfin cannot scan it")
+
+    best: Tuple[MediaRoot, str] | None = None
+    for r in roots:
+        h = r.host.casefold()
+        if p.casefold() == h:
+            rel = ""
+        elif p.casefold().startswith(h + "/"):
+            rel = p[len(r.host):].lstrip("/")
+        else:
+            continue
+        if best is None or len(r.host) > len(best[0].host):
+            best = (r, rel)
+
+    if best is None:
+        if len(roots) == 1:
+            return p, (f"'{path}' is outside RKM_MEDIA_PATH ('{roots[0].host}') — it cannot "
+                       "be mounted into the media containers, so Jellyfin cannot scan it "
+                       "(a media folder on ANOTHER drive must first be declared as "
+                       "RKM_MEDIA_PATH_2 in .env)")
+        listing = ", ".join(r.label for r in roots)
+        return p, (f"'{path}' is outside every configured media root ({listing}) — it "
+                   "cannot be mounted into the media containers, so Jellyfin cannot "
+                   "scan it (add the drive as RKM_MEDIA_PATH_2/3 in .env)")
+
+    root, rel = best
+    return (f"{root.container}/{rel}" if rel else root.container), ""
 
 
 def parse_media_libraries(env: Dict[str, str]) -> Tuple[List[MediaLibrary], List[str]]:
@@ -109,11 +217,12 @@ def parse_media_libraries(env: Dict[str, str]) -> Tuple[List[MediaLibrary], List
     the folder id, but humans expect unique names.
 
     ``PATH`` may be written as the media server's own container path
-    (``/data/...``) or as a host path under ``RKM_MEDIA_PATH`` — both are
+    (``/data/...``, ``/media2/...``) or as a host path under ANY configured
+    media root (``RKM_MEDIA_PATH``, ``RKM_MEDIA_PATH_2`` …) — both are
     normalised to the container path here, in the ONE config layer, so the api
-    and the provisioner always agree. ``MEDIA_LIBRARY_N_TYPE`` (movies |
-    tvshows | mixed) is an optional hint used when Jellyfin creates the
-    library; it defaults to ``mixed``.
+    and the provisioner always agree. ``MEDIA_LIBRARY_N_TYPE`` (movies | tvshows
+    | mixed) is an optional hint used when Jellyfin creates the library; it
+    defaults to ``mixed``.
     """
     libraries: List[MediaLibrary] = []
     warnings: List[str] = []
@@ -129,7 +238,8 @@ def parse_media_libraries(env: Dict[str, str]) -> Tuple[List[MediaLibrary], List
     if not by_index:
         return [], []
 
-    media_root = str((env or {}).get("RKM_MEDIA_PATH") or "")
+    roots, root_warnings = media_roots(env or {})
+    warnings.extend(root_warnings)
 
     for idx in sorted(by_index):
         pair = by_index[idx]
@@ -144,7 +254,7 @@ def parse_media_libraries(env: Dict[str, str]) -> Tuple[List[MediaLibrary], List
         if not path:
             warnings.append(f"MEDIA_LIBRARY_{idx} ({name}): PATH is empty — library skipped")
             continue
-        container_path, path_warning = translate_media_path(path, media_root)
+        container_path, path_warning = translate_media_path(path, roots)
         if path_warning:
             warnings.append(f"MEDIA_LIBRARY_{idx} ({name}): {path_warning}")
         libraries.append(MediaLibrary(

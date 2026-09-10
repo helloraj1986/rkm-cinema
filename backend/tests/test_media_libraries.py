@@ -6,6 +6,9 @@ paths, and that the internal env key is never surfaced as a name.
 """
 from config.media_libraries import (
     MediaLibrary,
+    MediaRoot,
+    container_mount_for,
+    media_roots,
     normalize_collection_type,
     normalize_media_path,
     parse_media_libraries,
@@ -171,6 +174,129 @@ class TestParseMediaLibraries:
         })
         assert libs[0].name == "Movies"
         assert "MEDIA_LIBRARY_1_NAME" not in libs[0].name
+
+
+class TestMediaRoots:
+    """RKM_MEDIA_PATH (+ _2, _3 …) — a second drive is a first-class citizen."""
+
+    def test_single_primary_root_maps_to_data(self):
+        roots, warnings = media_roots({"RKM_MEDIA_PATH": "D:/RKM_MEDIA"})
+        assert roots == [MediaRoot(host="D:/RKM_MEDIA", container="/data")]
+        assert warnings == []
+
+    def test_second_and_third_roots_get_their_own_mounts(self):
+        roots, warnings = media_roots({
+            "RKM_MEDIA_PATH": "D:/RKM_MEDIA",
+            "RKM_MEDIA_PATH_3": "F:/Archive",
+            "RKM_MEDIA_PATH_2": "B:/RKM_MEDIA",
+        })
+        assert warnings == []
+        assert [(r.host, r.container) for r in roots] == [
+            ("D:/RKM_MEDIA", "/data"),
+            ("B:/RKM_MEDIA", "/media2"),
+            ("F:/Archive", "/media3"),
+        ]
+
+    def test_backslash_host_root_is_normalised(self):
+        roots, _ = media_roots({"RKM_MEDIA_PATH_2": r"B:\RKM_MEDIA"})
+        assert roots == [MediaRoot(host="B:/RKM_MEDIA", container="/media2")]
+
+    def test_blank_root_ignored(self):
+        roots, warnings = media_roots({"RKM_MEDIA_PATH": "D:/RKM_MEDIA",
+                                       "RKM_MEDIA_PATH_2": "   "})
+        assert [r.container for r in roots] == ["/data"]
+        assert warnings == []
+
+    def test_duplicate_host_root_warns_and_keeps_first_mount(self):
+        roots, warnings = media_roots({"RKM_MEDIA_PATH": "D:/RKM_MEDIA",
+                                       "RKM_MEDIA_PATH_2": "d:/rkm_media/"})
+        assert [(r.container) for r in roots] == ["/data"]
+        assert any("already mounted at /data" in w for w in warnings)
+
+    def test_no_roots_is_empty_not_an_error(self):
+        assert media_roots({}) == ([], [])
+        assert media_roots({"SOMETHING_ELSE": "x"}) == ([], [])
+
+    def test_container_mount_for(self):
+        assert container_mount_for(1) == "/data"
+        assert container_mount_for(2) == "/media2"
+        assert container_mount_for(9) == "/media9"
+
+
+class TestTranslateMediaPathMultiRoot:
+    """A PATH on the SECOND drive translates to that root's container mount."""
+
+    TWO = [MediaRoot(host="D:/RKM_MEDIA", container="/data"),
+           MediaRoot(host="B:/RKM_MEDIA", container="/media2")]
+
+    def test_second_drive_host_path(self):
+        assert translate_media_path("B:/RKM_MEDIA/TV Shows", self.TWO) == ("/media2/TV Shows", "")
+
+    def test_first_drive_host_path_unchanged_behaviour(self):
+        assert translate_media_path("D:/RKM_MEDIA/Movies", self.TWO) == ("/data/Movies", "")
+
+    def test_root_itself_maps_to_its_mount(self):
+        assert translate_media_path("B:/RKM_MEDIA", self.TWO) == ("/media2", "")
+
+    def test_case_insensitive_second_drive(self):
+        assert translate_media_path("b:/rkm_media/TV", self.TWO) == ("/media2/TV", "")
+
+    def test_container_path_on_second_mount_passes_through(self):
+        assert translate_media_path("/media2/TV Shows", self.TWO) == ("/media2/TV Shows", "")
+
+    def test_longest_matching_root_wins(self):
+        roots = [MediaRoot(host="D:/RKM_MEDIA", container="/data"),
+                 MediaRoot(host="D:/RKM_MEDIA/Kids", container="/media2")]
+        assert translate_media_path("D:/RKM_MEDIA/Kids/Cartoons", roots) == ("/media2/Cartoons", "")
+        assert translate_media_path("D:/RKM_MEDIA/Movies", roots) == ("/data/Movies", "")
+
+    def test_outside_every_root_warns_and_names_them(self):
+        p, w = translate_media_path("E:/Other", self.TWO)
+        assert p == "E:/Other"
+        assert "outside every configured media root" in w
+        assert "D:/RKM_MEDIA → /data" in w and "B:/RKM_MEDIA → /media2" in w
+        assert "RKM_MEDIA_PATH_2" in w
+
+    def test_single_root_message_still_says_rkm_media_path(self):
+        p, w = translate_media_path("E:/Other", self.TWO[:1])
+        assert "outside RKM_MEDIA_PATH" in w
+
+
+class TestParseMediaLibrariesAcrossTwoDrives:
+    def test_host_paths_on_both_drives_translate(self):
+        libs, warnings = parse_media_libraries({
+            "RKM_MEDIA_PATH": "D:/RKM_MEDIA",
+            "RKM_MEDIA_PATH_2": "B:/RKM_MEDIA",
+            "MEDIA_LIBRARY_1_NAME": "Movies",
+            "MEDIA_LIBRARY_1_PATH": "D:/RKM_MEDIA/Movies",
+            "MEDIA_LIBRARY_1_TYPE": "movie",
+            "MEDIA_LIBRARY_2_NAME": "TV Shows",
+            "MEDIA_LIBRARY_2_PATH": "B:/RKM_MEDIA/TV Shows",
+            "MEDIA_LIBRARY_2_TYPE": "tv",
+        })
+        assert warnings == []
+        assert [(l.name, l.path, l.collection_type) for l in libs] == [
+            ("Movies", "/data/Movies", "movies"),
+            ("TV Shows", "/media2/TV Shows", "tvshows"),
+        ]
+
+    def test_unmounted_drive_path_warns_but_is_kept(self):
+        libs, warnings = parse_media_libraries({
+            "RKM_MEDIA_PATH": "D:/RKM_MEDIA",
+            "MEDIA_LIBRARY_1_NAME": "TV Shows",
+            "MEDIA_LIBRARY_1_PATH": "B:/RKM_MEDIA/TV Shows",
+        })
+        assert libs[0].path == "B:/RKM_MEDIA/TV Shows"
+        assert any("RKM_MEDIA_PATH_2" in w for w in warnings)
+
+    def test_duplicate_root_warning_surfaces_through_the_parser(self):
+        _, warnings = parse_media_libraries({
+            "RKM_MEDIA_PATH": "D:/RKM_MEDIA",
+            "RKM_MEDIA_PATH_2": "D:/RKM_MEDIA",
+            "MEDIA_LIBRARY_1_NAME": "Movies",
+            "MEDIA_LIBRARY_1_PATH": "/data/Movies",
+        })
+        assert any("duplicate media root" in w for w in warnings)
 
 
 class TestNormalizeCollectionType:

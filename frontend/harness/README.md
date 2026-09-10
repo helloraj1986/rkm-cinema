@@ -21,9 +21,22 @@ curl -sSL -o public/harness-sample.mp4 \
 cd .. && python3 tools/measure_player_layout.py --shots /tmp/shots
 ```
 
+⚠ **Restart the dev server after editing app source.** Vite's watcher does not fire on
+this mount (WSL2/Docker), and an orphaned `vite` holding port 5199 keeps serving the
+pre-edit module — the measurement then reports the OLD layout and looks like your fix
+did nothing. Check before trusting a run:
+
+```bash
+pkill -f "vite --port 5199"          # then start it again
+curl -s http://localhost:5199/src/features/playback/Player.tsx | grep -c rkm-player__dock
+```
+
 `tools/measure_player_layout.py` prints a PASS/FAIL table for 10 device sizes and
-exits non-zero if any viewport fails. Add `--fullscreen` to also click the Fullscreen
-button (needs a browser that has `Element.requestFullscreen`) and re-probe.
+exits non-zero if any viewport fails. It asserts: the shell == the viewport, the dock
+is fully inside it, nothing pokes outside, the transport row never clips its own
+content, every rendered control is ≥32px and on-screen, the header policy matches the
+viewport height, and (with `--fullscreen`) that real element fullscreen still leaves
+the shell == the screen.
 
 ## What it stubs
 

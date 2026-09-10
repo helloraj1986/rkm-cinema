@@ -1060,8 +1060,12 @@ export function Player({
       {/* STAGE — the whole shell. The transport dock and the top chrome overlay it
           from the SHELL's own edges (see .rkm-player__dock / __top), and the <video>
           is out of flow, so no intrinsic media size can push either band off the
-          visible screen. This is what "fit to the screen" means here. */}
-      <div className="absolute inset-0 z-10">
+          visible screen. This is what "fit to the screen" means here.
+          NOTE: the stage deliberately carries NO z-index — an indexed stage would
+          create a stacking context and trap the settings panel / Up-Next card (z-30)
+          BELOW the top chrome (z-20), making their buttons unclickable wherever the
+          two bands meet (measured: the settings ✕ in short viewports). */}
+      <div className="absolute inset-0">
         <video
           ref={videoRef}
           autoPlay

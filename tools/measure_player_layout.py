@@ -124,6 +124,25 @@ def verdict(p: dict | None, err: str | None) -> list[str]:
             f"{p['overflowCount']} element(s) outside the viewport "
             f"(e.g. <{first.get('tag')}> {first.get('over')})"
         )
+    # The settings overlay must open fully on screen at every size (it is capped to the
+    # space above the dock, which is exactly where a short viewport clips it).
+    overlays = p.get("overlays")
+    if overlays is not None:
+        panel = overlays.get("settingsPanel")
+        if not panel:
+            notes.append("settings overlay did not open")
+        else:
+            if panel["right"] > vw + 0.5 or panel["bottom"] > vh + 0.5 or panel["x"] < -0.5 or panel["y"] < -0.5:
+                notes.append(
+                    f"settings panel outside the viewport ({panel['w']}x{panel['h']} at "
+                    f"{panel['x']},{panel['y']} -> {panel['right']},{panel['bottom']})"
+                )
+            if overlays.get("overflowCount"):
+                first = (overlays.get("overflow") or [{}])[0]
+                notes.append(
+                    f"{overlays['overflowCount']} element(s) outside the viewport with settings open "
+                    f"(e.g. <{first.get('tag')}> {first.get('over')})"
+                )
     if p.get("docScrollW", 0) > (vw or 0) + 1:
         notes.append(f"document scrolls horizontally ({p['docScrollW']} > {vw})")
     if p.get("docScrollH", 0) > (vh or 0) + 1:
@@ -138,6 +157,9 @@ def main() -> int:
     ap.add_argument("--shots", default=None, help="directory for per-viewport screenshots")
     ap.add_argument("--out", default=None, help="write the JSON report here")
     ap.add_argument("--fullscreen", action="store_true", help="also click Fullscreen + re-probe")
+    ap.add_argument(
+        "--overlays", action="store_true", help="also open the settings overlay + re-probe"
+    )
     args = ap.parse_args()
 
     frame_url = f"{args.base}/harness/player-frame.html?kind={args.kind}"
@@ -160,6 +182,22 @@ def main() -> int:
                 page.wait_for_function("() => !!document.querySelector('video')", timeout=15000)
                 page.wait_for_timeout(700)  # stubbed fetch + media metadata settle
                 probe = page.evaluate(PROBE_JS)
+                if args.overlays:
+                    # The settings panel is height-capped to the space above the dock;
+                    # on a short viewport that is exactly where a clipped panel appears.
+                    page.click("button[aria-label='Settings']")
+                    page.wait_for_timeout(350)
+                    ov = page.evaluate(PROBE_JS)
+                    panel = page.evaluate(
+                        "() => { const p = document.querySelector('[aria-label=\"Player settings\"]');"
+                        " if (!p) return null; const b = p.getBoundingClientRect();"
+                        " return { x: +b.x.toFixed(1), y: +b.y.toFixed(1), w: +b.width.toFixed(1),"
+                        " h: +b.height.toFixed(1), right: +b.right.toFixed(1), bottom: +b.bottom.toFixed(1) }; }"
+                    )
+                    ov["settingsPanel"] = panel
+                    probe = {**probe, "overlays": ov}
+                    page.click("button[aria-label='Close settings']")  # leave it as we found it
+                    page.wait_for_timeout(150)
                 if args.fullscreen and not mobile:
                     page.click("button[aria-label='Fullscreen']")
                     page.wait_for_timeout(600)

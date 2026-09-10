@@ -71,6 +71,6 @@ Write-Host "  Dashboard:  http://localhost:$dp/"
 Write-Host "  Jellyfin:   http://localhost:8098/web"
 Write-Host "  API health: http://localhost:$dp/api/health"
 Write-Host ""
-Write-Host "Isolated from your prod stack (own network rkm-exp, own ./data, own ports)." -ForegroundColor DarkGray
+Write-Host "Isolated from your prod stack (own network rkm-exp, own ports, media root from RKM_MEDIA_PATH in .env)." -ForegroundColor DarkGray
 Write-Host "Teardown (keeps data):  docker compose -p rkm-bundled down" -ForegroundColor DarkGray
 Write-Host "Full reset (DELETES experiment data):  docker compose -p rkm-bundled down -v" -ForegroundColor DarkGray

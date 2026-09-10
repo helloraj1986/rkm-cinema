@@ -45,7 +45,11 @@ def _request(method, path, *, token=None, body=None, q=None, timeout=15):
     if token:
         params["api_key"] = token
     url += ("?" + urllib.parse.urlencode(params)) if params else ""
-    data = json.dumps(body).encode() if body is not None else None
+    data = None
+    if body is not None:
+        # body="" means "send an EMPTY body on purpose": POST /Auth/Keys?app=...
+        # needs Content-Length: 0 on Jellyfin 10.11 (an absent body 400s).
+        data = b"" if body == "" else json.dumps(body).encode()
     req = urllib.request.Request(url, data=data, method=method)
     req.add_header("Content-Type", "application/json")
     req.add_header("Accept", "application/json")
@@ -174,44 +178,58 @@ def ensure_admin(retries=40, delay=3.0) -> str | None:
     return None
 
 
-def ensure_api_key(admin_token):
-    """Create or reuse an RKM Cinema API key, VERIFIED by reading back /Auth/Keys.
+#: The app name our Jellyfin API key is registered under.
+API_KEY_APP = "RKM Cinema"
 
-    The POST payload shape differs across Jellyfin versions, so after any POST we
-    re-read the key list and return whatever 'RKM Cinema' key actually exists.
+
+def ensure_api_key(admin_token):
+    """Create or reuse the RKM Cinema API key, VERIFIED by reading back /Auth/Keys.
+
+    Live-probed on Jellyfin 10.11.11 (2026-09-10). The shapes differ from what this
+    script originally assumed — and getting them wrong is invisible, because both
+    failures look like "no key exists" and the caller silently falls back:
+
+        create : POST /Auth/Keys?app=<name>  with an EMPTY body (a JSON body -> 400)
+        list   : items carry ``AppName`` + ``AccessToken`` (NOT ``App``/``Key``)
+
+    So: try the verified query form first, accept both field spellings, and always
+    confirm by re-reading the list — a create that returns 204 but registers
+    nothing must NOT be reported as success.
     """
     def _find():
         code, data = _request("GET", "/Auth/Keys", token=admin_token)
         if code == 200 and isinstance(data, dict):
             for it in (data.get("Items") or []):
-                if str(it.get("App", "")) == "RKM Cinema" and it.get("Key"):
-                    return str(it["Key"])
+                app = str(it.get("AppName") or it.get("App") or "")
+                key = it.get("AccessToken") or it.get("Key")
+                if app == API_KEY_APP and key:
+                    return str(key)
         return None
 
     existing = _find()
     if existing:
-        print("[jellyfin] reusing existing RKM Cinema API key")
+        print(f"[jellyfin] reusing the existing '{API_KEY_APP}' API key")
         return existing
 
-    new_key = uuid.uuid4().hex
-    # Variant A: client-supplied key; Variant B: server-generated (App only).
-    variants = [
-        {"App": "RKM Cinema", "ApiKey": new_key},
-        {"App": "RKM Cinema"},
+    attempts = [
+        ("query param, empty body (10.11+)", {"q": {"app": API_KEY_APP}, "body": ""}),
+        ("JSON body: App + ApiKey", {"body": {"App": API_KEY_APP, "ApiKey": uuid.uuid4().hex}}),
+        ("JSON body: App only", {"body": {"App": API_KEY_APP}}),
     ]
-    for v in variants:
-        code, body = _request("POST", "/Auth/Keys", token=admin_token, body=v)
-        print(f"[jellyfin] POST /Auth/Keys ({'client-key' if 'ApiKey' in v else 'server-gen'}) -> {code}")
+    for label, kwargs in attempts:
+        code, _ = _request("POST", "/Auth/Keys", token=admin_token, **kwargs)
+        print(f"[jellyfin] POST /Auth/Keys ({label}) -> {code}")
         if code in (200, 204):
-            k = _find()
-            if k:
-                print("[jellyfin] confirmed API key registered")
-                return k
-    # Fallback that is guaranteed to work: Jellyfin accepts an admin user's
-    # access token via ?api_key= for user-scoped queries (the same auth that
-    # added the libraries). This sidesteps version-specific /Auth/Keys shapes.
-    print("[jellyfin] using admin AccessToken as the RKM API credential (fallback: "
-          "/Auth/Keys not available on this version).")
+            found = _find()
+            if found:
+                print(f"[jellyfin] confirmed '{API_KEY_APP}' API key registered")
+                return found
+
+    # Fallback that is guaranteed to work: Jellyfin accepts an admin user's access
+    # token via ?api_key= for user-scoped queries (the same auth that just created
+    # the libraries). This sidesteps version-specific /Auth/Keys shapes.
+    print("[jellyfin] using the admin AccessToken as the RKM credential (fallback: "
+          "/Auth/Keys could not be used on this version).")
     return admin_token
 
 

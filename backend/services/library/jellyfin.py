@@ -669,7 +669,10 @@ class JellyfinLibraryProvider(LibraryProvider):
         ``kind`` mirrors Jellyfin's image type — ``Primary`` (poster),
         ``Backdrop`` (16:9 keyart), ``Thumb`` (wide banner), etc.
 
-        Returns ``{"content": bytes, "content_type": str}`` or None.
+        Returns ``{"content": bytes, "content_type": str, "etag": str|None,
+        "last_modified": str|None}`` or None. The validators are FORWARDED to the
+        client (see api/routes/jellyfin_poster.py) so a repeat visit can be a
+        bodiless 304 instead of re-sending the whole image.
         """
         if not self._configured() or not item_id:
             return None
@@ -679,9 +682,12 @@ class JellyfinLibraryProvider(LibraryProvider):
             with urllib.request.urlopen(url, timeout=12) as r:
                 data = r.read()
                 content_type = r.headers.get("Content-Type", "image/jpeg")
+                etag = r.headers.get("ETag")
+                last_modified = r.headers.get("Last-Modified")
             if not data:
                 return None
-            return {"content": data, "content_type": content_type}
+            return {"content": data, "content_type": content_type,
+                    "etag": etag, "last_modified": last_modified}
         except Exception as e:
             logger.warning("Jellyfin get_poster(%s/%s) failed: %s", item_id, kind, e)
             return None

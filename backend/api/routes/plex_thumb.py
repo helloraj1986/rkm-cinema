@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 from fastapi import APIRouter, Query
 from fastapi.responses import Response
+from api.routes.jellyfin_poster import ARTWORK_CACHE_CONTROL
 from config.settings import get_config
 from services.library import PlexLibraryProvider
 
@@ -23,5 +24,7 @@ def plex_thumb(path: str = Query(default=""), width: int = Query(default=500, ge
     except Exception:
         result = None
     if not result:
+        # A missing thumbnail is never cached — Plex may generate it later.
         return Response(status_code=404)
-    return Response(content=result["content"], media_type=result["content_type"])
+    return Response(content=result["content"], media_type=result["content_type"],
+                    headers={"Cache-Control": ARTWORK_CACHE_CONTROL})

@@ -943,7 +943,7 @@ export function Player({
   return (
     <div
       ref={rootRef}
-      className="fixed inset-0 z-[var(--z-player)] flex flex-col bg-black"
+      className="rkm-player z-[var(--z-player)]"
       role="dialog"
       aria-modal="true"
       aria-label={`${item.title} player`}
@@ -951,9 +951,11 @@ export function Player({
       onPointerDown={markActivity}
       style={{ cursor: chromeHidden ? "none" : undefined }}
     >
-      {/* 16:9 backdrop behind the player */}
+      {/* Keyart backdrop: visible while the stream prepares (and through the chrome
+          scrims). The picture itself letterboxes inside the <video>'s own black, so
+          the space around it is never a translucent poster frame. */}
       <div
-        className="absolute inset-0 opacity-40 blur-md"
+        className="pointer-events-none absolute inset-0 opacity-40 blur-md"
         style={{
           backgroundImage: `url(${backdrop})`,
           backgroundSize: "cover",
@@ -963,14 +965,402 @@ export function Player({
       />
       <div className="pointer-events-none absolute inset-0 bg-black/55" aria-hidden="true" />
 
+      {/* STAGE — the whole shell. The transport dock and the top chrome overlay it
+          from the SHELL's own edges (see .rkm-player__dock / __top), and the <video>
+          is out of flow, so no intrinsic media size can push either band off the
+          visible screen. This is what "fit to the screen" means here. */}
+      <div className="absolute inset-0 z-10">
+        <video
+          ref={videoRef}
+          autoPlay
+          playsInline
+          onClick={togglePlay}
+          className={`absolute inset-0 h-full w-full bg-black object-contain ${
+            chromeHidden ? "cursor-none" : "cursor-pointer"
+          }`}
+        />
+
+        {switching && !error && (
+          <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/30">
+            <div className="h-9 w-9 animate-spin rounded-full border-2 border-white/15 border-t-accent" />
+            <span className="text-[11px] font-medium tracking-wide text-zinc-300">Preparing stream…</span>
+          </div>
+        )}
+
+        {!playing && !error && !switching && (
+          <button
+            onClick={togglePlay}
+            aria-label="Play"
+            className="pointer-events-auto absolute left-1/2 top-1/2 grid h-20 w-20 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-black/55 text-white ring-1 ring-white/20 backdrop-blur-md transition hover:bg-black/75 hover:ring-white/40"
+          >
+            <Icon name="play" size={34} filled />
+          </button>
+        )}
+
+        {error && (
+          <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/85 p-6 text-center">
+            <div className="max-w-md rounded-2xl border border-white/10 bg-surface-2/90 p-6 shadow-modal">
+              <p className="text-sm font-semibold text-zinc-100">{error}</p>
+              <button
+                type="button"
+                onClick={onClose}
+                className="mt-4 inline-flex h-10 items-center justify-center rounded-[10px] border border-white/10 bg-white/[.07] px-4 text-sm font-bold text-zinc-100 transition hover:bg-white/[.12]"
+              >
+                Close player
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Up-Next card — anchored above the transport dock (--rkm-dock-h), never
+            below the fold, and never wider than the viewport on a phone. */}
+        {upNext && (
+          <div className="absolute bottom-[calc(var(--rkm-dock-h)+12px)] right-3 z-30 w-[calc(100%-1.5rem)] max-w-72 overflow-hidden rounded-2xl border border-white/10 bg-surface-2/95 shadow-modal backdrop-blur-md sm:right-5">
+            <div className="flex items-center gap-3 p-4">
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-accent/15 text-accent">
+                <Icon name="play" size={16} filled />
+              </span>
+              <div className="min-w-0">
+                <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">
+                  Up next {autoSecs > 0 ? `· auto in ${autoSecs}s` : ""}
+                </div>
+                <div className="mt-0.5 flex items-center gap-1.5">
+                  {queueEntryCode(upNext) ? (
+                    <span className="shrink-0 rounded bg-accent/15 px-1 py-px text-[10px] font-bold text-accent">
+                      {queueEntryCode(upNext)}
+                    </span>
+                  ) : null}
+                  <span className="truncate text-sm font-semibold text-white">{upNext.name}</span>
+                </div>
+              </div>
+            </div>
+            <div className="flex gap-2 border-t border-white/[.06] px-4 py-3">
+              <button
+                onClick={playNext}
+                className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-[8px] bg-accent text-xs font-bold text-black transition hover:bg-accent-hover"
+              >
+                <Icon name="play" size={12} filled />
+                Play next
+              </button>
+              <button
+                onClick={cancelNext}
+                className="inline-flex h-9 flex-1 items-center justify-center rounded-[8px] border border-white/10 bg-white/[.06] text-xs font-semibold text-zinc-200 transition hover:bg-white/[.12]"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Subtitle overlay — item-time cues parsed from the VTT proxy. The
+            HLS/direct timeline IS the item timeline, so alignment is exact, and the
+            cue sits above the transport dock rather than behind it. */}
+        {subText && (
+          <div className="pointer-events-none absolute inset-x-0 bottom-[calc(var(--rkm-dock-h)+10px)] z-[5] flex justify-center px-4 sm:px-6">
+            <div className="max-w-[85%] whitespace-pre-line rounded-lg bg-black/70 px-3.5 py-1.5 text-center text-base text-white shadow-lg backdrop-blur-[2px] [text-shadow:0_1px_3px_rgba(0,0,0,0.95)]">
+              {subText}
+            </div>
+          </div>
+        )}
+
+        {/* Settings overlay (Plex-style): click anywhere outside to dismiss;
+            Esc / the ✕ close it too. The panel rides above the transport dock and
+            is height-capped to the space actually available, so it can never be
+            clipped by the shell or push its own controls off-screen. */}
+        {showSettings && (
+          <div
+            className="absolute inset-0 z-[15]"
+            onPointerDown={() => setShowSettings(false)}
+            aria-hidden="true"
+          />
+        )}
+
+        {showSettings && (
+          <div
+            role="dialog"
+            aria-label="Player settings"
+            onPointerDown={(e) => e.stopPropagation()}
+            onPointerEnter={onChromeEnter}
+            onPointerLeave={onChromeLeave}
+            className="absolute bottom-[calc(var(--rkm-dock-h)+10px)] right-3 z-30 flex max-h-[calc(100dvh-var(--rkm-dock-h)-1.75rem)] w-[340px] max-w-[calc(100%-1.5rem)] flex-col overflow-hidden rounded-2xl border border-white/10 bg-surface-2/90 shadow-[0_24px_80px_rgba(0,0,0,0.6)] backdrop-blur-2xl sm:right-5"
+          >
+            <div className="flex items-center justify-between border-b border-white/[.06] px-4 py-3">
+              <span className={panelLabel}>Player settings</span>
+              <button
+                type="button"
+                onClick={() => setShowSettings(false)}
+                aria-label="Close settings"
+                className="grid h-7 w-7 place-items-center rounded-full text-zinc-400 transition hover:bg-white/10 hover:text-white"
+              >
+                <Icon name="close" size={14} />
+              </button>
+            </div>
+
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4">
+              <section className="space-y-2">
+                <div className={panelLabel}>Speed</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {PLAYBACK_RATES.map((r) => (
+                    <button
+                      key={r}
+                      type="button"
+                      aria-pressed={rate === r}
+                      onClick={() => {
+                        setRate(r);
+                        persistPrefs({ rate: r });
+                      }}
+                      className={chipBtn(rate === r)}
+                    >
+                      {r}×
+                    </button>
+                  ))}
+                </div>
+              </section>
+
+              <section className="space-y-2">
+                <div className={panelLabel}>Quality</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {QUALITY_OPTIONS.map((q) => (
+                    <button
+                      key={q.label}
+                      type="button"
+                      aria-pressed={quality === q.label}
+                      onClick={() => {
+                        setQuality(q.label);
+                        persistPrefs({ quality: q.label });
+                      }}
+                      className={chipBtn(quality === q.label)}
+                    >
+                      {q.label}
+                    </button>
+                  ))}
+                </div>
+                {usesHls(mode) ? (
+                  <p className="text-[10px] font-medium tabular-nums text-zinc-500">
+                    Live: {abrBadgeLabel(lvl)}
+                    {lvl?.bitrate ? ` · ${Math.round(lvl.bitrate / 1e6)} Mbps` : ""}
+                  </p>
+                ) : null}
+              </section>
+
+              {info && info.audio.length > 0 ? (
+                <section className="space-y-1.5">
+                  <div className={panelLabel}>Audio track</div>
+                  <select
+                    value={audioIndex}
+                    onChange={(e) => setAudioIndex(Number(e.target.value))}
+                    className={overlaySelect}
+                  >
+                    <option value={0}>Default</option>
+                    {info.audio.map((a) => (
+                      <option key={a.index} value={a.index}>
+                        {a.name}
+                        {a.language ? ` (${a.language})` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </section>
+              ) : null}
+
+              {info && info.subtitles.length > 0 ? (
+                <section className="space-y-1.5">
+                  <div className={panelLabel}>Subtitles</div>
+                  <select
+                    value={subIndex == null ? "" : String(subIndex)}
+                    onChange={(e) => setSubIndex(e.target.value === "" ? null : Number(e.target.value))}
+                    className={overlaySelect}
+                  >
+                    <option value="">Off</option>
+                    {info.subtitles.map((s) => (
+                      <option key={s.index} value={s.index}>
+                        {s.name}
+                        {s.language ? ` (${s.language})` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </section>
+              ) : null}
+            </div>
+
+            <div className="flex items-center justify-between border-t border-white/[.06] px-4 py-2.5">
+              <span
+                className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                  mode !== "direct" ? "bg-accent/15 text-accent" : "bg-white/[.07] text-zinc-400"
+                }`}
+              >
+                <span
+                  className={`h-1.5 w-1.5 rounded-full ${mode !== "direct" ? "bg-accent" : "bg-zinc-500"}`}
+                  aria-hidden="true"
+                />
+                {desiredMode ? hlsModeLabel(mode) : "Loading…"}
+              </span>
+              <span className="text-[10px] font-medium text-zinc-500">
+                {info ? `${info.audio.length} audio · ${info.subtitles.length} sub` : "no track info"}
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* TRANSPORT DOCK — pinned to the SHELL's bottom edge (never to the stage's),
+            so its position cannot depend on how tall the picture happens to be, and
+            it can never sit below the visible screen. Safe-area padding for the home
+            indicator / browser toolbar lives in .rkm-player__dock. */}
+        <div
+          className={`rkm-player__dock pointer-events-none absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-black/95 via-black/70 to-transparent transition-opacity duration-300 ${
+            chromeHidden ? "opacity-0" : "opacity-100"
+          }`}
+        >
+          <div
+            ref={barRef}
+            role="slider"
+            tabIndex={0}
+            aria-label="Seek"
+            aria-valuemin={0}
+            aria-valuemax={total > 0 ? Math.round(total) : 0}
+            aria-valuenow={Math.round(barPos)}
+            aria-disabled={total <= 0}
+            onClick={(e) => e.stopPropagation()}
+            onPointerDown={(e) => {
+              markActivity();
+              onBarPointerDown(e);
+            }}
+            onPointerMove={(e) => {
+              markActivity();
+              onBarPointerMove(e);
+            }}
+            onPointerUp={onBarPointerUp}
+            onPointerCancel={onBarPointerCancel}
+            onKeyDown={onBarKeyDown}
+            onPointerEnter={onChromeEnter}
+            onPointerLeave={onChromeLeave}
+            className={`${chromeHidden ? "pointer-events-none" : "pointer-events-auto"} group relative flex h-5 w-full cursor-pointer touch-none items-center outline-none ${total <= 0 ? "opacity-40" : ""}`}
+          >
+            <div className="relative h-1 w-full overflow-visible rounded-full bg-white/20">
+              <div
+                className="absolute inset-y-0 left-0 rounded-full bg-accent"
+                style={{ width: `${barPct}%` }}
+              />
+            </div>
+            <div
+              className="pointer-events-none absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-accent shadow-[0_0_0_4px_rgba(255,196,0,.25)] transition-opacity group-hover:shadow-[0_0_0_5px_rgba(255,196,0,.3)]"
+              style={{ left: `${barPct}%` }}
+            />
+          </div>
+          <div
+            onPointerEnter={onChromeEnter}
+            onPointerLeave={onChromeLeave}
+            className={`${chromeHidden ? "pointer-events-none" : "pointer-events-auto"} mt-2 flex items-center gap-2.5 text-[11px] text-zinc-100 sm:gap-3`}
+          >
+            <button onClick={togglePlay} aria-label={playing ? "Pause" : "Play"} className={ctrlBtn}>
+              <Icon name={playing ? "pause" : "play"} size={17} filled={!playing} />
+            </button>
+            {prevEntry ? (
+              <button
+                onClick={() => skipToEntry(prevEntry)}
+                aria-label={`Previous episode ${queueEntryCode(prevEntry)}`}
+                title={`Previous episode — ${prevEntry.name}`}
+                className={ctrlBtn}
+              >
+                <Icon name="chevron-left" size={18} />
+              </button>
+            ) : null}
+            {nextEntry ? (
+              <button
+                onClick={() => skipToEntry(nextEntry)}
+                aria-label={`Next episode ${queueEntryCode(nextEntry)}`}
+                title={`Next episode — ${nextEntry.name}`}
+                className={ctrlBtn}
+              >
+                <Icon name="chevron-right" size={18} />
+              </button>
+            ) : null}
+            <button
+              onClick={toggleMute}
+              aria-label={muted || volume === 0 ? "Unmute" : "Mute"}
+              className={ctrlBtn}
+            >
+              <Icon name={muted || volume === 0 ? "volume-x" : "volume"} size={17} />
+            </button>
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.05}
+              value={muted ? 0 : volume}
+              onChange={(e) => {
+                const val = Number(e.target.value);
+                const v = videoRef.current;
+                if (!v) return;
+                v.volume = val;
+                v.muted = val === 0;
+                setVolume(val);
+                setMuted(val === 0);
+                persistPrefs({ volume: val, muted: val === 0 });
+              }}
+              aria-label="Volume"
+              className="h-1 w-16 cursor-pointer accent-[var(--accent)] sm:w-20"
+            />
+            {desiredMode ? (
+              <span
+                className={`hidden rounded-full px-2 py-0.5 text-[10px] font-semibold tracking-wide sm:inline ${
+                  mode !== "direct" ? "bg-accent/15 text-accent" : "bg-white/[.07] text-zinc-400"
+                }`}
+              >
+                {hlsModeLabel(mode)}
+              </span>
+            ) : null}
+            <span className="ml-auto flex items-baseline gap-1 tabular-nums text-zinc-300">
+              <span className="text-[12px] font-semibold">{fmtTime(cur)}</span>
+              {total > 0 ? (
+                <span className="text-[11px] font-medium text-zinc-500">/ {fmtTime(total)}</span>
+              ) : null}
+            </span>
+            <button
+              onClick={() => setShowSettings((s) => !s)}
+              aria-label={showSettings ? "Close settings" : "Settings"}
+              aria-expanded={showSettings}
+              title="Settings"
+              className={`${ctrlBtn} ${showSettings ? "bg-white/20 ring-white/30" : ""}`}
+            >
+              <Icon name="settings" size={17} />
+            </button>
+            {pipSupported ? (
+              <button
+                onClick={() => void togglePip()}
+                aria-label={isPip ? "Exit picture-in-picture" : "Picture in picture"}
+                title={isPip ? "Exit picture-in-picture" : "Picture in picture"}
+                className={`${ctrlBtn} px-2.5`}
+              >
+                <span className={`text-[10px] font-extrabold tracking-wider ${isPip ? "text-accent" : ""}`}>PIP</span>
+              </button>
+            ) : null}
+            <button
+              onClick={toggleFullscreen}
+              aria-label={isFs ? "Exit fullscreen" : "Fullscreen"}
+              className={ctrlBtn}
+            >
+              <Icon name={isFs ? "minimize" : "maximize"} size={17} />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* TOP CHROME — an overlay anchored to the SHELL's own top edge, so it cannot
+          move with the video. The gradient band is click-through: only the title row
+          takes pointer events, and hiding is opacity-only (never layout), so hiding
+          mid-playback can never resize the picture. */}
       <div
-        onPointerEnter={onChromeEnter}
-        onPointerLeave={onChromeLeave}
-        className={`relative z-10 flex items-center justify-between gap-3 bg-gradient-to-b from-black/80 to-transparent p-3 pr-4 transition-opacity duration-300 sm:p-4 sm:pr-5 ${
-          chromeHidden ? "pointer-events-none opacity-0" : "opacity-100"
+        className={`rkm-player__top pointer-events-none absolute inset-x-0 top-0 z-20 bg-gradient-to-b from-black/85 via-black/35 to-transparent pb-8 transition-opacity duration-300 ${
+          chromeHidden ? "opacity-0" : "opacity-100"
         }`}
       >
-        <div className="flex min-w-0 items-center gap-3">
+        <div
+          onPointerEnter={onChromeEnter}
+          onPointerLeave={onChromeLeave}
+          className={`flex min-w-0 items-center gap-3 ${
+            chromeHidden ? "pointer-events-none" : "pointer-events-auto"
+          }`}
+        >
           <button
             onClick={onClose}
             aria-label="Close player"
@@ -992,377 +1382,6 @@ export function Player({
                 </span>
               </div>
             ) : null}
-          </div>
-        </div>
-      </div>
-
-      <div className="relative z-10 flex flex-1 flex-col p-4">
-        <div className="relative flex flex-1 items-center justify-center">
-          <video
-            ref={videoRef}
-            autoPlay
-            playsInline
-            onClick={togglePlay}
-            className={`max-h-full max-w-full rounded-lg bg-black shadow-2xl ${chromeHidden ? "cursor-none" : "cursor-pointer"}`}
-          />
-
-          {switching && !error && (
-            <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/30">
-              <div className="h-9 w-9 animate-spin rounded-full border-2 border-white/15 border-t-accent" />
-              <span className="text-[11px] font-medium tracking-wide text-zinc-300">Preparing stream…</span>
-            </div>
-          )}
-
-          {!playing && !error && !switching && (
-            <button
-              onClick={togglePlay}
-              aria-label="Play"
-              className="pointer-events-auto absolute left-1/2 top-1/2 grid h-20 w-20 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-black/55 text-white ring-1 ring-white/20 backdrop-blur-md transition hover:bg-black/75 hover:ring-white/40"
-            >
-              <Icon name="play" size={34} filled />
-            </button>
-          )}
-
-          {error && (
-            <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/85 p-6 text-center">
-              <div className="max-w-md rounded-2xl border border-white/10 bg-surface-2/90 p-6 shadow-modal">
-                <p className="text-sm font-semibold text-zinc-100">{error}</p>
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="mt-4 inline-flex h-10 items-center justify-center rounded-[10px] border border-white/10 bg-white/[.07] px-4 text-sm font-bold text-zinc-100 transition hover:bg-white/[.12]"
-                >
-                  Close player
-                </button>
-              </div>
-            </div>
-          )}
-
-          {upNext && (
-            <div className="absolute bottom-28 right-6 z-10 w-72 overflow-hidden rounded-2xl border border-white/10 bg-surface-2/95 shadow-modal backdrop-blur-md">
-              <div className="flex items-center gap-3 p-4">
-                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-accent/15 text-accent">
-                  <Icon name="play" size={16} filled />
-                </span>
-                <div className="min-w-0">
-                  <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">
-                    Up next {autoSecs > 0 ? `· auto in ${autoSecs}s` : ""}
-                  </div>
-                  <div className="mt-0.5 flex items-center gap-1.5">
-                    {queueEntryCode(upNext) ? (
-                      <span className="shrink-0 rounded bg-accent/15 px-1 py-px text-[10px] font-bold text-accent">
-                        {queueEntryCode(upNext)}
-                      </span>
-                    ) : null}
-                    <span className="truncate text-sm font-semibold text-white">{upNext.name}</span>
-                  </div>
-                </div>
-              </div>
-              <div className="flex gap-2 border-t border-white/[.06] px-4 py-3">
-                <button
-                  onClick={playNext}
-                  className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-[8px] bg-accent text-xs font-bold text-black transition hover:bg-accent-hover"
-                >
-                  <Icon name="play" size={12} filled />
-                  Play next
-                </button>
-                <button
-                  onClick={cancelNext}
-                  className="inline-flex h-9 flex-1 items-center justify-center rounded-[8px] border border-white/10 bg-white/[.06] text-xs font-semibold text-zinc-200 transition hover:bg-white/[.12]"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Subtitle overlay — item-time cues parsed from the VTT proxy. The
-              HLS/direct timeline IS the item timeline, so alignment is exact. */}
-          {subText && (
-            <div className="pointer-events-none absolute inset-x-0 bottom-24 z-[5] flex justify-center px-6">
-              <div className="max-w-[85%] whitespace-pre-line rounded-lg bg-black/70 px-3.5 py-1.5 text-center text-base text-white shadow-lg backdrop-blur-[2px] [text-shadow:0_1px_3px_rgba(0,0,0,0.95)]">
-                {subText}
-              </div>
-            </div>
-          )}
-
-          {/* Settings overlay (Plex-style): click anywhere outside to dismiss;
-              Esc / the ✕ close it too. Panel hovers over the top of the stage. */}
-          {showSettings && (
-            <div
-              className="absolute inset-0 z-[15]"
-              onPointerDown={() => setShowSettings(false)}
-              aria-hidden="true"
-            />
-          )}
-
-          {showSettings && (
-            <div
-              role="dialog"
-              aria-label="Player settings"
-              onPointerDown={(e) => e.stopPropagation()}
-              onPointerEnter={onChromeEnter}
-              onPointerLeave={onChromeLeave}
-              className="absolute right-4 top-4 z-[20] w-[340px] max-w-[calc(100%-2rem)] overflow-hidden rounded-2xl border border-white/10 bg-surface-2/90 shadow-[0_24px_80px_rgba(0,0,0,0.6)] backdrop-blur-2xl"
-            >
-              <div className="flex items-center justify-between border-b border-white/[.06] px-4 py-3">
-                <span className={panelLabel}>Player settings</span>
-                <button
-                  type="button"
-                  onClick={() => setShowSettings(false)}
-                  aria-label="Close settings"
-                  className="grid h-7 w-7 place-items-center rounded-full text-zinc-400 transition hover:bg-white/10 hover:text-white"
-                >
-                  <Icon name="close" size={14} />
-                </button>
-              </div>
-
-              <div className="max-h-[min(62vh,420px)] space-y-4 overflow-y-auto px-4 py-4">
-                <section className="space-y-2">
-                  <div className={panelLabel}>Speed</div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {PLAYBACK_RATES.map((r) => (
-                      <button
-                        key={r}
-                        type="button"
-                        aria-pressed={rate === r}
-                        onClick={() => {
-                          setRate(r);
-                          persistPrefs({ rate: r });
-                        }}
-                        className={chipBtn(rate === r)}
-                      >
-                        {r}×
-                      </button>
-                    ))}
-                  </div>
-                </section>
-
-                <section className="space-y-2">
-                  <div className={panelLabel}>Quality</div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {QUALITY_OPTIONS.map((q) => (
-                      <button
-                        key={q.label}
-                        type="button"
-                        aria-pressed={quality === q.label}
-                        onClick={() => {
-                          setQuality(q.label);
-                          persistPrefs({ quality: q.label });
-                        }}
-                        className={chipBtn(quality === q.label)}
-                      >
-                        {q.label}
-                      </button>
-                    ))}
-                  </div>
-                  {usesHls(mode) ? (
-                    <p className="text-[10px] font-medium tabular-nums text-zinc-500">
-                      Live: {abrBadgeLabel(lvl)}
-                      {lvl?.bitrate ? ` · ${Math.round(lvl.bitrate / 1e6)} Mbps` : ""}
-                    </p>
-                  ) : null}
-                </section>
-
-                {info && info.audio.length > 0 ? (
-                  <section className="space-y-1.5">
-                    <div className={panelLabel}>Audio track</div>
-                    <select
-                      value={audioIndex}
-                      onChange={(e) => setAudioIndex(Number(e.target.value))}
-                      className={overlaySelect}
-                    >
-                      <option value={0}>Default</option>
-                      {info.audio.map((a) => (
-                        <option key={a.index} value={a.index}>
-                          {a.name}
-                          {a.language ? ` (${a.language})` : ""}
-                        </option>
-                      ))}
-                    </select>
-                  </section>
-                ) : null}
-
-                {info && info.subtitles.length > 0 ? (
-                  <section className="space-y-1.5">
-                    <div className={panelLabel}>Subtitles</div>
-                    <select
-                      value={subIndex == null ? "" : String(subIndex)}
-                      onChange={(e) => setSubIndex(e.target.value === "" ? null : Number(e.target.value))}
-                      className={overlaySelect}
-                    >
-                      <option value="">Off</option>
-                      {info.subtitles.map((s) => (
-                        <option key={s.index} value={s.index}>
-                          {s.name}
-                          {s.language ? ` (${s.language})` : ""}
-                        </option>
-                      ))}
-                    </select>
-                  </section>
-                ) : null}
-              </div>
-
-              <div className="flex items-center justify-between border-t border-white/[.06] px-4 py-2.5">
-                <span
-                  className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                    mode !== "direct" ? "bg-accent/15 text-accent" : "bg-white/[.07] text-zinc-400"
-                  }`}
-                >
-                  <span
-                    className={`h-1.5 w-1.5 rounded-full ${mode !== "direct" ? "bg-accent" : "bg-zinc-500"}`}
-                    aria-hidden="true"
-                  />
-                  {desiredMode ? hlsModeLabel(mode) : "Loading…"}
-                </span>
-                <span className="text-[10px] font-medium text-zinc-500">
-                  {info ? `${info.audio.length} audio · ${info.subtitles.length} sub` : "no track info"}
-                </span>
-              </div>
-            </div>
-          )}
-
-          {/* Custom control bar — total from the API runtime until the stream
-              duration resolves, so length + progress are always correct. */}
-          <div
-            onPointerEnter={onChromeEnter}
-            onPointerLeave={onChromeLeave}
-            className={`pointer-events-none absolute inset-x-0 bottom-0 rounded-b-lg bg-gradient-to-t from-black/90 via-black/60 to-transparent px-3 pb-2.5 pt-12 transition-opacity duration-300 sm:px-5 ${
-              chromeHidden ? "opacity-0" : "opacity-100"
-            }`}
-          >
-            <div
-              ref={barRef}
-              role="slider"
-              tabIndex={0}
-              aria-label="Seek"
-              aria-valuemin={0}
-              aria-valuemax={total > 0 ? Math.round(total) : 0}
-              aria-valuenow={Math.round(barPos)}
-              aria-disabled={total <= 0}
-              onClick={(e) => e.stopPropagation()}
-              onPointerDown={(e) => {
-                markActivity();
-                onBarPointerDown(e);
-              }}
-              onPointerMove={(e) => {
-                markActivity();
-                onBarPointerMove(e);
-              }}
-              onPointerUp={onBarPointerUp}
-              onPointerCancel={onBarPointerCancel}
-              onKeyDown={onBarKeyDown}
-              onPointerEnter={onChromeEnter}
-              onPointerLeave={onChromeLeave}
-              className={`${chromeHidden ? "pointer-events-none" : "pointer-events-auto"} group relative flex h-5 w-full cursor-pointer touch-none items-center outline-none ${total <= 0 ? "opacity-40" : ""}`}
-            >
-              <div className="relative h-1 w-full overflow-visible rounded-full bg-white/20">
-                <div
-                  className="absolute inset-y-0 left-0 rounded-full bg-accent"
-                  style={{ width: `${barPct}%` }}
-                />
-              </div>
-              <div
-                className="pointer-events-none absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-accent shadow-[0_0_0_4px_rgba(255,196,0,.25)] transition-opacity group-hover:shadow-[0_0_0_5px_rgba(255,196,0,.3)]"
-                style={{ left: `${barPct}%` }}
-              />
-            </div>
-            <div
-              onPointerEnter={onChromeEnter}
-              onPointerLeave={onChromeLeave}
-              className={`${chromeHidden ? "pointer-events-none" : "pointer-events-auto"} mt-2 flex items-center gap-2.5 text-[11px] text-zinc-100 sm:gap-3`}
-            >
-              <button onClick={togglePlay} aria-label={playing ? "Pause" : "Play"} className={ctrlBtn}>
-                <Icon name={playing ? "pause" : "play"} size={17} filled={!playing} />
-              </button>
-              {prevEntry ? (
-                <button
-                  onClick={() => skipToEntry(prevEntry)}
-                  aria-label={`Previous episode ${queueEntryCode(prevEntry)}`}
-                  title={`Previous episode — ${prevEntry.name}`}
-                  className={ctrlBtn}
-                >
-                  <Icon name="chevron-left" size={18} />
-                </button>
-              ) : null}
-              {nextEntry ? (
-                <button
-                  onClick={() => skipToEntry(nextEntry)}
-                  aria-label={`Next episode ${queueEntryCode(nextEntry)}`}
-                  title={`Next episode — ${nextEntry.name}`}
-                  className={ctrlBtn}
-                >
-                  <Icon name="chevron-right" size={18} />
-                </button>
-              ) : null}
-              <button
-                onClick={toggleMute}
-                aria-label={muted || volume === 0 ? "Unmute" : "Mute"}
-                className={ctrlBtn}
-              >
-                <Icon name={muted || volume === 0 ? "volume-x" : "volume"} size={17} />
-              </button>
-              <input
-                type="range"
-                min={0}
-                max={1}
-                step={0.05}
-                value={muted ? 0 : volume}
-                onChange={(e) => {
-                  const val = Number(e.target.value);
-                  const v = videoRef.current;
-                  if (!v) return;
-                  v.volume = val;
-                  v.muted = val === 0;
-                  setVolume(val);
-                  setMuted(val === 0);
-                  persistPrefs({ volume: val, muted: val === 0 });
-                }}
-                aria-label="Volume"
-                className="h-1 w-16 cursor-pointer accent-[var(--accent)] sm:w-20"
-              />
-              {desiredMode ? (
-                <span
-                  className={`hidden rounded-full px-2 py-0.5 text-[10px] font-semibold tracking-wide sm:inline ${
-                    mode !== "direct" ? "bg-accent/15 text-accent" : "bg-white/[.07] text-zinc-400"
-                  }`}
-                >
-                  {hlsModeLabel(mode)}
-                </span>
-              ) : null}
-              <span className="ml-auto flex items-baseline gap-1 tabular-nums text-zinc-300">
-                <span className="text-[12px] font-semibold">{fmtTime(cur)}</span>
-                {total > 0 ? (
-                  <span className="text-[11px] font-medium text-zinc-500">/ {fmtTime(total)}</span>
-                ) : null}
-              </span>
-              <button
-                onClick={() => setShowSettings((s) => !s)}
-                aria-label={showSettings ? "Close settings" : "Settings"}
-                aria-expanded={showSettings}
-                title="Settings"
-                className={`${ctrlBtn} ${showSettings ? "bg-white/20 ring-white/30" : ""}`}
-              >
-                <Icon name="settings" size={17} />
-              </button>
-              {pipSupported ? (
-                <button
-                  onClick={() => void togglePip()}
-                  aria-label={isPip ? "Exit picture-in-picture" : "Picture in picture"}
-                  title={isPip ? "Exit picture-in-picture" : "Picture in picture"}
-                  className={`${ctrlBtn} px-2.5`}
-                >
-                  <span className={`text-[10px] font-extrabold tracking-wider ${isPip ? "text-accent" : ""}`}>PIP</span>
-                </button>
-              ) : null}
-              <button
-                onClick={toggleFullscreen}
-                aria-label={isFs ? "Exit fullscreen" : "Fullscreen"}
-                className={ctrlBtn}
-              >
-                <Icon name={isFs ? "minimize" : "maximize"} size={17} />
-              </button>
-            </div>
           </div>
         </div>
       </div>

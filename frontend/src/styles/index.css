@@ -192,3 +192,60 @@
       linear-gradient(145deg, #2a1a17, #704634 55%, #090a0c);
   }
 }
+
+/* ---------------------------------------------------------------------------
+ * Player shell (PLAYER_LAYOUT_PLAN §2). Three OVERLAYING bands — top chrome,
+ * video stage, transport dock — each measured against the VISIBLE viewport,
+ * never against each other:
+ *
+ *   · the shell is `fixed` + `100dvh` (not `inset: 0` alone): on Chrome Android
+ *     and iOS Safari the layout viewport is the URL-bar-HIDDEN height, so a
+ *     fixed shell can put the transport bar under the browser's toolbar;
+ *   · the <video> is taken OUT OF FLOW inside the stage, so no intrinsic media
+ *     size can push the chrome off-screen (the old flex `min-height: auto` trap
+ *     put the transport bar 28–128px below the fold on short/landscape windows);
+ *   · both chrome bands are anchored to the shell's own edges, so their position
+ *     can never depend on how tall the picture happens to be.
+ *
+ * `--rkm-dock-h` is published by the dock's ResizeObserver so overlays
+ * (subtitles, Up-Next, settings) clear it instead of guessing a bottom offset.
+ * --------------------------------------------------------------------------- */
+@layer components {
+  .rkm-player {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100vh; /* fallback where dvh is unsupported */
+    height: 100dvh;
+    overflow: hidden;
+    overscroll-behavior: none;
+    background: #000;
+    --rkm-dock-h: 96px;
+    --rkm-safe-top: env(safe-area-inset-top, 0px);
+    --rkm-safe-bottom: env(safe-area-inset-bottom, 0px);
+    --rkm-safe-left: env(safe-area-inset-left, 0px);
+    --rkm-safe-right: env(safe-area-inset-right, 0px);
+  }
+
+  /* The fullscreen element IS the screen, and on a notched device that includes
+     the safe areas — the bands pad against them below. */
+  .rkm-player:fullscreen {
+    width: 100%;
+    height: 100dvh;
+  }
+
+  /* Top chrome band: sits under the status bar/notch, not behind it. */
+  .rkm-player__top {
+    padding-top: calc(0.7rem + var(--rkm-safe-top));
+    padding-left: max(0.75rem, var(--rkm-safe-left));
+    padding-right: max(0.75rem, var(--rkm-safe-right));
+  }
+
+  /* Transport band: pinned above the home indicator / browser toolbar. */
+  .rkm-player__dock {
+    padding-top: 3.25rem; /* the gradient's fade-in area */
+    padding-bottom: calc(0.6rem + var(--rkm-safe-bottom));
+    padding-left: max(0.75rem, var(--rkm-safe-left));
+    padding-right: max(0.75rem, var(--rkm-safe-right));
+  }
+}

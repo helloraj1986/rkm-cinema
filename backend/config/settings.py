@@ -6,6 +6,26 @@ from functools import lru_cache
 
 from config.media_libraries import parse_media_libraries
 
+#: Env-key FAMILIES the media-library parser needs, beyond the declared config
+#: keys above. Expressed as a prefix predicate so the contract is testable: a key
+#: the parser needs but that is NOT covered here is silently dropped from the
+#: environment, and then every host-style library path stops translating.
+#: 2026-09-10: RKM_MEDIA_PATH was in neither list, so the api had no media roots,
+#: could not translate D:/B: paths, and reported ALL libraries unresolved — the
+#: sidebar greyed out every one of them while Jellyfin's own folders were correct.
+MEDIA_CONFIG_KEY_PREFIXES = ("MEDIA_LIBRARY_", "RKM_MEDIA_PATH")
+
+
+def is_env_passthrough_key(key: str) -> bool:
+    """True when a real environment variable must reach the config env.
+
+    Covers the ``MEDIA_LIBRARY_N_*`` declarations AND every media root
+    (``RKM_MEDIA_PATH``, ``RKM_MEDIA_PATH_2``, ``RKM_MEDIA_PATH_3`` …). Deliberately
+    narrow: other ``RKM_*`` keys (admin passwords, ports) stay out of the api's
+    config on purpose.
+    """
+    return any(str(key).startswith(p) for p in MEDIA_CONFIG_KEY_PREFIXES)
+
 
 class Config:
     """Single source of truth for all environment configuration."""
@@ -108,9 +128,8 @@ class Config:
             pass
 
         # 2. Real environment variables override .env
-        for key in os.environ:
-            if key in self._get_all_keys() or key.startswith("MEDIA_LIBRARY_"):
-                env[key] = os.environ[key]
+        for key, value in self._env_passthrough(os.environ).items():
+            env[key] = value
 
         # Assign with validation
         self.MEDIA_HOST = env.get("MEDIA_HOST", "192.168.65.254")
@@ -181,6 +200,17 @@ class Config:
         # Media libraries (MEDIA_LIBRARIES_PLAN Phase 1): parsed here in the
         # dedicated settings layer — never read MEDIA_LIBRARY_* anywhere else.
         self.media_libraries, self.media_library_warnings = parse_media_libraries(env)
+
+    def _env_passthrough(self, environ) -> dict:
+        """The real env vars that override .env — declared keys + media families.
+
+        Extracted so the contract is directly testable: if a key the media-library
+        parser needs is not covered here, it silently disappears from the api's
+        environment and every host-style library path stops translating
+        (2026-09-10 regression — see MEDIA_CONFIG_KEY_PREFIXES).
+        """
+        return {k: v for k, v in environ.items()
+                if k in self._get_all_keys() or is_env_passthrough_key(k)}
 
     def _normalize_url(self, url: str) -> str:
         """Ensure URL has no trailing slash."""

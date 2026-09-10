@@ -1,3 +1,11 @@
+## ▶ SESSION (2026-09-10) — DOCS CONSOLIDATED INTO `docs/`, MERGED TO `main` ✅ (commit `cd8201a`)
+- **Every root markdown file except `README.md` moved into `docs/`** with `git mv` (history preserved): `ARCHITECTURE.md`, `PROGRESS.md`, `TAILSCALE_HOSTING.md`. The root now has exactly one markdown file.
+- **References fixed, not left to rot:** 26 `docs/<name>.md` mentions in PROGRESS.md and 1 in ARCHITECTURE.md dropped the prefix (from inside `docs/` the old form pointed at `docs/docs/`); navigable `README.md` mentions became `../README.md`; ARCHITECTURE.md's repo-layout tree now shows the real layout; the root README's layout block + docs table point into `docs/` and gained a `TAILSCALE_HOSTING.md` row (it was previously unreferenced).
+- **Deliberately unchanged:** the dated session narrative in PROGRESS.md that names files as they were at the time (editing those would falsify the record), and mentions of files that no longer exist.
+- **New `tools/check_md_links.py`** gates future moves: every relative markdown link must resolve (29 files / 7 links, all resolve; exits non-zero otherwise).
+- **Merged to `main`** — fast-forward `9328c9e → cd8201a` — and `experiment/bundled-docker-stack` fast-forwarded to the same commit; all three refs pushed.
+- Gates: backend **499 tests**, ruff clean. CI contract-drift check unaffected (`docs/api/` did not move).
+
 ## ▶ LATEST SESSION (2026-09-10) — "EVERY SHOW WATCHED" ROOT-CAUSED + ONE COMMAND TO RUN IT ALL ✅ (branch: `feat/configurable-media-libraries`)
 **User-reported:** "the tv shows are coming up as watched again" → answered with live evidence, not theory.
 

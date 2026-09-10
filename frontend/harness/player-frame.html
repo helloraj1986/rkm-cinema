@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>RKM player harness — frame</title>
+    <script>
+      /**
+       * Player LAYOUT harness — one iframe == one viewport.
+       *
+       * The iframe's own layout viewport IS the emulated device size, so
+       * `position: fixed` + `100dvh` inside it behave exactly as they do on a
+       * real phone/laptop. Nothing here is app code: we stub the API (no
+       * backend in the sandbox) and remap the media URL at a real 16:9 file so
+       * the <video> reports genuine intrinsic dimensions.
+       */
+      (function () {
+        var params = new URLSearchParams(location.search);
+        var mediaSrc = params.get("src") || "/harness-sample.mp4";
+
+        // ---- API stub ---------------------------------------------------
+        var playbackInfo = {
+          media_source_id: "harness-ms",
+          container: "mp4",
+          video: { codec: "h264", profile: "High", width: 960, height: 540, bit_depth: 8, bit_rate: 2000000 },
+          audio: [{ index: 1, name: "English AAC", language: "eng", codec: "aac" }],
+          subtitles: [{ index: 2, name: "English", language: "eng", codec: "srt" }],
+        };
+        function jsonRes(body, status) {
+          return new Response(JSON.stringify(body), {
+            status: status || 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        var realFetch = window.fetch.bind(window);
+        window.fetch = function (input, init) {
+          var url = typeof input === "string" ? input : (input && input.url) || "";
+          if (url.indexOf("/api/jellyfin/playback-info") >= 0) return Promise.resolve(jsonRes(playbackInfo));
+          if (url.indexOf("/api/jellyfin/progress") >= 0) return Promise.resolve(jsonRes({ ok: true }));
+          if (url.indexOf("/api/jellyfin/subtitle") >= 0)
+            return Promise.resolve(
+              new Response("WEBVTT\n\n00:00:01.000 --> 00:00:20.000\nHarness subtitle cue line\n", {
+                status: 200,
+                headers: { "Content-Type": "text/vtt" },
+              }),
+            );
+          if (url.indexOf("/api/jellyfin/backdrop") >= 0) return Promise.resolve(new Response("", { status: 404 }));
+          if (url.indexOf("/api/jellyfin/stream") >= 0 || url.indexOf("/api/jellyfin/hls") >= 0)
+            return Promise.resolve(new Response("", { status: 404 }));
+          return realFetch(input, init);
+        };
+
+        // ---- media remap: every app media URL plays the local sample file ----
+        // `src` is a reflected attribute, so watch the attribute and swap it.
+        if (mediaSrc) {
+          var obs = new MutationObserver(function (records) {
+            for (var i = 0; i < records.length; i++) {
+              var el = records[i].target;
+              if (records[i].attributeName !== "src" || !el || el.tagName !== "VIDEO") continue;
+              var cur = el.getAttribute("src") || "";
+              if (cur.indexOf("/api/") === 0) {
+                obs.disconnect();
+                el.setAttribute("src", mediaSrc);
+                el.load();
+                obs.observe(document.documentElement, { subtree: true, attributes: true, attributeFilter: ["src"] });
+              }
+            }
+          });
+          obs.observe(document.documentElement, { subtree: true, attributes: true, attributeFilter: ["src"] });
+        }
+
+        // ---- measurement -------------------------------------------------
+        function rectOf(el) {
+          if (!el) return null;
+          var b = el.getBoundingClientRect();
+          return {
+            x: +b.x.toFixed(1),
+            y: +b.y.toFixed(1),
+            w: +b.width.toFixed(1),
+            h: +b.height.toFixed(1),
+            right: +b.right.toFixed(1),
+            bottom: +b.bottom.toFixed(1),
+          };
+        }
+
+        window.__probe = function () {
+          var vw = window.innerWidth;
+          var vh = window.innerHeight;
+          var de = document.documentElement;
+          var root = document.querySelector('[role="dialog"][aria-modal="true"]');
+          var video = document.querySelector("video");
+          var seek = document.querySelector('[role="slider"][aria-label="Seek"]');
+          var dock = seek ? seek.parentElement : null;
+          var row = dock ? dock.lastElementChild : null;
+
+          // How tall 100dvh really is in THIS viewport.
+          var probeEl = document.createElement("div");
+          probeEl.style.cssText = "position:fixed;top:0;left:0;width:0;height:100dvh;pointer-events:none";
+          document.body.appendChild(probeEl);
+          var dvh = probeEl.getBoundingClientRect().height;
+          probeEl.remove();
+
+          // Anything inside the player that pokes outside the viewport by >1px.
+          var bad = [];
+          if (root) {
+            var all = root.querySelectorAll("*");
+            for (var i = 0; i < all.length; i++) {
+              var el = all[i];
+              var b = el.getBoundingClientRect();
+              if (b.width === 0 && b.height === 0) continue;
+              var over = [];
+              if (b.left < -1) over.push("left=" + b.left.toFixed(1));
+              if (b.right > vw + 1) over.push("right=" + b.right.toFixed(1) + ">vw" + vw);
+              if (b.top < -1) over.push("top=" + b.top.toFixed(1));
+              if (b.bottom > vh + 1) over.push("bottom=" + b.bottom.toFixed(1) + ">vh" + vh);
+              if (over.length) {
+                bad.push({
+                  tag: el.tagName.toLowerCase(),
+                  cls: String(el.className || "").slice(0, 120),
+                  aria: el.getAttribute("aria-label") || el.getAttribute("title") || "",
+                  over: over.join(" "),
+                });
+              }
+            }
+          }
+
+          return {
+            vw: vw,
+            vh: vh,
+            dvh: +dvh.toFixed(1),
+            dpr: window.devicePixelRatio,
+            docScrollW: de.scrollWidth,
+            docScrollH: de.scrollHeight,
+            bodyScrollW: document.body.scrollWidth,
+            bodyScrollH: document.body.scrollHeight,
+            mounted: Boolean(root),
+            videoNative: video ? { w: video.videoWidth, h: video.videoHeight, readyState: video.readyState } : null,
+            root: rectOf(root),
+            video: rectOf(video),
+            seek: rectOf(seek),
+            dock: rectOf(dock),
+            dockRow: rectOf(row),
+            dockH: dock ? +dock.getBoundingClientRect().height.toFixed(1) : null,
+            overflowCount: bad.length,
+            overflow: bad.slice(0, 20),
+          };
+        };
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/harness/player-frame.tsx"></script>
+  </body>
+</html>

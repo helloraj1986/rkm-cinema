@@ -61,3 +61,6 @@ provisioner/__pycache__/
 *.tmp
 cinemagoer.db
 app.js.bak3
+
+# Player layout harness fixture (downloaded by frontend/harness/README.md, not source)
+frontend/public/harness-sample.mp4

@@ -24,6 +24,7 @@ Python 3.11+. Runs from the repo root.
 from __future__ import annotations
 
 import json
+import re
 import secrets
 import sys
 from pathlib import Path
@@ -184,46 +185,86 @@ def resolve_data_path(env: dict) -> Path:
     return p
 
 
+def is_real_media_root(raw: str) -> bool:
+    """True when ``RKM_MEDIA_PATH`` points somewhere real, not the repo default.
+
+    Deliberately platform-independent: ``D:/RKM_MEDIA`` is absolute to a Windows
+    interpreter but looks RELATIVE to a POSIX one, and the sample tree
+    (``media/_movie``, ``media/_tv``) must never be seeded into a user's drive on
+    either platform. So a drive-letter path and a UNC path count as real even on
+    Linux, and only ``./data``-style relative paths select the sample tree.
+    """
+    p = (raw or "").strip()
+    if not p:
+        return False
+    if re.match(r"^[A-Za-z]:[\\/]", p) or p.startswith("\\\\"):
+        return True
+    return Path(p).expanduser().is_absolute()
+
+
 def ensure_storage(data: Path, env: dict | None = None) -> None:
     """Create the storage tree and validate configured media libraries.
 
     Rules:
-    - the app's own dirs (downloads/, rkm/) are always ensured under the media
-      root — that is where the stack keeps qBittorrent output + the watchlist DB;
+    - the app's own dirs (downloads/, rkm/) are always ensured under the PRIMARY
+      media root — that is where the stack keeps qBittorrent output + the
+      watchlist DB (a second media drive holds library folders only);
     - SAMPLE media dirs (media/_movie, media/_tv) are created ONLY when the root
       is the repo-local default (``./data``) — never inside a real media drive
       the user pointed us at, and never when libraries are configured;
-    - with MEDIA_LIBRARY_N_* configured each library folder is existence-checked
-      here (earliest, clearest warning); with none configured we simply note
-      that the provisioner will auto-discover the root's subfolders.
+    - EVERY configured media root is reported (host path → mount), so a missing
+      drive or a mistyped RKM_MEDIA_PATH_N is visible before the containers even
+      start; with MEDIA_LIBRARY_N_* set each library folder is existence-checked
+      here too.
     """
     env = env or {}
     (data / "downloads").mkdir(parents=True, exist_ok=True)
     (data / "rkm").mkdir(parents=True, exist_ok=True)
 
-    libraries = []
+    roots, root_warnings = [], []
+    libraries, warnings = [], []
     try:
         import sys as _sys
         if str(ROOT / "backend") not in _sys.path:
             _sys.path.insert(0, str(ROOT / "backend"))
-        from config.media_libraries import parse_media_libraries
+        from config.media_libraries import media_roots, parse_media_libraries
 
+        roots, root_warnings = media_roots(env)
         libraries, warnings = parse_media_libraries(env)
-        for w in warnings:
-            print(f"[env] WARN: {w}")
     except Exception as e:  # pragma: no cover - imported lazily for safety
         print(f"[env] WARN: could not parse media libraries ({e})")
-        libraries = []
 
-    # A relative root means the repo-local sample tree; an absolute one is the
-    # user's own drive and must not be seeded with sample folders.
+    for w in [*root_warnings, *warnings]:
+        print(f"[env] WARN: {w}")
+
+    # Every declared root: the primary one is this `data` dir; the others are
+    # extra drives the containers mount at /media2, /media3 … Their library
+    # folders are checked below through the configured libraries.
+    for r in roots:
+        if r.container == "/data":
+            print(f"[env] media root: {r.host} → {r.container} "
+                  f"({'ok' if data.exists() else 'MISSING'})")
+        else:
+            print(f"[env] media root: {r.host} → {r.container} (extra drive — mounted "
+                  "by compose; create it on the host if it is missing)")
+    if not roots:
+        print("[env] WARN: no RKM_MEDIA_PATH configured — the containers fall back to ./data")
+
+    # A relative root means the repo-local sample tree; a real drive (absolute,
+    # UNC or Windows drive letter) must never be seeded with sample folders.
     raw_root = str(env.get("RKM_MEDIA_PATH") or "./data").strip()
-    is_default_root = not Path(raw_root).expanduser().is_absolute()
+    is_default_root = not is_real_media_root(raw_root)
 
     if libraries:
         for lib in libraries:
-            # container path (/data/...) → host path under the media root
-            rel = lib.path[len("/data"):].lstrip("/") if lib.path.startswith("/data") else ""
+            # container path (/data/… → primary root, /media2/… → extra root)
+            root = next((r for r in roots if lib.path.startswith(r.container + "/")
+                         or lib.path == r.container), None)
+            if root and root.container != "/data":
+                print(f"[env] library '{lib.name}' → {lib.path} "
+                      f"(on {root.host} — check the folder exists on that drive)")
+                continue
+            rel = lib.path[len("/data"):].lstrip("/") if root else ""
             host = data / rel if rel else data
             if host.exists() and host.is_dir():
                 state = "ok"
@@ -233,7 +274,8 @@ def ensure_storage(data: Path, env: dict | None = None) -> None:
                 state = "MISSING (create it, or fix the PATH in .env)"
             print(f"[env] library '{lib.name}' → {host} [{state}]")
         print(f"storage tree ready at: {data} "
-              f"({len(libraries)} configured librar{'y' if len(libraries) == 1 else 'ies'})")
+              f"({len(libraries)} configured librar{'y' if len(libraries) == 1 else 'ies'}"
+              f", {len(roots)} media root{'s' if len(roots) != 1 else ''})")
         return
 
     if is_default_root:
@@ -243,7 +285,7 @@ def ensure_storage(data: Path, env: dict | None = None) -> None:
         return
 
     print(f"storage tree ready at: {data} — no MEDIA_LIBRARY_N_* configured; the "
-          "provisioner will auto-discover this folder's subfolders as libraries")
+          "provisioner will auto-discover each media root's subfolders as libraries")
 
 
 def build_api_vars(env: dict) -> dict:
@@ -302,11 +344,14 @@ def build_api_vars(env: dict) -> dict:
         api[k] = str(env.get(k) or "").strip()
     # Media libraries (MEDIA_LIBRARIES_PLAN): pass every MEDIA_LIBRARY_N_NAME /
     # PATH / TYPE key through to the api container so config.settings can parse
-    # them, plus the host media root RKM_MEDIA_PATH so a host-style PATH
-    # (D:/RKM_MEDIA/Movies Kids) can be translated to the container path.
+    # them, plus EVERY media root (RKM_MEDIA_PATH + RKM_MEDIA_PATH_2/3 …) so a
+    # host-style PATH (D:/RKM_MEDIA/Movies Kids, B:/RKM_MEDIA/TV Shows) can be
+    # translated to the container path the containers actually mount.
     api["RKM_MEDIA_PATH"] = str(env.get("RKM_MEDIA_PATH") or "./data").strip()
     for k, v in env.items():
         if k.startswith("MEDIA_LIBRARY_"):
+            api[k] = str(v).strip()
+        elif k.startswith("RKM_MEDIA_PATH_"):
             api[k] = str(v).strip()
     return api
 

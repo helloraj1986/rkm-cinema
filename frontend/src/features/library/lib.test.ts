@@ -19,8 +19,6 @@ import {
   libraryFilterToParams,
   libraryGenres,
   libraryIconFor,
-  libraryItemsByType,
-  libraryKindLabel,
   libraryViewFromParams,
   personHeadshotUrl,
   pickHomeHero,
@@ -82,25 +80,6 @@ describe("isSeries", () => {
 });
 
 // ------------------------------------------------ Plex-style views (PLEX_VIEWS_PLAN)
-describe("libraryItemsByType (folder split)", () => {
-  const movie = { ...base, item_id: "m1", type: "movie" };
-  const tv = { ...base, item_id: "t1", type: "tv" };
-  it("movies folder keeps non-series only", () => {
-    expect(libraryItemsByType([movie, tv], "movies").map((i) => i.item_id)).toEqual(["m1"]);
-  });
-  it("shows folder keeps series only", () => {
-    expect(libraryItemsByType([movie, tv], "shows").map((i) => i.item_id)).toEqual(["t1"]);
-  });
-  it("tolerates empty/undefined lists", () => {
-    expect(libraryItemsByType([], "movies")).toEqual([]);
-    expect(libraryItemsByType(undefined as unknown as MediaItem[], "shows")).toEqual([]);
-  });
-  it("folder labels", () => {
-    expect(libraryKindLabel("movies")).toBe("Movies");
-    expect(libraryKindLabel("shows")).toBe("TV Shows");
-  });
-});
-
 // ------------------------------------------- Library & discovery (roadmap item 4)
 describe("addedTime", () => {
   it("parses plain ISO and normalises Jellyfin's 7-digit fractions", () => {

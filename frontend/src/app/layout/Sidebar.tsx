@@ -1,32 +1,35 @@
 import { NavLink } from "react-router-dom";
 import { Icon, type IconName } from "../../components/ui/Icon";
+import { useLibraryFolders } from "../../features/library/api";
+import { libraryIconFor } from "../../features/library/lib";
 
 /**
  * Premium sidebar (design spec §5–6): brand lockup, grouped navigation,
  * selected-pill active state with the tiny yellow indicator, and a CSS-driven
  * collapse — full 240px on desktop (≥xl), icon rail on tablet (md–xl), hidden
  * below md where the MobileNav bottom bar takes over.
+ *
+ * Libraries group (MEDIA_LIBRARIES_PLAN): populated from /api/library/folders —
+ * the configured MEDIA_LIBRARY_N_NAME values when any are set, otherwise the
+ * media server's own folder names. Names come from the API, never hardcoded;
+ * a configured library that failed to resolve shows a warning glyph instead of
+ * a dead link.
  */
 type NavItem = { to: string; label: string; icon: IconName; end?: boolean };
 
-const GROUPS: { title: string; items: NavItem[] }[] = [
-  {
-    title: "Browse",
-    items: [
-      { to: "/library/home", label: "Home", icon: "home", end: true },
-      { to: "/library/movies", label: "Movies", icon: "film" },
-      { to: "/library/shows", label: "TV Shows", icon: "tv" },
-    ],
-  },
-  {
-    title: "Collections",
-    items: [
-      { to: "/watchlist", label: "Watchlist", icon: "heart" },
-      { to: "/discover", label: "Discover", icon: "compass" },
-      { to: "/suggest", label: "Suggest", icon: "sparkles" },
-    ],
-  },
-];
+const BROWSE: { title: string; items: NavItem[] } = {
+  title: "Browse",
+  items: [{ to: "/library/home", label: "Home", icon: "home", end: true }],
+};
+
+const COLLECTIONS: { title: string; items: NavItem[] } = {
+  title: "Collections",
+  items: [
+    { to: "/watchlist", label: "Watchlist", icon: "heart" },
+    { to: "/discover", label: "Discover", icon: "compass" },
+    { to: "/suggest", label: "Suggest", icon: "sparkles" },
+  ],
+};
 
 function BrandLockup() {
   return (
@@ -71,34 +74,85 @@ function NavIndicator({ active }: { active: boolean }) {
   );
 }
 
+function GroupNav({ title, items }: { title: string; items: NavItem[] }) {
+  return (
+    <div>
+      <GroupHeading>{title}</GroupHeading>
+      {items.map((item) => (
+        <NavLink
+          key={item.to}
+          to={item.to}
+          end={item.end}
+          title={item.label}
+          className={({ isActive }) => linkCls(isActive)}
+        >
+          {({ isActive }) => (
+            <>
+              <NavIndicator active={isActive} />
+              <Icon name={item.icon} size={19} className="shrink-0" />
+              <span className="hidden truncate xl:inline">{item.label}</span>
+            </>
+          )}
+        </NavLink>
+      ))}
+    </div>
+  );
+}
+
 export function Sidebar() {
+  const { data } = useLibraryFolders();
+  const libraries = data?.libraries ?? [];
+
   return (
     <aside className="sticky top-0 hidden h-dvh w-[76px] shrink-0 flex-col self-start border-r border-white/[.06] bg-[#0B0C0F] py-5 md:flex xl:w-60">
       <BrandLockup />
 
       <nav aria-label="Primary" className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-2.5">
-        {GROUPS.map((group) => (
-          <div key={group.title}>
-            <GroupHeading>{group.title}</GroupHeading>
-            {group.items.map((item) => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                end={item.end}
-                title={item.label}
-                className={({ isActive }) => linkCls(isActive)}
-              >
-                {({ isActive }) => (
-                  <>
-                    <NavIndicator active={isActive} />
-                    <Icon name={item.icon} size={19} className="shrink-0" />
-                    <span className="hidden truncate xl:inline">{item.label}</span>
-                  </>
-                )}
-              </NavLink>
-            ))}
+        <GroupNav title={BROWSE.title} items={BROWSE.items} />
+
+        {libraries.length > 0 && (
+          <div>
+            <GroupHeading>Libraries</GroupHeading>
+            {libraries.map((lib) => {
+              const icon = libraryIconFor(lib.collection_type);
+              const href = lib.ok && lib.folder_id
+                ? `/library/folder/${encodeURIComponent(lib.folder_id)}`
+                : null;
+              if (!href) {
+                return (
+                  <div
+                    key={lib.name}
+                    title={lib.warning || "Library unavailable"}
+                    aria-label={`${lib.name} — unavailable`}
+                    className="flex cursor-not-allowed items-center gap-3 rounded-[10px] py-2.5 pl-3 text-[13.5px] font-medium text-zinc-600 opacity-70"
+                  >
+                    <Icon name={icon} size={19} className="shrink-0" />
+                    <span className="hidden truncate xl:inline">{lib.name}</span>
+                    <span className="ml-auto hidden h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500 xl:block" />
+                  </div>
+                );
+              }
+              return (
+                <NavLink
+                  key={href}
+                  to={href}
+                  title={lib.name}
+                  className={({ isActive }) => linkCls(isActive)}
+                >
+                  {({ isActive }) => (
+                    <>
+                      <NavIndicator active={isActive} />
+                      <Icon name={icon} size={19} className="shrink-0" />
+                      <span className="hidden truncate xl:inline">{lib.name}</span>
+                    </>
+                  )}
+                </NavLink>
+              );
+            })}
           </div>
-        ))}
+        )}
+
+        <GroupNav title={COLLECTIONS.title} items={COLLECTIONS.items} />
       </nav>
 
       <div className="px-2.5 pt-2">

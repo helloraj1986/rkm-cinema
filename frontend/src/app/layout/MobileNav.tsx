@@ -1,18 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { Icon, type IconName } from "../../components/ui/Icon";
+import { useLibraryFolders } from "../../features/library/api";
+import { libraryIconFor } from "../../features/library/lib";
 
 /**
  * Mobile navigation (design spec §38/§59): the sidebar disappears below md and
- * a bottom bar takes over — Home · Movies · Shows · Search · More. More opens a
- * compact sheet above the bar with the remaining destinations. Blurred,
- * safe-area aware, z-indexed below the player/toasts.
+ * a bottom bar takes over — Home · first two libraries · More. More opens a
+ * compact sheet above the bar with the remaining libraries + destinations.
+ * Blurred, safe-area aware, z-indexed below the player/toasts. Library entries
+ * come from the folders API (MEDIA_LIBRARIES_PLAN) — never hardcoded names.
  */
-const TABS: { to: string; label: string; icon: IconName; end?: boolean }[] = [
-  { to: "/library/home", label: "Home", icon: "home", end: true },
-  { to: "/library/movies", label: "Movies", icon: "film" },
-  { to: "/library/shows", label: "Shows", icon: "tv" },
-];
+type Tab = { to: string; label: string; icon: IconName; end?: boolean };
 
 const MORE: { to: string; label: string; icon: IconName }[] = [
   { to: "/watchlist", label: "Watchlist", icon: "heart" },
@@ -27,8 +26,15 @@ function tabCls(active: boolean) {
   }`;
 }
 
+function activeFor(pathname: string, to: string): boolean {
+  return to === "/library/home"
+    ? pathname === "/library/home" || pathname === "/"
+    : pathname.startsWith(to);
+}
+
 export function MobileNav() {
   const location = useLocation();
+  const { data } = useLibraryFolders();
   const [moreOpen, setMoreOpen] = useState(false);
   const sheetRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -52,9 +58,23 @@ export function MobileNav() {
     return () => window.removeEventListener("keydown", onKey);
   }, [moreOpen]);
 
-  const moreActive = MORE.some((m) =>
-    m.to === "/watchlist" ? location.pathname.startsWith("/watchlist") : location.pathname.startsWith(m.to),
-  );
+  // Live libraries only (resolved to a server folder) become tabs / sheet
+  // entries. Loading or empty → Home + More only, never fabricated names.
+  const liveLibs = (data?.libraries ?? []).filter((l) => l.ok && l.folder_id);
+  const tabLibraries: Tab[] = liveLibs.slice(0, 2).map((l) => ({
+    to: `/library/folder/${encodeURIComponent(l.folder_id as string)}`,
+    label: l.name,
+    icon: libraryIconFor(l.collection_type),
+  }));
+  const moreLibraries: Tab[] = liveLibs.slice(2).map((l) => ({
+    to: `/library/folder/${encodeURIComponent(l.folder_id as string)}`,
+    label: l.name,
+    icon: libraryIconFor(l.collection_type),
+  }));
+
+  const moreActive =
+    MORE.some((m) => activeFor(location.pathname, m.to)) ||
+    moreLibraries.some((m) => activeFor(location.pathname, m.to));
 
   return (
     <nav
@@ -68,6 +88,21 @@ export function MobileNav() {
           aria-label="More destinations"
           className="absolute bottom-full left-0 right-0 mx-3 mb-2 overflow-hidden rounded-2xl border border-white/10 bg-surface-3 shadow-modal"
         >
+          {moreLibraries.map((m) => (
+            <NavLink
+              key={m.to}
+              to={m.to}
+              role="menuitem"
+              className={({ isActive }) =>
+                `flex items-center gap-3 px-4 py-3 text-sm font-medium transition-colors ${
+                  isActive ? "bg-white/[.07] text-white" : "text-zinc-400 hover:bg-white/[.05] hover:text-zinc-100"
+                }`
+              }
+            >
+              <Icon name={m.icon} size={18} />
+              {m.label}
+            </NavLink>
+          ))}
           {MORE.map((m) => (
             <NavLink
               key={m.to}
@@ -86,8 +121,16 @@ export function MobileNav() {
         </div>
       )}
       <div className="mx-auto flex h-16 max-w-lg items-center gap-1 px-3">
-        {TABS.map((t) => (
-          <NavLink key={t.to} to={t.to} end={t.end} className={({ isActive }) => tabCls(isActive)}>
+        <NavLink
+          to="/library/home"
+          end={tabLibraries.length === 0}
+          className={() => tabCls(activeFor(location.pathname, "/library/home"))}
+        >
+          <Icon name="home" size={21} />
+          <span className="truncate">Home</span>
+        </NavLink>
+        {tabLibraries.map((t) => (
+          <NavLink key={t.to} to={t.to} className={() => tabCls(activeFor(location.pathname, t.to))}>
             <Icon name={t.icon} size={21} />
             <span className="truncate">{t.label}</span>
           </NavLink>

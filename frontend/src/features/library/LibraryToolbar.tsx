@@ -20,6 +20,7 @@ export function LibraryToolbar({
   view,
   resultCount,
   totalCount,
+  countNoun,
   onChange,
   onViewChange,
 }: {
@@ -30,6 +31,8 @@ export function LibraryToolbar({
   view: LibraryViewMode;
   resultCount: number;
   totalCount: number;
+  /** Plural count noun (folder view passes "titles"); defaults to type nouns. */
+  countNoun?: string;
   onChange: (patch: { genre?: string; sort?: LibrarySort }) => void;
   onViewChange: (view: LibraryViewMode) => void;
 }) {
@@ -37,6 +40,7 @@ export function LibraryToolbar({
   const pillOff =
     "border border-white/[.08] bg-white/[.06] text-zinc-300 hover:bg-white/[.1] hover:text-white";
   const filtered = genre !== "";
+  const noun = countNoun ?? (label === "TV Shows" ? "shows" : "movies");
 
   return (
     <div className="flex flex-col gap-3.5">
@@ -80,8 +84,8 @@ export function LibraryToolbar({
 
         <span className="ml-auto text-xs font-medium text-zinc-500" aria-live="polite">
           {filtered
-            ? `${resultCount} of ${totalCount} ${totalCount === 1 ? label.toLowerCase() : label === "TV Shows" ? "shows" : "movies"}`
-            : `${totalCount} ${totalCount === 1 ? label.toLowerCase() : label === "TV Shows" ? "shows" : "movies"}`}
+            ? `${resultCount} of ${totalCount} ${totalCount === 1 ? label.toLowerCase() : noun}`
+            : `${totalCount} ${totalCount === 1 ? label.toLowerCase() : noun}`}
         </span>
       </div>
 

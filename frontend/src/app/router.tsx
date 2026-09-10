@@ -4,6 +4,7 @@ import { ConfigHealthView } from "../features/settings/ConfigHealthView";
 import { LibraryLayout } from "../features/library/LibraryLayout";
 import { LibraryHomeView } from "../features/library/LibraryHomeView";
 import { LibraryFolderView } from "../features/library/LibraryFolderView";
+import { LibraryKindRedirect } from "../features/library/LibraryKindRedirect";
 import { ItemDetailPage } from "../features/library/ItemDetailPage";
 import { DiscoverView } from "../features/discover/DiscoverView";
 import { WatchlistView } from "../features/watchlist/WatchlistView";
@@ -12,9 +13,12 @@ import { SuggestView } from "../features/suggest/SuggestView";
 /**
  * One router for the React shell (the legacy vanilla app was removed).
  *
- * Library routes (PLEX_VIEWS_PLAN): a layout owns the full-screen player + card
- * handlers, and the children are URL-backed views — /library/home, the Movies /
- * TV Shows "folders", and each item's OWN page (/library/item/:id).
+ * Library routes (PLEX_VIEWS_PLAN + MEDIA_LIBRARIES_PLAN): a layout owns the
+ * full-screen player + card handlers, and the children are URL-backed views —
+ * /library/home, the configured media library folders (/library/folder/:id)
+ * and each item's OWN page (/library/item/:id). /library/movies and
+ * /library/shows are legacy paths that redirect to the matching server folder
+ * (global-search genre hints still deep-link there).
  *
  * Legacy parity (LEGACY_PARITY_PLAN): /discover, /watchlist, /search and
  * /suggest are React views fed by live /api data. Playback lives inside the
@@ -33,8 +37,9 @@ export const router = createBrowserRouter([
         children: [
           { index: true, element: <Navigate to="/library/home" replace /> },
           { path: "home", element: <LibraryHomeView /> },
-          { path: "movies", element: <LibraryFolderView kind="movies" /> },
-          { path: "shows", element: <LibraryFolderView kind="shows" /> },
+          { path: "folder/:folderId", element: <LibraryFolderView /> },
+          { path: "movies", element: <LibraryKindRedirect kind="movies" /> },
+          { path: "shows", element: <LibraryKindRedirect kind="tvshows" /> },
           { path: "item/:itemId", element: <ItemDetailPage /> },
         ],
       },

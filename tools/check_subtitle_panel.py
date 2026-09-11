@@ -65,6 +65,25 @@ def main() -> int:
         print("\n=== rendered rows (aria-pressed = active) ===")
         print(json.dumps(state, indent=2))
 
+        # ---- the reported bug (live 2026-09-12): the row the user CLICKED must be the
+        # ---- one that shows the round box, and only that row.
+        chosen = [r for r in state["rows"] if r["pressed"] == "true"
+                  and "OpenSubtitles" in r["label"]]
+        problems = []
+        if len(chosen) != 1:
+            problems.append(f"expected exactly ONE ticked OpenSubtitles row, got "
+                            f"{len(chosen)}: {[r['label'] for r in chosen]}")
+        elif "Harness.Release.1080p" not in chosen[0]["label"]:
+            problems.append(f"the ticked row is not the chosen result: {chosen[0]['label']}")
+        if any("SUBRIP - External" in r["label"] and r["pressed"] == "true"
+               for r in state["rows"]):
+            problems.append("the delivered local track is ticked as well — two selections")
+        print(f"\nticked result rows: {len(chosen)}")
+        if problems:
+            print("FAIL: " + "; ".join(problems))
+            return 1
+        print("OK: exactly one row is ticked, and it is the OpenSubtitles result chosen.")
+
         if args.shots:
             Path(args.shots).mkdir(parents=True, exist_ok=True)
             page.screenshot(path=str(Path(args.shots) / "subtitle-panel-laptop.png"))

@@ -13,6 +13,7 @@ import {
   abrBadgeLabel, shouldAutoHideChrome, warmGet, warmPut, warmDelete,
   WARM_AHEAD_SEC, loadPlayerPrefs, savePlayerPrefs, PLAYER_PREFS_KEY,
   subtitleRowLabel, resolveActiveSubtitle, rankSubtitleRows,
+  activeSubtitleRowKey, localSubtitleRowKey, subtitleRowKey,
   fullscreenPlan, playerChromeFor,
   type AbrLevelFacts, type HlsEngine, type PlayerPrefs, type FullscreenPlan,
   type WebkitFullscreenVideo,
@@ -254,12 +255,26 @@ export function Player({
   const [subRemaining, setSubRemaining] = useState<number | null>(null);
   const [subEnabled, setSubEnabled] = useState<boolean | null>(null);
   const [subDisabled, setSubDisabled] = useState(false);
+  // The OpenSubtitles result the user picked. Kept separately from `subIndex`, because
+  // the tick belongs on the row they CLICKED while `subIndex` addresses the stream that
+  // actually plays — see activeSubtitleRowKey().
+  const [subChoiceId, setSubChoiceId] = useState<string | null>(null);
   const [subNotice, setSubNotice] = useState<{ text: string; kind: "error" | "warn" } | null>(null);
   const subNoticeTimer = useRef<number | null>(null);
 
   modeRef.current = mode;
   rateRef.current = rate;
   showSettingsRef.current = showSettings;
+
+  // EXACTLY ONE row of the subtitle picker is ticked, and it is the row that REPRESENTS
+  // the current choice — the result the user picked if the panel has it, otherwise the
+  // local track actually playing. Computed once here so a local row and a remote row can
+  // never both claim it (see activeSubtitleRowKey).
+  const activeKey = activeSubtitleRowKey(
+    subRows,
+    { subtitle_id: subChoiceId, index: subIndex },
+    info?.subtitles ?? null,
+  );
 
   const activeAudioCodec =
     (audioIndex > 0
@@ -461,6 +476,7 @@ export function Player({
         // covers a stale warm-cache entry. No match → apply NOTHING (the picker
         // opens) rather than show a different subtitle than the one chosen.
         setSubIndex(resolveActiveSubtitle(d?.subtitles ?? [], d?.preferred_subtitle ?? null));
+        setSubChoiceId(d?.preferred_subtitle?.subtitle_id ?? null);
         // A different item means different results: never carry the previous
         // title's OpenSubtitles list (or its notice) across.
         setSubRows(null);
@@ -540,6 +556,7 @@ export function Player({
       // The server's own resolution wins: it knows which track carries our identity.
       const idx = data.preferred_subtitle?.index;
       if (idx != null) setSubIndex(idx);
+      setSubChoiceId(data.preferred_subtitle?.subtitle_id ?? null);
     } catch (e) {
       showSubNotice((e as Error)?.message || "Could not search subtitles");
     } finally {
@@ -552,6 +569,7 @@ export function Player({
    *  remember, and the item already carries the file.) */
   const chooseLocalSubtitle = (index: number | null) => {
     setSubIndex(index);
+    setSubChoiceId(null);
     setSubNotice(null);
   };
 
@@ -569,8 +587,17 @@ export function Player({
       const index = res.preferred_subtitle?.index
         ?? resolveActiveSubtitle(res.subtitles ?? [], res.preferred_subtitle ?? null);
       setSubIndex(index);
+      setSubChoiceId(row.subtitle_id);
       setSubDisabled(false);
       if (res.remaining_downloads != null) setSubRemaining(res.remaining_downloads);
+      showSubNotice(
+        `Added "${row.display_title}"${res.reused ? " — already on disk" : ""}`, "warn");
+      // Re-read the TRACK LIST too: the delivered subtitle becomes a NEW local track,
+      // and until playback-info is refreshed that row does not exist in the panel at
+      // all — which is exactly how a successful download came to look like nothing had
+      // happened (live 2026-09-12).
+      const fresh = await api.playbackInfo(item.item_id).catch(() => null);
+      if (fresh) setInfo(fresh);
       // Refresh the rows so the active marker and the usage count are the server's
       // numbers, not our optimistic guess.
       setSubSearching(false);
@@ -585,6 +612,7 @@ export function Player({
   /** Turn subtitles off — and REMEMBER it, so the next playback stays off. */
   const turnSubtitlesOff = () => {
     setSubIndex(null);
+    setSubChoiceId(null);
     setSubNotice(null);
     // Only worth a round trip when a choice exists to disable.
     if (info?.preferred_subtitle || subRows?.some((r) => r.active)) {
@@ -1466,7 +1494,7 @@ export function Player({
 
                   <SubtitleChoiceRow
                     label="Off"
-                    active={subIndex == null}
+                    active={activeKey === null && subIndex == null && !subChoiceId}
                     onClick={turnSubtitlesOff}
                   />
                   {subDisabled ? (
@@ -1477,9 +1505,11 @@ export function Player({
 
                   {(info.subtitles ?? []).map((t: PlaybackTrack) => (
                     <SubtitleChoiceRow
-                      key={`local-${t.index}`}
+                      key={localSubtitleRowKey(t.index)}
+                      hint={activeKey === localSubtitleRowKey(t.index) && subChoiceId
+                        ? "downloaded" : undefined}
                       label={`${t.name}${t.language ? ` (${t.language})` : ""}`}
-                      active={subIndex === t.index}
+                      active={activeKey === localSubtitleRowKey(t.index)}
                       onClick={() => chooseLocalSubtitle(t.index)}
                     />
                   ))}
@@ -1499,7 +1529,7 @@ export function Player({
                         <SubtitleChoiceRow
                           key={row.subtitle_id}
                           label={subtitleRowLabel(row)}
-                          active={row.active}
+                          active={activeKey === subtitleRowKey(row)}
                           busy={subBusyId === row.subtitle_id}
                           hint={subBusyId === row.subtitle_id ? "Downloading…" : undefined}
                           onClick={() => void chooseRemoteSubtitle(row)}

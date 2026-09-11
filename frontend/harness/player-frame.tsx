@@ -30,7 +30,14 @@ const HARNESS_PLAYBACK_INFO = {
     { index: 1, name: "English AAC 5.1", language: "eng", codec: "aac" },
     { index: 2, name: "Hindi AAC 2.0", language: "hin", codec: "aac" },
   ],
-  subtitles: [{ index: 3, name: "English", language: "eng" }],
+  // The item's OWN track — plus the track our download delivered, which the server
+  // names generically (live 2026-09-12: "English - SUBRIP - External", never the
+  // release name). This pair is what made the reported bug invisible in the harness:
+  // the tick MUST land on the result row below, not on this one.
+  subtitles: [
+    { index: 3, name: "English - SUBRIP - External", language: "eng", external: true },
+    { index: 2, name: "English", language: "eng" },
+  ],
   preferred_subtitle: {
     subtitle_id: "os:111", provider: "opensubtitles", language: "en",
     display_title: "Harness.Release.1080p", index: 3, used_count: 4,

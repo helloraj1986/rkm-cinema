@@ -115,6 +115,7 @@ def subtitle_search(
         "languages": cfg.opensubtitles_languages(),
         "results": merge_subtitle_rows(tracks, remote, counts=counts,
                                        active_index=(preferred or {}).get("index"),
+                                       active_subtitle_id=(preferred or {}).get("subtitle_id"),
                                        last_used=last_used),
         "local_count": len(tracks),
         "remote_count": len(remote),

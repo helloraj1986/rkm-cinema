@@ -279,6 +279,40 @@ class TestRanking:
         # the provider file id rides along so a client need not parse "os:<id>"
         assert rows[2]["file_id"] == 111 and rows[0]["file_id"] is None
 
+    def test_the_row_the_user_chose_is_the_one_marked_active(self):
+        """MEASURED LIVE 2026-09-12 (user report): a download succeeded, the track was
+        attached, and the row the user had clicked still looked unselected — remote rows
+        were hard-coded `active: False`, so only the derived local track could ever show
+        the tick, and that row is not in the panel until the player reloads its tracks.
+        """
+        remote = [SimpleNamespace(subtitle_id="os:682960", file_id=682960,
+                                  provider="opensubtitles", language="en",
+                                  display_title="3 Deewarein (2003)", download_count=10,
+                                  hearing_impaired=False, format="srt",
+                                  vendor_format="srt", year=2003)]
+        rows = merge_subtitle_rows(TRACKS, remote, counts={"os:682960": 1},
+                                   active_index=0, active_subtitle_id="os:682960")
+        chosen = [r for r in rows if r["subtitle_id"] == "os:682960"][0]
+        assert chosen["active"] is True
+        # exactly one row is ticked: the delivery of that choice is the SAME subtitle,
+        # so the local track it resolved to must not light up as a second selection
+        assert [r for r in rows if r["active"]] == [chosen]
+        assert [r["active"] for r in rows if r["local"]] == [False, False]
+
+    def test_a_stored_choice_still_marks_its_row_when_no_track_matches(self):
+        """The file may be gone or re-indexed: the choice is still the user's choice."""
+        remote = [SimpleNamespace(subtitle_id="os:5", file_id=5, provider="opensubtitles",
+                                  language="en", display_title="Some.Release", download_count=1,
+                                  hearing_impaired=False, format="srt",
+                                  vendor_format="srt", year=2019)]
+        rows = merge_subtitle_rows(TRACKS, remote, active_index=None,
+                                   active_subtitle_id="os:5")
+        assert [r["active"] for r in rows] == [False, False, True]
+
+    def test_with_no_remote_choice_the_local_track_keeps_the_tick(self):
+        rows = merge_subtitle_rows(TRACKS, [], active_index=1)
+        assert [r["active"] for r in rows] == [False, True]
+
     def test_episodes_search_by_series_title_and_numbers(self):
         assert search_keywords({"type": "Episode", "series_name": "Chernobyl", "year": 2019,
                                 "season": 1, "episode": 1, "tmdb_id": 999}) == {

@@ -451,6 +451,7 @@ def rank_results(results: List, counts: Dict[str, int]) -> List:
 
 def merge_subtitle_rows(tracks: List[dict], remote: List, *, counts=None,
                         active_index: Optional[int] = None,
+                        active_subtitle_id: Optional[str] = None,
                         last_used: Optional[Dict[str, str]] = None) -> List[dict]:
     """One list for the player panel: the item's LOCAL tracks, then remote results.
 
@@ -458,6 +459,16 @@ def merge_subtitle_rows(tracks: List[dict], remote: List, *, counts=None,
     subtitles keep working exactly as they do today. Remote rows carry our usage count
     and are ranked by it; only local rows carry a stream ``index``, because a remote
     subtitle has no index until it is downloaded and attached.
+
+    EXACTLY ONE row is marked ``active``, and it is the row that REPRESENTS the user's
+    choice — the OpenSubtitles result they picked, identified by ``active_subtitle_id``.
+    MEASURED LIVE 2026-09-12: the delivered track is only ever named
+    "English - SUBRIP - External", so ticking the local track instead leaves the row the
+    user actually clicked looking unselected ("it says downloaded but the round box is
+    empty") while an unfamiliar row lights up beside it. When a remote identity is
+    stored, the local track it resolved to is that same subtitle — a delivery of it, not
+    a second choice — so it is deliberately NOT ticked as well. With no remote identity
+    (the user picked one of the item's own tracks), ``active_index`` still does the job.
     """
     counts = counts or {}
     last_used = last_used or {}
@@ -477,7 +488,9 @@ def merge_subtitle_rows(tracks: List[dict], remote: List, *, counts=None,
             "format": "",
             "vendor_format": "",
             "year": None,
-            "active": (active_index is not None and t.get("index") == active_index),
+            "active": (active_index is not None
+                       and t.get("index") == active_index
+                       and not active_subtitle_id),
             "local": True,
         })
     for r in rank_results(remote or [], counts):
@@ -499,7 +512,8 @@ def merge_subtitle_rows(tracks: List[dict], remote: List, *, counts=None,
             "format": r.format,
             "vendor_format": r.vendor_format,
             "year": r.year,
-            "active": False,
+            # See the docstring: the user's own choice is the row that gets the tick.
+            "active": bool(active_subtitle_id and sid == active_subtitle_id),
             "local": False,
         })
     return rows

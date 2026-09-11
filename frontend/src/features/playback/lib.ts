@@ -3,7 +3,8 @@
  * episode queue / season grouping / play-resume logic. Pure so they're
  * unit-testable without a DOM.
  */
-import type { EpisodeShape, PlaybackInfo, PlaybackTrack, PreferredSubtitle } from "../../lib/api/client";
+import type { EpisodeShape, PlaybackInfo, PlaybackTrack, PreferredSubtitle, SubtitleRow }
+  from "../../lib/api/client";
 import type { HlsConfig } from "hls.js";
 
 /** Ordered "Up Next" queue entry derived from an episode list. */
@@ -621,6 +622,48 @@ export function languageKey(value: string | null | undefined): string {
   if (text.length === 3) return LANG_639_2_EXCEPTIONS[text] ?? text.slice(0, 2);
   if (text.length > 3) return LANG_639_2_EXCEPTIONS[text.slice(0, 3)] ?? text.slice(0, 2);
   return text;
+}
+
+/** Stable key for ONE row of the subtitle picker.
+ *
+ *  Local tracks are keyed by stream INDEX (they have no provider id); remote results by
+ *  their subtitle id. The player compares these keys to decide which single row gets the
+ *  round box. */
+export function localSubtitleRowKey(index: number | null | undefined): string {
+  return `local:${index ?? ""}`;
+}
+
+export function subtitleRowKey(row: SubtitleRow): string {
+  return row.local ? localSubtitleRowKey(row.index) : row.subtitle_id;
+}
+
+/** Which row of the picker is ticked — EXACTLY ONE, and never a lie.
+ *
+ *  MEASURED LIVE 2026-09-12 (user report: "it says downloaded but I don't see the
+ *  selection on the subtitle"): the download and the attach BOTH worked, the panel showed
+ *  no selection at all. The row the user clicked is an OpenSubtitles RESULT; the delivered
+ *  track is a separate local track the server names "English - SUBRIP - External". So
+ *  ticking "the track at the resolved index" ticks a row the user never chose — and
+ *  ticking only the result row shows nothing while the results are off screen. Hence: the
+ *  chosen RESULT wins when it is in the list, otherwise the local track the player is
+ *  actually applying.
+ *
+ *  Returns null when nothing applies (subtitles off, or nothing resolved).
+ */
+export function activeSubtitleRowKey(
+  remoteRows: SubtitleRow[] | null,
+  chosen: { subtitle_id?: string | null; index?: number | null },
+  tracks: PlaybackTrack[] | null | undefined,
+): string | null {
+  const id = (chosen.subtitle_id || "").trim();
+  if (id) {
+    const row = (remoteRows || []).find((r) => r.subtitle_id === id);
+    if (row) return row.subtitle_id;
+  }
+  const index = chosen.index ?? null;
+  if (index == null) return null;
+  const track = (tracks || []).find((t) => t.index === index);
+  return track ? localSubtitleRowKey(track.index) : null;
 }
 
 /** "Used 24 times" / "Used once" / "" — ours, never the provider's download count. */

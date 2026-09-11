@@ -16,6 +16,7 @@ import {
   WARM_AHEAD_SEC, type WarmEntry,
   loadPlayerPrefs, savePlayerPrefs, PLAYER_PREFS_KEY, type PlayerPrefs,
   languageKey, usedCountLabel, subtitleRowLabel, rankSubtitleRows, resolveActiveSubtitle,
+  activeSubtitleRowKey, localSubtitleRowKey, subtitleRowKey,
 } from "./lib";
 
 const ep = (id: string, season: number, episode: number, played = false, position = 0): EpisodeShape => ({
@@ -572,5 +573,61 @@ describe("resolveActiveSubtitle", () => {
       subtitle_id: "os:1", provider: "opensubtitles", language: "en",
       display_title: "x", index: 0, used_count: 0,
     })).toBeNull();
+  });
+});
+
+// ------------------------------- which row is ticked (live bug, 2026-09-12)
+// The user downloaded a subtitle for "3 Deewarein", the app said it was added, and the
+// panel showed NO selection. Two independent reasons, both covered here: the row they
+// clicked is a remote RESULT (which the API used to hard-code as inactive), and the
+// delivered track is a DIFFERENT, locally-named row that only appears after the track
+// list is re-read.
+describe("activeSubtitleRowKey", () => {
+  const tracks = [{ index: 0, name: "English - SUBRIP - External", language: "eng" }] as never;
+  const rows = [
+    { subtitle_id: "os:682960", local: false, display_title: "3 Deewarein (2003)",
+      language: "en", index: null, used_count: 1 },
+    { subtitle_id: "os:682998", local: false, display_title: "3.Deewarein.2003.DVDRip",
+      language: "en", index: null, used_count: 0 },
+    { subtitle_id: "", local: true, display_title: "English - SUBRIP - External",
+      language: "eng", index: 0, used_count: 0 },
+  ] as never;
+
+  it("ticks the row the user picked, not the track it was delivered as", () => {
+    // The reported bug: before the fix the only tickable row was the local
+    // "English - SUBRIP - External" one, so the picker looked unselected.
+    expect(activeSubtitleRowKey(rows, { subtitle_id: "os:682960", index: 0 }, tracks)).toEqual("os:682960");
+  });
+
+  it("falls back to the applied local track when the results are not on screen", () => {
+    // After a reload, before searching again: nothing remote to point at, but the
+    // subtitle IS applied — so the row representing it is the local track.
+    expect(activeSubtitleRowKey(null, { subtitle_id: "os:682960", index: 0 }, tracks)).toEqual("local:0");
+  });
+
+  it("keeps ticking a stored choice even when no track carries it", () => {
+    expect(activeSubtitleRowKey(rows, { subtitle_id: "os:682960", index: null }, [])).toEqual("os:682960");
+  });
+
+  it("still ticks an embedded track chosen in this session", () => {
+    expect(activeSubtitleRowKey(rows, { subtitle_id: null, index: 0 }, tracks)).toEqual("local:0");
+  });
+
+  it("ticks nothing when subtitles are off or unresolved", () => {
+    expect(activeSubtitleRowKey(rows, { subtitle_id: null, index: null }, tracks)).toEqual(null);
+    expect(activeSubtitleRowKey(rows, { subtitle_id: null, index: 7 }, tracks)).toEqual(null);
+  });
+
+  it("never ticks two rows for one choice", () => {
+    const key = activeSubtitleRowKey(rows, { subtitle_id: "os:682960", index: 0 }, tracks);
+    const ticked = (rows as Array<{ index: number }>).filter(
+      (r) => subtitleRowKey(r as never) === key || localSubtitleRowKey(r.index) === key);
+    expect(ticked.length).toEqual(1);
+  });
+
+  it("keys a local row by its stream index", () => {
+    expect(localSubtitleRowKey(3)).toEqual("local:3");
+    expect(subtitleRowKey({ local: true, index: 3, subtitle_id: "" } as never)).toEqual("local:3");
+    expect(subtitleRowKey({ local: false, index: null, subtitle_id: "os:9" } as never)).toEqual("os:9");
   });
 });

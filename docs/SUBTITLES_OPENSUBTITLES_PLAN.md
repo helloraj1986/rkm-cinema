@@ -1,6 +1,6 @@
 # OpenSubtitles + Jellyfin Subtitle Integration Plan — `feat/subtitles-opensubtitles`
 
-**Status: EXECUTING.** Phases 0–3 DONE (`4d08890`, `e27d28d`, `c7e4412`, `c29ce0b`); the API key is configured. **Phase 4 (player UX) is next and needs nothing from the user.** Option A CONFIRMED by the user (2026-09-12). Branch `feat/subtitles-opensubtitles` cut from `main`
+**Status: EXECUTING — READY FOR THE RKM-HP EYEBALL.** Phases 0–4 DONE (`4d08890`, `e27d28d`, `c7e4412`, `c29ce0b`, `9722d88`); the API key is configured. **Phase 5 (hardening/docs/ADR-0005) is next; the user's deploy + eyeball is the acceptance for 0–4.** Option A CONFIRMED by the user (2026-09-12). Branch `feat/subtitles-opensubtitles` cut from `main`
 (`ceddc50`) with this plan as its first commit, **rebased onto `main` @ `251ec63` on 2026-09-12** before any code landed. Execute phase by phase, one commit each, gates green
 after every phase — same cycle as every other branch in this repo.
 
@@ -352,7 +352,16 @@ Gate per phase: `cd backend && python -m pytest -q && python -m ruff check .`; f
   (`:8125`, isolated store, temp Jellyfin key, all traces removed): movie search 30 results, episode search 19
   + its 2 local tracks, select → preferred resolved to index 0, re-search ranks it first used=1, disable → null.
   ⚠ JSON store implemented as this plan recommended; SQLite stays a separate decision (§10.3).
-- **Phase 4 — player UX.** ⏳ NEXT. Panel section as §3.7 (Off / local / OpenSubtitles rows, inline search,
+- **Phase 4 — player UX. ✅ DONE (`9722d88`)** — `Off` / the item's own tracks / ranked
+  OpenSubtitles rows (language · source · `Used N times` · SDH · active marker from the server's
+  own flag), inline on-demand search, per-row busy state, "N downloads left today", a
+  NON-BLOCKING notice pill for quota/rate-limit/format errors, and auto-apply on load via
+  `preferred_subtitle` + `resolveActiveSubtitle()` (identity → current index; no match ⇒ apply
+  nothing). +15 vitest helpers. Verified by CONTENT via the new `tools/check_subtitle_panel.py`
+  (0 subtitle-search calls before the button, 1 after) and by `tools/measure_player_layout.py`
+  **10/10 with the panel open**. The layout harness now stubs the API — without that, `info`
+  stayed null and every data-driven panel section was skipped, so the probe measured an empty
+  shell. Panel as §3.7 (Off / local / OpenSubtitles rows, inline search,
   per-row busy, toasts, active marker), auto-apply on load via the resolution rules, pure helpers
   (`rankSubtitleResults`, `resolveActiveSubtitle`, `usedCountLabel`) unit-tested with vitest, plus the
   harness still passing `tools/measure_player_layout.py` (10/10 viewports).

@@ -76,6 +76,10 @@ and a full scan takes **2-4 h** (~850 movies, 116 series, 5000+ episodes).
 | Posters reload every visit | — | Fixed in `c654d8a`; if it returns, the `web` image did not rebuild |
 | A show won't appear at all | `python tools\probe_media_files.py --dir "/media2/TV Shows/<folder>"` | Folder naming, or the file is unplayable (ffprobe failure) |
 | Deploy stopped at the provisioner | `.\rkm-cinema.ps1 logs` | Read the `[jellyfin]` line it stopped on — the messages name the cause |
+| No online subtitles offered / "not configured" | `python tools\probe_subtitle_selection.py "<title>"` | No `OPENSUBTITLES_API_KEY`, or the vendor is down — the warning in the panel names which |
+| "It says added" but the picker shows no tick | `python tools\probe_subtitle_selection.py "<title>"` | Compares the stored choice, the panel's rows and the server's tracks — it prints which row is marked active |
+| Subtitle download refused | — | Daily limit reached; the message carries the reset time (counters reset 00:00 UTC = 10:00 AEST) |
+| Subtitles stopped applying after a change | `python tools\probe_subtitle_selection.py "<title>"` | The chosen identity no longer matches a track (re-indexed, file removed) — nothing is applied rather than something wrong |
 
 ## Where state lives, and what survives what
 
@@ -106,6 +110,8 @@ The app's own watchlist is a JSON file at `D:\RKM_MEDIA\rkm\watchlist.json`
 | `tools\probe_jellyfin_state.py` | scan state, per-library counts, log errors |
 | `tools\diagnose_episode_linkage.py` | series/episode record linkage |
 | `tools\rebuild_jellyfin_library.py` | delete + re-create one library (`--yes` required) |
+| `tools\probe_subtitle_selection.py` | read-only: the server's subtitle tracks, every picker row (active/local/index/used) and `playback-info`'s `preferred_subtitle` |
+| `tools\probe_subtitles.py` | read-only recon: which subtitle endpoints/plugins the server has at all |
 | `PROGRESS.md` | session-by-session history |
 
 Notes: the tools find the stack themselves (inside the sandbox via

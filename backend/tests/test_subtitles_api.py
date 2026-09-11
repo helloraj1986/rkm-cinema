@@ -325,6 +325,120 @@ class TestRanking:
             "title": "Some Film", "year": 2001}
 
 
+class DeadTransport:
+    """Every request fails the way a dead network fails."""
+
+    def __init__(self, exc=None):
+        self.exc = exc or OSError("connection refused")
+        self.calls = 0
+
+    def request(self, method, url, *, headers=None, params=None, json_body=None, timeout=None):
+        self.calls += 1
+        raise self.exc
+
+
+def dead_client(exc=None):
+    cfg = SimpleNamespace(OPENSUBTITLES_API_KEY="k" * 8, OPENSUBTITLES_USERNAME=None,
+                          OPENSUBTITLES_PASSWORD=None, OPENSUBTITLES_LANGUAGES="en")
+    cfg.has_opensubtitles = lambda: True
+    cfg.has_opensubtitles_login = lambda: False
+    cfg.opensubtitles_languages = lambda: ["en"]
+    return OpenSubtitlesClient(config=cfg, transport=DeadTransport(exc))
+
+
+def unconfigured_client():
+    """A client with no API key — it refuses locally, without a request."""
+    cfg = SimpleNamespace(OPENSUBTITLES_API_KEY=None, OPENSUBTITLES_USERNAME=None,
+                          OPENSUBTITLES_PASSWORD=None, OPENSUBTITLES_LANGUAGES="en")
+    cfg.has_opensubtitles = lambda: False
+    cfg.has_opensubtitles_login = lambda: False
+    cfg.opensubtitles_languages = lambda: ["en"]
+    return OpenSubtitlesClient(config=cfg)
+
+
+# ------------------------------------------------------- failure paths (Phase 5)
+class TestFailurePaths:
+    """The rule the plan states as criterion 10: a subtitle problem degrades the FEATURE,
+    never the app. Playback, seeking and the item's own subtitles must keep working while
+    OpenSubtitles is unreachable, misconfigured, out of quota, or answering nonsense.
+    """
+
+    def _search(self, client, **kw):
+        return client.get("/api/jellyfin/subtitle-search?id=abc&language=en", **kw)
+
+    def test_a_dead_network_is_a_warning_and_the_local_tracks_still_come_back(
+            self, monkeypatch, client):
+        monkeypatch.setattr(subs_route, "build_opensubtitles_client",
+                            lambda cfg=None: dead_client())
+        r = self._search(client)
+        assert r.status_code == 200                      # never a 500, never a broken panel
+        body = r.json()
+        assert body["enabled"] is True                   # configured — the VENDOR is down
+        assert body["remote_count"] == 0
+        assert body["warning"]
+        local = [row for row in body["results"] if row["local"]]
+        assert [row["index"] for row in local] == [0, 1]  # own subtitles untouched, usable
+        assert [row["display_title"] for row in local] == ["English", "English (SDH)"]
+
+    def test_a_vendor_payload_we_did_not_expect_does_not_500_the_listing(
+            self, monkeypatch, client):
+        # A shape change (or a parser bug) is not a typed OpenSubtitlesError. The listing
+        # is passive, so it must STILL degrade to the local tracks.
+        monkeypatch.setattr(subs_route, "build_opensubtitles_client",
+                            lambda cfg=None: dead_client(ValueError("unexpected payload")))
+        r = self._search(client)
+        assert r.status_code == 200
+        assert r.json()["warning"] and r.json()["remote_count"] == 0
+        assert any(row["local"] for row in r.json()["results"])
+
+    def test_a_search_never_asks_the_vendor_when_it_is_not_configured(
+            self, monkeypatch, client):
+        client.cfg.has_opensubtitles = lambda: False
+        dead = dead_client()
+        monkeypatch.setattr(subs_route, "build_opensubtitles_client", lambda cfg=None: dead)
+        r = self._search(client)
+        assert r.status_code == 200
+        assert r.json()["enabled"] is False
+        assert "OPENSUBTITLES_API_KEY" in r.json()["warning"]
+        assert dead.transport.calls == 0                 # refused locally, no request spent
+        assert any(row["local"] for row in r.json()["results"])
+
+    def test_select_without_a_key_is_503_and_names_the_setting(self, monkeypatch, client):
+        monkeypatch.setattr(subs_route, "build_opensubtitles_client",
+                            lambda cfg=None: unconfigured_client())
+        r = client.post("/api/jellyfin/subtitle-select",
+                        json={"item_id": "abc", "file_id": 111, "language": "en"})
+        assert r.status_code == 503                      # NOT 500
+        assert "OPENSUBTITLES_API_KEY" in r.json()["detail"]
+
+    def test_select_while_the_network_is_down_is_502(self, monkeypatch, client):
+        monkeypatch.setattr(subs_route, "build_opensubtitles_client",
+                            lambda cfg=None: dead_client())
+        r = client.post("/api/jellyfin/subtitle-select",
+                        json={"item_id": "abc", "file_id": 111, "language": "en"})
+        assert r.status_code == 502 and r.json()["detail"]
+        # nothing was attached and no preference was invented
+        assert client.fake_lib.uploads == []
+        assert client.fake_lib.refreshes == []
+
+    def test_turning_subtitles_off_works_with_the_vendor_down(self, monkeypatch, client):
+        # No client is involved in this one — proving "off" stays available offline.
+        monkeypatch.setattr(subs_route, "build_opensubtitles_client",
+                            lambda cfg=None: dead_client())
+        r = client.post("/api/jellyfin/subtitle-disable", json={"item_id": "abc"})
+        assert r.status_code == 200 and r.json()["disabled"] is True
+
+    def test_a_leftover_quota_counter_is_reported_on_the_row_not_as_an_error(
+            self, monkeypatch, client):
+        # Quota exhaustion is a STATE, not a failure of the listing: the panel still lists
+        # everything (so the user can see what they have) and says how many are left.
+        monkeypatch.setattr(subs_route, "build_opensubtitles_client",
+                            lambda cfg=None: ok_client(RouteTransport(search_status=429)))
+        r = self._search(client)
+        assert r.status_code == 200
+        assert r.json()["warning"]
+
+
 # ----------------------------------------------------------------------- endpoints
 class TestSearchRoute:
     def test_local_tracks_come_back_even_with_no_result(self, client):

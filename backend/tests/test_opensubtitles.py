@@ -299,6 +299,33 @@ class TestRetryPolicy:
             c.search(tmdb_id=603)
         assert len(t.calls_to("GET")) == 2
 
+    def test_a_raw_network_error_is_wrapped_and_retried_like_any_other(self):
+        """A bare OSError is what urllib raises; it must become OUR TransportError.
+
+        MEASURED 2026-09-12 (Phase 5): unwrapped, it skipped the retry policy and surfaced
+        at the select route as a 500 — the route only maps the typed taxonomy.
+        """
+        c, t = client(OSError("connection refused"), resp(body=SEARCH_PAYLOAD))
+        rows = c.search(tmdb_id=603)
+        assert [r.file_id for r in rows] == [111, 222]
+        assert len(t.calls_to("GET")) == 2
+
+    def test_a_raw_network_error_on_a_post_is_wrapped_and_never_retried(self):
+        c, t = client(OSError("connection reset"), login=False)
+        with pytest.raises(TransportError):
+            c.download(111)
+        assert len(t.calls_to("POST")) == 1
+
+    def test_a_raw_network_error_never_leaks_the_url_it_carries(self):
+        """urllib errors stringify their URL, and a download URL carries a token."""
+        link = "https://dl.opensubtitles.example/signed?token=SUPERSECRET&f=1"
+        c, t = client(OSError(f"<urlopen error> {link}"), login=False)
+        with pytest.raises(TransportError) as e:
+            c.download(111)
+        assert "SUPERSECRET" not in str(e.value)
+        assert "token=" not in str(e.value)
+        assert "OSError" in str(e.value)          # we still say WHAT kind of failure it was
+
     def test_a_download_post_is_never_retried(self):
         """It may already have been charged — a retry spends a second download."""
         c, t = client(resp(body=DOWNLOAD_PAYLOAD), login=False)

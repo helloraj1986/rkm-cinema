@@ -1,6 +1,6 @@
 # OpenSubtitles + Jellyfin Subtitle Integration Plan — `feat/subtitles-opensubtitles`
 
-**Status: Phases 0–4 MERGED to `main` (`710f678`, 2026-09-12) — deployed from `main` from now on.** The one bug the eyeball found is FIXED (`5ba203a`) and awaits its own verification after a rebuild. **Phase 5 (hardening · README/ARCHITECTURE/OPERATIONS · ADR-0005) is the only work left.** Phases 0–4 DONE (`4d08890`, `e27d28d`, `c7e4412`, `c29ce0b`, `9722d88`); the API key is configured. **Phase 5 (hardening/docs/ADR-0005) is next; the user's deploy + eyeball is the acceptance for 0–4.** Option A CONFIRMED by the user (2026-09-12). Branch `feat/subtitles-opensubtitles` cut from `main`
+**Status: COMPLETE — all six phases shipped (2026-09-12).** Phases 0–4 merged to `main` (`710f678`), including the selection fix the user's eyeball found (`5ba203a`). **Phase 5 done** (hardening + docs + ADR-0005). The API key is configured; the feature deploys from `main`. Option A CONFIRMED by the user (2026-09-12). Branch `feat/subtitles-opensubtitles` cut from `main`
 (`ceddc50`) with this plan as its first commit, **rebased onto `main` @ `251ec63` on 2026-09-12** before any code landed. Execute phase by phase, one commit each, gates green
 after every phase — same cycle as every other branch in this repo.
 
@@ -365,10 +365,16 @@ Gate per phase: `cd backend && python -m pytest -q && python -m ruff check .`; f
   per-row busy, toasts, active marker), auto-apply on load via the resolution rules, pure helpers
   (`rankSubtitleResults`, `resolveActiveSubtitle`, `usedCountLabel`) unit-tested with vitest, plus the
   harness still passing `tools/measure_player_layout.py` (10/10 viewports).
-- **Phase 5 — hardening + docs + record.** Failure paths end-to-end (creds blanked, quota exhausted,
-  network down): playback, seek and local subs unaffected. Docs: `.env.example`, README, ARCHITECTURE
-  (§ subtitle flow), OPERATIONS (symptom→command row), **ADR-0005** (new external dependency +
-  credential handling + why the plugin was rejected), PROGRESS record, then the user's rebuild + eyeball.
+- **Phase 5 — hardening + docs + record. ✅ DONE** — failure paths end-to-end as TESTS (creds blanked,
+  quota exhausted, network down, and a vendor payload nobody expected): the listing degrades to the
+  item's own tracks, select answers 503/502/429 instead of 500, and "off" still works with the vendor
+  dead. Found and fixed a real gap doing it: a RAW `OSError` from the transport was neither retried nor
+  typed, so it reached select as a 500 and skipped the retry policy — it is now wrapped into
+  `TransportError` (message carries the exception CLASS, never its text: a urllib error stringifies its
+  URL and our URLs can be the pre-signed download link). Docs: README (feature + `OPENSUBTITLES_*`
+  config row), ARCHITECTURE (§15 subtitle flow + 3 endpoints + the client row), OPERATIONS (4
+  symptom→command rows + both subtitle probes), **ADR-0005** (the integration, the rejected plugin and
+  Bazarr, credential handling, the runtime quota rule). The user's rebuild + eyeball is the last step.
 
 ## 6. Verification commands (the plan's own checks)
 

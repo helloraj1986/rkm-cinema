@@ -357,13 +357,26 @@ class OpenSubtitlesClient:
                 # Mapping happens INSIDE the loop so a 5xx is retried with the same
                 # budget as a network error — 5xx is the other transient condition.
                 return self._map_errors(resp, url)
-            except TransportError as exc:
-                last = exc
+            except (TransportError, OSError) as exc:
+                # A RAW network failure — connection refused, DNS, TLS, a dropped socket,
+                # a read timeout — is the SAME condition as our own TransportError: it
+                # earns the same single retry for an idempotent GET, and it is ALWAYS
+                # wrapped before it leaves this method.
+                # MEASURED 2026-09-12 (Phase 5 hardening): an unwrapped OSError skipped the
+                # retry policy entirely AND reached the select route as an HTTP 500,
+                # because that route maps the TYPED taxonomy only. No caller should have
+                # to know which layer's exception it is holding.
+                # The message carries the exception's CLASS, never its text: a urllib
+                # error stringifies its URL, and our URLs can be the pre-signed download
+                # link (which carries a token).
+                last = exc if isinstance(exc, TransportError) else TransportError(
+                    f"OpenSubtitles request failed at {safe_url(url)} "
+                    f"({exc.__class__.__name__})")
                 if attempt < attempts:
                     logger.warning("OpenSubtitles retry %d/%d for %s (%s)",
-                                   attempt, attempts, safe_url(url), exc)
+                                   attempt, attempts, safe_url(url), last)
                     continue
-                raise
+                raise last
         raise last if last else TransportError("request failed")  # pragma: no cover
 
     def _map_errors(self, resp: TransportResponse, url: str) -> TransportResponse:

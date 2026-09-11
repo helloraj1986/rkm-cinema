@@ -87,6 +87,13 @@ window.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
   if (url.includes("subtitle-search")) {
     window.__subtitleSearchCalls = (window.__subtitleSearchCalls ?? 0) + 1;
   }
+  //: ?failSearch=1 makes the ONLINE search fail the way a dead vendor fails, so a check
+  //: can prove the picker still lists (and can still apply) the item's OWN subtitles.
+  const failSearch = new URLSearchParams(location.search).has("failSearch");
+  if (failSearch && url.includes("subtitle-search")) {
+    return new Response(JSON.stringify({ detail: "Subtitle search failed — see the api log" }),
+                        { status: 502, headers: { "Content-Type": "application/json" } });
+  }
   const json = url.includes("subtitle-search")
     ? HARNESS_SUBTITLE_SEARCH
     : url.includes("playback-info")

@@ -102,6 +102,14 @@ def subtitle_search(
                 # Degrade, never break: the local tracks are still a complete answer.
                 logger.info("subtitle search degraded for %s: %s", id, exc)
                 warning = str(exc)
+            except Exception:  # a PASSIVE listing must never 500 (Phase 5 hardening)
+                # An UNEXPECTED failure — a vendor payload shape change, a parser bug —
+                # must still not take the picker down: the item's own tracks are already
+                # a complete answer, and the player must keep working. Logged with a
+                # traceback so it is visible, reported as a warning so the user knows why
+                # the online list is empty instead of silently seeing nothing.
+                logger.exception("subtitle search failed unexpectedly for %s", id)
+                warning = "Subtitle search failed — see the api log"
         else:
             warning = "Could not determine a title to search for this item"
     else:

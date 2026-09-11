@@ -119,6 +119,9 @@ Rules:
 | `GET /api/library` | Library counts + recently-added (first provider that answers); per-item thumb |
 | `GET /api/jellyfin/poster` | Same-origin artwork proxy (person/backdrop variants too) — the api key stays server-side |
 | `GET /api/quality` | Radarr/Sonarr quality profiles for the download dialog |
+| `GET /api/jellyfin/subtitle-search` | Every subtitle choice for an item: its own tracks + ranked OpenSubtitles results (each with `used_count`/`active`). Degrades to the local tracks on any vendor failure |
+| `POST /api/jellyfin/subtitle-select` | Download + attach + remember one subtitle, then return the refreshed tracks |
+| `POST /api/jellyfin/subtitle-disable` | Turn subtitles off for an item, **keeping** the choice |
 
 ---
 
@@ -195,6 +198,7 @@ reconciler's snapshot keeps a `watch` map keyed by provider name, holding the
 | `YouTubeService` | Scrape youtube.com for the official trailer (no API key) |
 | `QBittorrentService` | Torrent list + download-state (used by status) |
 | `TrailerService` | Legacy trailer fallback |
+| `OpenSubtitlesClient` | Subtitle search/download/quota from OpenSubtitles.com (`services/opensubtitles.py`) — isolated: no Jellyfin imports, no app state. **The app's only credential besides the media server and TMDB**; its key reaches the api only (see ADR-0005) |
 | `WatchlistService` | Atomic watchlist persistence + state validation |
 | `MediaStatusService` | Per-entry status via the domain state machine |
 | `DownloadService` | Movie/tv routing + add + fallback orchestration |
@@ -247,3 +251,46 @@ with fakes — **no test touches the live LAN**.
 - `backend/tests/` cover: the status resolver + state machine, media-type resolver, Radarr/Sonarr routing + title fallback + ambiguity, duplicate prevention, error handling, trailer validation, the library provider + factory (one backend: Jellyfin), the `LibraryService` collapse and watch-link failure containment, the reconciler, recommendation pipeline, and API endpoints.
 - All tests use **injected fakes** — no real LAN, no real API keys required.
 - Run: `cd backend && python -m pytest tests/ -q` (all green; count moves with the suite — see `PROGRESS.md` for the current number).
+
+---
+
+## 15. Subtitles (OpenSubtitles) — additive, optional, never blocking
+
+Read `adr/ADR-0005-opensubtitles-integration.md` before changing any of this. The shape:
+
+```
+  player picker  ──►  /api/jellyfin/subtitle-search   ──►  OpenSubtitles.com  (search: unmetered)
+        │                    │                                  │
+        │                    └──►  the item's OWN tracks  (always listed, never altered)
+        │
+        └── click a result ──►  /api/jellyfin/subtitle-select
+                                     │  download (METERED — never retried)
+                                     ├─► write  <video stem>.<lang>.srt  beside the media (atomic,
+                                     │     UTF-8; reused if a same-language sidecar already exists)
+                                     ├─► POST /Items/{id}/Refresh        (the ITEM — never a scan)
+                                     └─► store the CHOICE (an identity, not an index) + count the use
+                                                   │
+  playback-info.preferred_subtitle  ◄──────────────┘   (ONE additive field: the player applies it on load)
+```
+
+The three rules that are easy to get wrong:
+
+1. **Preferences store an IDENTITY, never a stream index.** Jellyfin's indices are
+   positional and our own download shifts them; `resolveActiveSubtitle()` resolves the
+   identity to the current index at load time and applies NOTHING when it no longer
+   matches — never a different subtitle.
+2. **The tick belongs on the row the user CLICKED.** A delivered subtitle arrives as a
+   local track the server names generically ("English - SUBRIP - External"), so ticking the
+   resolved index ticks a row the user never chose. `activeSubtitleRowKey()` (frontend,
+   unit-tested) marks exactly one row: the chosen result, else the local track applying.
+3. **A subtitle failure degrades the feature, never the app.** Every vendor failure is
+   reported as a `warning` on a 200 listing (never a 500), the item's own subtitles are
+   always returned, and only an action the user explicitly asked for (select) can fail the
+   request — with an honest status: 503 not configured, 502 credentials/transport, 429
+   quota/rate limit, 400 bad format. `tools/check_subtitle_panel.py --fail-search` proves
+   the panel still lists and can still apply the local tracks with the vendor dead.
+
+State: `<media root>/rkm/subtitles.json` — `prefs` (per item: provider, `subtitle_id`,
+language, display title, `disabled`) and `usage` (per subtitle: count, last used). Atomic
+writes, corrupt-tolerant, JSON by design. The quota is read from the API at runtime — never
+hardcoded — and the UI shows a number only when the API has actually reported one.

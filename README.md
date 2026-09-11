@@ -59,6 +59,7 @@ downloaded  -> DOWNLOADED     otherwise   -> NOT_REQUESTED
 | **Continue watching** | Resume row built from the media server's own playback state |
 | **Recently added / played** | Rows for what's new and what you were watching |
 | **In-app playback** | Streams through the backend with HLS — no separate player app, no media URLs exposed |
+| **Subtitles** | Search OpenSubtitles inside the player, apply with one click, and the choice is remembered per title — the api fetches the file, places it beside your media and the server indexes it (optional; needs a free OpenSubtitles API key) |
 | **Trailers** | Official YouTube trailers, embedded, no API key required |
 | **Global search** | One search across everything you have and everything you could request |
 | **Watchlist** | Add titles, watch status move through the lifecycle, with toasts and optimistic UI |
@@ -155,6 +156,7 @@ docker compose -p rkm-bundled down          # stop (keeps state)
 | `RKM_PRUNE_LIBRARIES` | `true` (default) removes libraries the stack no longer declares — **files on disk are never touched** |
 | `RADARR_URL` / `SONARR_URL` / `PROWLARR_URL` + API keys | Your acquisition stack (bundled or existing on the LAN) |
 | `TMDB_API_KEY` | Metadata, artwork, discovery, similar titles |
+| `OPENSUBTITLES_API_KEY` | Online subtitle search + downloads. Free key from opensubtitles.com → *API Consumers*. Searching is unmetered; **downloads are** (5/day anonymous, more with the optional `OPENSUBTITLES_USERNAME`/`OPENSUBTITLES_PASSWORD` login). Leave blank and everything else works, without online subtitles |
 | `RKM_JELLYFIN_ADMIN_PASSWORD` | The bundled media server's admin password |
 
 **A container can only read what is bind-mounted.** Declaring a *library* on a drive

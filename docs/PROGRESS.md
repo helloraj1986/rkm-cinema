@@ -1,3 +1,23 @@
+## ▶ LATEST SESSION (2026-09-12) — SUBTITLES PHASE 5: HARDENING + DOCS + ADR-0005 ✅ **PLAN COMPLETE (all 6 phases)** (branch `feat/subtitles-hardening`; the four earlier commits are on `main` at `710f678`)
+
+**Hardening — the plan's criterion 10 as TESTS, not as hope.** Seven new API tests + three client tests pin the failure paths end to end: a dead network, a vendor payload nobody expected, blank credentials, quota exhausted, and a rate limit. What they enforce: the search listing **degrades to the item's own tracks on a 200** (never a 500, never an empty panel), select answers **503** not configured / **502** credentials & transport / **429** quota & rate limit, nothing is attached or remembered when the download failed, and "off" still works with the vendor dead. `tools/check_subtitle_panel.py --fail-search` proves the same thing in the BROWSER: with the online search returning 502, the item's own subtitles are still listed and still appliable, the Off row survives, and the notice says why.
+- ⚠ **A real gap, found by writing those tests rather than by a user report:** the client's retry loop only caught our own `TransportError`, so a **raw `OSError`** (connection refused — what `urllib` actually raises) escaped **un-typed and un-retried**. Consequence: the select route returned **HTTP 500** (it maps the typed taxonomy only) and GETs silently skipped their retry budget. Fixed in `_request`: raw network errors are wrapped into `TransportError` and get the same single retry as a 5xx. The wrapped message carries the exception **CLASS, never its text** — a `urllib` error stringifies its URL and our URLs can be the pre-signed download link (the redaction test now covers exactly that).
+- Proof the tests bite: run against the pre-fix tree (`git stash` the two source files) **5 of them fail**, including the raw-`OSError` escape.
+- Polish: the picker no longer offers "Search again" once the API has said OpenSubtitles is not configured.
+
+**Docs.** `docs/adr/ADR-0005-opensubtitles-integration.md` — the decision, the four measurements behind it, the rejected options (the Jellyfin plugin: manual install outside bootstrap, creds in Jellyfin's config, quota invisible to the api, issues #109/#159; Bazarr: no picker, no usage tracking, kept for bulk later), credential handling, and the runtime-quota rule. `ARCHITECTURE.md` gains **§15** (the flow diagram, the three rules that are easy to get wrong, the store shape) plus the three endpoints and the client row in the integration table. `OPERATIONS.md` gains four symptom→command rows and both subtitle probes. `README.md` gains the feature row and the `OPENSUBTITLES_*` config row.
+
+**Gates:** **681** backend pytest · ruff clean · `tsc` clean · **185** vitest · vite build green · layout **10/10** both modes (with the settings panel open) · panel check: normal (exactly one row ticked, the chosen result) AND `--fail-search` (own subtitles survive) · docs links 35 files / 7 links.
+
+**⚠ DEPLOY + EYEBALL (last step) — api AND web changed:**
+```powershell
+cd D:\hermes_agent\hermes-workspace\projects\rkm-cinema
+.\rkm-cinema.ps1 status
+docker compose -p rkm-bundled up -d --build api web
+```
+Check: the tick lands on the row you clicked (**3 Deewarein (2003)**), the delivered row reads `English - SUBRIP - External · downloaded`, **Off** sticks across a reload, "N downloads left today" matches what the API actually reports, and — the new bit — with the api key blanked or the vendor unreachable, **everything else still plays** and the picker explains itself instead of failing.
+
+**Phase status: 0 ✅ · 1 ✅ · 2 ✅ · 3 ✅ · 4 ✅ (incl. the eyeball's selection fix) · 5 ✅.** Plan doc marked COMPLETE.
 ## ▶ LATEST SESSION (2026-09-12) — SUBTITLE SELECTION FIX (found by the user's eyeball) ✅ FIXED → **MERGED to `main` 2026-09-12** (`710f678`; `main` `251ec63` → `710f678`, deploy branch `experiment/bundled-docker-stack` FF'd to match, all three pushed). ⚠ The fix itself is not yet eyeballed — it needs the rebuild below; the PRE-FIX branch build is what the user saw (commit `5ba203a`, branch `feat/subtitles-opensubtitles`)
 
 **The user's report, verbatim:** *"i did this for 3 deewarein movie...i searched-> selected->it says downloaded-> but i dont see the selection on the subtitle(the round box?)...can you have look"* — i.e. the download reported success and the picker showed NO selection.

@@ -1540,14 +1540,16 @@ export function Player({
                           No OpenSubtitles results for this title.
                         </p>
                       ) : null}
-                      <button
-                        type="button"
-                        onClick={() => void loadSubtitleRows()}
-                        disabled={subSearching}
-                        className="inline-flex h-8 w-full items-center justify-center rounded-lg border border-white/10 bg-white/[.06] text-[11px] font-semibold text-zinc-100 transition hover:bg-white/[.12] disabled:opacity-60"
-                      >
-                        {subSearching ? "Searching…" : "Search again"}
-                      </button>
+                      {subEnabled === false ? null : (
+                        <button
+                          type="button"
+                          onClick={() => void loadSubtitleRows()}
+                          disabled={subSearching}
+                          className="inline-flex h-8 w-full items-center justify-center rounded-lg border border-white/10 bg-white/[.06] text-[11px] font-semibold text-zinc-100 transition hover:bg-white/[.12] disabled:opacity-60"
+                        >
+                          {subSearching ? "Searching…" : "Search again"}
+                        </button>
+                      )}
                     </>
                   )}
 

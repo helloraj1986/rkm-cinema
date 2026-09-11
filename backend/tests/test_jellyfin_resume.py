@@ -25,7 +25,6 @@ def _cfg(**over):
         JELLYFIN_API_KEY="jkey",
         JELLYFIN_BROWSER_URL="http://localhost:8098",
         MEDIA_SERVER="jellyfin",
-        PLEX_URL="", PLEX_TOKEN="", EMBY_URL="", EMBY_API_KEY="",
     )
     vals.update(over)
     return SimpleNamespace(**vals)

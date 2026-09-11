@@ -69,7 +69,6 @@ INTERNAL_FALLBACKS = {
 # isolated /data/rkm store) stay repo-.env-only.
 LEGACY_KEYS = [
     "TMDB_API_KEY", "TVDB_API_KEY",
-    "PLEX_URL", "PLEX_TOKEN", "EMBY_URL", "EMBY_API_KEY",
     "RADARR_URL", "RADARR_API_KEY", "SONARR_URL", "SONARR_API_KEY",
     "PROWLARR_URL", "PROWLARR_API_KEY", "QBITTORRENT_URL",
     "RADARR_QUALITY_PROFILE_ID", "SONARR_QUALITY_PROFILE_ID",
@@ -308,9 +307,17 @@ def ensure_storage(data: Path, env: dict | None = None) -> None:
 def build_api_vars(env: dict) -> dict:
     """Derive the api container env from the single repo .env (pure mapping —
     unit-testable). Container-internal addresses are resolved here."""
-    backend = str(env.get("MEDIA_SERVER") or "jellyfin").strip().lower()
-    if backend not in ("jellyfin", "plex", "emby"):
-        fail(f"MEDIA_SERVER must be jellyfin|plex|emby, got: {backend}")
+    raw_backend = str(env.get("MEDIA_SERVER") or "").strip().lower()
+    # There is exactly ONE media server (Jellyfin) and the api can only wire it.
+    # This used to `fail()` on a retired value, which would strand a working box on
+    # an un-updated .env; it now warns and continues. The rendered value is ALWAYS
+    # jellyfin (never a pass-through), and that is deliberate for a second reason:
+    # the admin-password generation below is gated on the backend, and letting a
+    # legacy value reach it produces a stack whose libraries are all disabled.
+    if raw_backend != "jellyfin":
+        print(f"[env] WARNING: MEDIA_SERVER={raw_backend or '(blank)'} is not a live backend; "
+              f"rendering jellyfin (the only media server).")
+    backend = "jellyfin"
 
     # Metadata required for discovery/Suggest.
     tmdb_key = str(env.get("TMDB_API_KEY") or "").strip()
@@ -338,11 +345,6 @@ def build_api_vars(env: dict) -> dict:
         "JELLYFIN_BROWSER_URL": jf_browser,
         "TMDB_API_KEY": tmdb_key,
         "TVDB_API_KEY": str(env.get("TVDB_API_KEY") or "").strip(),
-        # Plex/Emby always passed through (used when MEDIA_SERVER=plex|emby).
-        "PLEX_URL": str(env.get("PLEX_URL") or "").strip(),
-        "PLEX_TOKEN": str(env.get("PLEX_TOKEN") or "").strip(),
-        "EMBY_URL": str(env.get("EMBY_URL") or "").strip(),
-        "EMBY_API_KEY": str(env.get("EMBY_API_KEY") or "").strip(),
         # Watchlist persistence + scheduler.
         "WATCHLIST_STORE": str(env.get("WATCHLIST_STORE") or "json").strip().lower(),
         "WATCHLIST_DB_PATH": str(env.get("WATCHLIST_DB_PATH") or "/data/rkm/watchlist.json").strip(),

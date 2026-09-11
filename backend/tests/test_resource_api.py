@@ -36,10 +36,6 @@ def _config_patch(monkeypatch):
     class FakeCfg:
         RADARR_API_KEY = "k"
         SONARR_API_KEY = ""
-        PLEX_URL = ""
-        PLEX_TOKEN = ""
-        EMBY_URL = ""
-        EMBY_API_KEY = ""
         def has_tmdb(self):
             return True
         def has_jellyfin(self):
@@ -406,8 +402,7 @@ def test_reconciler_populates_title_year_mediatype():
         watchlist=wl,
         library=LibraryService(providers=[_FakeLib()]),
         radarr=radarr, sonarr=None, qbit=qbit,
-        config=Mock(PLEX_URL="", PLEX_TOKEN="", EMBY_URL="", EMBY_API_KEY="",
-                    RADARR_API_KEY="k", SONARR_API_KEY="", RADARR_URL="",
+        config=Mock(RADARR_API_KEY="k", SONARR_API_KEY="", RADARR_URL="",
                     SONARR_URL="", QBITTORRENT_URL=""))
     snap = rec.get_snapshot("movie:tmdb:603")
     assert snap.media_type is MediaType.MOVIE

@@ -18,7 +18,7 @@ MEDIA_CONFIG_KEY_PREFIXES = ("MEDIA_LIBRARY_", "RKM_MEDIA_PATH")
 #: Keys that are READ from the environment but never annotated on the class, so
 #: the derived key set in :meth:`Config._get_all_keys` cannot see them. Keep this
 #: list empty if possible — annotating the attribute is the better fix.
-_EXTRA_ENV_KEYS = {"TMDB_CACHE_TTL", "PLEX_SCAN_TTL"}
+_EXTRA_ENV_KEYS = {"TMDB_CACHE_TTL"}
 
 
 def is_env_passthrough_key(key: str) -> bool:
@@ -62,12 +62,11 @@ class Config:
     RADARR_API_KEY: str
     SONARR_URL: str
     SONARR_API_KEY: str
-    PLEX_URL: str
-    PLEX_TOKEN: str
-    # Primary library backend. Default "jellyfin" — the bundled self-contained
-    # stack is the only deployment now (the old Plex-primary + Emby-fallback
-    # profile is retired). "plex"/"emby" are still accepted for legacy configs,
-    # but nothing deploys them any more.
+    # Media server selector. Jellyfin is the ONLY backend this build can wire
+    # (the bundled self-contained stack); the old Plex-primary + Emby-fallback
+    # profile is retired, so this value no longer selects anything — it is kept
+    # so an un-updated `.env` still loads, and "plex"/"emby" are still accepted as
+    # VALUES for exactly that reason (see resolve_media_server).
     MEDIA_SERVER: str = "jellyfin"
 
     # --- Optional ---
@@ -77,14 +76,10 @@ class Config:
     JELLYFIN_API_KEY: Optional[str]
     PROWLARR_URL: Optional[str]
     PROWLARR_API_KEY: Optional[str]
-    EMBY_URL: Optional[str]
-    EMBY_API_KEY: Optional[str]
     YOUTUBE_API_KEY: Optional[str]
     QBITTORRENT_URL: str
-    # Browser-reachable (Tailscale MagicDNS) endpoints for deep links. `app.plex.tv`
-    # cloud links fail to auto-open; these point at the local server's own web UI.
-    PLEX_BROWSER_URL: Optional[str]
-    EMBY_BROWSER_URL: Optional[str]
+    # Browser-reachable (Tailscale MagicDNS) endpoint for deep links. Cloud links
+    # fail to auto-open; this points at the local server's own web UI.
     JELLYFIN_BROWSER_URL: Optional[str]
 
     # --- Quality profile overrides (optional) ---
@@ -164,8 +159,6 @@ class Config:
         self.RADARR_API_KEY = env.get("RADARR_API_KEY", "")
         self.SONARR_URL = self._normalize_url(env.get("SONARR_URL", f"http://{self.MEDIA_HOST}:8989"))
         self.SONARR_API_KEY = env.get("SONARR_API_KEY", "")
-        self.PLEX_URL = self._normalize_url(env.get("PLEX_URL", f"http://{self.MEDIA_HOST}:32400"))
-        self.PLEX_TOKEN = env.get("PLEX_TOKEN", "")
         self.MEDIA_SERVER = resolve_media_server(env.get("MEDIA_SERVER"))
 
         self.TMDB_API_KEY = env.get("TMDB_API_KEY") or None
@@ -176,24 +169,13 @@ class Config:
             self.TMDB_CACHE_TTL = int(env.get("TMDB_CACHE_TTL") or 21600)  # 6h default
         except ValueError:
             self.TMDB_CACHE_TTL = 21600
-        # Plex full-library scan cache TTL (seconds). The library changes rarely,
-        # so the refresh button / reconcile reuse one scan instead of re-scanning
-        # Plex on every click. Default 1h; invalidate via clear_cache() on writes.
-        try:
-            self.PLEX_SCAN_TTL = int(env.get("PLEX_SCAN_TTL") or 3600)
-        except ValueError:
-            self.PLEX_SCAN_TTL = 3600
         self.JELLYFIN_URL = self._normalize_url(env["JELLYFIN_URL"]) if env.get("JELLYFIN_URL") else None
         self.JELLYFIN_API_KEY = env.get("JELLYFIN_API_KEY") or None
         self.JELLYFIN_BROWSER_URL = self._normalize_url(env.get("JELLYFIN_BROWSER_URL") or "") or None
         self.PROWLARR_URL = self._normalize_url(env["PROWLARR_URL"]) if env.get("PROWLARR_URL") else None
         self.PROWLARR_API_KEY = env.get("PROWLARR_API_KEY") or None
-        self.EMBY_URL = env.get("EMBY_URL") or None
-        self.EMBY_API_KEY = env.get("EMBY_API_KEY") or None
         self.YOUTUBE_API_KEY = env.get("YOUTUBE_API_KEY") or None
         self.QBITTORRENT_URL = self._normalize_url(env.get("QBITTORRENT_URL", f"http://{self.MEDIA_HOST}:1701"))
-        self.PLEX_BROWSER_URL = self._normalize_url(env.get("PLEX_BROWSER_URL") or "") or None
-        self.EMBY_BROWSER_URL = self._normalize_url(env.get("EMBY_BROWSER_URL") or "") or None
 
         # Optional quality profile overrides
         radarr_qp = env.get("RADARR_QUALITY_PROFILE_ID")
@@ -256,14 +238,20 @@ class Config:
         return url.rstrip("/")
 
     def validate_required(self) -> list[str]:
-        """Return list of missing required configuration."""
+        """Return list of missing required configuration.
+
+        Deliberately does NOT require a Jellyfin credential: a fresh install
+        legitimately has no ``JELLYFIN_API_KEY`` until the provisioner writes one,
+        so a hard requirement would warn on every first boot. ``/api/health``
+        reports the media server's configured/ok state, which is the right place
+        for it. (It used to require ``PLEX_TOKEN``, so a Jellyfin-only stack
+        logged a false `Missing required config: ['PLEX_TOKEN']` on every boot.)
+        """
         missing = []
         if not self.RADARR_API_KEY:
             missing.append("RADARR_API_KEY")
         if not self.SONARR_API_KEY:
             missing.append("SONARR_API_KEY")
-        if not self.PLEX_TOKEN:
-            missing.append("PLEX_TOKEN")
         return missing
 
     def has_tmdb(self) -> bool:
@@ -274,9 +262,6 @@ class Config:
 
     def has_jellyfin(self) -> bool:
         return bool(self.JELLYFIN_URL and self.JELLYFIN_API_KEY)
-
-    def has_emby(self) -> bool:
-        return bool(self.EMBY_URL and self.EMBY_API_KEY)
 
     def has_youtube(self) -> bool:
         return bool(self.YOUTUBE_API_KEY)
@@ -301,8 +286,6 @@ def load_env() -> dict:
         "RADARR_API_KEY": cfg.RADARR_API_KEY,
         "SONARR_URL": cfg.SONARR_URL,
         "SONARR_API_KEY": cfg.SONARR_API_KEY,
-        "PLEX_URL": cfg.PLEX_URL,
-        "PLEX_TOKEN": cfg.PLEX_TOKEN,
         "TMDB_API_KEY": cfg.TMDB_API_KEY or "",
         "TVDB_API_KEY": cfg.TVDB_API_KEY or "",
         "JELLYFIN_URL": cfg.JELLYFIN_URL or "",

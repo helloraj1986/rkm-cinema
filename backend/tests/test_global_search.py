@@ -75,8 +75,7 @@ def test_owned_state_map():
 # --------------------------------------------------------------------------- provider (mocked urlopen)
 def _cfg(**over):
     vals = dict(JELLYFIN_URL="http://jellyfin:8096", JELLYFIN_API_KEY="jkey",
-                JELLYFIN_BROWSER_URL="http://localhost:8098", MEDIA_SERVER="jellyfin",
-                PLEX_URL="", PLEX_TOKEN="", EMBY_URL="", EMBY_API_KEY="")
+                JELLYFIN_BROWSER_URL="http://localhost:8098", MEDIA_SERVER="jellyfin")
     vals.update(over)
     cfg = SimpleNamespace(**vals)
     cfg.has_jellyfin = lambda: bool(cfg.JELLYFIN_URL and cfg.JELLYFIN_API_KEY)

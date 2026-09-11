@@ -170,3 +170,37 @@ def test_generated_password_is_persisted_once(rc):
     """A blank password is generated + written back to .env exactly once."""
     rc.build_api_vars({"MEDIA_SERVER": "jellyfin", "TMDB_API_KEY": "k"})
     assert any(k == "RKM_JELLYFIN_ADMIN_PASSWORD" for _, k, _ in rc._test_writes)
+
+
+# ---------------------------------------------------------------- retired MEDIA_SERVER
+def test_retired_media_server_still_renders_and_resolves_to_jellyfin(rc, capsys):
+    """An un-updated `.env` naming a retired backend must NOT be able to fail.
+
+    Regression guard for the deploy that would strand the Windows box: this used
+    to `fail()` the render, and even a tolerated pass-through would skip the
+    Jellyfin admin-password generation below (that block is gated on the backend),
+    which produces a stack whose libraries are all disabled.
+    """
+    api = rc.build_api_vars(dict(BASE, MEDIA_SERVER="plex",
+                                 PLEX_URL="http://old:32400", PLEX_TOKEN="legacy"))
+    assert api["MEDIA_SERVER"] == "jellyfin"          # normalised, not passed through
+    assert "PLEX_URL" not in api and "PLEX_TOKEN" not in api
+    out = capsys.readouterr().out
+    assert "MEDIA_SERVER=plex is not a live backend" in out   # warned, not failed
+
+
+def test_retired_media_server_still_generates_the_admin_password(rc, monkeypatch):
+    """The password generation is gated on the backend — a legacy value must not skip it."""
+    writes = []
+    monkeypatch.setattr(rc, "write_env_key", lambda path, k, v: writes.append((k, v)))
+    env = {"MEDIA_SERVER": "emby", "TMDB_API_KEY": "k"}   # no JELLYFIN admin password yet
+    api = rc.build_api_vars(env)
+    assert api["MEDIA_SERVER"] == "jellyfin"
+    assert any(k == "RKM_JELLYFIN_ADMIN_PASSWORD" and v for k, v in writes), writes
+
+
+def test_unknown_media_server_warns_instead_of_failing(rc, capsys):
+    """A typo is tolerated too: the api's resolver already maps it to jellyfin."""
+    api = rc.build_api_vars(dict(BASE, MEDIA_SERVER="typo-backend"))
+    assert api["MEDIA_SERVER"] == "jellyfin"
+    assert "is not a live backend" in capsys.readouterr().out

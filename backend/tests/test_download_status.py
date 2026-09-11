@@ -98,7 +98,7 @@ class TestDownloadStatus:
         wl.save(data)
 
         # All services mocked out at the service boundary.
-        cfg = Mock(PLEX_URL="", PLEX_TOKEN="", RADARR_API_KEY="k", SONARR_API_KEY="",
+        cfg = Mock(RADARR_API_KEY="k", SONARR_API_KEY="",
                    RADARR_URL="http://r", SONARR_URL="http://s", QBITTORRENT_URL="http://q")
         radarr = Mock()
         radarr.get_movies.return_value = []

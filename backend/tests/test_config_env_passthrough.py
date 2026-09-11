@@ -18,39 +18,70 @@ from config.settings import Config, is_env_passthrough_key
 class TestConfigKeysCoverage:
     """The hand-written key list is gone — every declared setting must pass through."""
 
-    #: Snapshot of the keys the app is known to read (2026-09-10). If a setting is
-    #: renamed/removed this test should be updated deliberately, never silently.
+    #: Snapshot of the keys the app is known to read. Updated 2026-09-11: the
+    #: Plex/Emby settings were deleted with their providers
+    #: (docs/REMOVE_PLEX_EMBY_PLAN.md). If a setting is renamed/removed this test
+    #: should be updated deliberately, never silently — that is its whole job.
     KNOWN_KEYS = {
         "MEDIA_HOST", "RADARR_URL", "RADARR_API_KEY", "SONARR_URL", "SONARR_API_KEY",
-        "PLEX_URL", "PLEX_TOKEN", "MEDIA_SERVER", "TMDB_API_KEY", "TVDB_API_KEY",
+        "MEDIA_SERVER", "TMDB_API_KEY", "TVDB_API_KEY",
         "JELLYFIN_URL", "JELLYFIN_API_KEY", "JELLYFIN_BROWSER_URL", "PROWLARR_URL",
         "PROWLARR_API_KEY", "QBITTORRENT_URL", "RADARR_QUALITY_PROFILE_ID",
-        "SONARR_QUALITY_PROFILE_ID", "PLEX_BROWSER_URL", "EMBY_BROWSER_URL",
+        "SONARR_QUALITY_PROFILE_ID",
         "WATCHLIST_STORE", "WATCHLIST_DB_PATH", "WATCHLIST_SCHEDULER",
         "AUTO_ADD_ENABLED", "RECONCILE_INTERVAL_MIN", "DAILY_JOB_HOUR",
-        "TMDB_CACHE_TTL", "PLEX_SCAN_TTL",
-        # these three were declared on the class yet MISSING from the old
-        # hand-written list — they were being silently dropped:
-        "EMBY_URL", "EMBY_API_KEY", "YOUTUBE_API_KEY",
+        "TMDB_CACHE_TTL",
+        # declared on the class yet MISSING from the old hand-written list — it
+        # was being silently dropped:
+        "YOUTUBE_API_KEY",
+    }
+
+    #: Settings that must NOT come back: retired with the Plex/Emby providers.
+    RETIRED_KEYS = {
+        "PLEX_URL", "PLEX_TOKEN", "PLEX_BROWSER_URL", "PLEX_SCAN_TTL",
+        "EMBY_URL", "EMBY_API_KEY", "EMBY_BROWSER_URL",
     }
 
     def test_every_known_key_is_covered(self):
         missing = sorted(self.KNOWN_KEYS - Config()._get_all_keys())
         assert missing == [], f"keys dropped from the passthrough: {missing}"
 
-    def test_previously_dropped_keys_now_pass_through(self):
-        passed = Config()._env_passthrough({
-            "EMBY_URL": "http://emby:8096", "EMBY_API_KEY": "k",
-            "YOUTUBE_API_KEY": "y", "TMDB_CACHE_TTL": "3600",
-        })
-        assert passed == {"EMBY_URL": "http://emby:8096", "EMBY_API_KEY": "k",
-                          "YOUTUBE_API_KEY": "y", "TMDB_CACHE_TTL": "3600"}
+    def test_retired_keys_are_gone(self):
+        """The Plex/Emby settings are REMOVED, not merely unused."""
+        still_there = sorted(self.RETIRED_KEYS & Config()._get_all_keys())
+        assert still_there == [], f"retired keys still declared: {still_there}"
+
+    def test_previously_dropped_key_now_passes_through(self):
+        passed = Config()._env_passthrough({"YOUTUBE_API_KEY": "y", "TMDB_CACHE_TTL": "3600"})
+        assert passed == {"YOUTUBE_API_KEY": "y", "TMDB_CACHE_TTL": "3600"}
 
     def test_derived_set_ignores_internal_attributes(self):
         keys = Config()._get_all_keys()
         assert "media_libraries" not in keys
         assert "media_library_warnings" not in keys
         assert not any(k.startswith("_") for k in keys)
+
+
+class TestRequiredKeys:
+    """``validate_required`` must not demand a credential of a live service."""
+
+    def test_media_server_credential_is_not_required(self):
+        """A Jellyfin-only stack used to log a phantom PLEX_TOKEN warning on boot.
+
+        The media server's configured/ok state is reported by ``/api/health``; a
+        HARD requirement here would warn on every fresh install, whose API key
+        only exists after the provisioner has run.
+        """
+        cfg = Config()
+        cfg.RADARR_API_KEY = "k"
+        cfg.SONARR_API_KEY = "k"
+        assert cfg.validate_required() == []
+
+    def test_missing_arr_keys_are_still_reported(self):
+        cfg = Config()
+        cfg.RADARR_API_KEY = ""
+        cfg.SONARR_API_KEY = ""
+        assert cfg.validate_required() == ["RADARR_API_KEY", "SONARR_API_KEY"]
 
 
 class TestEnvPassthroughPredicate:

@@ -96,8 +96,7 @@ class TestRequestMediaCommand:
 
     def test_not_configured_when_no_provider(self):
         # No acquisition service at all (empty config builds no provider) -> NOT_CONFIGURED.
-        cfg = Mock(RADARR_API_KEY="", SONARR_API_KEY="", PLEX_URL="", PLEX_TOKEN="",
-                   EMBY_URL="", EMBY_API_KEY="")
+        cfg = Mock(RADARR_API_KEY="", SONARR_API_KEY="")
         res = RequestMediaCommand(library=_FakeLib(), acquisition=None, config=cfg).run("movie:tmdb:603")
         assert res.state is RequestMediaState.NOT_CONFIGURED
 

@@ -20,12 +20,10 @@ def _cfg(**over):
         JELLYFIN_API_KEY="jkey",
         JELLYFIN_BROWSER_URL="http://localhost:8098",
         MEDIA_SERVER="jellyfin",
-        PLEX_URL="", PLEX_TOKEN="", EMBY_URL="", EMBY_API_KEY="",
     )
     vals.update(over)
     cfg = SimpleNamespace(**vals)
     cfg.has_jellyfin = lambda: bool(cfg.JELLYFIN_URL and cfg.JELLYFIN_API_KEY)
-    cfg.has_emby = lambda: bool(cfg.EMBY_URL and cfg.EMBY_API_KEY)
     return cfg
 
 

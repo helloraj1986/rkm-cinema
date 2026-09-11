@@ -45,6 +45,18 @@ def jellyfin_playback_info(id: str = Query(default="")):
         info = None
     if not info:
         raise HTTPException(status_code=404, detail="No playback info")
+    # ADDITIVE (SUBTITLES_OPENSUBTITLES_PLAN Phase 3): the user's stored subtitle
+    # choice, already resolved to a CURRENT stream index — indices are positional, so
+    # the store keeps the identity and this resolves it per load. ``None`` means "no
+    # choice, or disabled, or the identity no longer matches a track" and the picker
+    # opens; the player needs no extra round trip to apply it.
+    try:
+        from services.subtitle_store import SubtitleStore
+        info["preferred_subtitle"] = SubtitleStore(config=cfg).preferred_subtitle(
+            id, info.get("subtitles") or [])
+    except Exception as e:  # noqa: BLE001 - a store problem must not break playback
+        logger.warning("preferred_subtitle(%s) failed: %s", id, e)
+        info["preferred_subtitle"] = None
     return JSONResponse(info)
 
 

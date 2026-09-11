@@ -36,6 +36,26 @@ class ConfigResponse(BaseModel):
     services: Dict[str, bool]
 
 
+class SubtitleSelectRequest(BaseModel):
+    """Choose a subtitle for an item (spec §3: discovery → apply → persist).
+
+    ``file_id`` is the OpenSubtitles file id; ``subtitle_id`` (``os:<file_id>``) is
+    what the store keeps, so the identity survives a stream-index change.
+    """
+
+    item_id: str = ""
+    file_id: int = 0
+    language: str = ""
+    display_title: str = ""
+    provider: str = "opensubtitles"
+
+
+class SubtitleDisableRequest(BaseModel):
+    """Turn subtitles off for an item without forgetting which one was chosen."""
+
+    item_id: str = ""
+
+
 class JellyfinProgressRequest(BaseModel):
     """Playback progress reported by the in-app player (Jellyfin Sessions API).
 

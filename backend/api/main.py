@@ -11,6 +11,7 @@ from api.routes import jellyfin_poster as jellyfin_poster_routes
 from api.routes import jellyfin_stream as jellyfin_stream_routes
 from api.routes import jellyfin_hls as jellyfin_hls_routes
 from api.routes import jellyfin_tracks as jellyfin_tracks_routes
+from api.routes import jellyfin_subtitles as jellyfin_subtitles_routes
 from api.routes import jellyfin_detail as jellyfin_detail_routes
 from api.routes import jellyfin_similar as jellyfin_similar_routes
 from api.routes import media as media_routes
@@ -53,6 +54,7 @@ def create_app() -> FastAPI:
     app.include_router(jellyfin_stream_routes.router, prefix="/api")
     app.include_router(jellyfin_hls_routes.router, prefix="/api")
     app.include_router(jellyfin_tracks_routes.router, prefix="/api")
+    app.include_router(jellyfin_subtitles_routes.router, prefix="/api")
     app.include_router(jellyfin_detail_routes.router, prefix="/api")
     app.include_router(jellyfin_similar_routes.router, prefix="/api")
     app.include_router(suggest.router, prefix="/api")

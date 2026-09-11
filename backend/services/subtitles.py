@@ -33,7 +33,7 @@ import time
 import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from services.opensubtitles import (DownloadedSubtitle, OpenSubtitlesClient,
                                     UnsupportedFormatError)
@@ -332,6 +332,43 @@ class SubtitleService:
         return list((info or {}).get("subtitles") or [])
 
 
+def search_keywords(context: dict) -> dict:
+    """The OpenSubtitles search kwargs for an item, by the plan's §3.2 priority.
+
+    ``tmdb_id`` → ``imdb_id`` → ``title`` (+``year``, and for an episode
+    ``season``/``episode``). Two decisions worth stating:
+
+    * An EPISODE is searched by its SERIES title + season/episode, never by the
+      episode's own tmdb id — that id identifies the episode, not the show, and the API
+      keys TV searches by parent title/season/episode. Measured live 2026-09-12:
+      ``Chernobyl`` S1E1 → 19 results, and his library's episodes carry no provider ids
+      at all, so this is the path that actually gets used.
+    * ``year`` is only sent when the server reports one (ProductionYear); a wrong year
+      narrows a search that would otherwise have found the right release.
+    """
+    context = context or {}
+    kind = str(context.get("type") or "").lower()
+    if kind == "episode":
+        keywords: dict = {}
+        title = str(context.get("series_name") or context.get("name") or "").strip()
+        if title:
+            keywords["title"] = title
+        for key in ("year", "season", "episode"):
+            if context.get(key) is not None:
+                keywords[key] = context[key]
+        return keywords
+    if context.get("tmdb_id"):
+        return {"tmdb_id": context["tmdb_id"]}
+    if context.get("imdb_id"):
+        return {"imdb_id": str(context["imdb_id"])}
+    keywords = {}
+    if context.get("name"):
+        keywords["title"] = str(context["name"])
+    if context.get("year"):
+        keywords["year"] = context["year"]
+    return keywords
+
+
 def resolve_active_track(tracks: List[dict], *, display_title: str = "", language: str = "",
                          subtitle_id: str = "") -> Optional[int]:
     """Resolve a STORED subtitle identity to a CURRENT track index (plan §3.6).
@@ -361,6 +398,106 @@ def resolve_active_track(tracks: List[dict], *, display_title: str = "", languag
             if normalise_language(track.get("language") or "") == lang:
                 return track.get("index")
     return None
+
+
+def usage_key(subtitle_id: str) -> str:
+    """The usage counter's key for a subtitle identity (``os:123456`` → ``123456``).
+
+    The plan's store shape keys usage by the provider's numeric file id; a stored
+    ``subtitle_id`` carries a provider prefix, so it is stripped here and both forms
+    resolve to the same counter. A pure helper (not a store method) because the
+    ranking and the response builder both need it, and neither should import the store.
+    """
+    text = str(subtitle_id or "")
+    if ":" in text:
+        text = text.split(":", 1)[1]
+    return text
+
+
+def count_for(counts: Dict[str, int], subtitle_id: str) -> int:
+    """Our usage count for a subtitle, tolerant of how the map was keyed.
+
+    ⚠ The store's ``usage_counts()`` returns ``{"os:123": n}`` while the raw usage map
+    is keyed ``{"123": n}`` — a lookup that assumed ONE of those forms silently returned
+    0 for every row, which is a ranking that appears to work and never does. Both forms
+    (and a bare numeric id) resolve here. Caught by test.
+    """
+    counts = counts or {}
+    numeric = usage_key(subtitle_id)
+    for key in (str(subtitle_id or ""), numeric, f"os:{numeric}"):
+        if key and key in counts:
+            try:
+                return int(counts[key] or 0)
+            except (TypeError, ValueError):
+                return 0
+    return 0
+
+
+def rank_results(results: List, counts: Dict[str, int]) -> List:
+    """Order subtitle results: OUR usage count first, then the provider's popularity.
+
+    Plan criterion 8: a subtitle this user has picked before is a better default than
+    one with more global downloads. Ties fall back to ``download_count``, then to the
+    stable identity so the order never depends on dict iteration.
+    """
+    def key(row):
+        sid = getattr(row, "subtitle_id", None) or (row or {}).get("subtitle_id", "")
+        return (-count_for(counts, sid),
+                -int(getattr(row, "download_count", None)
+                     or (row or {}).get("download_count", 0) or 0),
+                str(sid))
+    return sorted(results, key=key)
+
+
+def merge_subtitle_rows(tracks: List[dict], remote: List, *, counts=None,
+                        active_index: Optional[int] = None,
+                        last_used: Optional[Dict[str, str]] = None) -> List[dict]:
+    """One list for the player panel: the item's LOCAL tracks, then remote results.
+
+    Local (embedded/on-disk) tracks come first and unchanged — criterion 9: existing
+    subtitles keep working exactly as they do today. Remote rows carry our usage count
+    and are ranked by it; only local rows carry a stream ``index``, because a remote
+    subtitle has no index until it is downloaded and attached.
+    """
+    counts = counts or {}
+    last_used = last_used or {}
+    rows: List[dict] = []
+    for t in tracks or []:
+        rows.append({
+            "subtitle_id": "",
+            "provider": "local",
+            "language": str(t.get("language") or ""),
+            "display_title": str(t.get("name") or ""),
+            "index": t.get("index"),
+            "used_count": 0,
+            "last_used": "",
+            "download_count": 0,
+            "hearing_impaired": False,
+            "format": "",
+            "vendor_format": "",
+            "year": None,
+            "active": (active_index is not None and t.get("index") == active_index),
+            "local": True,
+        })
+    for r in rank_results(remote or [], counts):
+        sid = r.subtitle_id
+        rows.append({
+            "subtitle_id": sid,
+            "provider": r.provider,
+            "language": r.language,
+            "display_title": r.display_title,
+            "index": None,
+            "used_count": count_for(counts, sid),
+            "last_used": last_used.get(sid, "") or last_used.get(usage_key(sid), ""),
+            "download_count": r.download_count,
+            "hearing_impaired": r.hearing_impaired,
+            "format": r.format,
+            "vendor_format": r.vendor_format,
+            "year": r.year,
+            "active": False,
+            "local": False,
+        })
+    return rows
 
 
 def normalise_language(value: str) -> str:

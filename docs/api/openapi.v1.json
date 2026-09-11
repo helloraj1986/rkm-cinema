@@ -979,6 +979,145 @@
         }
       }
     },
+    "/api/jellyfin/subtitle-search": {
+      "get": {
+        "summary": "Subtitle Search",
+        "description": "Every subtitle choice for an item: its LOCAL tracks, then OpenSubtitles results.\n\nLocal tracks are always returned and never altered (criterion 9). Each row carries\nour own usage count and ``active`` so the panel can mark the user's choice without a\nsecond call; remote rows are ranked by our usage first, then the provider's\npopularity (criterion 8).",
+        "operationId": "subtitle_search_api_jellyfin_subtitle_search_get",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "Jellyfin item id (movie or episode)",
+              "default": "",
+              "title": "Id"
+            },
+            "description": "Jellyfin item id (movie or episode)"
+          },
+          {
+            "name": "language",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "ISO code; blank = the configured default",
+              "default": "",
+              "title": "Language"
+            },
+            "description": "ISO code; blank = the configured default"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 30,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/jellyfin/subtitle-select": {
+      "post": {
+        "summary": "Subtitle Select",
+        "description": "Download, attach and REMEMBER a subtitle, then return the refreshed tracks.\n\nOne call does the whole user action: fetch the bytes, write them beside the media\n(or upload them), refresh the item, persist the choice and increment its usage\ncount. A repeat selection of something already attached is a no-op download-wise\n(the delivery layer reuses it), so the usage count reflects deliberate choices.",
+        "operationId": "subtitle_select_api_jellyfin_subtitle_select_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubtitleSelectRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/jellyfin/subtitle-disable": {
+      "post": {
+        "summary": "Subtitle Disable",
+        "description": "Turn subtitles off for an item, KEEPING the choice (re-enable is one tap).",
+        "operationId": "subtitle_disable_api_jellyfin_subtitle_disable_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubtitleDisableRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/jellyfin/detail": {
       "get": {
         "summary": "Jellyfin Detail",
@@ -2876,6 +3015,50 @@
           "statuses"
         ],
         "title": "StatusResponse"
+      },
+      "SubtitleDisableRequest": {
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "title": "Item Id",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "SubtitleDisableRequest",
+        "description": "Turn subtitles off for an item without forgetting which one was chosen."
+      },
+      "SubtitleSelectRequest": {
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "title": "Item Id",
+            "default": ""
+          },
+          "file_id": {
+            "type": "integer",
+            "title": "File Id",
+            "default": 0
+          },
+          "language": {
+            "type": "string",
+            "title": "Language",
+            "default": ""
+          },
+          "display_title": {
+            "type": "string",
+            "title": "Display Title",
+            "default": ""
+          },
+          "provider": {
+            "type": "string",
+            "title": "Provider",
+            "default": "opensubtitles"
+          }
+        },
+        "type": "object",
+        "title": "SubtitleSelectRequest",
+        "description": "Choose a subtitle for an item (spec \u00a73: discovery \u2192 apply \u2192 persist).\n\n``file_id`` is the OpenSubtitles file id; ``subtitle_id`` (``os:<file_id>``) is\nwhat the store keeps, so the identity survives a stream-index change."
       },
       "SuggestDetail": {
         "properties": {

@@ -586,6 +586,76 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/jellyfin/subtitle-search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Subtitle Search
+         * @description Every subtitle choice for an item: its LOCAL tracks, then OpenSubtitles results.
+         *
+         *     Local tracks are always returned and never altered (criterion 9). Each row carries
+         *     our own usage count and ``active`` so the panel can mark the user's choice without a
+         *     second call; remote rows are ranked by our usage first, then the provider's
+         *     popularity (criterion 8).
+         */
+        get: operations["subtitle_search_api_jellyfin_subtitle_search_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jellyfin/subtitle-select": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Subtitle Select
+         * @description Download, attach and REMEMBER a subtitle, then return the refreshed tracks.
+         *
+         *     One call does the whole user action: fetch the bytes, write them beside the media
+         *     (or upload them), refresh the item, persist the choice and increment its usage
+         *     count. A repeat selection of something already attached is a no-op download-wise
+         *     (the delivery layer reuses it), so the usage count reflects deliberate choices.
+         */
+        post: operations["subtitle_select_api_jellyfin_subtitle_select_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jellyfin/subtitle-disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Subtitle Disable
+         * @description Turn subtitles off for an item, KEEPING the choice (re-enable is one tap).
+         */
+        post: operations["subtitle_disable_api_jellyfin_subtitle_disable_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/jellyfin/detail": {
         parameters: {
             query?: never;
@@ -1474,6 +1544,51 @@ export interface components {
             };
             /** Indexerissue */
             indexerIssue?: string | null;
+        };
+        /**
+         * SubtitleDisableRequest
+         * @description Turn subtitles off for an item without forgetting which one was chosen.
+         */
+        SubtitleDisableRequest: {
+            /**
+             * Item Id
+             * @default
+             */
+            item_id: string;
+        };
+        /**
+         * SubtitleSelectRequest
+         * @description Choose a subtitle for an item (spec §3: discovery → apply → persist).
+         *
+         *     ``file_id`` is the OpenSubtitles file id; ``subtitle_id`` (``os:<file_id>``) is
+         *     what the store keeps, so the identity survives a stream-index change.
+         */
+        SubtitleSelectRequest: {
+            /**
+             * Item Id
+             * @default
+             */
+            item_id: string;
+            /**
+             * File Id
+             * @default 0
+             */
+            file_id: number;
+            /**
+             * Language
+             * @default
+             */
+            language: string;
+            /**
+             * Display Title
+             * @default
+             */
+            display_title: string;
+            /**
+             * Provider
+             * @default opensubtitles
+             */
+            provider: string;
         };
         /**
          * SuggestDetail
@@ -2464,6 +2579,107 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    subtitle_search_api_jellyfin_subtitle_search_get: {
+        parameters: {
+            query?: {
+                /** @description Jellyfin item id (movie or episode) */
+                id?: string;
+                /** @description ISO code; blank = the configured default */
+                language?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    subtitle_select_api_jellyfin_subtitle_select_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubtitleSelectRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    subtitle_disable_api_jellyfin_subtitle_disable_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubtitleDisableRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

@@ -915,6 +915,44 @@ class JellyfinLibraryProvider(LibraryProvider):
             logger.warning("Jellyfin upload_subtitle(%s) failed: %s", item_id, e)
             return False
 
+    def subtitle_search_context(self, item_id: str) -> Optional[dict]:
+        """The identity an OpenSubtitles search needs (see the ABC for the contract).
+
+        One narrow fetch — provider ids, plus the series context an episode needs. The
+        library's episodes carry NO provider ids of their own (measured), so the series
+        name + season/episode numbers are what actually make an episode searchable.
+        """
+        if not self._configured() or not item_id:
+            return None
+        uid = self._user_id()
+        if not uid:
+            return None
+        import json
+        fields = ("ProviderIds,SeriesName,SeriesId,IndexNumber,ParentIndexNumber,"
+                  "ProductionYear,Name,Type")
+        url = (f"{self.config.JELLYFIN_URL}/Users/{uid}/Items/{item_id}"
+               f"?Fields={fields}&api_key={self.config.JELLYFIN_API_KEY}")
+        try:
+            with urllib.request.urlopen(url, timeout=10) as r:
+                it = json.load(r)
+        except Exception as e:
+            logger.warning("Jellyfin subtitle_search_context(%s) failed: %s", item_id, e)
+            return None
+        ids = it.get("ProviderIds") or {}
+        tmdb = ids.get("Tmdb")
+        return {
+            "item_id": str(it.get("Id") or item_id),
+            "type": str(it.get("Type") or ""),
+            "name": str(it.get("Name") or ""),
+            "year": int(it["ProductionYear"]) if it.get("ProductionYear") else None,
+            "tmdb_id": int(tmdb) if str(tmdb or "").isdigit() else None,
+            "imdb_id": str(ids.get("Imdb") or ""),
+            "series_id": str(it.get("SeriesId") or ""),
+            "series_name": str(it.get("SeriesName") or ""),
+            "season": it.get("ParentIndexNumber"),
+            "episode": it.get("IndexNumber"),
+        }
+
     def item_detail(self, item_id: str) -> Optional[dict]:
         """Rich single-item metadata for the Plex-style preplay/detail view.
 

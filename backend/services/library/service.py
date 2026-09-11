@@ -201,6 +201,15 @@ class LibraryProvider(ABC):
         is possible — e.g. the media file lives outside the api's mounts)."""
         return False
 
+    def subtitle_search_context(self, item_id: str) -> Optional[dict]:
+        """The identity a subtitle SEARCH needs for an item (``None`` if unknown).
+
+        Not the rich detail payload: provider ids (tmdb/imdb) plus, for an episode, the
+        series name and season/episode numbers — exactly what keys an OpenSubtitles
+        search, and nothing else.
+        """
+        return None
+
 
 class LibraryService:
     """Unified library facade.
@@ -467,6 +476,18 @@ class LibraryService:
             except Exception as e:
                 logger.warning("upload_subtitle failed for %s: %s", p.name, e)
         return False
+
+    def subtitle_search_context(self, item_id: str) -> Optional[dict]:
+        """Search identity for an item, from the first provider that knows it."""
+        for p in self._providers:
+            try:
+                context = p.subtitle_search_context(item_id)
+            except Exception as e:
+                logger.warning("subtitle_search_context failed for %s: %s", p.name, e)
+                continue
+            if context:
+                return context
+        return None
 
     def get_poster(self, item_id: str, max_width: int = 500, kind: str = "Primary") -> Optional[dict]:
         """Fetch an item image from the first provider able to serve it."""

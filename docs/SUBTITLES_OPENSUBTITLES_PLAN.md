@@ -1,8 +1,14 @@
 # OpenSubtitles + Jellyfin Subtitle Integration Plan — `feat/subtitles-opensubtitles`
 
-**Status: SCOPED 2026-09-12, NOT STARTED. Option A CONFIRMED by the user (2026-09-12); an OpenSubtitles API key is the only outstanding input.** Branch `feat/subtitles-opensubtitles` cut from `main`
-(`ceddc50`) with this plan as its first commit. Execute phase by phase, one commit each, gates green
+**Status: EXECUTING.** Phases 0–1 DONE (`4d08890`, `e27d28d`); **Phase 2 is blocked on the OpenSubtitles API key — the only outstanding input.** Option A CONFIRMED by the user (2026-09-12). Branch `feat/subtitles-opensubtitles` cut from `main`
+(`ceddc50`) with this plan as its first commit, **rebased onto `main` @ `251ec63` on 2026-09-12** before any code landed. Execute phase by phase, one commit each, gates green
 after every phase — same cycle as every other branch in this repo.
+
+> **Where it got to (2026-09-12, read the PROGRESS.md record for the detail):** Phase 0 declared the
+> five settings, made one BOM-tolerant `.env` parser for all three readers, and confirmed the
+> passthrough/render/dry-run behaviour; Phase 1 shipped `services/opensubtitles.py` with 58 fake-transport
+> tests and a **live** (zero-quota) check of the transport + error mapping against the real vendor API.
+> Backend gates: 589 passed / 1 pre-existing environmental failure, ruff clean.
 
 Executes the user's spec (2026-09-12): discover, apply and **persist** subtitles for movies and TV
 episodes, with a Plex-like in-player subtitle panel and per-subtitle usage counts.
@@ -311,19 +317,20 @@ Subtitles
 Gate per phase: `cd backend && python -m pytest -q && python -m ruff check .`; from Phase 3 also
 `cd frontend && npx tsc --noEmit && npx vitest run && npm run build`.
 
-- **Phase 0 — config plumbing + probe (no behaviour).** Declare the five settings; render them into
-  `.rkm.env`; BOM tolerance in the env parser; `has_opensubtitles()`; one startup log line; `.env.example`
-  documented. Confirm: keys visible inside the api container, **absent** from the built frontend bundle
-  and `/api/config`, and a test write from the api container lands on the media drive.
-  *Gate proof:* `grep -rin opensubtitles frontend/dist` → 0; new config tests.
-- **Phase 1 — `services/opensubtitles.py` + tests.** Login/JWT cache, search (id-first keying), download,
-  `user_info`, typed error taxonomy, quota/rate-limit handling, redaction. Unit tests with a fake
-  transport cover: success, bad key (401), bad login, 429 with `Retry-After`, `remaining == 0`, timeout,
-  empty results, non-text format. **No live calls in the suite.**
-- **Phase 2 — attach to Jellyfin + dedupe.** Sidecar write (atomic, UTF-8), item refresh (lightest that
-  works), `POST /Videos/{itemId}/Subtitles` fallback, re-read playback-info. Live-verify with exactly ONE
-  real download against RKM-HP: the new track appears in `playback-info` and plays through the existing
-  VTT proxy. Record the quota cost in the commit message.
+- **Phase 0 — config plumbing + probe (no behaviour). ✅ DONE (`4d08890`)** — five settings declared + read;
+  keys rendered into `.rkm.env` (api only) with a render-time status line; BOM tolerance + quoting parity in
+  the ONE `.env` parser (`backend/config/env_file.py`, now used by `render_config`, `config.settings` and
+  `tools/rkm_common`); `has_opensubtitles()` keys off the API key alone; one api startup line; `.env.example`
+  and the live `.env` documented. Confirmed in the sandbox: keys absent from the built frontend bundle
+  (`grep -rin opensubtitles frontend/dist frontend/src` → 0) and from `/api/config` (pinned by test), old-vs-new
+  parser output on a quoted+BOM'd line, and a dry render showing all five keys reaching the `.rkm.env` mapping.
+  ⏳ The two container-side confirmations (key visible inside the api, a write from the api landing on the media
+  drive) belong on RKM-HP — no docker daemon in the sandbox; they are in the record's user runbook.
+- **Phase 1 — `services/opensubtitles.py` + tests. ✅ DONE (`e27d28d`)** — login/JWT cache (+one re-login on
+  401), id-keyed search, download → bytes, `user_info` quota, the full typed taxonomy, retry policy (GETs once,
+  download POST never), redaction. 58 tests on a scripted fake transport — **no live calls in the suite** — plus
+  one live zero-quota smoke of the real transport (403 on a bogus key → `AuthFailedError`).
+- **Phase 2 — attach to Jellyfin + dedupe. ⏳ BLOCKED ON THE API KEY** (one deliberate live download).
 - **Phase 3 — store + routes + contract.** `services/subtitle_store.py` (atomic, corrupt-tolerant, usage
   increment, ranking) + the three endpoints + the additive `playback-info.preferred_subtitle`; regenerate
   snapshot + typed client; route/store tests.

@@ -437,57 +437,6 @@
         }
       }
     },
-    "/api/plex/thumb": {
-      "get": {
-        "summary": "Plex Thumb",
-        "description": "Proxy a Plex thumbnail so the browser can render it (token stays server-side).",
-        "operationId": "plex_thumb_api_plex_thumb_get",
-        "parameters": [
-          {
-            "name": "path",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "default": "",
-              "title": "Path"
-            }
-          },
-          {
-            "name": "width",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "maximum": 2000,
-              "minimum": 16,
-              "default": 500,
-              "title": "Width"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/jellyfin/poster": {
       "get": {
         "summary": "Jellyfin Poster",

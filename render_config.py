@@ -34,6 +34,16 @@ ENV_PATH = ROOT / ".env"              # THE single user config
 API_ENV = ROOT / ".rkm.env"           # api container env_file (generated)
 STATE_PATH = ROOT / ".rkm_state.json"  # small render summary (generated)
 
+# The SHARED .env parser (backend/config/env_file.py): one reading of this file for
+# the renderer, the api (config.settings) and the probe tools. Quoting, inline
+# comments and a leading BOM are handled identically there — the rules Docker Compose
+# applies — so the values rendered into .rkm.env are the values the containers see.
+# (2026-09-12: this file used to carry its own copy of that logic while
+# config.settings carried a second, weaker one.)
+if str(ROOT / "backend") not in sys.path:
+    sys.path.insert(0, str(ROOT / "backend"))
+from config.env_file import parse_env_file  # noqa: E402
+
 # Keys we can safely default (non-secret). Appended to .env when absent so the
 # file stays complete and self-documenting for the user.
 DEFAULTS = {
@@ -79,42 +89,6 @@ LEGACY_KEYS = [
 def fail(msg: str) -> None:
     print(f"ERROR: {msg}", file=sys.stderr)
     sys.exit(2)
-
-
-def _strip_inline_comment(value: str) -> str:
-    """Drop a trailing ``␣#…`` comment from an UNQUOTED .env value.
-
-    Matches how Docker Compose / godotenv read the same file (a ``#`` only starts
-    a comment when preceded by whitespace, so ``D:/a#b`` survives). Quoted values
-    never reach here, so a legitimate ``' #'`` is still expressible as "value #x".
-    2026-09-10: this parser used to keep the comment while Compose stripped it —
-    two readings of one file, which is how a value silently picks up stray text.
-    """
-    idx = value.find(" #")
-    return (value[:idx] if idx != -1 else value).rstrip()
-
-
-def parse_env_file(path: Path) -> dict:
-    """Parse a .env file (comments, blank lines, `export`, quotes)."""
-    parsed: dict = {}
-    try:
-        lines = path.read_text(encoding="utf-8").splitlines()
-    except FileNotFoundError:
-        return parsed
-    for line in lines:
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        k, _, v = line.partition("=")
-        k = k.strip().lstrip("export").strip()
-        v = v.strip()
-        if len(v) >= 2 and v[0] == v[-1] and v[0] in "\"'":
-            v = v[1:-1]                      # quoted → verbatim between the quotes
-        else:
-            v = _strip_inline_comment(v)
-        if k:
-            parsed[k] = v
-    return parsed
 
 
 def write_env_key(path: Path, key: str, value: str) -> None:
@@ -376,6 +350,21 @@ def build_api_vars(env: dict) -> dict:
     # bundled Jellyfin is app-managed, so this defaults ON (blank = on); set
     # RKM_PRUNE_LIBRARIES=false to keep libraries the app does not declare.
     api["RKM_PRUNE_LIBRARIES"] = str(env.get("RKM_PRUNE_LIBRARIES") or "").strip()
+
+    # Subtitles / OpenSubtitles (SUBTITLES_OPENSUBTITLES_PLAN §3.1). The api is the
+    # ONLY consumer of these credentials — never a web build arg, never the frontend
+    # bundle (the plan's §1 criterion 11). Blank is a supported state: no API key
+    # means the feature is off, and a key with no login means the anonymous tier.
+    for k in ("OPENSUBTITLES_API_KEY", "OPENSUBTITLES_USERNAME", "OPENSUBTITLES_PASSWORD",
+              "OPENSUBTITLES_LANGUAGES", "OPENSUBTITLES_ENABLED"):
+        api[k] = str(env.get(k) or "").strip()
+    if api["OPENSUBTITLES_API_KEY"]:
+        login = "login configured" if api["OPENSUBTITLES_USERNAME"] else "anonymous (no login)"
+        print(f"[env] OpenSubtitles: enabled — {login}, "
+              f"languages: {api['OPENSUBTITLES_LANGUAGES'] or 'en'}")
+    else:
+        print("[env] OpenSubtitles: not configured — subtitle search disabled "
+              "(set OPENSUBTITLES_API_KEY in .env to enable it)")
     return api
 
 

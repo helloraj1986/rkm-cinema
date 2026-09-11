@@ -172,6 +172,61 @@ def test_generated_password_is_persisted_once(rc):
     assert any(k == "RKM_JELLYFIN_ADMIN_PASSWORD" for _, k, _ in rc._test_writes)
 
 
+# ---------------------------------------------------------------- subtitles (Phase 0)
+SUBTITLE_ENV = {
+    "OPENSUBTITLES_API_KEY": "abc123",
+    "OPENSUBTITLES_USERNAME": "",
+    "OPENSUBTITLES_PASSWORD": "",
+    "OPENSUBTITLES_LANGUAGES": "en",
+    "OPENSUBTITLES_ENABLED": "auto",
+}
+
+
+def test_opensubtitles_keys_reach_the_api_env(rc):
+    """The api is the only consumer — an unrouted key means a dead feature.
+
+    The api container has no `.env` at all: its configuration IS `.rkm.env`, so a
+    credential that does not survive this render can never reach the client
+    (2026-09-12, the plan's §3.1 "how a new key actually reaches the api").
+    """
+    api = rc.build_api_vars(dict(BASE, **SUBTITLE_ENV))
+    for key, value in SUBTITLE_ENV.items():
+        assert api[key] == value, key
+
+
+def test_key_only_renders_as_enabled_and_reports_itself(rc, capsys):
+    api = rc.build_api_vars(dict(BASE, OPENSUBTITLES_API_KEY="abc123",
+                                 OPENSUBTITLES_LANGUAGES="en,hi"))
+    assert api["OPENSUBTITLES_USERNAME"] == ""
+    out = capsys.readouterr().out
+    assert "OpenSubtitles: enabled" in out
+    assert "anonymous (no login)" in out
+    assert "en,hi" in out
+    assert "abc123" not in out, "the key must never be printed"
+
+
+def test_absent_keys_render_blank_and_say_so(rc, capsys):
+    """Blank is a supported state: no key = the feature is off, not a broken stack."""
+    api = rc.build_api_vars(dict(BASE))
+    assert all(api.get(k) == "" for k in SUBTITLE_ENV)
+    assert "OpenSubtitles: not configured" in capsys.readouterr().out
+
+
+def test_a_pasted_block_with_a_bom_still_renders_the_key(rc, tmp_path):
+    """The plan's §4.1 trap: the spec's snippet starts with a BOM.
+
+    Read as plain utf-8 it renamed the FIRST key to ``\\ufeffOPENSUBTITLES_API_KEY`` —
+    the credential then simply vanished, with nothing logged anywhere.
+    """
+    env_file = tmp_path / ".env"
+    env_file.write_text("\ufeffOPENSUBTITLES_API_KEY=abc123\nTMDB_API_KEY=k\n", encoding="utf-8")
+    parsed = rc.parse_env_file(env_file)
+    assert parsed["OPENSUBTITLES_API_KEY"] == "abc123"
+    assert not any(k.startswith("\ufeff") for k in parsed)
+    assert rc.build_api_vars(dict(parsed, MEDIA_SERVER="jellyfin",
+                                  RKM_JELLYFIN_ADMIN_PASSWORD="pw"))["OPENSUBTITLES_API_KEY"] == "abc123"
+
+
 # ---------------------------------------------------------------- retired MEDIA_SERVER
 def test_retired_media_server_still_renders_and_resolves_to_jellyfin(rc, capsys):
     """An un-updated `.env` naming a retired backend must NOT be able to fail.

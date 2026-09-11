@@ -34,6 +34,11 @@ class TestConfigKeysCoverage:
         # declared on the class yet MISSING from the old hand-written list — it
         # was being silently dropped:
         "YOUTUBE_API_KEY",
+        # Subtitles (SUBTITLES_OPENSUBTITLES_PLAN Phase 0, 2026-09-12) — declared so
+        # the passthrough carries them; a dropped key disables the whole feature
+        # with no error anywhere.
+        "OPENSUBTITLES_API_KEY", "OPENSUBTITLES_USERNAME", "OPENSUBTITLES_PASSWORD",
+        "OPENSUBTITLES_LANGUAGES", "OPENSUBTITLES_ENABLED",
     }
 
     #: Settings that must NOT come back: retired with the Plex/Emby providers.

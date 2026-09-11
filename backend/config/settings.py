@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Optional
 from functools import lru_cache
 
+from config.env_file import parse_env_file
 from config.media_libraries import parse_media_libraries
 
 #: Env-key FAMILIES the media-library parser needs, beyond the declared config
@@ -34,6 +35,23 @@ def is_env_passthrough_key(key: str) -> bool:
 
 #: The media servers this app knows how to read.
 MEDIA_SERVERS = ("jellyfin", "plex", "emby")
+
+
+def canonical_env_paths() -> list:
+    """The `.env` files a bare-checkout / container run may read, in order.
+
+    A module-level seam rather than an inline literal, so a test can point the
+    config layer at a fixed file and assert HOW it reads it: the 2026-09-12 parity
+    fix (quote handling + BOM tolerance, see :mod:`config.env_file`) is otherwise
+    only reachable through the developer's own `.env`. First existing file wins.
+    """
+    return [
+        Path("/workspace/.env"),          # host-backed workspace env
+        Path("/app/.env"),                # container-local fallback
+        # Repo-level single-source .env (repo root = backend/../..) — used when
+        # running from a bare checkout with no /workspace or /app env.
+        Path(__file__).resolve().parent.parent.parent / ".env",
+    ]
 
 
 def resolve_media_server(raw: Optional[str]) -> str:
@@ -96,6 +114,20 @@ class Config:
     RECONCILE_INTERVAL_MIN: int     # frequent reconcile cadence (default 10 min)
     DAILY_JOB_HOUR: int             # daily recommendation job hour (24h, default 18)
 
+    # --- Subtitles / OpenSubtitles (SUBTITLES_OPENSUBTITLES_PLAN §3.1) ---
+    # The API key identifies the APPLICATION and is mandatory on every call; it
+    # carries the anonymous allowance (5 downloads / 24h per IP). The username +
+    # password identify the USER and only raise the quota, so they are OPTIONAL:
+    # a missing login degrades to anonymous, never to "disabled".
+    # Annotating these on the class is what makes the real-env passthrough carry
+    # the keys at all — an undeclared key is dropped before the app ever sees it
+    # (the 2026-09-10 RKM_MEDIA_PATH bug, which greyed out every library).
+    OPENSUBTITLES_API_KEY: Optional[str]
+    OPENSUBTITLES_USERNAME: Optional[str]
+    OPENSUBTITLES_PASSWORD: Optional[str]
+    OPENSUBTITLES_LANGUAGES: str    # comma list, e.g. "en" or "en,hi"
+    OPENSUBTITLES_ENABLED: str      # 'auto' (default) | true | false
+
     # --- Media libraries (MEDIA_LIBRARIES_PLAN) ---
     # Parsed from MEDIA_LIBRARY_N_NAME/PATH .env keys. Empty when the user has
     # not configured any — the UI then falls back to the server's own folders.
@@ -116,20 +148,16 @@ class Config:
         env = {}
 
         # 1. Canonical .env file (host-backed at /workspace/.env = D:\.env)
-        canonical_paths = [
-            Path("/workspace/.env"),
-            Path("/app/.env"),
-            # Repo-level single-source .env (repo root = backend/../..) — used
-            # when running from a bare checkout with no /workspace or /app env.
-            Path(__file__).resolve().parent.parent.parent / ".env",
-        ]
-        for path in canonical_paths:
+        for path in canonical_env_paths():
             if path.exists():
-                for line in path.read_text().splitlines():
-                    line = line.strip()
-                    if line and not line.startswith("#") and "=" in line:
-                        k, _, v = line.partition("=")
-                        env[k.strip()] = v.strip()
+                # ONE parser for every reader of this file (config/env_file.py):
+                # quoting, inline comments and a leading BOM are read the same way
+                # here as they are by render_config and the probe tools. This layer
+                # used to do a bare partition("=") + strip(), so a quoted value
+                # arrived WITH its quotes — a password containing '#' or a space
+                # was then truncated or wrong on a bare-checkout run while the
+                # container (which receives the rendered .rkm.env) was fine.
+                env.update(parse_env_file(path))
                 break
 
         # 1.5 Provisioner-written runtime config (bundled stack). The one-shot
@@ -204,6 +232,15 @@ class Config:
         except ValueError:
             self.DAILY_JOB_HOUR = 18
 
+        # Subtitles / OpenSubtitles. Blank is normal (the feature is optional), so
+        # these are never validated as required — the app boots and plays fine
+        # without them and only the subtitle SEARCH section degrades.
+        self.OPENSUBTITLES_API_KEY = (env.get("OPENSUBTITLES_API_KEY") or "").strip() or None
+        self.OPENSUBTITLES_USERNAME = (env.get("OPENSUBTITLES_USERNAME") or "").strip() or None
+        self.OPENSUBTITLES_PASSWORD = (env.get("OPENSUBTITLES_PASSWORD") or "").strip() or None
+        self.OPENSUBTITLES_LANGUAGES = (env.get("OPENSUBTITLES_LANGUAGES") or "en").strip() or "en"
+        self.OPENSUBTITLES_ENABLED = (env.get("OPENSUBTITLES_ENABLED") or "auto").strip().lower()
+
         # Media libraries (MEDIA_LIBRARIES_PLAN Phase 1): parsed here in the
         # dedicated settings layer — never read MEDIA_LIBRARY_* anywhere else.
         self.media_libraries, self.media_library_warnings = parse_media_libraries(env)
@@ -268,6 +305,45 @@ class Config:
 
     def has_prowlarr(self) -> bool:
         return bool(self.PROWLARR_URL and self.PROWLARR_API_KEY)
+
+    # --- Subtitles / OpenSubtitles -------------------------------------------
+    def opensubtitles_disabled(self) -> bool:
+        """True when the user explicitly switched subtitle search off in `.env`."""
+        return self.OPENSUBTITLES_ENABLED in ("0", "false", "no", "off")
+
+    def has_opensubtitles(self) -> bool:
+        """True when the OpenSubtitles client is usable.
+
+        Keys off the **API key alone** (plan §3.1): the key is the application's
+        identity and carries the anonymous allowance (5 downloads / 24h per IP),
+        while the username/password are the *user's* identity and only raise the
+        quota (rank-dependent). So a missing login must degrade to anonymous —
+        never to "disabled", which is the bug this rule exists to prevent. An
+        explicit ``OPENSUBTITLES_ENABLED=false`` is the one way to turn it off.
+        """
+        return bool(self.OPENSUBTITLES_API_KEY) and not self.opensubtitles_disabled()
+
+    def opensubtitles_languages(self) -> list:
+        """Default subtitle languages (lowercased, de-duplicated, order kept).
+
+        Read by the UI as the default search language; the stored per-item
+        preference always wins over this list.
+        """
+        seen, out = set(), []
+        for raw in str(self.OPENSUBTITLES_LANGUAGES or "").split(","):
+            code = raw.strip().lower()
+            if code and code not in seen:
+                seen.add(code)
+                out.append(code)
+        return out or ["en"]
+
+    def has_opensubtitles_login(self) -> bool:
+        """True when a username AND password are present (raises the quota).
+
+        Deliberately separate from :meth:`has_opensubtitles`: the login is an
+        upgrade to the anonymous tier, not a requirement.
+        """
+        return bool(self.OPENSUBTITLES_USERNAME and self.OPENSUBTITLES_PASSWORD)
 
 
 @lru_cache(maxsize=1)

@@ -11,9 +11,19 @@ from __future__ import annotations
 
 import json
 import socket
+import sys
 import urllib.error
 import urllib.request
 from pathlib import Path
+
+#: The SHARED .env parser lives with the app config (repo ``backend/config/``) so
+#: the tools, the renderer and the api read one file the same way — including BOM
+#: tolerance (see config/env_file.py). Imported by path because tools/ is not a
+#: package and this module is imported by scripts run from anywhere.
+_BACKEND = Path(__file__).resolve().parent.parent / "backend"
+if str(_BACKEND) not in sys.path:
+    sys.path.insert(0, str(_BACKEND))
+from config.env_file import parse_env_file  # noqa: E402
 
 #: Ports used by the bundled stack (overridable in .env).
 DEFAULT_DASHBOARD_PORT = "8124"
@@ -30,34 +40,16 @@ def repo_root(start: Path | None = None) -> Path:
 
 
 def load_env(root: Path | None = None) -> dict:
-    """Parse the repo .env (same rules as the stack: no inline comment surprises).
+    """Parse the repo .env through the SHARED parser (``config/env_file.py``).
 
-    Values keep everything before an unquoted ` #` comment, matching Docker
-    Compose and render_config.parse_env_file.
+    One reading for every reader: values keep everything before an unquoted `` #``
+    comment (matching Docker Compose and ``render_config``), a quoted value is taken
+    verbatim, an ``export`` prefix is not part of the name, and a leading BOM is
+    stripped rather than silently renaming the first key. This tool-side copy used to
+    be a fourth implementation of those rules.
     """
     path = (root or repo_root()) / ".env"
-    env: dict[str, str] = {}
-    try:
-        text = path.read_text(encoding="utf-8")
-    except FileNotFoundError:
-        return env
-    for line in text.splitlines():
-        s = line.strip()
-        if not s or s.startswith("#") or "=" not in s:
-            continue
-        k, _, v = s.partition("=")
-        k = k.strip()
-        if k.startswith("export "):
-            # `export KEY=value` is valid shell-style .env syntax; render_config's
-            # parser accepts it, so this one must not disagree about the same file.
-            k = k[len("export "):].strip()
-        v = v.strip()
-        if len(v) >= 2 and v[0] == v[-1] and v[0] in "\"'":
-            v = v[1:-1]
-        elif " #" in v:
-            v = v.split(" #", 1)[0].rstrip()
-        env[k.strip()] = v
-    return env
+    return parse_env_file(path)
 
 
 def _reachable(host: str, port: str, timeout: float = 1.5) -> bool:

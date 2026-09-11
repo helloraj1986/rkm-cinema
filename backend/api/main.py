@@ -64,19 +64,31 @@ def create_app() -> FastAPI:
 
     @app.on_event("startup")
     async def startup():
+        import logging
         # Validate required config
         missing = cfg.validate_required()
         if missing:
-            import logging
             logging.warning("Missing required config: %s", missing)
+        # Subtitles (SUBTITLES_OPENSUBTITLES_PLAN §3.1): OpenSubtitles is OPTIONAL,
+        # so it is never added to validate_required() — the app must boot, browse and
+        # play without it, and only the subtitle SEARCH section degrades. ONE clear
+        # line, naming the anonymous/key-less case so "why is search empty?" is
+        # answerable from the log. Never logs the key or the password.
+        if cfg.has_opensubtitles():
+            logging.info("OpenSubtitles enabled (%s) — subtitle search languages: %s",
+                         "login configured" if cfg.has_opensubtitles_login()
+                         else "anonymous, no login",
+                         ", ".join(cfg.opensubtitles_languages()))
+        else:
+            reason = ("disabled by OPENSUBTITLES_ENABLED" if cfg.opensubtitles_disabled()
+                      else "no OPENSUBTITLES_API_KEY")
+            logging.info("OpenSubtitles not configured (%s) — subtitle search disabled", reason)
         # Phase 14: start the in-process job scheduler if enabled (spec §26/§40).
         try:
             from jobs.scheduler import start_if_enabled
             if start_if_enabled(config=cfg):
-                import logging
                 logging.info("RKM job scheduler started")
         except Exception:
-            import logging
             logging.exception("Failed to start job scheduler")
 
     return app

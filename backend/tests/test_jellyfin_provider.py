@@ -166,12 +166,47 @@ def test_factory_jellyfin_not_configured_returns_none():
     assert build_library_service(_cfg(MEDIA_SERVER="jellyfin", JELLYFIN_API_KEY="")) is None
 
 
-def test_factory_default_is_plex_emby_when_no_media_server():
+def test_factory_defaults_to_jellyfin_when_no_media_server():
+    """An unset/blank MEDIA_SERVER must select Jellyfin, not the retired Plex path.
+
+    Regression guard: before 2026-09-11 this resolved to Plex-primary + Emby
+    fallback, so a config that lost the key silently swapped the whole library
+    backend — and the user-visible symptom (every library row greyed out) looked
+    like a broken drive mount rather than a bad default.
+    """
     from services.library.factory import build_library_service
-    cfg = SimpleNamespace(MEDIA_SERVER="", PLEX_URL="http://p:32400", PLEX_TOKEN="pt",
+    cfg = SimpleNamespace(MEDIA_SERVER="", JELLYFIN_URL="http://j:8096", JELLYFIN_API_KEY="jk",
+                          PLEX_URL="http://p:32400", PLEX_TOKEN="pt",
+                          EMBY_URL="http://e:8096", EMBY_API_KEY="ek")
+    svc = build_library_service(cfg)
+    assert [p.name for p in svc.providers] == ["jellyfin"]
+
+
+def test_factory_legacy_plex_emby_still_honoured_when_explicit():
+    """Explicitly asking for the legacy Plex backend still builds Plex + Emby.
+
+    The adapters stay until their removal phase; this keeps that path honest and
+    tells us if it breaks before anyone deletes it.
+    """
+    from services.library.factory import build_library_service
+    cfg = SimpleNamespace(MEDIA_SERVER="plex", PLEX_URL="http://p:32400", PLEX_TOKEN="pt",
                           EMBY_URL="http://e:8096", EMBY_API_KEY="ek")
     svc = build_library_service(cfg)
     assert [p.name for p in svc.providers] == ["plex", "emby"]
+
+
+def test_resolve_media_server_is_one_rule():
+    """The single resolver every caller shares (config loader, factory, /api/config)."""
+    from config.settings import resolve_media_server
+    # Jellyfin, and the safe default for anything absent/blank/unknown.
+    assert resolve_media_server("jellyfin") == "jellyfin"
+    assert resolve_media_server("  JELLYFIN  ") == "jellyfin"
+    assert resolve_media_server("") == "jellyfin"
+    assert resolve_media_server(None) == "jellyfin"
+    assert resolve_media_server("typo") == "jellyfin"
+    # Legacy values are still honoured verbatim when asked for explicitly.
+    assert resolve_media_server("plex") == "plex"
+    assert resolve_media_server("Emby") == "emby"
 
 
 class _CtxBody:

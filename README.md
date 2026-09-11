@@ -4,7 +4,7 @@ A self-hosted **media library + acquisition dashboard**. Browse your media serve
 libraries, request movies and series, watch them in the browser, and track every
 title from "requested" to "available".
 
-Runs against **Jellyfin** (bundled), **Plex** or **Emby**, and hands new titles to
+Runs against **Jellyfin** — the stack brings its own — and hands new titles to
 **Radarr**/**Sonarr** → **qBittorrent**. Metadata and discovery come from **TMDB**.
 
 ---
@@ -29,7 +29,7 @@ Runs against **Jellyfin** (bundled), **Plex** or **Emby**, and hands new titles 
       |                     |
       |                     +--> qBittorrent .. downloads
       v
-   media server  ---  Jellyfin (bundled, :8098) | Plex | Emby   <- what you can watch
+   media server  ---  Jellyfin (bundled, :8098)   <- what you can watch
       |
       v
    your media drives .... D:\RKM_MEDIA (movies) + B:\RKM_MEDIA (TV)
@@ -64,7 +64,7 @@ downloaded  -> DOWNLOADED     otherwise   -> NOT_REQUESTED
 | **Watchlist** | Add titles, watch status move through the lifecycle, with toasts and optimistic UI |
 | **Requests** | Movie → Radarr, series → Sonarr, with quality-profile choice and duplicate prevention |
 | **Suggest** | Filter by genre/year/rating, pull ideas from TMDB, add straight to the watchlist |
-| **Deep watch links** | "Watch on Plex/Jellyfin" opens the server's own web UI (works over Tailscale) |
+| **Deep watch links** | "Watch on Jellyfin" opens the server's own web UI (works over Tailscale) |
 | **Settings / config health** | Shows which integrations are configured and reachable, and what's missing |
 | **Artwork caching** | Posters cached 7 days with `304` revalidation; dynamic JSON stays `no-store` |
 
@@ -128,7 +128,6 @@ Underlying scripts, if you prefer them directly:
 ```powershell
 .\bootstrap.ps1                 # same as .\rkm.ps1 deploy
 .\bootstrap.ps1 -NoBackup       # skip the automatic pre-rebuild backup
-.\run-rkm-cinema.ps1            # PROD profile: :8123, points at your existing Plex/Emby/*arr
 docker compose -p rkm-bundled ps
 docker compose -p rkm-bundled down          # stop (keeps state)
 ```
@@ -150,8 +149,8 @@ docker compose -p rkm-bundled down          # stop (keeps state)
 | `RKM_MEDIA_PATH` | Primary media root, mounted at `/data` (e.g. `D:/RKM_MEDIA`) |
 | `RKM_MEDIA_PATH_2`, `_3` | Extra physical drives, mounted at `/media2`, `/media3` — **two drives need two entries** |
 | `MEDIA_LIBRARY_N_NAME/_PATH/_TYPE` | Sidebar libraries. `PATH` is a host path (`D:/RKM_MEDIA/Movies`) or container path (`/data/Movies`); `TYPE` = `movie`/`tv`/`mixed`. Leave all empty to auto-discover every folder |
-| `MEDIA_SERVER` | `jellyfin` (bundled), `plex` or `emby` |
-| `RKM_DASHBOARD_PORT`, `RKM_JELLYFIN_PORT` | Host ports (bundled defaults `8124` / `8098`; prod uses `8123` / `8096`) |
+| `MEDIA_SERVER` | Which media server the API reads. `jellyfin` (the default, and the only one the stack deploys) — `plex`/`emby` remain accepted for legacy configs only |
+| `RKM_DASHBOARD_PORT`, `RKM_JELLYFIN_PORT` | Host ports (defaults `8124` / `8098`) |
 | `WATCHLIST_DB_PATH` | Where the app's own watchlist JSON lives |
 | `RKM_PRUNE_LIBRARIES` | `true` (default) removes libraries the stack no longer declares — **files on disk are never touched** |
 | `RADARR_URL` / `SONARR_URL` / `PROWLARR_URL` + API keys | Your acquisition stack (bundled or existing on the LAN) |
@@ -166,12 +165,12 @@ see it.
 
 ## Ports
 
-| Service | Bundled | Prod |
-|---|---|---|
-| Dashboard / API (web) | **8124** | 8123 |
-| Media server | **8098** → 8096 | 8096 |
-| Radarr / Sonarr / Prowlarr | 7879 / 8988 / 9697 (profile `fullstack`) | your own |
-| qBittorrent | 8080 (profile `fullstack`) | your own |
+| Service | Host port |
+|---|---|
+| Dashboard / API (web) | **8124** |
+| Media server (Jellyfin) | **8098** → 8096 |
+| Radarr / Sonarr / Prowlarr | 7879 / 8988 / 9697 (profile `fullstack`) |
+| qBittorrent | 8080 (profile `fullstack`) |
 
 ---
 

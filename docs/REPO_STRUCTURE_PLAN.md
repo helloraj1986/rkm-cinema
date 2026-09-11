@@ -13,7 +13,7 @@ rkm-cinema/                          # deploy/infra + docs + config stay at root
 ├── .env.example  .gitignore  .dockerignore
 ├── README.md  ARCHITECTURE.md  PROGRESS.md  TAILSCALE_HOSTING.md
 ├── docker-compose.yml
-├── bootstrap.ps1  bootstrap.sh  run-rkm-cinema.ps1
+├── rkm-cinema.ps1  bootstrap.ps1  bootstrap.sh
 ├── render_config.py                 # deploy tooling (reads repo .env) — stays at root
 ├── nginx/default.conf               # infra — stays at root (web image COPYs it)
 ├── docs/                            # plans, ADRs, api contract — stays at root
@@ -41,7 +41,7 @@ Repo root today mixes ALL of the following (git tracked unless noted):
 - **Backend python tree at ROOT**: `api/ services/ domain/ core/ config/ infrastructure/ application/ jobs/ scripts/` + `requirements.txt` `ruff.toml` + root `Dockerfile` (api image). Import style is top-level (`import api.main`, `from services…`), so CWD/pythonpath matters everywhere.
 - **Legacy vanilla frontend at ROOT**: `index.html` (tracked; un-ignored via `.gitignore`), `app.js`, `app.css`, `api.js`; `dashboard.html` + `dashboard-data.json` gitignored/generated. nginx serves `/legacy/` by aliasing the **repo-root mount** (`./:/legacy-source:ro` in compose).
 - **React frontend**: `web/` (src, package.json, Dockerfile, .gitignore) + `nginx/default.conf` COPYed by `web/Dockerfile`.
-- **Deploy/infra**: `docker-compose.yml`, `bootstrap.ps1/.sh`, `run-rkm-cinema.ps1`, `render_config.py`, `provisioner/`, `nginx/default.conf`, `.github/workflows/ci.yml` (git-ignored on disk — token lacks `workflow` scope; do NOT push it, but DO update it in place so it is ready).
+- **Deploy/infra**: `docker-compose.yml`, `rkm-cinema.ps1`, `bootstrap.ps1/.sh`, `render_config.py`, `provisioner/`, `nginx/default.conf`, `.github/workflows/ci.yml` (git-ignored on disk — token lacks `workflow` scope; do NOT push it, but DO update it in place so it is ready).
 - **One-off/stale at ROOT (tracked)**: `build_dashboard.py build_first_watchlist.py rebuild_verify.py tvdb_enrich.py verify_dashboard.py verify_html.py verify_trailers.py check_js.py`; markdown: `RKM_Watchlist_Production_Refactor_Task.md .hermes_report_data_model_tests.md progress_download_selection.md ARCHITECTURE_GUIDE.md`; `archive/` (tracked QA/monolith remnants).
 - **Ignored junk on disk**: `.env .rkm.env .rkm_state.json data/ rkm.config.toml cinemagoer.db dashboard-data.json dashboard.html app.js.backup* app.js.bak* app.js.orig app.js.before* .pytest_cache/ .ruff_cache/ __pycache__/ .DS_Store` + a stray literal `D:\hermes_agent\hermes-workspace\projects\rkm-cinema\data` directory (created on disk by a bad path — **delete in Phase 0**, not tracked).
 

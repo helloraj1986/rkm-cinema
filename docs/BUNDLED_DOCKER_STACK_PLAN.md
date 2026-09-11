@@ -213,7 +213,7 @@ Two thin launchers (bash + PowerShell — the repo already ships a `.ps1` style 
 ```
 
 No Docker CLI reachable / daemon unreachable is a hard, informative error (the project already
-knows Docker Desktop can be absent — see `run-rkm-cinema.ps1`).
+knows Docker Desktop can be absent — see `bootstrap.ps1`, which fails loudly when the daemon is not up).
 
 ---
 

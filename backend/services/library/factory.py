@@ -1,11 +1,11 @@
 """Build a fully-wired :class:`LibraryService` from config.
 
 The single place that decides which library backends the app uses, driven by
-``config.MEDIA_SERVER``:
+``config.MEDIA_SERVER`` (resolved by :func:`config.settings.resolve_media_server`):
 
-- ``plex`` (default)  → Plex primary + Emby fallback (historical behaviour)
-- ``jellyfin``        → Jellyfin only (bundled self-contained stack)
-- ``emby``            → Emby only
+- ``jellyfin`` (default) → Jellyfin only (the bundled self-contained stack)
+- ``plex``             → Plex primary + Emby fallback (legacy, no longer deployed)
+- ``emby``             → Emby only (legacy, no longer deployed)
 
 Every call site that previously hand-wired ``LibraryService`` + provider
 appends now delegates here, so one switch is consistent app-wide.
@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from config.settings import get_config
+from config.settings import get_config, resolve_media_server
 from services.library.service import LibraryService
 
 
@@ -30,7 +30,10 @@ def build_library_service(config=None, *, plex=None, http=None) -> Optional[Libr
     ``None`` when the chosen backend is not configured.
     """
     cfg = config if config is not None else get_config()
-    backend = (getattr(cfg, "MEDIA_SERVER", "") or "plex").strip().lower()
+    # An explicitly-supplied PlexService IS a request for the Plex backend (the legacy
+    # passthrough a few call sites still use) — it must never be silently ignored in
+    # favour of the default.
+    backend = "plex" if plex is not None else resolve_media_server(getattr(cfg, "MEDIA_SERVER", ""))
 
     if backend == "jellyfin":
         if not (cfg.JELLYFIN_URL and cfg.JELLYFIN_API_KEY):

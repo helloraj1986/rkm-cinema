@@ -1,7 +1,7 @@
 """Config endpoint - public-safe configuration."""
 from fastapi import APIRouter
 from api.models import ConfigResponse
-from config.settings import get_config
+from config.settings import get_config, resolve_media_server
 from services.acquisition import build_acquisition_service
 from services.library import build_library_service
 from services.watchlist import WatchlistService
@@ -20,7 +20,9 @@ def get_config_endpoint():
     acq_health = acq.health()
     radarr_ok = bool(cfg.RADARR_API_KEY) and acq_health.get("radarr", False)
     sonarr_ok = bool(cfg.SONARR_API_KEY) and acq_health.get("sonarr", False)
-    backend = (cfg.MEDIA_SERVER or "plex").lower()
+    # ONE resolver decides the backend, shared with the library-provider factory:
+    # an unset/unknown MEDIA_SERVER reads as jellyfin, never as the retired Plex path.
+    backend = resolve_media_server(cfg.MEDIA_SERVER)
     acq_lib = build_library_service(cfg)
     backend_ok = bool(acq_lib and acq_lib.providers and acq_lib.providers[0].health())
     plex_ok = bool(backend == "plex") and backend_ok

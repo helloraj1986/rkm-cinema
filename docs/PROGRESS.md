@@ -1,3 +1,36 @@
+## ▶ LATEST SESSION (2026-09-11) — CONTINUE WATCHING ROOT-CAUSED + FIXED: the progress report was a no-op ⏳ AWAITING THE RKM-HP EYEBALL (branch: `fix/resume-progress` off `refactor/remove-plex-emby`, commit `88598cf`; supersedes nothing — the Plex/Emby record below it is still unmerged)
+**User-reported (live, RKM-HP):** *"continue watching is not being updated — I was just watching a movie 3 Deewarein but after closing it it's not coming in the continue watching section… can you check why"*.
+
+**ROOT CAUSE (one sentence):** the app reported playback through Jellyfin's `/Sessions/Playing*` endpoints, which only persist a position when the report matches a live **device playback session** — and in-app playback never is one (the app proxies the stream itself), so Jellyfin answered every report **204 and stored nothing**; the app then faithfully showed the server's (empty) truth.
+
+**How the triple-check isolated it (each step against the LIVE stack, no theorising):**
+1. `tools/probe_continue_watching.py` — the three views side by side. Jellyfin's own `UserData` for '3 Deewarein': **PlaybackPositionTicks=0, Played=False, PlayCount=0**; Jellyfin's own `/Items/Resume` did NOT contain it; and the app's 5 CW items matched Jellyfin's Resume list **exactly**. So the app's read side was innocent — the WRITE never arrived.
+2. The app's route reproduced it deterministically from the sandbox: `POST /api/jellyfin/progress` returned **204 for start/timeupdate/stopped and the position stayed 0**.
+3. Jellyfin's **own log** (via the `System/Logs` API) named the culprit: `Playback stopped reported by app "RKM Cinema" "10.11.11" playing "3 Deewarein". Stopped at "1650965" ms` — the user's ~27-minute watch reached Jellyfin, was logged… and dropped.
+
+**Every plausible fix of the Sessions shape was tried live and ALL were accepted-and-dropped (204, nothing stored):** the REAL `PlaySessionId` from PlaybackInfo, an invented one, `+ X-Emby-Authorization` device header, `X-Emby-Token`, and `Authorization: MediaBrowser …, Token="…"`. That ruled out plumbing/casing/credential theories and proved the endpoint family simply cannot work for a player that isn't a Jellyfin session.
+
+**Why it looked like it "used to work":** the morning's resume positions (Chhaava 581s, Hulchul 459s, Disclosure Day 594s) were reported while the api was authenticating as the **provisioner's admin session** — the log attributes those to `app "RKM Provisioner"` — and those DID land. Since the api started reporting as the **"RKM Cinema" API key** (log: `app "RKM Cinema"`, first entry 17:06 today = the rebuild) every report has been dropped. So: worked this morning, silently broken after the redeploy.
+
+**THE FIX (branch `fix/resume-progress`):**
+- `JellyfinLibraryProvider.set_playback_position(item_id, position_ticks)` writes the item's own user data — `POST /Users/{uid}/Items/{id}/UserData` with **only** `PlaybackPositionTicks` — then invalidates the item cache. Same user-scoped family as the already-working `mark_state`.
+- ⚠ It must NEVER send `Played`: verified live that an explicit `Played: false` **un-marks an already-watched title**, while omitting it leaves the flag alone. Pinned by a test.
+- ABC + `LibraryService` gained `set_playback_position`, so the route goes through the service (§43) instead of hand-building a Jellyfin URL.
+- `/api/jellyfin/progress` now answers **204 only when a backend confirms the write, 502 when it didn't** — "204 for a report that stored nothing" is literally the shape of this bug.
+- `runtime_ticks` added to the progress payload (additive) and sent by the player, so a `stopped` within **5%** of the runtime marks the item **watched** instead of leaving a resume point at the credits.
+
+**VERIFIED END-TO-END against the live stack through the app's own new code** (`tools/verify_progress_reporting.py`): wrote the user's real position for 3 Deewarein (1651s) → Jellyfin stored **1651.0s** → it appears in Jellyfin's Resume → **the app's `/api/library/continue-watching` now returns 6 items including '3 Deewarein'**. That call also restored the resume point the watch earned (the item is back for the user immediately — the reading side never needed a redeploy).
+
+**Gates:** backend **487 passed** (+5: 4 route tests replaced by 5 behaviour tests, +2 provider tests) · ruff clean · openapi 38 paths (`runtime_ticks` additive) · `tsc` clean · vitest 163/163 · vite build green.
+**New tools:** `tools/probe_continue_watching.py` (read-only diagnosis: item state vs Jellyfin Resume vs the app's payload) and `tools/verify_progress_reporting.py` (the write-then-read-back proof).
+
+**⚠ Deploy + eyeball (RKM-HP)** — api AND web changed:
+```powershell
+cd D:\hermes_agent\hermes-workspace\projects\rkm-cinema
+docker compose -p rkm-bundled up -d --build api web
+```
+Then: play something for ~30 s, close the player, and it should appear in **Continue Watching** on Home (resume point ≈ where you stopped). Finish something to the end and it should leave CW and show as watched. This is web+api only — no full `deploy`, so a library scan is not touched.
+**Note for the merge:** this branch is stacked on `refactor/remove-plex-emby` (still awaiting its own eyeball). Merge that one first, then `fix/resume-progress` fast-forwards onto it, then FF `experiment/bundled-docker-stack`.
 ## ▶ LATEST SESSION (2026-09-11) — PLEX/EMBY CODE REMOVED (plan phases 1–5) ⏳ AWAITING THE RKM-HP EYEBALL (branch: `refactor/remove-plex-emby`, 7 commits `bb6a2e5` → this record; plan `docs/REMOVE_PLEX_EMBY_PLAN.md`, now marked EXECUTED with a §8 "corrections found while executing")
 **User instruction (2026-09-11):** *"continue with rkm-cinema app with next item in progress.md"* — the queued item was this plan. It executes the earlier decision *"i dont want use prod profile anymore as plex and emby's role is taken by jellyfin"*: the deployment went on `chore/retire-prod-stack`, this branch removes the **code** it left behind. Both prerequisites were already merged to `main`, and the branch was rebased onto that `main` before phase 1.
 

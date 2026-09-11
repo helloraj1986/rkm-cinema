@@ -133,12 +133,22 @@ and Bazarr deliver subtitles, so existing local subtitles behave identically.
 ### 3.1 Config & plumbing (`.env` → `.rkm.env` → api only)
 
 ```env
-OPENSUBTITLES_API_KEY=          # REQUIRED for any call (free at opensubtitles.com)
-OPENSUBTITLES_USERNAME=         # enables the 20/day quota (vs 5/day anonymous)
-OPENSUBTITLES_PASSWORD=
+OPENSUBTITLES_API_KEY=          # REQUIRED for any call (free at opensubtitles.com).
+                                # Identifies the APPLICATION ("consumer") — one key per app.
+OPENSUBTITLES_USERNAME=         # OPTIONAL. Identifies the USER; raises the download quota
+OPENSUBTITLES_PASSWORD=         # from the anonymous 5/24h-per-IP tier to ~10-20/day (rank).
+                                # Not needed to ship: key-only must work (see below).
 OPENSUBTITLES_LANGUAGES=en      # comma list; UI default language
 OPENSUBTITLES_ENABLED=auto      # auto = on when API key present; false = off
 ```
+
+**Key-only is a supported mode — the login must stay optional.** The API key is the app's identity and
+carries the anonymous allowance (5 downloads / 24h per IP); username/password are the *user's* identity and
+are what raise the quota (rank-dependent: ~10–20/day free, up to 1000 VIP). Therefore: `has_opensubtitles()`
+keys off the **API key alone**; a missing login must degrade to anonymous, never to "disabled". The
+`/infos/user` endpoint needs a JWT, so without a login the remaining-quota figure comes from the last
+`/download` response (`remaining` + `reset_time_utc`, returned either way) — surface it when known, and
+never block a download on not knowing it in advance.
 
 - `backend/config/settings.py`: **declare the attributes on `Config`** (the env passthrough only
   forwards *declared* keys — the 2026-09-10 `RKM_MEDIA_PATH` bug was exactly this), read them in

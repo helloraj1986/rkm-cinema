@@ -3,7 +3,7 @@
  * episode queue / season grouping / play-resume logic. Pure so they're
  * unit-testable without a DOM.
  */
-import type { EpisodeShape, PlaybackInfo } from "../../lib/api/client";
+import type { EpisodeShape, PlaybackInfo, PlaybackTrack, PreferredSubtitle } from "../../lib/api/client";
 import type { HlsConfig } from "hls.js";
 
 /** Ordered "Up Next" queue entry derived from an episode list. */
@@ -595,4 +595,101 @@ export function savePlayerPrefs(prefs: PlayerPrefs, set: (key: string, value: st
   } catch {
     /* storage unavailable (private mode etc.) — prefs just don't persist */
   }
+}
+
+// ---------------------------------------------------------------- subtitles
+/** ISO 639-2/B codes whose first two letters do NOT give the 639-1 code, which is
+ *  what the subtitle APIs use (German is `ger`, not `ge`). Everything else maps by
+ *  its two-letter prefix (`eng` → `en`, `hin` → `hi`). */
+const LANG_639_2_EXCEPTIONS: Record<string, string> = {
+  ger: "de", deu: "de", fre: "fr", fra: "fr", dut: "nl", nld: "nl", cze: "cs",
+  ces: "cs", gre: "el", ell: "el", rum: "ro", ron: "ro", slo: "sk", slk: "sk",
+  chi: "zh", zho: "zh", may: "ms", msa: "ms", per: "fa", fas: "fa", alb: "sq",
+  sqi: "sq", arm: "hy", hye: "hy", geo: "ka", kat: "ka", ice: "is", isl: "is",
+  mac: "mk", mkd: "mk", mao: "mi", mri: "mi", wel: "cy", cym: "cy", bur: "my",
+  mya: "my", tib: "bo", bod: "bo", scc: "sr", srp: "sr", swe: "sv",
+};
+
+/** A comparable two-letter language key: `eng`/`EN` → `en`, `pt-BR` → `pt`, `ger` → `de`.
+ *  Needed because the store holds the subtitle API's `en` while a track reports
+ *  ffprobe's `eng` — a literal comparison would never match, so auto-apply would
+ *  silently do nothing. */
+export function languageKey(value: string | null | undefined): string {
+  let text = String(value ?? "").trim().toLowerCase();
+  if (!text) return "";
+  if (text.includes("-") || text.includes("_")) text = text.replace(/_/g, "-").split("-")[0];
+  if (text.length === 3) return LANG_639_2_EXCEPTIONS[text] ?? text.slice(0, 2);
+  if (text.length > 3) return LANG_639_2_EXCEPTIONS[text.slice(0, 3)] ?? text.slice(0, 2);
+  return text;
+}
+
+/** "Used 24 times" / "Used once" / "" — ours, never the provider's download count. */
+export function usedCountLabel(count: number | null | undefined): string {
+  const n = Number(count ?? 0);
+  if (!Number.isFinite(n) || n < 1) return "";
+  return n === 1 ? "Used once" : `Used ${n} times`;
+}
+
+/** The one-line label for a subtitle row: language · provider · usage · HI. */
+export function subtitleRowLabel(row: {
+  language?: string; provider?: string; display_title?: string;
+  used_count?: number; hearing_impaired?: boolean; download_count?: number;
+}): string {
+  const parts = [
+    String(row.display_title ?? "").trim() || "Subtitle",
+    row.language ? String(row.language).toUpperCase() : "",
+    row.provider && row.provider !== "local" ? "OpenSubtitles" : "on disk",
+    usedCountLabel(row.used_count),
+    // "SDH", not "HI": the language code for Hindi IS "HI", so a bare "HI" marker
+    // reads as a language on a Hindi subtitle. SDH is also the term users know.
+    row.hearing_impaired ? "SDH" : "",
+  ].filter(Boolean);
+  return parts.join(" · ");
+}
+
+/**
+ * Order the picker: local tracks first (unchanged behaviour — they are what the
+ * item already has), then OpenSubtitles results by OUR usage count, then by the
+ * provider's popularity. Mirrors the server's ranking so the UI cannot disagree
+ * with the API about which subtitle is "best".
+ */
+export function rankSubtitleRows<T extends { local?: boolean; used_count?: number; download_count?: number; subtitle_id?: string }>(
+  rows: T[],
+): T[] {
+  return [...(rows ?? [])].sort((a, b) => {
+    const localDiff = Number(Boolean(b.local)) - Number(Boolean(a.local));
+    if (localDiff !== 0) return localDiff;
+    const usedDiff = Number(b.used_count ?? 0) - Number(a.used_count ?? 0);
+    if (usedDiff !== 0) return usedDiff;
+    const dlDiff = Number(b.download_count ?? 0) - Number(a.download_count ?? 0);
+    if (dlDiff !== 0) return dlDiff;
+    return String(a.subtitle_id ?? "").localeCompare(String(b.subtitle_id ?? ""));
+  });
+}
+
+/**
+ * Resolve a STORED subtitle choice to a stream index in the CURRENT track list.
+ *
+ * Stream indices are positional: adding or removing any track (which our own
+ * download does) shifts every index after it, so we store the identity and resolve
+ * it here at load time. Exact release-title match wins; otherwise the first track in
+ * the same language; otherwise `null` — apply NOTHING and let the picker open.
+ * **Never** substitute a different subtitle for the one that was chosen.
+ */
+export function resolveActiveSubtitle(
+  tracks: PlaybackTrack[],
+  preferred: PreferredSubtitle | null | undefined,
+): number | null {
+  if (!preferred || !tracks?.length) return null;
+  const want = String(preferred.display_title ?? "").trim().toLowerCase();
+  if (want) {
+    const exact = tracks.find((t) => String(t.name ?? "").trim().toLowerCase() === want);
+    if (exact) return exact.index;
+  }
+  const lang = languageKey(preferred.language);
+  if (lang) {
+    const sameLang = tracks.find((t) => languageKey(t.language) === lang);
+    if (sameLang) return sameLang.index;
+  }
+  return null;
 }

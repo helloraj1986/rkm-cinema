@@ -268,7 +268,7 @@ class TestRanking:
         assert [r.subtitle_id for r in rank_results([a, b], {})] == ["os:2", "os:1"]
 
     def test_rows_put_local_tracks_first_and_mark_the_active_one(self):
-        remote = [SimpleNamespace(subtitle_id="os:111", provider="opensubtitles",
+        remote = [SimpleNamespace(subtitle_id="os:111", file_id=111, provider="opensubtitles",
                                   language="en", display_title="Film.2009.WEB-DL",
                                   download_count=10, hearing_impaired=False, format="srt",
                                   vendor_format="eng-full", year=2009)]
@@ -276,6 +276,8 @@ class TestRanking:
         assert [r["provider"] for r in rows] == ["local", "local", "opensubtitles"]
         assert rows[1]["active"] is True and rows[0]["active"] is False
         assert rows[2]["used_count"] == 4 and rows[2]["index"] is None
+        # the provider file id rides along so a client need not parse "os:<id>"
+        assert rows[2]["file_id"] == 111 and rows[0]["file_id"] is None
 
     def test_episodes_search_by_series_title_and_numbers(self):
         assert search_keywords({"type": "Episode", "series_name": "Chernobyl", "year": 2019,

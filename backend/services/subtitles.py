@@ -465,6 +465,7 @@ def merge_subtitle_rows(tracks: List[dict], remote: List, *, counts=None,
     for t in tracks or []:
         rows.append({
             "subtitle_id": "",
+            "file_id": None,
             "provider": "local",
             "language": str(t.get("language") or ""),
             "display_title": str(t.get("name") or ""),
@@ -483,6 +484,10 @@ def merge_subtitle_rows(tracks: List[dict], remote: List, *, counts=None,
         sid = r.subtitle_id
         rows.append({
             "subtitle_id": sid,
+            # The provider's own file id, so a client can ask for this exact subtitle
+            # without parsing our identity format ("os:<file_id>"). Read tolerantly:
+            # a row built without it must not break the whole list.
+            "file_id": getattr(r, "file_id", None),
             "provider": r.provider,
             "language": r.language,
             "display_title": r.display_title,

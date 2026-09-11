@@ -103,8 +103,27 @@
           var dvh = probeEl.getBoundingClientRect().height;
           probeEl.remove();
 
-          // Anything inside the player that pokes outside the viewport by >1px.
+          // Anything inside the player that pokes outside the viewport by >1px —
+          // EXCEPT content inside a SCROLL CONTAINER, which the user can reach by
+          // scrolling. The settings dialog is `max-h-[…] overflow-y-auto` by design:
+          // a title with 30 subtitle results cannot fit a 390px-tall phone in
+          // landscape, and "below the fold inside a scroller" is reachable, not
+          // broken. What must never happen is content outside the viewport that is
+          // NOT scrollable — the dock dropping below the screen is exactly that, and
+          // it is still caught here.
+          function scrollableAncestor(el) {
+            var p = el.parentElement;
+            while (p && p !== root) {
+              var cs = getComputedStyle(p);
+              if ((cs.overflowY === "auto" || cs.overflowY === "scroll") &&
+                  p.scrollHeight > p.clientHeight + 1) return true;
+              p = p.parentElement;
+            }
+            return false;
+          }
+
           var bad = [];
+          var reachable = 0;
           if (root) {
             var all = root.querySelectorAll("*");
             for (var i = 0; i < all.length; i++) {
@@ -117,6 +136,7 @@
               if (b.top < -1) over.push("top=" + b.top.toFixed(1));
               if (b.bottom > vh + 1) over.push("bottom=" + b.bottom.toFixed(1) + ">vh" + vh);
               if (over.length) {
+                if (scrollableAncestor(el)) { reachable++; continue; }
                 bad.push({
                   tag: el.tagName.toLowerCase(),
                   cls: String(el.className || "").slice(0, 120),
@@ -166,6 +186,7 @@
             minButtonH: buttons.length ? Math.min.apply(null, buttons.map(function (b) { return b.h; })) : null,
             overflowCount: bad.length,
             overflow: bad.slice(0, 20),
+            overflowReachable: reachable,
           };
         };
       })();

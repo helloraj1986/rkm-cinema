@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import Hls from "hls.js";
-import { api, type PlaybackInfo, type ProgressPayload } from "../../lib/api/client";
+import {
+  api, type PlaybackInfo, type PlaybackTrack, type ProgressPayload, type SubtitleRow,
+} from "../../lib/api/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { Icon } from "../../components/ui/Icon";
 import {
@@ -10,6 +12,7 @@ import {
   playMethodForMode, usesHls, hlsEngineFor, nextHlsMode, hlsConfigFor,
   abrBadgeLabel, shouldAutoHideChrome, warmGet, warmPut, warmDelete,
   WARM_AHEAD_SEC, loadPlayerPrefs, savePlayerPrefs, PLAYER_PREFS_KEY,
+  subtitleRowLabel, resolveActiveSubtitle, rankSubtitleRows,
   fullscreenPlan, playerChromeFor,
   type AbrLevelFacts, type HlsEngine, type PlayerPrefs, type FullscreenPlan,
   type WebkitFullscreenVideo,
@@ -28,6 +31,48 @@ const MPEGURL = "application/vnd.apple.mpegurl";
 /** Pre-warm Jellyfin's pipe for an item that will play next: when the default
  *  route is HLS, fetch the master manifest once (no-store) so the transcode
  *  pipe + proxy are hot when the Player actually mounts. Best-effort only. */
+/**
+ * One selectable subtitle row (Off / a local track / an OpenSubtitles result).
+ *
+ * A radio, not a `<select>`: the panel now shows remote results with usage counts
+ * and per-row download state, which a native select cannot express. `aria-pressed`
+ * keeps the choice announced for screen readers.
+ */
+function SubtitleChoiceRow({
+  label, active, busy, hint, onClick,
+}: {
+  label: string;
+  active: boolean;
+  busy?: boolean;
+  hint?: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={busy}
+      aria-pressed={active}
+      className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[11px] transition ${
+        active
+          ? "bg-accent/15 text-accent ring-1 ring-accent/30"
+          : "bg-white/[.04] text-zinc-300 hover:bg-white/[.09]"
+      } disabled:opacity-70`}
+    >
+      <span
+        className={`grid h-3.5 w-3.5 shrink-0 place-items-center rounded-full border ${
+          active ? "border-accent" : "border-white/25"
+        }`}
+        aria-hidden="true"
+      >
+        {active ? <span className="h-1.5 w-1.5 rounded-full bg-accent" /> : null}
+      </span>
+      <span className="min-w-0 flex-1 truncate">{label}</span>
+      {hint ? <span className="shrink-0 text-[10px] font-medium text-zinc-400">{hint}</span> : null}
+    </button>
+  );
+}
+
 function prefetchMasterFor(id: string, info: PlaybackInfo): void {
   const mode = pickStreamMode({
     quality: "Original",
@@ -199,6 +244,18 @@ export function Player({
   // timeline IS the item timeline).
   const [subText, setSubText] = useState<string | null>(null);
   const subCuesRef = useRef<VttCue[]>([]);
+  // Subtitle PICKER state (plan §3.7). Local tracks arrive with playback-info;
+  // OpenSubtitles results are fetched ONLY when the user asks, so opening the panel
+  // never spends a download. `subBusyId` drives a per-row spinner (several selects
+  // are impossible at once anyway — one is enough to block the rest).
+  const [subRows, setSubRows] = useState<SubtitleRow[] | null>(null);
+  const [subBusyId, setSubBusyId] = useState<string | null>(null);
+  const [subSearching, setSubSearching] = useState(false);
+  const [subRemaining, setSubRemaining] = useState<number | null>(null);
+  const [subEnabled, setSubEnabled] = useState<boolean | null>(null);
+  const [subDisabled, setSubDisabled] = useState(false);
+  const [subNotice, setSubNotice] = useState<{ text: string; kind: "error" | "warn" } | null>(null);
+  const subNoticeTimer = useRef<number | null>(null);
 
   modeRef.current = mode;
   rateRef.current = rate;
@@ -396,7 +453,20 @@ export function Player({
     warmDelete(item.item_id);
     infoP
       .then((d) => {
-        if (alive) setInfo(d || null);
+        if (!alive) return;
+        setInfo(d || null);
+        // Auto-apply the user's stored subtitle choice (spec criteria 4–5). The
+        // server resolves the identity to a CURRENT index (indices are positional);
+        // re-resolving here against the same track list is a cheap guard that also
+        // covers a stale warm-cache entry. No match → apply NOTHING (the picker
+        // opens) rather than show a different subtitle than the one chosen.
+        setSubIndex(resolveActiveSubtitle(d?.subtitles ?? [], d?.preferred_subtitle ?? null));
+        // A different item means different results: never carry the previous
+        // title's OpenSubtitles list (or its notice) across.
+        setSubRows(null);
+        setSubNotice(null);
+        setSubDisabled(false);
+        setSubBusyId(null);
       })
       .catch(() => {
         /* stay direct; the error-ladder still rescues a bad direct attempt */
@@ -440,6 +510,91 @@ export function Player({
       v.removeEventListener("leavepictureinpicture", onLeave);
     };
   }, []);
+
+  // ---------------------------------------------------------------- subtitles
+  /** Show a non-blocking notice (quota/rate-limit/format errors and warnings).
+   *  The plan is explicit: a subtitle problem must NEVER block playback, so these
+   *  are a transient pill rather than the blocking error card. */
+  const showSubNotice = (text: string, kind: "error" | "warn" = "error") => {
+    setSubNotice({ text, kind });
+    if (subNoticeTimer.current) window.clearTimeout(subNoticeTimer.current);
+    subNoticeTimer.current = window.setTimeout(() => setSubNotice(null), 7000);
+  };
+
+  useEffect(() => () => {
+    if (subNoticeTimer.current) window.clearTimeout(subNoticeTimer.current);
+  }, []);
+
+  /** Fetch the picker's rows (local tracks + ranked OpenSubtitles results).
+   *  Called on demand — opening the panel must not spend a download. */
+  const loadSubtitleRows = async (): Promise<void> => {
+    if (subSearching) return;
+    setSubSearching(true);
+    try {
+      const data = await api.searchSubtitles(item.item_id);
+      setSubRows(data.results ?? []);
+      setSubEnabled(data.enabled);
+      setSubDisabled(data.disabled);
+      if (data.remaining_downloads != null) setSubRemaining(data.remaining_downloads);
+      if (data.warning) showSubNotice(data.warning, "warn");
+      // The server's own resolution wins: it knows which track carries our identity.
+      const idx = data.preferred_subtitle?.index;
+      if (idx != null) setSubIndex(idx);
+    } catch (e) {
+      showSubNotice((e as Error)?.message || "Could not search subtitles");
+    } finally {
+      setSubSearching(false);
+    }
+  };
+
+  /** Choose a LOCAL track: applies for this session, exactly as before.
+   *  (The store only persists OpenSubtitles choices — there is no download to
+   *  remember, and the item already carries the file.) */
+  const chooseLocalSubtitle = (index: number | null) => {
+    setSubIndex(index);
+    setSubNotice(null);
+  };
+
+  /** Download + attach + remember one OpenSubtitles result. */
+  const chooseRemoteSubtitle = async (row: SubtitleRow) => {
+    if (subBusyId || row.file_id == null) return;
+    setSubBusyId(row.subtitle_id);
+    try {
+      const res = await api.selectSubtitle({
+        item_id: item.item_id,
+        file_id: row.file_id,
+        language: row.language,
+        display_title: row.display_title,
+      });
+      const index = res.preferred_subtitle?.index
+        ?? resolveActiveSubtitle(res.subtitles ?? [], res.preferred_subtitle ?? null);
+      setSubIndex(index);
+      setSubDisabled(false);
+      if (res.remaining_downloads != null) setSubRemaining(res.remaining_downloads);
+      // Refresh the rows so the active marker and the usage count are the server's
+      // numbers, not our optimistic guess.
+      setSubSearching(false);
+      await loadSubtitleRows();
+    } catch (e) {
+      showSubNotice((e as Error)?.message || "Could not add that subtitle");
+    } finally {
+      setSubBusyId(null);
+    }
+  };
+
+  /** Turn subtitles off — and REMEMBER it, so the next playback stays off. */
+  const turnSubtitlesOff = () => {
+    setSubIndex(null);
+    setSubNotice(null);
+    // Only worth a round trip when a choice exists to disable.
+    if (info?.preferred_subtitle || subRows?.some((r) => r.active)) {
+      setSubDisabled(true);
+      void api.disableSubtitle(item.item_id).catch((e) => {
+        setSubDisabled(false);
+        showSubNotice((e as Error)?.message || "Could not save the subtitle setting");
+      });
+    }
+  };
 
   // Fetch + parse the selected subtitle stream as item-time cues. Native
   // <track> doesn't survive engine switches reliably, so the overlay renders
@@ -1115,6 +1270,20 @@ export function Player({
           </button>
         )}
 
+        {/* Non-blocking subtitle notice (quota exhausted, rate limit, bad format).
+            A pill, not a dialog: the plan forbids letting a subtitle problem block
+            playback, and the user may still be watching happily without subtitles. */}
+        {subNotice && (
+          <div
+            role="status"
+            className={`pointer-events-none absolute left-1/2 top-[calc(env(safe-area-inset-top,0px)+4.25rem)] z-40 max-w-[min(92vw,32rem)] -translate-x-1/2 rounded-full px-3.5 py-2 text-center text-[11px] font-semibold shadow-modal backdrop-blur-md ${
+              subNotice.kind === "error" ? "bg-red-500/85 text-white" : "bg-amber-400/90 text-black"
+            }`}
+          >
+            {subNotice.text}
+          </div>
+        )}
+
         {error && (
           <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/85 p-6 text-center">
             <div className="max-w-md rounded-2xl border border-white/10 bg-surface-2/90 p-6 shadow-modal">
@@ -1280,22 +1449,84 @@ export function Player({
                 </section>
               ) : null}
 
-              {info && info.subtitles.length > 0 ? (
+              {/* Subtitles (spec §4): Off / the item's own tracks / OpenSubtitles
+                  results with our usage counts. The item's tracks behave exactly as
+                  before; remote rows are fetched only when asked, and a failure here
+                  never touches the picture — it becomes a notice pill. */}
+              {info ? (
                 <section className="space-y-1.5">
-                  <div className={panelLabel}>Subtitles</div>
-                  <select
-                    value={subIndex == null ? "" : String(subIndex)}
-                    onChange={(e) => setSubIndex(e.target.value === "" ? null : Number(e.target.value))}
-                    className={overlaySelect}
-                  >
-                    <option value="">Off</option>
-                    {info.subtitles.map((s) => (
-                      <option key={s.index} value={s.index}>
-                        {s.name}
-                        {s.language ? ` (${s.language})` : ""}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className={panelLabel}>Subtitles</div>
+                    {subRemaining != null ? (
+                      <span className="text-[10px] font-medium tabular-nums text-zinc-500">
+                        {subRemaining} download{subRemaining === 1 ? "" : "s"} left today
+                      </span>
+                    ) : null}
+                  </div>
+
+                  <SubtitleChoiceRow
+                    label="Off"
+                    active={subIndex == null}
+                    onClick={turnSubtitlesOff}
+                  />
+                  {subDisabled ? (
+                    <p className="text-[10px] font-medium text-zinc-500">
+                      Off for this title — pick one to turn subtitles back on.
+                    </p>
+                  ) : null}
+
+                  {(info.subtitles ?? []).map((t: PlaybackTrack) => (
+                    <SubtitleChoiceRow
+                      key={`local-${t.index}`}
+                      label={`${t.name}${t.language ? ` (${t.language})` : ""}`}
+                      active={subIndex === t.index}
+                      onClick={() => chooseLocalSubtitle(t.index)}
+                    />
+                  ))}
+
+                  {subRows === null ? (
+                    <button
+                      type="button"
+                      onClick={() => void loadSubtitleRows()}
+                      disabled={subSearching}
+                      className="inline-flex h-8 w-full items-center justify-center rounded-lg border border-white/10 bg-white/[.06] text-[11px] font-semibold text-zinc-100 transition hover:bg-white/[.12] disabled:opacity-60"
+                    >
+                      {subSearching ? "Searching OpenSubtitles…" : "Search OpenSubtitles"}
+                    </button>
+                  ) : (
+                    <>
+                      {rankSubtitleRows(subRows.filter((r) => !r.local)).map((row) => (
+                        <SubtitleChoiceRow
+                          key={row.subtitle_id}
+                          label={subtitleRowLabel(row)}
+                          active={row.active}
+                          busy={subBusyId === row.subtitle_id}
+                          hint={subBusyId === row.subtitle_id ? "Downloading…" : undefined}
+                          onClick={() => void chooseRemoteSubtitle(row)}
+                        />
+                      ))}
+                      {subRows.filter((r) => !r.local).length === 0 ? (
+                        <p className="text-[10px] font-medium text-zinc-500">
+                          No OpenSubtitles results for this title.
+                        </p>
+                      ) : null}
+                      <button
+                        type="button"
+                        onClick={() => void loadSubtitleRows()}
+                        disabled={subSearching}
+                        className="inline-flex h-8 w-full items-center justify-center rounded-lg border border-white/10 bg-white/[.06] text-[11px] font-semibold text-zinc-100 transition hover:bg-white/[.12] disabled:opacity-60"
+                      >
+                        {subSearching ? "Searching…" : "Search again"}
+                      </button>
+                    </>
+                  )}
+
+                  {subEnabled === false ? (
+                    <p className="text-[10px] font-medium text-zinc-500">
+                      OpenSubtitles is not configured — set OPENSUBTITLES_API_KEY in .env to
+                      search online subtitles.
+                    </p>
+                  ) : null}
                 </section>
               ) : null}
             </div>

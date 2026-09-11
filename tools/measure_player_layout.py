@@ -226,6 +226,13 @@ def main() -> int:
         size = f"{r.viewport['w']}x{r.viewport['h']}"
         state = "PASS" if r.ok else "FAIL"
         detail = "; ".join(r.notes) if r.notes else "shell = viewport, dock inside, no overflow"
+        # Informational only: content below the fold INSIDE the settings panel's
+        # scroll container is reachable by scrolling, so it is not a failure — but it
+        # is worth seeing, since it is how much of the panel a phone user must scroll.
+        if not r.notes and r.probe:
+            reach = (r.probe.get("overlays") or {}).get("overflowReachable")
+            if reach:
+                detail += f" | {reach} more inside the panel's scroll area (reachable)"
         if r.ok:
             detail += (
                 f" | video {p.get('video', {}).get('w')}x{p.get('video', {}).get('h')}"

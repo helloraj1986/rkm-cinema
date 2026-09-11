@@ -15,6 +15,7 @@ import {
   warmGet, warmPut, warmDelete, warmClear, WARM_TTL_MS, WARM_MAX_ITEMS,
   WARM_AHEAD_SEC, type WarmEntry,
   loadPlayerPrefs, savePlayerPrefs, PLAYER_PREFS_KEY, type PlayerPrefs,
+  languageKey, usedCountLabel, subtitleRowLabel, rankSubtitleRows, resolveActiveSubtitle,
 } from "./lib";
 
 const ep = (id: string, season: number, episode: number, played = false, position = 0): EpisodeShape => ({
@@ -447,5 +448,129 @@ describe("nextPlayableEpisode + episodeCode (series preplay auto-continue)", () 
   });
   it("episodeCode formats S/E", () => {
     expect(episodeCode({ season: 1, episode: 4 })).toBe("S1E4");
+  });
+});
+
+
+// ------------------------------------------------------------------- subtitles
+describe("languageKey", () => {
+  it("normalises the two standards a track and the subtitle API use", () => {
+    expect(languageKey("en")).toBe("en");
+    expect(languageKey("ENG")).toBe("en");
+    expect(languageKey("eng")).toBe("en");   // ffprobe's 639-2/B
+    expect(languageKey("hin")).toBe("hi");
+    expect(languageKey("tam")).toBe("ta");
+    expect(languageKey("pt-BR")).toBe("pt");
+    expect(languageKey("zh_CN")).toBe("zh");
+  });
+
+  it("handles the codes whose prefix would be WRONG", () => {
+    expect(languageKey("ger")).toBe("de");   // not "ge"
+    expect(languageKey("fre")).toBe("fr");
+    expect(languageKey("swe")).toBe("sv");   // not "sw" (Swahili)
+  });
+
+  it("is empty for empty input", () => {
+    expect(languageKey("")).toBe("");
+    expect(languageKey(null)).toBe("");
+    expect(languageKey(undefined)).toBe("");
+  });
+});
+
+describe("usedCountLabel", () => {
+  it("counts from one upwards and says nothing at zero", () => {
+    expect(usedCountLabel(0)).toBe("");
+    expect(usedCountLabel(null)).toBe("");
+    expect(usedCountLabel(1)).toBe("Used once");
+    expect(usedCountLabel(2)).toBe("Used 2 times");
+    expect(usedCountLabel(24)).toBe("Used 24 times");
+  });
+});
+
+describe("subtitleRowLabel", () => {
+  it("shows the release, language, source and our usage", () => {
+    expect(subtitleRowLabel({
+      display_title: "Film.2009.WEB-DL", language: "en", provider: "opensubtitles",
+      used_count: 24,
+    })).toBe("Film.2009.WEB-DL · EN · OpenSubtitles · Used 24 times");
+  });
+
+  it("calls a local track what it is and marks hearing-impaired subs", () => {
+    expect(subtitleRowLabel({ display_title: "English", language: "eng", provider: "local" }))
+      .toBe("English · ENG · on disk");
+    expect(subtitleRowLabel({ display_title: "SDH", language: "en", provider: "opensubtitles",
+      used_count: 1, hearing_impaired: true }))
+      .toBe("SDH · EN · OpenSubtitles · Used once · SDH");
+  });
+
+  it("never renders an empty label", () => {
+    expect(subtitleRowLabel({})).toBe("Subtitle · on disk");
+  });
+});
+
+describe("rankSubtitleRows", () => {
+  const local = (id: string, index: number) => ({ subtitle_id: "", provider: "local", local: true, index, used_count: 0, download_count: 0, display_title: id });
+  const remote = (id: string, used: number, dl: number) => ({ subtitle_id: id, provider: "opensubtitles", local: false, index: null, used_count: used, download_count: dl, display_title: id });
+
+  it("keeps local tracks first, whatever the remote popularity", () => {
+    const rows = [remote("os:1", 0, 999999), local("English", 0)];
+    expect(rankSubtitleRows(rows).map((r) => r.subtitle_id)).toEqual(["", "os:1"]);
+  });
+
+  it("ranks remote results by OUR usage, then the provider's count", () => {
+    const rows = [remote("os:1", 0, 500), remote("os:2", 3, 1), remote("os:3", 0, 900)];
+    expect(rankSubtitleRows(rows).map((r) => r.subtitle_id)).toEqual(["os:2", "os:3", "os:1"]);
+  });
+
+  it("is stable for identical rows and does not mutate the input", () => {
+    const rows = [remote("os:2", 0, 5), remote("os:1", 0, 5)];
+    const sorted = rankSubtitleRows(rows);
+    expect(sorted.map((r) => r.subtitle_id)).toEqual(["os:1", "os:2"]);
+    expect(rows.map((r) => r.subtitle_id)).toEqual(["os:2", "os:1"]);
+  });
+});
+
+describe("resolveActiveSubtitle", () => {
+  const tracks = [
+    { index: 0, name: "English", language: "eng" },
+    { index: 1, name: "English (SDH)", language: "eng" },
+    { index: 3, name: "Hindi", language: "hin" },
+  ];
+
+  it("applies the exact stored release when it is among the tracks", () => {
+    expect(resolveActiveSubtitle(tracks, {
+      subtitle_id: "os:1", provider: "opensubtitles", language: "en",
+      display_title: "English (SDH)", index: 1, used_count: 2,
+    })).toBe(1);
+  });
+
+  it("keeps working when the index moved (tracks are positional)", () => {
+    const moved = [{ index: 7, name: "English (SDH)", language: "eng" }];
+    expect(resolveActiveSubtitle(moved, {
+      subtitle_id: "os:1", provider: "opensubtitles", language: "en",
+      display_title: "English (SDH)", index: 1, used_count: 2,
+    })).toBe(7);
+  });
+
+  it("falls back to the same LANGUAGE when the release title is gone", () => {
+    expect(resolveActiveSubtitle(tracks, {
+      subtitle_id: "os:1", provider: "opensubtitles", language: "en",
+      display_title: "Some.Other.Release.1080p", index: 1, used_count: 0,
+    })).toBe(0);
+  });
+
+  it("applies NOTHING rather than a different subtitle", () => {
+    expect(resolveActiveSubtitle(tracks, {
+      subtitle_id: "os:1", provider: "opensubtitles", language: "fr",
+      display_title: "Film.FRENCH", index: 1, used_count: 0,
+    })).toBeNull();
+  });
+
+  it("is null with no choice or no tracks", () => {
+    expect(resolveActiveSubtitle(tracks, null)).toBeNull();
+    expect(resolveActiveSubtitle([], {
+      subtitle_id: "os:1", provider: "opensubtitles", language: "en",
+      display_title: "x", index: 0, used_count: 0,
+    })).toBeNull();
   });
 });

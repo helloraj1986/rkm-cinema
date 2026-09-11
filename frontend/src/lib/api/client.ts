@@ -255,6 +255,19 @@ export interface PlaybackVideo {
   bit_rate?: number;
 }
 
+/** The user's stored subtitle choice for an item, resolved to a CURRENT index.
+ *  Stream indices are positional (adding/removing a track shifts them), so the
+ *  server keeps the identity and resolves the index per load. */
+export interface PreferredSubtitle {
+  subtitle_id: string;
+  provider: string;
+  language: string;
+  display_title: string;
+  /** Current stream index of that subtitle, or the matched local track. */
+  index: number;
+  used_count: number;
+}
+
 /** Tracks + media-source for the player's audio/subtitle pickers. */
 export interface PlaybackInfo {
   media_source_id: string;
@@ -264,6 +277,62 @@ export interface PlaybackInfo {
   video?: PlaybackVideo | null;
   audio: PlaybackTrack[];
   subtitles: PlaybackTrack[];
+  /** ADDITIVE (subtitle plan P3): null when there is no choice, it is disabled, or
+   *  the identity no longer matches a track — the picker opens in that case. */
+  preferred_subtitle?: PreferredSubtitle | null;
+}
+
+/** One row in the subtitle picker: a LOCAL track or an OpenSubtitles result. */
+export interface SubtitleRow {
+  /** Our identity ("os:<file_id>"); "" for a local track. */
+  subtitle_id: string;
+  /** The provider's file id to ask for; null for a local track. */
+  file_id: number | null;
+  /** "local" | "opensubtitles". */
+  provider: string;
+  language: string;
+  display_title: string;
+  /** Stream index — only a LOCAL track has one (a remote result gains one when
+   *  it is downloaded and attached). */
+  index: number | null;
+  used_count: number;
+  last_used: string;
+  download_count: number;
+  hearing_impaired: boolean;
+  format: string;
+  vendor_format: string;
+  year: number | null;
+  active: boolean;
+  local: boolean;
+}
+
+/** GET /api/jellyfin/subtitle-search — local tracks + ranked remote results. */
+export interface SubtitleSearchShape {
+  item_id: string;
+  /** False when no OpenSubtitles key is configured (local tracks still work). */
+  enabled: boolean;
+  language: string;
+  languages: string[];
+  results: SubtitleRow[];
+  local_count: number;
+  remote_count: number;
+  preferred_subtitle: PreferredSubtitle | null;
+  disabled: boolean;
+  /** Downloads left today, as the API reported it — null until it is known. */
+  remaining_downloads: number | null;
+  /** Why the remote half degraded (never blocks local playback). */
+  warning: string;
+}
+
+/** POST /api/jellyfin/subtitle-select result. */
+export interface SubtitleSelectResult {
+  ok: boolean;
+  delivered: string;
+  reused: boolean;
+  subtitles: PlaybackTrack[];
+  used_count: number;
+  remaining_downloads: number | null;
+  preferred_subtitle: PreferredSubtitle | null;
 }
 
 /**
@@ -657,6 +726,21 @@ export const api = {
   },
   /** Audio + text-subtitle track lists for the player pickers. */
   playbackInfo: (itemId: string) => getJson<PlaybackInfo>(`/jellyfin/playback-info?id=${encodeURIComponent(itemId)}`),
+  /** Every subtitle choice for an item: local tracks + OpenSubtitles results. */
+  searchSubtitles: (itemId: string, language?: string) =>
+    getJson<SubtitleSearchShape>(
+      `/jellyfin/subtitle-search?id=${encodeURIComponent(itemId)}` +
+      (language ? `&language=${encodeURIComponent(language)}` : ""),
+    ),
+  /** Download + attach + remember one subtitle (one user action). */
+  selectSubtitle: (payload: {
+    item_id: string; file_id: number; language: string; display_title?: string;
+  }) => postJson<SubtitleSelectResult>("/jellyfin/subtitle-select", payload),
+  /** Turn subtitles off for an item (the choice is kept, so this is reversible). */
+  disableSubtitle: (itemId: string) =>
+    postJson<{ ok: boolean; disabled: boolean }>("/jellyfin/subtitle-disable", {
+      item_id: itemId,
+    }),
   /** Proxy URL for a text subtitle (WebVTT) stream. */
   subtitleUrl: (itemId: string, mediaSourceId: string, index: number) =>
     `${BASE}/jellyfin/subtitle?id=${encodeURIComponent(itemId)}&ms=${encodeURIComponent(mediaSourceId)}&index=${index}`,

@@ -20,7 +20,7 @@ const REDUCED_MOTION =
 /**
  * Detail modal for a watchlist entry (legacy `openModal` parity): backdrop
  * hero + floating poster, chips, scores, synopsis, director/cast/added facts,
- * and the state-driven action row (Play in RKM / Watch on Plex·Emby·Jellyfin /
+ * and the state-driven action row (Play in RKM / Watch on Jellyfin /
  * Download with progress) + trailer embed. Esc / ✕ / backdrop-click close.
  *
  * Premium pass (2026-09): Dialog shell (§51 modal chrome + focus trap/restore),
@@ -179,17 +179,7 @@ export function WatchlistDetail({
                   ▶ Watch on Jellyfin
                 </button>
               ) : null}
-              {state.plexUrl ? (
-                <button type="button" onClick={() => onWatchLink(entry, state.plexUrl)} className={`${actionBtn} bg-violet-600 text-white hover:bg-violet-500`}>
-                  ▶ Watch on Plex
-                </button>
-              ) : null}
-              {state.embyUrl ? (
-                <button type="button" onClick={() => onWatchLink(entry, state.embyUrl)} className={`${actionBtn} bg-fuchsia-700 text-white hover:bg-fuchsia-600`}>
-                  ▶ Watch on Emby
-                </button>
-              ) : null}
-              {!(jf?.available && jf.item_id) && !state.plexUrl && !state.embyUrl && !(jf?.available && jf.url) ? (
+              {!(jf?.available && jf.item_id) && !(jf?.available && jf.url) ? (
                 <button type="button" disabled className={`${actionBtn} bg-emerald-600/70 text-white`}>
                   <Icon name="check" size={14} />
                   Available

@@ -14,9 +14,7 @@ export interface ServiceMap {
   radarr: boolean;
   sonarr: boolean;
   tmdb: boolean;
-  plex: boolean;
   jellyfin: boolean;
-  emby: boolean;
 }
 
 export interface ConfigShape {

@@ -218,14 +218,11 @@ describe("filterLibraryItems", () => {
 });
 
 describe("posterUrl", () => {
-  it("prefers the jellyfin poster proxy when an id exists", () => {
-    expect(posterUrl({ item_id: "abc 1", thumb: null })).toContain("/api/jellyfin/poster?id=abc%201");
+  it("uses the media server poster proxy when an id exists", () => {
+    expect(posterUrl({ item_id: "abc 1" })).toContain("/api/jellyfin/poster?id=abc%201");
   });
-  it("falls back to the plex thumb proxy", () => {
-    expect(posterUrl({ item_id: "", thumb: "/z/t.jpg" })).toContain("/api/plex/thumb?path=");
-  });
-  it("null when neither", () => {
-    expect(posterUrl({ item_id: "", thumb: null })).toBeNull();
+  it("null when there is no item id (callers show the seeded art)", () => {
+    expect(posterUrl({ item_id: "" })).toBeNull();
   });
 });
 

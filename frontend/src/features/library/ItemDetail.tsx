@@ -226,7 +226,7 @@ export function ItemDetailContent({
       ? `Replay ${episodeCode(firstEp)}`
       : "Play";
 
-  const poster = posterUrl({ item_id: itemId, thumb: item?.thumb ?? null });
+  const poster = posterUrl({ item_id: itemId });
   const backdrop = d?.has_backdrop ? api.backdropUrl(itemId, 1920) : null;
   const percent = detailResumePercent(d?.play, runtimeSec);
   const metaBits = [

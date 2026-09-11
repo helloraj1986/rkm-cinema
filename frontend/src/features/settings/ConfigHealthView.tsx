@@ -6,15 +6,16 @@ import { Badge } from "../../components/ui/Badge";
 import { Icon, type IconName } from "../../components/ui/Icon";
 import { artTone } from "../library/lib";
 
-const SERVICES = ["radarr", "sonarr", "tmdb", "plex", "jellyfin", "emby"] as const;
+// One media server (Jellyfin) plus the acquisition/metadata services the api
+// reports on. /api/health is the source of truth and no longer reports the
+// retired backends.
+const SERVICES = ["radarr", "sonarr", "tmdb", "jellyfin"] as const;
 
 const SERVICE_ICON: Record<(typeof SERVICES)[number], IconName> = {
   radarr: "film",
   sonarr: "tv",
   tmdb: "star",
-  plex: "play",
   jellyfin: "play",
-  emby: "play",
 };
 
 /**

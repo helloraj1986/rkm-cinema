@@ -53,7 +53,7 @@ export function useCardActions() {
     navigate(`/library/item/${encodeURIComponent(itemId)}`);
   };
 
-  /** External watch links (Plex / Emby / Jellyfin web). */
+  /** External watch link (the media server's own web UI). */
   const watchLink = (entry: WatchlistEntry, url: string) => {
     window.open(url, "_blank", "noopener,noreferrer");
   };

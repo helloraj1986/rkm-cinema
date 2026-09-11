@@ -12,13 +12,17 @@ import type {
   SuggestResult,
 } from "../../lib/api/client";
 
-/** Poster proxy URL for a library item (Jellyfin id first, Plex thumb fallback). */
-export function posterUrl(item: Pick<MediaItem, "item_id" | "thumb">): string | null {
+/**
+ * Poster proxy URL for a library item — by ITEM ID, or null.
+ *
+ * The server's poster route is addressed by item id; a bare image path cannot be
+ * proxied (the second route that used to try went with the retired backends,
+ * 2026-09-11). Callers render the seeded art when this is null — the existing
+ * no-image path.
+ */
+export function posterUrl(item: Pick<MediaItem, "item_id">): string | null {
   if (item.item_id) {
     return `/api/jellyfin/poster?id=${encodeURIComponent(item.item_id)}&width=500`;
-  }
-  if (item.thumb) {
-    return `/api/plex/thumb?path=${encodeURIComponent(item.thumb)}&width=500`;
   }
   return null;
 }

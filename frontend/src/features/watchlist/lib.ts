@@ -94,8 +94,6 @@ export interface ResolvedState {
   qbitName?: string;
   capabilities: { can_download: boolean; can_watch: boolean };
   watch: Record<string, WatchLink>;
-  plexUrl: string;
-  embyUrl: string;
   jellyfinUrl: string;
   jellyfinItemId: string;
   acquisition?: MediaResource["acquisition"];
@@ -107,8 +105,6 @@ const NOT_ADDED: ResolvedState = {
   detail: "",
   capabilities: { can_download: true, can_watch: false },
   watch: {},
-  plexUrl: "",
-  embyUrl: "",
   jellyfinUrl: "",
   jellyfinItemId: "",
 };
@@ -136,8 +132,6 @@ export function resolveState(
       qbitName: resource.qbitName ?? "",
       capabilities: resource.capabilities ?? { can_download: false, can_watch: false },
       watch,
-      plexUrl: (watch.plex as WatchLink | undefined)?.url ?? "",
-      embyUrl: (watch.emby as WatchLink | undefined)?.url ?? "",
       jellyfinUrl: (watch.jellyfin as WatchLink | undefined)?.url ?? "",
       jellyfinItemId: (watch.jellyfin as WatchLink | undefined)?.item_id ?? "",
       acquisition: resource.acquisition,
@@ -172,14 +166,21 @@ export const STATE_LABEL: Record<string, string> = {
   unknown: "Unknown",
 };
 
-/** Available watch links in display order: Plex, Emby, Jellyfin. */
-export function availableWatchLinks(st: ResolvedState): { provider: "plex" | "emby" | "jellyfin"; url: string; itemId: string }[] {
-  const out: { provider: "plex" | "emby" | "jellyfin"; url: string; itemId: string }[] = [];
-  const plex = (st.watch.plex as WatchLink | undefined);
-  const emby = (st.watch.emby as WatchLink | undefined);
+/**
+ * The watch providers this app can link out to. There is exactly ONE media
+ * server (Jellyfin) — the type is kept named so a second is a deliberate change
+ * rather than a name lookup kept alive for symmetry.
+ */
+export type WatchProvider = "jellyfin";
+
+export const WATCH_PROVIDER_LABEL: Record<WatchProvider, string> = {
+  jellyfin: "Watch on Jellyfin",
+};
+
+/** Available watch links, in display order. */
+export function availableWatchLinks(st: ResolvedState): { provider: WatchProvider; url: string; itemId: string }[] {
+  const out: { provider: WatchProvider; url: string; itemId: string }[] = [];
   const jf = (st.watch.jellyfin as WatchLink | undefined);
-  if (plex?.available && plex.url) out.push({ provider: "plex", url: plex.url, itemId: plex.item_id ?? "" });
-  if (emby?.available && emby.url) out.push({ provider: "emby", url: emby.url, itemId: emby.item_id ?? "" });
   if (jf?.available && jf.url) out.push({ provider: "jellyfin", url: jf.url, itemId: jf.item_id ?? "" });
   return out;
 }
@@ -187,7 +188,7 @@ export function availableWatchLinks(st: ResolvedState): { provider: "plex" | "em
 /** The one main card action (legacy cardMarkup/downloadButton ordering). */
 export type CardAction =
   | { type: "play-rkm"; itemId: string; label: "Play in RKM" | "Episodes" }
-  | { type: "watch-link"; provider: "plex" | "emby" | "jellyfin"; url: string; label: string }
+  | { type: "watch-link"; provider: WatchProvider; url: string; label: string }
   | { type: "available" }
   | { type: "requested" }
   | { type: "downloading"; progress: number }
@@ -208,7 +209,7 @@ export function cardPrimaryAction(entry: Pick<WatchlistEntry, "type">, st: Resol
         type: "watch-link",
         provider: first.provider,
         url: first.url,
-        label: first.provider === "plex" ? "Watch on Plex" : first.provider === "emby" ? "Watch on Emby" : "Watch on Jellyfin",
+        label: WATCH_PROVIDER_LABEL[first.provider],
       };
     }
     return { type: "available" };

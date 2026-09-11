@@ -32,7 +32,7 @@ export function WatchCard({
   onDownload: (entry: WatchlistEntry) => void;
   /** In-app play / episodes — routes to the item's page (/library/item/:id). */
   onPlayInRkm: (entry: WatchlistEntry, itemId: string) => void;
-  /** Open an external watch link (Plex/Emby/Jellyfin web). */
+  /** Open an external watch link (the media server's own web UI). */
   onWatchLink: (entry: WatchlistEntry, url: string) => void;
   onTrailer: (entry: WatchlistEntry) => void;
   /** Fill the parent grid cell (folder/page grids) instead of the fixed rail width. */

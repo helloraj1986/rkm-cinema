@@ -120,10 +120,7 @@ describe("cardPrimaryAction (legacy cardMarkup/downloadButton ordering)", () => 
   it("Play in RKM first when a Jellyfin item id is available", () => {
     const r = res("movie:tmdb:603", "available", {
       capabilities: { can_download: false, can_watch: true },
-      watch: {
-        plex: { available: true, url: "https://plex/x" },
-        jellyfin: { available: true, url: "https://jf/x", item_id: "jf-1" },
-      },
+      watch: { jellyfin: { available: true, url: "https://jf/x", item_id: "jf-1" } },
     });
     expect(cardPrimaryAction(movie, resolveState(movie, r, true))).toEqual({
       type: "play-rkm",
@@ -132,13 +129,13 @@ describe("cardPrimaryAction (legacy cardMarkup/downloadButton ordering)", () => 
     });
     expect(cardPrimaryAction(show, resolveState(show, r, true)).type).toBe("play-rkm");
   });
-  it("watch-link when only a provider is available", () => {
+  it("watch-link when a server link resolves but has no in-app item id", () => {
     const r = res("movie:tmdb:603", "available", {
       capabilities: { can_download: false, can_watch: true },
-      watch: { plex: { available: true, url: "https://plex/x" } },
+      watch: { jellyfin: { available: true, url: "https://jf/x" } },
     });
     const a = cardPrimaryAction(movie, resolveState(movie, r, true));
-    expect(a).toMatchObject({ type: "watch-link", provider: "plex", label: "Watch on Plex" });
+    expect(a).toMatchObject({ type: "watch-link", provider: "jellyfin", label: "Watch on Jellyfin" });
   });
   it("disabled Available when capability says watchable but no live link", () => {
     const r = res("movie:tmdb:603", "available", {

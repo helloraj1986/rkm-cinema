@@ -315,7 +315,7 @@ function LibraryStrip({
           <div className="max-w-md">
             <h3 className="font-semibold text-zinc-200">Library preview</h3>
             <p className="mt-1 text-sm leading-relaxed text-zinc-500">
-              Connect a library backend (PLEX_URL/PLEX_TOKEN, EMBY_URL/EMBY_API_KEY, or JELLYFIN_URL/JELLYFIN_API_KEY) and your
+              Connect Jellyfin (JELLYFIN_URL + JELLYFIN_API_KEY in the repo .env) and your
               library counts and recent additions appear here.
             </p>
           </div>

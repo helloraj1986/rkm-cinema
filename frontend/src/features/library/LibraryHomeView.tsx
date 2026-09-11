@@ -130,7 +130,7 @@ export function LibraryHomeView() {
         sub={
           items.isError
             ? "We couldn't load your library."
-            : "Connect Jellyfin, Plex or Emby in the repo .env, then redeploy the stack."
+            : "Connect Jellyfin in the repo .env, then redeploy the stack."
         }
       />
     );

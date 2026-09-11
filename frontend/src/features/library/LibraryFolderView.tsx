@@ -137,7 +137,7 @@ export function LibraryFolderView() {
           <div className="max-w-sm">
             <h2 className="font-semibold text-zinc-200">No media server connected</h2>
             <p className="mt-1 text-sm leading-relaxed text-zinc-500">
-              Connect Jellyfin, Plex or Emby in the repo .env, then redeploy the stack.
+              Connect Jellyfin in the repo .env, then redeploy the stack.
             </p>
           </div>
         </div>

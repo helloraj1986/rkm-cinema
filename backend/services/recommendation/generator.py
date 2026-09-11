@@ -8,7 +8,7 @@ which survive. LAN-free in tests via a DI-injected ``tmdb``.
 Multi-strategy discover: each run rotates through 3 strategies to pull
 from a wider pool — popular (trending), top-rated (critically acclaimed),
 and hidden gems (high rating, lower vote count). This prevents the pipeline
-from always returning the same popular content already in Plex.
+from always returning the same popular content already in the library.
 """
 from __future__ import annotations
 

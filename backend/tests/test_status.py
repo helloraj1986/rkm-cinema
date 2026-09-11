@@ -28,27 +28,26 @@ from domain.state_machine import (  # backwards-compat shim still exposes the sa
 class TestResolveStatus:
     def test_available_when_in_library_always_wins(self):
         """in_library trumps every other fact (even a record + download)."""
-        f = StatusFacts(in_plex=True, arr_record_exists=True,
-                        plex_links=WatchLinks(plex_url="http://p", emby_url="http://e"))
+        f = StatusFacts(in_library=True, arr_record_exists=True,
+                        library_links=WatchLinks(watch_url="http://server/x"))
         r = resolve_status(f)
         assert r.state is MediaStatus.AVAILABLE
-        assert r.plexUrl == "http://p"
-        assert r.embyUrl == "http://e"
+        assert r.watch_url == "http://server/x"
 
     def test_priority_order(self):
-        assert resolve_status(StatusFacts(in_plex=False, qbit_active=True)).state is MediaStatus.DOWNLOADING
-        assert resolve_status(StatusFacts(in_plex=False, arr_record_exists=True)).state is MediaStatus.REQUESTED
-        assert resolve_status(StatusFacts(in_plex=False, arr_has_file=True)).state is MediaStatus.DOWNLOADED
+        assert resolve_status(StatusFacts(in_library=False, qbit_active=True)).state is MediaStatus.DOWNLOADING
+        assert resolve_status(StatusFacts(in_library=False, arr_record_exists=True)).state is MediaStatus.REQUESTED
+        assert resolve_status(StatusFacts(in_library=False, arr_has_file=True)).state is MediaStatus.DOWNLOADED
         assert resolve_status(StatusFacts()).state is MediaStatus.NOT_ADDED
 
     def test_watch_link_failure_does_not_downgrade_available(self):
         """Spec §10: a missing/failed watch link leaves the item AVAILABLE."""
-        r = resolve_status(StatusFacts(in_plex=True))  # no watch links at all
+        r = resolve_status(StatusFacts(in_library=True))  # no watch links at all
         assert r.state is MediaStatus.AVAILABLE
-        assert r.plexUrl == ""
+        assert r.watch_url == ""
 
     def test_requested_detail_surfaces_indexer_issue(self):
-        r = resolve_status(StatusFacts(in_plex=False, arr_record_exists=True,
+        r = resolve_status(StatusFacts(in_library=False, arr_record_exists=True,
                                        indexer_issue="Indexers down"))
         assert r.detail == "Waiting — search indexers down"
 
@@ -58,29 +57,28 @@ class TestResolveStatus:
 
     def test_library_wins_over_downloading(self):
         """§30: in-library + an active qBittorrent download -> AVAILABLE, not DOWNLOADING."""
-        f = StatusFacts(in_plex=True, qbit_active=True, qbit_percent=42)
+        f = StatusFacts(in_library=True, qbit_active=True, qbit_percent=42)
         r = resolve_status(f)
         assert r.state is MediaStatus.AVAILABLE
-        assert r.detail == "Available in Plex"
+        assert r.detail == "Available on Jellyfin"
 
     def test_library_wins_over_requested(self):
         """§30: in-library + an existing *arr record -> AVAILABLE, not REQUESTED."""
-        f = StatusFacts(in_plex=True, arr_record_exists=True)
+        f = StatusFacts(in_library=True, arr_record_exists=True)
         r = resolve_status(f)
         assert r.state is MediaStatus.AVAILABLE
 
-    def test_emby_button_only_when_plex_link_fails(self):
-        """§30: Plex link failure + Emby success -> AVAILABLE carries ONLY the Emby button.
+    def test_item_id_survives_a_failed_watch_link(self):
+        """§30: a failed watch link is a capability problem, never a state downgrade.
 
-        A missing Plex watch-link is a capability problem (spec §10), never a state
-        downgrade — and when the Emby link still resolves, the item exposes Emby.
+        The item stays AVAILABLE with an empty watch URL, and the server's own
+        item id — what in-app playback needs — is still available to the caller.
         """
-        links = WatchLinks(plex_available=False, plex_url="",
-                           emby_available=True, emby_url="http://e")
-        r = resolve_status(StatusFacts(in_plex=True, plex_links=links))
+        links = WatchLinks(library_available=False, watch_url="", server_item_id="ITEM9")
+        r = resolve_status(StatusFacts(in_library=True, library_links=links))
         assert r.state is MediaStatus.AVAILABLE
-        assert r.plexUrl == ""
-        assert r.embyUrl == "http://e"
+        assert r.watch_url == ""
+        assert r.server_item_id == "ITEM9"
 
 
 class TestCapabilitiesAndSnapshot:
@@ -91,14 +89,16 @@ class TestCapabilitiesAndSnapshot:
 
     def test_media_snapshot_from_result(self):
         res = StatusResult(state=MediaStatus.AVAILABLE, service="radarr",
-                           detail="Available in Plex", plexUrl="http://p")
+                           detail="Available on Jellyfin", watch_url="http://server/x",
+                           server_item_id="ITEM1")
         snap = MediaSnapshot.from_result(res, media_id="movie:tmdb:603",
-                                         watch_links={"plex": {"available": True, "url": "http://p"}})
+                                         watch_links={"jellyfin": {"available": True, "url": "http://server/x"}})
         assert snap.media_id == "movie:tmdb:603"
         assert snap.status is MediaStatus.AVAILABLE
         assert snap.capabilities.can_watch is True
         assert snap.capabilities.can_download is False
-        assert snap.watch_links["plex"]["url"] == "http://p"
+        assert snap.watch_links["jellyfin"]["url"] == "http://server/x"
+        assert snap.server_item_id == "ITEM1"
 
     def test_transitions_spec_intent(self):
         assert allowed_transitions(MediaStatus.NOT_ADDED, MediaStatus.AVAILABLE) is True
@@ -109,7 +109,7 @@ class TestStateMachineShim:
     """domain.state_machine is now a BC shim over domain.status (§43)."""
 
     def test_shim_exposes_same_resolver(self):
-        f = ShimFacts(in_plex=True)
+        f = ShimFacts(in_library=True)
         assert shim_resolve(f).state is MediaStatus.AVAILABLE
         assert ShimSnapshot is MediaSnapshot
         assert ShimFacts is StatusFacts

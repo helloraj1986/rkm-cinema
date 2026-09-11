@@ -49,7 +49,7 @@ class SuggestRequest(BaseModel):
     min_rating: float = 6.0          # minimum TMDB vote_average (0-10)
     sort_by: str = "popularity.desc" # popularity.desc | vote_average.desc | primary_release_date.desc
     count: int = 20                  # max results per type (1-50)
-    include_owned: bool = False      # include titles already in Plex
+    include_owned: bool = False      # include titles already in the library
 
 
 class SuggestResult(BaseModel):

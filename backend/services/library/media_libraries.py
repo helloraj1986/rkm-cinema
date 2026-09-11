@@ -64,7 +64,8 @@ def match_libraries(
         # server folder is a coincidence. That is how 'TV Shows' showed as ok=True
         # in the sidebar while still pointing at the stale /data/media/_tv, with
         # B:/RKM_MEDIA never declared. Deployments whose server reports host paths
-        # itself (Plex/Emby on Windows) keep the fallback: there the styles agree.
+        # itself would keep the fallback (the styles then agree); the bundled
+        # stack always reports container paths, so the gate is always in force.
         host_style_path = bool(lib.path) and not normalize_media_path(lib.path).startswith("/")
         server_uses_container_paths = any(
             p.startswith("/") for f in folders for p in _paths_of(f)

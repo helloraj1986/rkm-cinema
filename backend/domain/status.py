@@ -9,7 +9,7 @@ reconciler, a :class:`MediaSnapshot` carrying ``status`` + ``capabilities`` +
 
 Resolution priority (spec §12) — library availability always wins:
 
-    in_library            -> AVAILABLE   (with watch links)
+    in the library        -> AVAILABLE   (with watch links)
     else downloading      -> DOWNLOADING
     else acquisition req  -> REQUESTED
     else downloaded       -> DOWNLOADED
@@ -41,11 +41,9 @@ __all__ = [
 class WatchLinks:
     """Watch capabilities for an available item. URLs are backend-derived."""
 
-    plex_available: bool = False
-    plex_url: str = ""
-    plex_key: str = ""            # numeric Plex ratingKey for the item
-    emby_available: bool = False
-    emby_url: str = ""
+    library_available: bool = False
+    watch_url: str = ""
+    server_item_id: str = ""      # the media server's own item id for the item
 
 
 @dataclass
@@ -57,8 +55,8 @@ class StatusFacts:
     """
 
     media_type: MediaType = MediaType.MOVIE
-    in_plex: bool = False
-    plex_links: WatchLinks = field(default_factory=WatchLinks)
+    in_library: bool = False
+    library_links: WatchLinks = field(default_factory=WatchLinks)
     arr_has_file: bool = False
     arr_queue_active: bool = False
     arr_record_exists: bool = False
@@ -75,8 +73,8 @@ class StatusFacts:
     @property
     def detail(self) -> str:
         """Human-readable detail for the resolved state."""
-        if self.in_plex:
-            return "Available in Plex"
+        if self.in_library:
+            return "Available on Jellyfin"
         if self.qbit_done:
             return "Downloaded — awaiting import"
         if self.qbit_active:
@@ -99,9 +97,8 @@ class StatusResult:
     state: MediaStatus
     service: str = ""                     # the *arr service responsible
     detail: str = ""
-    plexUrl: str = ""
-    embyUrl: str = ""
-    plexKey: Optional[str] = None
+    watch_url: str = ""
+    server_item_id: Optional[str] = None
     progress: Optional[int] = None
     speed: Optional[float] = None
     eta: Optional[int] = None
@@ -148,7 +145,7 @@ class MediaSnapshot:
     eta: Optional[int] = None
     qbitState: str = ""
     qbitName: str = ""
-    plexKey: Optional[str] = None
+    server_item_id: Optional[str] = None
 
     @classmethod
     def from_result(cls, result: StatusResult, *, media_id: str = "",
@@ -170,7 +167,7 @@ class MediaSnapshot:
             eta=result.eta,
             qbitState=result.qbitState,
             qbitName=result.qbitName,
-            plexKey=result.plexKey,
+            server_item_id=result.server_item_id,
         )
 
 
@@ -185,25 +182,23 @@ def resolve_status(facts: StatusFacts) -> StatusResult:
     mt = facts.media_type
     service = mt.arr_service
 
-    # 1. Plex is the source of truth for availability.
-    if facts.in_plex:
+    # 1. The library (media server) is the source of truth for availability.
+    if facts.in_library:
         return StatusResult(
             state=MediaStatus.AVAILABLE,
             service=service,
-            detail="Available in Plex",
-            plexUrl=facts.plex_links.plex_url,
-            embyUrl=facts.plex_links.emby_url,
-            plexKey=facts.plex_links.plex_key or None,
+            detail="Available on Jellyfin",
+            watch_url=facts.library_links.watch_url,
+            server_item_id=facts.library_links.server_item_id or None,
         )
 
-    # 2. *arr reports a file on disk (not yet surfaced in Plex).
+    # 2. *arr reports a file on disk (not yet surfaced in the media server).
     if facts.arr_has_file:
         return StatusResult(
             state=MediaStatus.DOWNLOADED,
             service=service,
             detail="In library",
-            plexUrl=facts.plex_links.plex_url,
-            embyUrl=facts.plex_links.emby_url,
+            watch_url=facts.library_links.watch_url,
         )
 
     # 3. Down / downloading.
@@ -253,7 +248,7 @@ def allowed_transitions(current: MediaStatus, target: MediaStatus) -> bool:
     """Explicitly encode which lifecycle transitions are permitted.
 
     Kept deliberately conservative: at minimum every forward transition is
-    allowed, plus any transition TO available (Plex is authoritative).
+    allowed, plus any transition TO available (the media server is authoritative).
     """
     order = [
         MediaStatus.NOT_ADDED,

@@ -7,7 +7,7 @@ working during the refactor. New code should import from ``domain.status``.
 
 Resolution order (single source of truth in ``domain.status.resolve_status``):
 
-    Plex has media            -> AVAILABLE          (with Plex/Emby watch links)
+    the media server has it   -> AVAILABLE          (with watch links)
     else *arr has file        -> DOWNLOADED
     else qBittorrent/*arr q   -> DOWNLOADING
     else *arr record exists   -> REQUESTED

@@ -67,7 +67,7 @@ class JellyfinLibraryProvider(LibraryProvider):
 
     name = "jellyfin"
 
-    #: How long a full library scan is considered fresh (spec §29: same 60s as Emby).
+    #: How long a full library scan is considered fresh (spec §29: a 60s window).
     JELLYFIN_SCAN_TTL = 60
 
     def __init__(self, *, config=None, http=None, tmdb=None):
@@ -963,7 +963,8 @@ class JellyfinLibraryProvider(LibraryProvider):
         base = self._browser_base()
         if item_id:
             # Jellyfin web 10.10+ uses `#/` routes (NO `#!/` hashbang — that's
-            # Emby's legacy form and 404s on Jellyfin).
+            # Emby's legacy form and 404s on Jellyfin — that is Jellyfin's own
+            # protocol, kept deliberately).
             return {"jellyfin_url": self._item_web(item_id)}
         q = urllib.parse.quote(str(match.title or ""))
         return {"jellyfin_url": f"{base}#/search?query={q}"}

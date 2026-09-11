@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Cron driver: auto-add TMDB-discovered movies/shows to the RKM watchlist.
 
-Wires the refactored recommendation pipeline with Plex as the source-of-truth
+Wires the refactored recommendation pipeline with the library as the source-of-truth
 ownership gate (spec §1.2) so already-owned titles are never re-added, runs the
 idempotent DailyWatchlistJob, rebuilds the dashboard, and prints a summary of
 exactly what was added for Hermes cron to deliver.
@@ -123,7 +123,7 @@ def _render(*, preview: bool, candidates: int, passed: int, owned: int,
         "=" * len(head),
         f"candidates scanned      : {candidates}",
         f"passed quality criteria : {passed}",
-        f"already in Plex (skip)  : {owned}",
+        f"already in library (skip): {owned}",
         f"already on watchlist    : {wl_dup}",
         f"already recommended     : {already}",
         f"{'WOULD ADD' if preview else 'ADDED'}                    : {added_count}",

@@ -51,29 +51,29 @@ class TestDownloadStatus:
         assert sonarr.has_episodes(81189) is False
 
     # ------------------------------------------------------------------ state machine
-    def test_status_available_when_in_plex(self):
-        """Plex is source of truth -> available regardless of *arr."""
-        f = StatusFacts(in_plex=True, plex_links=WatchLinks(
-            plex_available=True, plex_url="http://plex/item",
-            emby_available=True, emby_url="http://emby/item"))
+    def test_status_available_when_in_library(self):
+        """The library (media server) is source of truth -> available regardless of *arr."""
+        f = StatusFacts(in_library=True, library_links=WatchLinks(
+            library_available=True, watch_url="http://server/item",
+            server_item_id="ITEM1"))
         r = resolve_status(f)
         assert r.state is MediaStatus.AVAILABLE
-        assert r.plexUrl == "http://plex/item"
-        assert r.embyUrl == "http://emby/item"
+        assert r.watch_url == "http://server/item"
+        assert r.server_item_id == "ITEM1"
 
-    def test_status_downloaded_when_radarr_hasfile_but_not_in_plex(self):
-        """hasFile but not in Plex -> downloaded (not available)."""
-        f = StatusFacts(in_plex=False, arr_has_file=True)
+    def test_status_downloaded_when_radarr_hasfile_but_not_in_library(self):
+        """hasFile but not in the library -> downloaded (not available)."""
+        f = StatusFacts(in_library=False, arr_has_file=True)
         assert resolve_status(f).state is MediaStatus.DOWNLOADED
 
     def test_status_requested_when_arr_record_exists(self):
-        f = StatusFacts(in_plex=False, arr_record_exists=True, indexer_issue="Indexers down")
+        f = StatusFacts(in_library=False, arr_record_exists=True, indexer_issue="Indexers down")
         r = resolve_status(f)
         assert r.state is MediaStatus.REQUESTED
         assert "indexers" in r.detail.lower()
 
     def test_status_downloading_when_qbit_active(self):
-        f = StatusFacts(in_plex=False, qbit_active=True, qbit_percent=37, qbit_speed=2.5)
+        f = StatusFacts(in_library=False, qbit_active=True, qbit_percent=37, qbit_speed=2.5)
         r = resolve_status(f)
         assert r.state is MediaStatus.DOWNLOADING
         assert r.progress == 37
@@ -133,11 +133,11 @@ class TestDownloadStatus:
         return path, wl
 
     def test_available_via_library_service_with_watch_links(self):
-        """LibraryService (not legacy PlexService) decides AVAILABLE + watch links.
+        """LibraryService decides AVAILABLE + watch links and the server item id.
 
         Phase 6 migration: MediaStatusService must resolve an item found in the
-        unified library to AVAILABLE with per-provider Plex/Emby links and the
-        numeric plexKey — with NO direct PlexService call in the path.
+        unified library to AVAILABLE with the server's watch link and its own
+        numeric item id — with NO direct service call in the path.
         """
         from services.library import LibraryMatch, LibraryService
 
@@ -158,20 +158,15 @@ class TestDownloadStatus:
                 return []
 
             def build_watch_link(self, match):
-                if self.name == "plex":
-                    return {"plex_url": ("https://plex/#!/server/sid/details?key="
-                                         f"/library/metadata/{match.metadata['rating_key']}")}
-                return {"emby_url": f"https://emby/#!/item?id={match.provider_item_id}&serverId=S1"}
+                return {"jellyfin_url": ("https://jellyfin/web/index.html#"
+                                         f"!/details?id={match.provider_item_id}")}
 
-        plex_match = LibraryMatch("plex", "320819", "The Matrix", 1999,
-                                  metadata={"rating_key": "320819"})
-        emby_match = LibraryMatch("emby", "ITEM1", "The Matrix", 1999)
-        library = LibraryService(providers=[
-            _FakeLib("plex", plex_match), _FakeLib("emby", emby_match)])
+        match = LibraryMatch("jellyfin", "320819", "The Matrix", 1999,
+                             metadata={"item_id": "320819"})
+        library = LibraryService(providers=[_FakeLib("jellyfin", match)])
 
         path, wl = self._seed_one()
-        cfg = Mock(PLEX_URL="", PLEX_TOKEN="", EMBY_URL="", EMBY_API_KEY="",
-                   RADARR_API_KEY="k", SONARR_API_KEY="",
+        cfg = Mock(RADARR_API_KEY="k", SONARR_API_KEY="",
                    RADARR_URL="http://r", SONARR_URL="http://s", QBITTORRENT_URL="http://q")
         radarr = Mock()
         radarr.get_movies.return_value = []
@@ -185,10 +180,9 @@ class TestDownloadStatus:
         snap = svc.compute_statuses()
         res = snap.results["tt0133093"]
         assert res.state is MediaStatus.AVAILABLE
-        assert res.plexUrl.startswith("https://plex/")
-        assert "/library/metadata/320819" in res.plexUrl
-        assert res.embyUrl.startswith("https://emby/")
-        assert res.plexKey == "320819"  # numeric ratingKey, not a URL
+        assert res.watch_url.startswith("https://jellyfin/")
+        assert "id=320819" in res.watch_url
+        assert res.server_item_id == "320819"  # the server's own item id, not a URL
 
         remove_tmp(path)
 

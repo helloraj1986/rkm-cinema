@@ -88,7 +88,7 @@ def artwork_response(result: dict, request: Request) -> Response:
 
     ``result`` is a provider payload (``content`` + ``content_type``, optionally
     ``etag``/``last_modified``) — optional on purpose, so providers that cannot
-    report validators (Plex thumbs) still get the cache policy.
+    report validators still get the cache policy.
     """
     headers = {"Cache-Control": ARTWORK_CACHE_CONTROL}
     etag = result.get("etag")

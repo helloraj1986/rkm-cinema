@@ -36,7 +36,7 @@ def get_status():
             eta=snap.eta,
             qbitState=snap.qbitState,
             qbitName=snap.qbitName,
-            plexKey=snap.plexKey,
+            plexKey=snap.server_item_id,
             plexUrl=plex.get("url") or "",
             embyUrl=emby.get("url") or "",
             jellyfinUrl=jellyfin.get("url") or "",

@@ -2,7 +2,7 @@
 """Daily recommendation orchestration script.
 
 Single entry point for the 18:00 AEST cron job.
-Performs: category rotation -> candidate selection -> quality gates -> Plex check
+Performs: category rotation -> candidate selection -> quality gates -> library check
 -> duplicate check -> trailer enrichment -> watchlist add -> dashboard rebuild.
 """
 import json

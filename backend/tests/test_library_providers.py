@@ -160,7 +160,7 @@ class TestWatchLinkResolver:
 
         # 1. Availability is independent of link resolution: item present -> AVAILABLE.
         assert svc.has(identity) is True
-        status = resolve_status(StatusFacts(media_type=MediaType.MOVIE, in_plex=True))
+        status = resolve_status(StatusFacts(media_type=MediaType.MOVIE, in_library=True))
         assert status.state is MediaStatus.AVAILABLE
 
         # 2. Link resolution soft-fails (no raise, available=False) — button hidden only.

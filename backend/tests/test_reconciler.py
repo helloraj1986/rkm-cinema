@@ -48,25 +48,19 @@ class _FakeLib:
     def build_watch_link(self, match):
         if self._fail_watch:
             raise RuntimeError("boom")
-        if self.name == "plex":
-            return {"plex_url": ("https://plex/#!/server/sid/details?key="
-                                 f"/library/metadata/{match.metadata['rating_key']}")}
-        return {"emby_url": f"https://emby/#!/item?id={match.provider_item_id}&serverId=S1"}
+        return {"jellyfin_url": ("https://jellyfin/web/index.html#"
+                                 f"!/details?id={match.provider_item_id}")}
 
 
-def _lib_with_plex_match():
+def _lib_with_match():
     from services.library import LibraryMatch, LibraryService
-    plex_match = LibraryMatch("plex", "320819", "The Matrix", 1999,
-                              metadata={"rating_key": "320819"})
-    emby_match = LibraryMatch("emby", "ITEM1", "The Matrix", 1999)
-    library = LibraryService(providers=[
-        _FakeLib("plex", plex_match), _FakeLib("emby", emby_match)])
-    return library
+    match = LibraryMatch("jellyfin", "ITEM1", "The Matrix", 1999,
+                         metadata={"item_id": "ITEM1"})
+    return LibraryService(providers=[_FakeLib("jellyfin", match)])
 
 
 def _cfg():
-    return Mock(PLEX_URL="", PLEX_TOKEN="", EMBY_URL="", EMBY_API_KEY="",
-                RADARR_API_KEY="k", SONARR_API_KEY="",
+    return Mock(RADARR_API_KEY="k", SONARR_API_KEY="",
                 RADARR_URL="http://r", SONARR_URL="http://s",
                 QBITTORRENT_URL="http://q")
 
@@ -85,18 +79,17 @@ class TestReconcilerSingleSnapshot:
     def test_get_snapshot_available_via_library(self):
         path, wl = _seed()
         radarr, qbit = _noop_arr()
-        rec = Reconciler(watchlist=wl, library=_lib_with_plex_match(),
+        rec = Reconciler(watchlist=wl, library=_lib_with_match(),
                          radarr=radarr, sonarr=None, qbit=qbit, config=_cfg())
         snap = rec.get_snapshot("movie:tmdb:603")
         assert snap.media_id == "movie:tmdb:603"
         assert snap.status is MediaStatus.AVAILABLE
         assert snap.capabilities.can_watch is True
         assert snap.capabilities.can_download is False
-        assert snap.plexKey == "320819"
-        plex = snap.watch_links.get("plex")
-        assert plex and "/library/metadata/320819" in plex["url"]
-        emby = snap.watch_links.get("emby")
-        assert emby and emby["available"] is True
+        assert snap.server_item_id == "ITEM1"
+        jellyfin = snap.watch_links.get("jellyfin")
+        assert jellyfin and jellyfin["available"] is True
+        assert "id=ITEM1" in jellyfin["url"]
         os.remove(path)
 
     def test_get_snapshot_not_added_when_unknown(self):
@@ -115,15 +108,17 @@ class TestReconcilerSingleSnapshot:
         from services.library import LibraryMatch, LibraryService
         path, wl = _seed()
         radarr, qbit = _noop_arr()
-        plex_match = LibraryMatch("plex", "320819", "The Matrix", 1999,
-                                  metadata={"rating_key": "320819"})
-        library = LibraryService(providers=[_FakeLib("plex", plex_match, fail_watch=True)])
+        match = LibraryMatch("jellyfin", "ITEM1", "The Matrix", 1999,
+                             metadata={"item_id": "ITEM1"})
+        library = LibraryService(providers=[_FakeLib("jellyfin", match, fail_watch=True)])
         rec = Reconciler(watchlist=wl, library=library,
                          radarr=radarr, sonarr=None, qbit=qbit, config=_cfg())
         snap = rec.get_snapshot("movie:tmdb:603")
         assert snap.status is MediaStatus.AVAILABLE  # availability independent
         assert snap.capabilities.can_watch is True
-        assert snap.plexKey == "320819"
+        # The item id comes from the MATCH, not from the watch link, so a failed
+        # link still leaves in-app playback addressable.
+        assert snap.server_item_id == "ITEM1"
         os.remove(path)
 
     def test_get_snapshot_unparseable_id_returns_not_added(self):
@@ -141,7 +136,7 @@ class TestReconcilerBulk:
     def test_compute_keyed_by_imdb_with_available_item(self):
         path, wl = _seed()
         radarr, qbit = _noop_arr()
-        rec = Reconciler(watchlist=wl, library=_lib_with_plex_match(),
+        rec = Reconciler(watchlist=wl, library=_lib_with_match(),
                          radarr=radarr, sonarr=None, qbit=qbit, config=_cfg())
         result = rec.compute()
         assert result.indexer_issue is None
@@ -182,12 +177,11 @@ class TestSnapshotToStatusResult:
     def test_roundtrip_available(self):
         path, wl = _seed()
         radarr, qbit = _noop_arr()
-        rec = Reconciler(watchlist=wl, library=_lib_with_plex_match(),
+        rec = Reconciler(watchlist=wl, library=_lib_with_match(),
                          radarr=radarr, sonarr=None, qbit=qbit, config=_cfg())
         snap = rec.get_snapshot("movie:tmdb:603")
         r = snapshot_to_status_result(snap)
         assert r.state is MediaStatus.AVAILABLE
-        assert r.plexKey == "320819"
-        assert "/library/metadata/320819" in r.plexUrl
-        assert r.embyUrl.startswith("https://emby/")
+        assert r.server_item_id == "ITEM1"
+        assert "id=ITEM1" in r.watch_url
         os.remove(path)

@@ -16,7 +16,7 @@ VALID_STATES = {
     "requested",    # Added to Radarr/Sonarr, searching
     "downloading",  # Active in qBittorrent
     "downloaded",   # File complete in Radarr/Sonarr (hasFile)
-    "available",    # Confirmed in Plex (ground truth)
+    "available",    # Confirmed in the library (ground truth)
     "failed",       # Radarr/Sonarr rejected/unreachable
     "recommended",  # Completed lifecycle, history
 }

@@ -1,4 +1,4 @@
-"""Recommendation service - category rotation, quality gates, Plex check, metadata enrichment."""
+"""Recommendation service - category rotation, quality gates, library check, metadata enrichment."""
 import logging
 import urllib.parse
 import urllib.request
@@ -112,7 +112,7 @@ class RecommendationService:
         )
         return self.criteria.evaluate(rc).passed
 
-    def check_plex_ownership(self, candidate: Candidate) -> bool:
+    def check_library_ownership(self, candidate: Candidate) -> bool:
         """Check if media already exists in the library (ground truth).
 
         Uses the unified LibraryService (stable-identity match, spec §1.2
@@ -269,7 +269,7 @@ class RecommendationService:
 
     def process_recommendation(self, candidate: Candidate) -> Optional[WatchlistEntry]:
         """
-        Full pipeline: quality gate -> Plex check -> duplicate check -> enrich -> add.
+        Full pipeline: quality gate -> library check -> duplicate check -> enrich -> add.
         Returns the added entry or None if rejected.
         """
         # 1. Quality gate
@@ -278,9 +278,9 @@ class RecommendationService:
                        candidate.title, candidate.imdb, candidate.rt)
             return None
 
-        # 2. Plex ownership check (ground truth)
-        if self.check_plex_ownership(candidate):
-            logger.info("REJECTED %s: Already in Plex", candidate.title)
+        # 2. Library ownership check (ground truth)
+        if self.check_library_ownership(candidate):
+            logger.info("REJECTED %s: Already in the library", candidate.title)
             return None
 
         # 3. Watchlist duplicate check

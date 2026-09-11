@@ -48,7 +48,7 @@ __all__ = ["Reconciler", "ReconcileResult", "snapshot_to_status_result"]
 
 # Process-level cache shared by the /api/status and /api/watchlist routes. The
 # reconciler builds fresh services (and empties their TTL caches) on EVERY
-# request, so without this each poll re-scans Plex and re-runs *arr lookups —
+# request, so without this each poll re-scans the library and re-runs *arr lookups —
 # the 155 tmdb-only TV entries alone cost ~56s when Sonarr's indexers are down.
 # Keyed on the watchlist file mtime so a write auto-invalidates; a short TTL
 # bounds staleness after a pure acquisition write (Radarr/Sonarr add) that
@@ -79,15 +79,18 @@ def snapshot_to_status_result(snap: MediaSnapshot) -> StatusResult:
     Used by the backwards-compatible :class:`MediaStatusService` shim so older
     consumers (and the pre-Phase-7 tests) stay green with zero duplicated logic.
     """
-    plex = (snap.watch_links or {}).get("plex") or {}
-    emby = (snap.watch_links or {}).get("emby") or {}
+    # The watch map is keyed by provider name; take the first link that actually
+    # carries a URL rather than hardcoding a provider key.
+    watch_url = next(
+        (v.get("url") for v in (snap.watch_links or {}).values() if v and v.get("url")),
+        "",
+    )
     return StatusResult(
         state=snap.status,
         service=snap.service,
         detail=snap.detail,
-        plexUrl=plex.get("url") or "",
-        embyUrl=emby.get("url") or "",
-        plexKey=snap.plexKey,
+        watch_url=watch_url,
+        server_item_id=snap.server_item_id,
         progress=snap.progress,
         speed=snap.speed,
         eta=snap.eta,
@@ -271,7 +274,7 @@ class Reconciler:
         facts = StatusFacts(media_type=mt)
         watch: dict = {}
 
-        # 1. Library (Plex/Emby) is source of truth — availability always wins.
+        # 1. The library (media server) is source of truth — availability always wins.
         if self._library:
             try:
                 matches = self._library.find_all(identity, title=title, year=year)
@@ -282,15 +285,16 @@ class Reconciler:
                     watch = self._library.watch_links(matches)
                 except Exception:
                     watch = {}
-                plex_match = next((m for m in matches if m.provider == "plex"), None)
-                facts.in_plex = True
-                facts.plex_links = WatchLinks(
-                    plex_available=bool((watch.get("plex") or {}).get("available")),
-                    plex_url=(watch.get("plex") or {}).get("url") or "",
-                    plex_key=str((plex_match.metadata or {}).get("rating_key", ""))
-                    if plex_match else "",
-                    emby_available=bool((watch.get("emby") or {}).get("available")),
-                    emby_url=(watch.get("emby") or {}).get("url") or "",
+                # The match carries the server's own item id; the watch map is
+                # keyed by provider name, so read the link for the provider that
+                # actually matched.
+                server_match = matches[0]
+                link = watch.get(server_match.provider) or {}
+                facts.in_library = True
+                facts.library_links = WatchLinks(
+                    library_available=bool(link.get("available")),
+                    watch_url=link.get("url") or "",
+                    server_item_id=str((server_match.metadata or {}).get("item_id", "")),
                 )
                 facts.indexer_issue = indexer_issue
                 result = resolve_status(facts)

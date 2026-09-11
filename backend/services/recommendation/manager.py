@@ -120,7 +120,7 @@ class RecommendationManager:
         result = RecommendationRunResult()
         try:
             # 0. Seen-set: candidates already evaluated on a prior run are skipped
-            #    BEFORE criteria/Plex so re-runs don't reprocess the same TMDB
+            #    BEFORE criteria/library so re-runs don't reprocess the same TMDB
             #    popular titles (spec §23 history; every candidate is recorded).
             repo = self._history_repo()
             seen = {h.get("media_id") for h in

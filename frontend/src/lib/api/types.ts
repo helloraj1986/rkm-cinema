@@ -104,6 +104,72 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/search/global": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search Global
+         * @description Library-first global search: owned rows + hints + deduped TMDB discovery.
+         */
+        get: operations["search_global_api_search_global_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/library/folders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Library Folders
+         * @description Configured media libraries + the server folders they resolve to.
+         *
+         *     MEDIA_LIBRARIES_PLAN: the sidebar's Libraries group is built from
+         *     ``libraries`` — the resolved MEDIA_LIBRARY_N_* list when any are configured
+         *     (names shown as-is, never the env keys), otherwise the server's OWN folder
+         *     names (no hardcoded Movies/TV Shows). ``folders`` carries every server
+         *     folder for reference; ``warnings`` surfaces config problems.
+         */
+        get: operations["get_library_folders_api_library_folders_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/library/folders/{folder_id}/items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Folder Items
+         * @description Every Movie + Series inside ONE library folder (folder-scoped poster wall).
+         */
+        get: operations["get_folder_items_api_library_folders__folder_id__items_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/library": {
         parameters: {
             query?: never;
@@ -262,26 +328,6 @@ export interface paths {
          * @description Get quality profiles from Radarr and Sonarr via the acquisition facade.
          */
         get: operations["get_quality_profiles_api_quality_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/plex/thumb": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Plex Thumb
-         * @description Proxy a Plex thumbnail so the browser can render it (token stays server-side).
-         */
-        get: operations["plex_thumb_api_plex_thumb_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -855,6 +901,40 @@ export interface components {
                 [key: string]: boolean;
             };
         };
+        /**
+         * ConfiguredLibrary
+         * @description One sidebar library — the user-facing view of a configured library.
+         *
+         *     ``name`` is ALWAYS the configured value (never the MEDIA_LIBRARY_N_ key);
+         *     ``folder_id`` is set when the configured PATH resolved to a real server
+         *     folder; ``ok``/``warning`` tell the UI whether this library is live.
+         */
+        ConfiguredLibrary: {
+            /** Name */
+            name: string;
+            /**
+             * Path
+             * @default
+             */
+            path: string;
+            /** Folder Id */
+            folder_id?: string | null;
+            /**
+             * Collection Type
+             * @default
+             */
+            collection_type: string;
+            /**
+             * Ok
+             * @default false
+             */
+            ok: boolean;
+            /**
+             * Warning
+             * @default
+             */
+            warning: string;
+        };
         /** DownloadRequest */
         DownloadRequest: {
             /**
@@ -889,6 +969,146 @@ export interface components {
             message: string;
             /** Service */
             service: string;
+        };
+        /**
+         * FolderItemsResponse
+         * @description GET /api/library/folders/{folder_id}/items — one folder's poster wall.
+         */
+        FolderItemsResponse: {
+            /** Provider */
+            provider?: string | null;
+            /** Folder Id */
+            folder_id: string;
+            /** Items */
+            items?: {
+                [key: string]: unknown;
+            }[];
+        };
+        /**
+         * GlobalDiscoveryRow
+         * @description TMDB discovery row — ONLY when no strong owned match exists.
+         */
+        GlobalDiscoveryRow: {
+            /** Tmdb Id */
+            tmdb_id: number;
+            /** Media Type */
+            media_type: string;
+            /** Title */
+            title: string;
+            /** Year */
+            year?: number | null;
+            /**
+             * Poster
+             * @default
+             */
+            poster: string;
+            /**
+             * Overview
+             * @default
+             */
+            overview: string;
+            /**
+             * In Watchlist
+             * @default false
+             */
+            in_watchlist: boolean;
+        };
+        /**
+         * GlobalEpisodeFacts
+         * @description Target for a series "Continue / Play" primary action (GLOBAL_SEARCH_PLAN).
+         */
+        GlobalEpisodeFacts: {
+            /** Id */
+            id: string;
+            /** Season */
+            season: number;
+            /** Episode */
+            episode: number;
+            /** Name */
+            name: string;
+            /**
+             * Position
+             * @default 0
+             */
+            position: number;
+            /**
+             * Remaining
+             * @default 0
+             */
+            remaining: number;
+            /**
+             * Kind
+             * @default play
+             */
+            kind: string;
+        };
+        /**
+         * GlobalHint
+         * @description Intent hint (Person / Genre / BoxSet collection) from provider search.
+         */
+        GlobalHint: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Kind */
+            kind: string;
+            /** Year */
+            year?: number | null;
+        };
+        /**
+         * GlobalOwnedRow
+         * @description One owned playable result (movie/show/episode) with playback facts + state.
+         */
+        GlobalOwnedRow: {
+            /** Id */
+            id: string;
+            /** Kind */
+            kind: string;
+            /** Title */
+            title: string;
+            /** Year */
+            year?: number | null;
+            /** Genres */
+            genres?: string[];
+            /** Rating */
+            rating?: number | null;
+            /**
+             * Played
+             * @default false
+             */
+            played: boolean;
+            /**
+             * Playback Position
+             * @default 0
+             */
+            playback_position: number;
+            /**
+             * Runtime
+             * @default 0
+             */
+            runtime: number;
+            /**
+             * Play Count
+             * @default 0
+             */
+            play_count: number;
+            /** Series Id */
+            series_id?: string | null;
+            /** Series Name */
+            series_name?: string | null;
+            /** Season */
+            season?: number | null;
+            /** Episode */
+            episode?: number | null;
+            /**
+             * State
+             * @default watch
+             */
+            state: string;
+            /** Remaining */
+            remaining?: number | null;
+            next_episode?: components["schemas"]["GlobalEpisodeFacts"] | null;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -993,6 +1213,40 @@ export interface components {
         JobsResponse: {
             /** Jobs */
             jobs: components["schemas"]["JobRunResponse"][];
+        };
+        /**
+         * LibrariesResponse
+         * @description GET /api/library/folders — the sidebar's libraries + server folders.
+         */
+        LibrariesResponse: {
+            /** Provider */
+            provider?: string | null;
+            /** Folders */
+            folders?: components["schemas"]["LibraryFolder"][];
+            /** Libraries */
+            libraries?: components["schemas"]["ConfiguredLibrary"][];
+            /** Warnings */
+            warnings?: string[];
+        };
+        /**
+         * LibraryFolder
+         * @description One library folder the media server actually exposes (MEDIA_LIBRARIES_PLAN).
+         */
+        LibraryFolder: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /**
+             * Collection Type
+             * @default
+             */
+            collection_type: string;
+            /**
+             * Path
+             * @default
+             */
+            path: string;
         };
         /** LibraryResponse */
         LibraryResponse: {
@@ -1117,6 +1371,35 @@ export interface components {
                 [key: string]: unknown;
             }[];
         };
+        /** SearchGlobalResponse */
+        SearchGlobalResponse: {
+            /** Query */
+            query: string;
+            /** Provider */
+            provider?: string | null;
+            /**
+             * Tmdb Key
+             * @default false
+             */
+            tmdb_key: boolean;
+            /**
+             * Strong Match
+             * @default false
+             */
+            strong_match: boolean;
+            /** Items */
+            items?: components["schemas"]["GlobalOwnedRow"][];
+            /** People */
+            people?: components["schemas"]["GlobalHint"][];
+            /** Person Titles */
+            person_titles?: components["schemas"]["GlobalOwnedRow"][];
+            /** Genres */
+            genres?: components["schemas"]["GlobalHint"][];
+            /** Collections */
+            collections?: components["schemas"]["GlobalHint"][];
+            /** Discovery */
+            discovery?: components["schemas"]["GlobalDiscoveryRow"][];
+        };
         /** SearchResponse */
         SearchResponse: {
             /** Watchlist */
@@ -1171,12 +1454,6 @@ export interface components {
             qbitState?: string | null;
             /** Qbitname */
             qbitName?: string | null;
-            /** Plexkey */
-            plexKey?: string | null;
-            /** Plexurl */
-            plexUrl?: string | null;
-            /** Embyurl */
-            embyUrl?: string | null;
             /** Jellyfinurl */
             jellyfinUrl?: string | null;
             /** Jellyfinitemid */
@@ -1624,6 +1901,88 @@ export interface operations {
             };
         };
     };
+    search_global_api_search_global_get: {
+        parameters: {
+            query?: {
+                q?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchGlobalResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_library_folders_api_library_folders_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LibrariesResponse"];
+                };
+            };
+        };
+    };
+    get_folder_items_api_library_folders__folder_id__items_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                folder_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FolderItemsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_library_api_library_get: {
         parameters: {
             query?: never;
@@ -1806,38 +2165,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["QualityProfilesResponse"];
-                };
-            };
-        };
-    };
-    plex_thumb_api_plex_thumb_get: {
-        parameters: {
-            query?: {
-                path?: string;
-                width?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

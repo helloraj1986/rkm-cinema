@@ -24,8 +24,6 @@ def get_status():
 
     statuses = {}
     for imdb, snap in result.snapshots.items():
-        plex = (snap.watch_links or {}).get("plex") or {}
-        emby = (snap.watch_links or {}).get("emby") or {}
         jellyfin = (snap.watch_links or {}).get("jellyfin") or {}
         statuses[imdb] = StatusEntry(
             state=snap.status.value,
@@ -36,9 +34,6 @@ def get_status():
             eta=snap.eta,
             qbitState=snap.qbitState,
             qbitName=snap.qbitName,
-            plexKey=snap.server_item_id,
-            plexUrl=plex.get("url") or "",
-            embyUrl=emby.get("url") or "",
             jellyfinUrl=jellyfin.get("url") or "",
             jellyfinItemId=jellyfin.get("item_id") or "",
         )

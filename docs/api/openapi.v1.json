@@ -2815,39 +2815,6 @@
             ],
             "title": "Qbitname"
           },
-          "plexKey": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Plexkey"
-          },
-          "plexUrl": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Plexurl"
-          },
-          "embyUrl": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Embyurl"
-          },
           "jellyfinUrl": {
             "anyOf": [
               {

@@ -61,9 +61,6 @@ class StatusEntry(BaseModel):
     eta: Optional[int] = None
     qbitState: Optional[str] = None
     qbitName: Optional[str] = None
-    plexKey: Optional[str] = None
-    plexUrl: Optional[str] = None
-    embyUrl: Optional[str] = None
     jellyfinUrl: Optional[str] = None
     #: Jellyfin native item id for in-app playback (via /api/jellyfin/stream).
     jellyfinItemId: Optional[str] = None

@@ -7,11 +7,10 @@ nothing special — then starts nginx with the REAL repo config (only the upstre
 address + listen port rewritten) and asserts:
 
   1. /api/jellyfin/poster  -> 200 with the cacheable policy, NO no-store
-  2. /api/plex/thumb       -> same
-  3. /api/jellyfin/person + /backdrop -> same
-  4. /api/library          -> still no-store (dynamic state)
-  5. exactly ONE Cache-Control header on artwork (proxy_hide_header works)
-  6. the nested location inherits proxy_pass (no 404/502)
+  2. /api/jellyfin/person + /backdrop -> same
+  3. /api/library          -> still no-store (dynamic state)
+  4. exactly ONE Cache-Control header on artwork (proxy_hide_header works)
+  5. the nested location inherits proxy_pass (no 404/502)
 
 Usage: python3 tools/verify_nginx_artwork_cache.py
 Exits non-zero on any failure.
@@ -44,7 +43,7 @@ class FakeApi(BaseHTTPRequestHandler):
     def do_GET(self):  # noqa: N802
         path = self.path.split("?")[0]
         artwork = path in ("/api/jellyfin/poster", "/api/jellyfin/person",
-                           "/api/jellyfin/backdrop", "/api/plex/thumb")
+                           "/api/jellyfin/backdrop")
         if artwork:
             body = JPEG
             self.send_response(200)
@@ -145,8 +144,7 @@ def main() -> int:
 
         cacheable = ["/api/jellyfin/poster?id=m1&width=500",
                      "/api/jellyfin/person?id=p1&width=300",
-                     "/api/jellyfin/backdrop?id=m1&width=1600",
-                     "/api/plex/thumb?path=%2Fx&width=500"]
+                     "/api/jellyfin/backdrop?id=m1&width=1600"]
         for path in cacheable:
             status, ccs = headers_of(f"{base}{path}")
             joined = " | ".join(ccs)

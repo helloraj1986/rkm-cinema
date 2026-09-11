@@ -944,8 +944,11 @@ def test_set_playback_position_writes_only_the_position():
     assert ok is True
     assert calls["method"] == "POST"
     assert calls["url"] == ("http://jellyfin:8096/Users/u1/Items/m1/UserData?api_key=jkey")
-    assert calls["body"] == {"PlaybackPositionTicks": 123456789}
+    assert calls["body"]["PlaybackPositionTicks"] == 123456789
     assert "Played" not in calls["body"], "sending Played would clobber the watched flag"
+    # LastPlayedDate is what orders Continue Watching: Resume sorts by it, newest
+    # first with nulls LAST, so without it a new entry sinks to the end of the rail.
+    assert sorted(calls["body"]) == ["LastPlayedDate", "PlaybackPositionTicks"]
 
 
 def test_set_playback_position_failure_is_false_not_an_exception():

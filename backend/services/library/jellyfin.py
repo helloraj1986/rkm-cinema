@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 import urllib.parse
 import urllib.request
+from datetime import datetime, timezone
 from typing import Optional
 
 from services.library.service import LibraryProvider, LibraryMatch
@@ -657,10 +658,20 @@ class JellyfinLibraryProvider(LibraryProvider):
         ``/Users/{uid}/Items/{id}/UserData`` write is the one that lands, and it is
         the same endpoint family the working ``mark_state`` uses.
 
-        Sends ONLY ``PlaybackPositionTicks`` on purpose: passing ``Played`` would
-        clobber the watched flag — an explicit ``Played: false`` un-marks an
-        already-watched title (verified live). Omitting it leaves the flag alone,
-        which is what a position report should do.
+        Sends ONLY ``PlaybackPositionTicks`` + ``LastPlayedDate`` on purpose:
+        passing ``Played`` would clobber the watched flag — an explicit
+        ``Played: false`` un-marks an already-watched title (verified live), while
+        omitting it leaves the flag alone, which is what a position report should
+        do.
+
+        ``LastPlayedDate`` is what puts the title at the TOP of Continue Watching.
+        Jellyfin's ``/Items/Resume`` (which the app preserves the order of) sorts by
+        that field, newest first, **nulls last** — and this endpoint does not set it
+        implicitly. Without it a freshly watched title sinks to the END of the rail
+        (or off it entirely once the provider's limit applies) even though its
+        position was stored: exactly the "resume shows on the item page but Home
+        never lists the new entry" symptom. Verified live 2026-09-11: setting it
+        moves the item to the head of Resume, and it does NOT disturb ``Played``.
 
         Returns ``True`` when Jellyfin accepted the write (a 2xx, which for this
         endpoint DOES mean stored — confirmed by reading the position back).
@@ -673,7 +684,10 @@ class JellyfinLibraryProvider(LibraryProvider):
         import json
         url = (f"{self.config.JELLYFIN_URL}/Users/{uid}/Items/{item_id}/UserData"
                f"?api_key={self.config.JELLYFIN_API_KEY}")
-        body = json.dumps({"PlaybackPositionTicks": int(position_ticks)}).encode("utf-8")
+        body = json.dumps({
+            "PlaybackPositionTicks": int(position_ticks),
+            "LastPlayedDate": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        }).encode("utf-8")
         try:
             req = urllib.request.Request(url, data=body, method="POST",
                                          headers={"Content-Type": "application/json"})

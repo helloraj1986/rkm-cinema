@@ -902,3 +902,56 @@ def test_library_service_folders_and_items_collapse_to_first_provider():
     empty = LibraryService(providers=[plex])
     assert empty.library_folders() == {"provider": None, "folders": []}
     assert empty.items_in_folder("f1") == {"provider": None, "folder_id": "f1", "items": []}
+
+
+def test_set_playback_position_writes_only_the_position():
+    """The one playback write Jellyfin actually honours — and what it must NOT send.
+
+    Regression (2026-09-11): the app reported progress through
+    ``/Sessions/Playing*``, which returns 204 and stores nothing for a player that
+    isn't a Jellyfin device session (i.e. every in-app playback), so resume
+    positions never landed and Continue Watching never updated. This pins the
+    user-scoped write that DOES land, plus the detail that makes it safe:
+    ``Played`` must be ABSENT, because an explicit ``Played: false`` un-marks an
+    already-watched title (verified live).
+    """
+    from services.library.jellyfin import JellyfinLibraryProvider
+    prov = JellyfinLibraryProvider(config=_cfg())
+    prov._user_id = lambda: "u1"      # avoid a real /Users round-trip
+    calls = {}
+
+    class _Resp:
+        status = 200
+
+        def read(self):
+            return b"{}"
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def fake_urlopen(req, timeout=None):
+        calls["url"] = req.full_url
+        calls["method"] = req.get_method()
+        calls["body"] = json.loads(req.data)
+        return _Resp()
+
+    with patch("urllib.request.urlopen", fake_urlopen):
+        ok = prov.set_playback_position("m1", 123456789)
+
+    assert ok is True
+    assert calls["method"] == "POST"
+    assert calls["url"] == ("http://jellyfin:8096/Users/u1/Items/m1/UserData?api_key=jkey")
+    assert calls["body"] == {"PlaybackPositionTicks": 123456789}
+    assert "Played" not in calls["body"], "sending Played would clobber the watched flag"
+
+
+def test_set_playback_position_failure_is_false_not_an_exception():
+    """A transport failure must answer False so the route can say 502, not lie."""
+    from services.library.jellyfin import JellyfinLibraryProvider
+    prov = JellyfinLibraryProvider(config=_cfg())
+    prov._user_id = lambda: "u1"
+    with patch("urllib.request.urlopen", side_effect=OSError("connection refused")):
+        assert prov.set_playback_position("m1", 100) is False

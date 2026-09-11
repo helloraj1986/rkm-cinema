@@ -707,6 +707,9 @@ export function Player({
     const pos = posNow();
     if (resumeRef.current > 0 && pos < resumeRef.current - 1) return;
     const ticks = Math.round(pos * 1e7);
+    // Runtime lets the api treat a report near the end as "finished" (mark the
+    // item watched) instead of storing a resume point at the credits.
+    const runtime = Number(totalRef.current) || 0;
     void api
       .reportProgress({
         item_id: item.item_id,
@@ -714,6 +717,7 @@ export function Player({
         is_paused: false,
         event,
         play_method: playMethodForMode(modeRef.current),
+        runtime_ticks: runtime > 0 ? Math.round(runtime * 1e7) : 0,
       })
       .catch(() => {});
   };

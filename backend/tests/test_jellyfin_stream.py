@@ -336,48 +336,86 @@ def test_resource_watch_carries_playback_facts(monkeypatch):
     assert jf["runtime"] == 9000
 
 
-def test_progress_forwards_to_jellyfin_sessions(monkeypatch):
-    """POST /api/jellyfin/progress maps events to the right Sessions endpoint."""
+def test_progress_writes_position_to_item_user_data(monkeypatch):
+    """A timeupdate stores the resume position on the ITEM (not a Sessions call).
+
+    Regression (2026-09-11): the route used Jellyfin's ``/Sessions/Playing*``
+    endpoints, which accept a report from a player that is not a Jellyfin device
+    session with a 204 and store NOTHING — so Continue Watching never updated.
+    """
     _patch_config(monkeypatch)
     calls = {}
-
-    def fake_urlopen(req, timeout=None):
-        calls["url"] = req.full_url
-        calls["data"] = json.loads(req.data)
-        return _FakeStreamResponse(status=204, headers={})
-
-    with patch("api.routes.jellyfin_stream.urllib.request.urlopen", fake_urlopen):
+    fake_svc = SimpleNamespace(
+        set_playback_position=lambda item_id, ticks: calls.update(item_id=item_id, ticks=ticks) or True,
+        mark_state=lambda *a, **k: calls.update(marked=True) or {"played": True},
+    )
+    with patch("api.routes.jellyfin_stream.build_library_service", return_value=fake_svc):
         r = client.post("/api/jellyfin/progress", json={
             "item_id": "m1", "position_ticks": 1200000000,
             "is_paused": False, "event": "timeupdate",
         })
 
     assert r.status_code == 204
-    assert "/Sessions/Playing/Progress" in calls["url"]
-    assert "api_key=sekret" in calls["url"]
-    assert calls["data"]["ItemId"] == "m1"
-    assert calls["data"]["PositionTicks"] == 1200000000
-    assert calls["data"]["EventName"] == "timeupdate"
+    assert calls["item_id"] == "m1"
+    assert calls["ticks"] == 1200000000
+    assert "marked" not in calls           # a mid-play report must not mark it watched
 
 
-def test_progress_uses_playing_for_start_event(monkeypatch):
-    """event=start hits /Sessions/Playing (starts the session with a position)."""
+def test_progress_stopped_near_the_end_marks_watched(monkeypatch):
+    """`stopped` within 5% of the runtime marks the item watched, not a resume point."""
     _patch_config(monkeypatch)
     calls = {}
-
-    def fake_urlopen(req, timeout=None):
-        calls["url"] = req.full_url
-        calls["data"] = json.loads(req.data)
-        return _FakeStreamResponse(status=204, headers={})
-
-    with patch("api.routes.jellyfin_stream.urllib.request.urlopen", fake_urlopen):
+    fake_svc = SimpleNamespace(
+        set_playback_position=lambda *a: calls.update(position=True) or True,
+        mark_state=lambda item_id, watched: calls.update(mark=(item_id, watched)) or {"played": True},
+    )
+    with patch("api.routes.jellyfin_stream.build_library_service", return_value=fake_svc):
         r = client.post("/api/jellyfin/progress", json={
-            "item_id": "m1", "position_ticks": 0, "is_paused": False, "event": "start",
+            "item_id": "m1", "position_ticks": 9600000000,   # 960s of a 1000s item
+            "runtime_ticks": 10000000000, "is_paused": False, "event": "stopped",
         })
 
     assert r.status_code == 204
-    assert "/Sessions/Playing" in calls["url"]
-    assert "/Sessions/Playing/Progress" not in calls["url"]
+    assert calls["mark"] == ("m1", True)
+    assert "position" not in calls
+
+
+def test_progress_stopped_midway_stores_the_position(monkeypatch):
+    """A stop well before the end is a resume point, not a watch."""
+    _patch_config(monkeypatch)
+    calls = {}
+    fake_svc = SimpleNamespace(
+        set_playback_position=lambda item_id, ticks: calls.update(ticks=ticks) or True,
+        mark_state=lambda *a: calls.update(marked=True) or {"played": True},
+    )
+    with patch("api.routes.jellyfin_stream.build_library_service", return_value=fake_svc):
+        r = client.post("/api/jellyfin/progress", json={
+            "item_id": "m1", "position_ticks": 16510000000,
+            "runtime_ticks": 69600000000, "is_paused": False, "event": "stopped",
+        })
+
+    assert r.status_code == 204
+    assert calls["ticks"] == 16510000000
+    assert "marked" not in calls
+
+
+def test_progress_reports_502_when_the_write_did_not_land(monkeypatch):
+    """Never answer 204 for a write that wasn't stored — that is the bug's shape."""
+    _patch_config(monkeypatch)
+    fake_svc = SimpleNamespace(set_playback_position=lambda *a: False,
+                               mark_state=lambda *a: {"played": False})
+    with patch("api.routes.jellyfin_stream.build_library_service", return_value=fake_svc):
+        r = client.post("/api/jellyfin/progress", json={
+            "item_id": "m1", "position_ticks": 10, "is_paused": False, "event": "timeupdate",
+        })
+    assert r.status_code == 502
+
+
+def test_progress_rejects_an_unknown_event(monkeypatch):
+    _patch_config(monkeypatch)
+    r = client.post("/api/jellyfin/progress", json={
+        "item_id": "m1", "position_ticks": 0, "is_paused": False, "event": "nonsense"})
+    assert r.status_code == 400
 
 
 def test_library_items_route_returns_all(monkeypatch):

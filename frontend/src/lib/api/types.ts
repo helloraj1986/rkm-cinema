@@ -462,9 +462,11 @@ export interface paths {
         put?: never;
         /**
          * Jellyfin Progress
-         * @description Report playback position back to Jellyfin so Watched/resume UI updates.
+         * @description Record playback progress on the ITEM so Watched/resume UI updates.
          *
          *     Keeps the Jellyfin credential server-side; the browser only POSTs JSON here.
+         *     A report near the end of a ``stopped`` playback marks the item watched
+         *     instead of storing a resume point at the credits.
          */
         post: operations["jellyfin_progress_api_jellyfin_progress_post"];
         delete?: never;
@@ -1181,6 +1183,11 @@ export interface components {
              * @default DirectPlay
              */
             play_method: string;
+            /**
+             * Runtime Ticks
+             * @default 0
+             */
+            runtime_ticks: number;
         };
         /**
          * JobRunResponse

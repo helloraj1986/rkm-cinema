@@ -644,6 +644,47 @@ class JellyfinLibraryProvider(LibraryProvider):
             logger.warning("Jellyfin mark_state(%s, %s) failed: %s", item_id, watched, e)
             return {"played": False, "play_count": 0}
 
+    def set_playback_position(self, item_id: str, position_ticks: int) -> bool:
+        """Persist a resume position on the ITEM's own user data.
+
+        ⚠ Deliberately NOT Jellyfin's ``/Sessions/Playing*`` endpoints. Those only
+        write when the report can be matched to a live *device playback session*,
+        which a proxy player never has: Jellyfin answers them **204 and stores
+        nothing**, so the item's position stays 0 and it never appears in Continue
+        Watching. Verified live 2026-09-11 against 10.11.11 — every shape was
+        accepted-and-dropped (real PlaySessionId, invented one, device header,
+        X-Emby-Token, Authorization). The user-scoped
+        ``/Users/{uid}/Items/{id}/UserData`` write is the one that lands, and it is
+        the same endpoint family the working ``mark_state`` uses.
+
+        Sends ONLY ``PlaybackPositionTicks`` on purpose: passing ``Played`` would
+        clobber the watched flag — an explicit ``Played: false`` un-marks an
+        already-watched title (verified live). Omitting it leaves the flag alone,
+        which is what a position report should do.
+
+        Returns ``True`` when Jellyfin accepted the write (a 2xx, which for this
+        endpoint DOES mean stored — confirmed by reading the position back).
+        """
+        if not self._configured() or not item_id:
+            return False
+        uid = self._user_id()
+        if not uid:
+            return False
+        import json
+        url = (f"{self.config.JELLYFIN_URL}/Users/{uid}/Items/{item_id}/UserData"
+               f"?api_key={self.config.JELLYFIN_API_KEY}")
+        body = json.dumps({"PlaybackPositionTicks": int(position_ticks)}).encode("utf-8")
+        try:
+            req = urllib.request.Request(url, data=body, method="POST",
+                                         headers={"Content-Type": "application/json"})
+            with urllib.request.urlopen(req, timeout=10) as r:
+                ok = int(getattr(r, "status", 200)) < 300
+        except Exception as e:
+            logger.warning("Jellyfin set_playback_position(%s) failed: %s", item_id, e)
+            return False
+        self.invalidate()  # the next library/Continue-Watching read sees the position
+        return ok
+
     def _user_state(self, item_id: str) -> dict:
         """Fresh ``{played, play_count}`` for one item, for the state mutation."""
         uid = self._user_id()

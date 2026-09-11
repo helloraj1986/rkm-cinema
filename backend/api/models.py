@@ -50,6 +50,10 @@ class JellyfinProgressRequest(BaseModel):
     event: str = "timeupdate"
     #: How the item is being played: DirectPlay | DirectStream | Transcode.
     play_method: str = "DirectPlay"
+    #: The item's total runtime in ticks, when the player knows it. Lets a
+    #: ``stopped`` report near the end be treated as "finished" (mark watched)
+    #: instead of leaving a resume point at the credits.
+    runtime_ticks: int = 0
 
 
 class StatusEntry(BaseModel):

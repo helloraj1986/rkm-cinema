@@ -17,7 +17,6 @@ instantly, and seeking those modes is done by restarting at ``StartTimeTicks``).
 from __future__ import annotations
 
 import logging
-import json
 import urllib.error
 import urllib.request
 
@@ -26,6 +25,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 from api.models import JellyfinProgressRequest
 from config.settings import get_config
+from services.library import build_library_service
 
 router = APIRouter()
 logger = logging.getLogger("rkm.api.jellyfin_stream")
@@ -153,56 +153,55 @@ def jellyfin_stream(
     return StreamingResponse(_iter_chunks(resp), status_code=status, headers=out_headers)
 
 
-# Event -> Jellyfin Sessions endpoint. In-app playback won't move Jellyfin's
-# UserData (played/resume %) unless the player reports back; these map 1:1.
-_SESSION_PATHS = {
-    "start": "/Sessions/Playing",
-    "timeupdate": "/Sessions/Playing/Progress",
-    "stopped": "/Sessions/Playing/Stopped",
-}
+#: The events the player reports. Jellyfin's own stop handler treats "within 5%
+#: of the end" as finished, and so do we (see FINISHED_FRACTION below).
+_KNOWN_EVENTS = ("start", "timeupdate", "stopped")
+FINISHED_FRACTION = 0.95
 
 
 @router.post("/jellyfin/progress")
 def jellyfin_progress(payload: JellyfinProgressRequest):
-    """Report playback position back to Jellyfin so Watched/resume UI updates.
+    """Record playback progress on the ITEM so Watched/resume UI updates.
 
     Keeps the Jellyfin credential server-side; the browser only POSTs JSON here.
+    A report near the end of a ``stopped`` playback marks the item watched
+    instead of storing a resume point at the credits.
     """
+    # ⚠ Do NOT switch this back to Jellyfin's /Sessions/Playing* endpoints: they
+    # only write when the report matches a live *device playback session*, and
+    # in-app playback never is one (the app proxies the stream itself), so they
+    # answer 204 and store nothing — which is exactly why Continue Watching
+    # stopped updating (2026-09-11). Every shape was tried live on 10.11.11 (real
+    # PlaySessionId, invented one, device header, X-Emby-Token, Authorization):
+    # all accepted-and-dropped. The user-scoped user-data write inside
+    # set_playback_position is the one that lands, verified by reading it back.
     cfg = get_config()
-    if not (cfg.JELLYFIN_URL and cfg.JELLYFIN_API_KEY):
-        raise HTTPException(status_code=503, detail="Jellyfin not configured")
     if not payload.item_id:
         raise HTTPException(status_code=400, detail="Missing item_id")
-
-    path = _SESSION_PATHS.get(payload.event)
-    if not path:
+    if payload.event not in _KNOWN_EVENTS:
         raise HTTPException(status_code=400, detail=f"Unknown event: {payload.event}")
 
-    body: dict = {
-        "ItemId": payload.item_id,
-        "MediaSourceId": payload.item_id,
-        "PositionTicks": int(payload.position_ticks),
-        "CanSeek": True,
-        "PlayMethod": payload.play_method or "DirectPlay",
-        "IsPaused": bool(payload.is_paused),
-        "PlaybackRate": 1.0,
-    }
-    if payload.event == "timeupdate":
-        body["EventName"] = "timeupdate"
-    if payload.event == "start":
-        body["PlaySessionId"] = f"rkm-{payload.item_id}"
+    service = build_library_service(cfg)
+    if service is None:
+        raise HTTPException(status_code=503, detail="Jellyfin not configured")
 
-    url = f"{cfg.JELLYFIN_URL}{path}?api_key={cfg.JELLYFIN_API_KEY}"
-    req = urllib.request.Request(
-        url, data=json.dumps(body).encode("utf-8"),
-        headers={"Content-Type": "application/json"}, method="POST",
+    finished = (
+        payload.event == "stopped"
+        and payload.runtime_ticks > 0
+        and payload.position_ticks >= payload.runtime_ticks * FINISHED_FRACTION
     )
     try:
-        urllib.request.urlopen(req, timeout=8).close()
-    except urllib.error.HTTPError as e:
-        logger.warning("jellyfin progress(%s/%s) -> %s", payload.event, payload.item_id, e.code)
-        raise HTTPException(status_code=e.code, detail=e.reason or "Jellyfin progress error")
-    except Exception as e:  # noqa: BLE001 - transport failure is a soft no
+        if finished:
+            played = bool((service.mark_state(payload.item_id, True) or {}).get("played"))
+            if not played:
+                raise HTTPException(status_code=502, detail="Jellyfin did not mark the item watched")
+        elif not service.set_playback_position(payload.item_id, payload.position_ticks):
+            # A 204 here would be the same lie the Sessions endpoint told: "we
+            # accepted it" while nothing was stored. Say it did not land.
+            raise HTTPException(status_code=502, detail="Jellyfin did not store the playback position")
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001 - transport failure
         logger.warning("jellyfin progress(%s/%s) failed: %s", payload.event, payload.item_id, e)
         raise HTTPException(status_code=502, detail="Jellyfin progress unavailable")
     return JSONResponse(status_code=204, content=None)

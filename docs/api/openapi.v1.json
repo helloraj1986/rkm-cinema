@@ -692,7 +692,7 @@
     "/api/jellyfin/progress": {
       "post": {
         "summary": "Jellyfin Progress",
-        "description": "Report playback position back to Jellyfin so Watched/resume UI updates.\n\nKeeps the Jellyfin credential server-side; the browser only POSTs JSON here.",
+        "description": "Record playback progress on the ITEM so Watched/resume UI updates.\n\nKeeps the Jellyfin credential server-side; the browser only POSTs JSON here.\nA report near the end of a ``stopped`` playback marks the item watched\ninstead of storing a resume point at the credits.",
         "operationId": "jellyfin_progress_api_jellyfin_progress_post",
         "requestBody": {
           "content": {
@@ -2075,6 +2075,11 @@
             "type": "string",
             "title": "Play Method",
             "default": "DirectPlay"
+          },
+          "runtime_ticks": {
+            "type": "integer",
+            "title": "Runtime Ticks",
+            "default": 0
           }
         },
         "type": "object",

@@ -167,6 +167,15 @@ class LibraryProvider(ABC):
         or ``None`` when the backend doesn't support marking."""
         return None
 
+    def set_playback_position(self, item_id: str, position_ticks: int) -> bool:
+        """Record a resume position for an item; ``True`` when the backend stored it.
+
+        A proxy player (one that never becomes a session inside the media server)
+        must write the item's user data directly — see the Jellyfin implementation
+        for why the ``/Sessions/Playing*`` endpoints cannot work here.
+        """
+        return False
+
 
 class LibraryService:
     """Unified library facade.
@@ -503,6 +512,20 @@ class LibraryService:
             if result:
                 return result
         return {"played": False, "play_count": 0}
+
+    def set_playback_position(self, item_id: str, position_ticks: int) -> bool:
+        """Record a resume position via the first provider that supports it.
+
+        Returns ``True`` only when a backend confirms it stored the value — never
+        "we asked" — so the caller can answer honestly instead of 204-and-forget.
+        """
+        for p in self._providers:
+            try:
+                if p.set_playback_position(item_id, position_ticks):
+                    return True
+            except Exception as e:
+                logger.warning("set_playback_position failed for %s: %s", p.name, e)
+        return False
 
     def search(self, q: str, limit: int = 12) -> dict:
         """Global-search owned media: ``{provider, items, people, genres}``.

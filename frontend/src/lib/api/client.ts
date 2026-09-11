@@ -598,6 +598,9 @@ export interface ProgressPayload {
   event: "start" | "timeupdate" | "stopped";
   /** How the item is being played: DirectPlay | DirectStream | Transcode. */
   play_method?: string;
+  /** Total runtime in ticks when the player knows it, so a report near the end
+   *  is treated as "finished" (marked watched) instead of a resume point. */
+  runtime_ticks?: number;
 }
 
 export const api = {

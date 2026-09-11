@@ -90,7 +90,7 @@ def main() -> int:
     if problems:
         for p in problems:
             print(f"  ATTENTION: {p}")
-        print("  diagnose with:  .\\rkm.ps1 diagnose")
+        print("  diagnose with:  .\\rkm-cinema.ps1 diagnose")
         return 1
     print("  everything looks healthy")
     return 0

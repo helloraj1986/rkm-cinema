@@ -32,6 +32,27 @@ def is_env_passthrough_key(key: str) -> bool:
     return any(str(key).startswith(p) for p in MEDIA_CONFIG_KEY_PREFIXES)
 
 
+#: The media servers this app knows how to read.
+MEDIA_SERVERS = ("jellyfin", "plex", "emby")
+
+
+def resolve_media_server(raw: Optional[str]) -> str:
+    """Which library backend a ``MEDIA_SERVER`` value selects.
+
+    JELLYFIN is the default, and the fallback for anything unrecognised: the
+    bundled self-contained stack is the only deployment, so an unset, blank or
+    typo'd value must never silently re-select the retired Plex-primary path.
+    (Before 2026-09-11 the default was ``"plex"`` — a missing key quietly switched
+    the whole library backend, and the symptom was every library row greyed out,
+    which reads like a broken drive mount rather than a config default.)
+
+    ONE rule, shared by the config loader, the provider factory and ``/api/config``
+    so the three can never disagree about what a value means.
+    """
+    value = (raw or "").strip().lower()
+    return value if value in MEDIA_SERVERS else "jellyfin"
+
+
 class Config:
     """Single source of truth for all environment configuration."""
 
@@ -43,10 +64,11 @@ class Config:
     SONARR_API_KEY: str
     PLEX_URL: str
     PLEX_TOKEN: str
-    # Primary library backend. Default "plex" (Plex-primary + Emby fallback = the
-    # historical behaviour). "jellyfin" or "emby" make that single backend the
-    # only provider — used by the bundled self-contained stack (experiment branch).
-    MEDIA_SERVER: str = "plex"
+    # Primary library backend. Default "jellyfin" — the bundled self-contained
+    # stack is the only deployment now (the old Plex-primary + Emby-fallback
+    # profile is retired). "plex"/"emby" are still accepted for legacy configs,
+    # but nothing deploys them any more.
+    MEDIA_SERVER: str = "jellyfin"
 
     # --- Optional ---
     TMDB_API_KEY: Optional[str]
@@ -144,9 +166,7 @@ class Config:
         self.SONARR_API_KEY = env.get("SONARR_API_KEY", "")
         self.PLEX_URL = self._normalize_url(env.get("PLEX_URL", f"http://{self.MEDIA_HOST}:32400"))
         self.PLEX_TOKEN = env.get("PLEX_TOKEN", "")
-        self.MEDIA_SERVER = (env.get("MEDIA_SERVER") or "plex").strip().lower()
-        if self.MEDIA_SERVER not in ("plex", "emby", "jellyfin"):
-            self.MEDIA_SERVER = "plex"
+        self.MEDIA_SERVER = resolve_media_server(env.get("MEDIA_SERVER"))
 
         self.TMDB_API_KEY = env.get("TMDB_API_KEY") or None
         self.TVDB_API_KEY = env.get("TVDB_API_KEY") or None

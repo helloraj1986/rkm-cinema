@@ -167,6 +167,30 @@ class TestHealthChecker:
         assert report.degraded is True
         assert report.serviceDetail["radarr"]["ok"] is False
 
+    def test_unconfigured_backend_is_degraded_not_a_crash(self):
+        """A media server with no credentials must report DOWN, not kill the endpoint.
+
+        Regression (found 2026-09-11): ``check()`` walked ``lib.providers`` unguarded,
+        so on a stack whose configured backend is not set up yet — a Jellyfin install
+        before the provisioner has written its API key — ``/api/health`` raised
+        AttributeError. The UI then reads as a dead app instead of "media server not
+        configured", and the fix is to treat it as one unhealthy service.
+        """
+        cfg = self._cfg()
+        cfg.MEDIA_SERVER = "jellyfin"   # the configured backend…
+        cfg.JELLYFIN_API_KEY = None     # …is not configured yet → factory returns None
+        acq = Mock(); acq.health.return_value = {"radarr": True, "sonarr": True}
+        qbit = Mock(); qbit.health.return_value = True
+        checker = HealthChecker(config=cfg)
+        checker._acquisition = acq
+        checker._qbit = qbit
+        # No _library injection on purpose: let the real factory answer "not configured".
+
+        report = checker.check()        # must not raise
+        assert report.services["jellyfin"] is False
+        assert report.services["plex"] is False
+        assert report.services["radarr"] is True
+
     def test_unconfigured_service_skipped_from_degraded(self):
         cfg = Mock()
         cfg.RADARR_API_KEY = ""; cfg.SONARR_API_KEY = ""

@@ -25,7 +25,7 @@ A self-hosted **media discovery + download dashboard**. It:
 - Deep-links each available title straight into **Plex** or **Emby** to watch (both share the same library).
 - Fetches **posters/backdrops/genres** from **TMDB** and **trailers** by scraping `youtube.com` (no YouTube API key).
 
-Access is private over **Tailscale**. The browser talks to nginx on :8123; nginx proxies `/api/*` to the FastAPI container, which holds all secrets.
+Access is private over **Tailscale**. The browser talks to nginx on :8124; nginx proxies `/api/*` to the FastAPI container, which holds all secrets.
 
 ---
 
@@ -33,10 +33,10 @@ Access is private over **Tailscale**. The browser talks to nginx on :8123; nginx
 
 ```
  Browser (Tailnet device)
-      │  http://rkm-hp.tail8d5e8.ts.net:8123
+      │  http://rkm-hp.tail8d5e8.ts.net:8124
       ▼
  ┌──────────────────────────────┐
- │  nginx (web container) :8123 │   serves the React shell (frontend/)
+ │  nginx (web container) :8124 │   serves the React shell (frontend/)
  │  ─ proxies /api/* → api:8000 │
  └──────────────┬───────────────┘
                 ▼
@@ -76,13 +76,13 @@ rkm-cinema/                       (full annotated tree in ../README.md)
 ├── docs/                         architecture, plans, ADRs, API contract,
 │                                 OPERATIONS.md, PROGRESS.md, ARCHITECTURE.md
 ├── nginx/  scripts/  tools/      web config; backup/restore; diagnostics
-├── docker-compose.yml  bootstrap.ps1  bootstrap.sh  render_config.py  rkm.ps1
+├── docker-compose.yml  bootstrap.ps1  bootstrap.sh  render_config.py  rkm-cinema.ps1
 └── README.md  .env (single config)  .env.example (committed template)
 ```
 
 Run everything from the subdirs: `cd backend && python -m pytest tests/ -q`,
 `cd frontend && npm run typecheck && npx vitest run && npm run build`.
-Deploy stays at the root (`.\\bootstrap.ps1` / `.\\run-rkm-cinema.ps1`).
+Deploy stays at the root (`.\\bootstrap.ps1`, wrapped by `.\\rkm-cinema.ps1 deploy`).
 
 ---
 
@@ -161,7 +161,7 @@ not a URL), and `emby_url` for `available`/`downloaded` titles.
 
 ---
 
-## 8. Watch deep-links (Plex / Emby)
+## 8. Watch deep-links (Jellyfin; Plex/Emby are legacy)
 
 Deep-links point **into the local server's own web UI** on the browser-reachable
 **Tailscale MagicDNS HTTPS** host — **not** Plex's `app.plex.tv` cloud app.
@@ -226,8 +226,8 @@ with fakes — **no test touches the live LAN**.
 
 ## 12. Deployment
 
-- Deploy (RKM-HP / Windows): `.\run-rkm-cinema.ps1` → `docker compose up -d --build`.
-- Two containers: `api` (FastAPI modular, holds secrets) + `web` (nginx :8123, static + `/api` proxy).
+- Deploy (RKM-HP / Windows): `.\\bootstrap.ps1` (or `.\\rkm-cinema.ps1 deploy`) → `docker compose -p rkm-bundled up -d --build`.
+- Two containers: `api` (FastAPI modular, holds secrets) + `web` (nginx :8124, static + `/api` proxy), plus the bundled `jellyfin` media server.
 - **Plex and Emby are both HTTPS-only** over Tailscale (`:32400` / `:8096`); deep-links must use `https://` and target the browser-reachable `PLEX_BROWSER_URL`/`EMBY_BROWSER_URL` host (see §8).
 
 ---
@@ -240,7 +240,7 @@ with fakes — **no test touches the live LAN**.
 4. **UI?** → update the React shell (`frontend/src/`).
 5. **Test it** → add a mockable pytest under `backend/tests/`; run `cd backend && python -m pytest tests/ -q`.
 6. No static dashboard rebuild exists any more — the React shell reads the live `/api` (the old `rebuild_dashboard.py` static generator was removed with the legacy app).
-7. Deploy with `.\run-rkm-cinema.ps1` (prod) or `.\bootstrap.ps1` (bundled stack); verify `/api/health` + the dashboard.
+7. Deploy with `.\bootstrap.ps1` (the bundled api + web + Jellyfin stack); verify `/api/health` + the dashboard.
 
 ---
 

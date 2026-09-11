@@ -1,6 +1,6 @@
 """tools/rkm_common.py — the shared plumbing every operation tool depends on.
 
-The URL resolution is the part worth pinning down: the same `.\rkm.ps1 status`
+The URL resolution is the part worth pinning down: the same `.\rkm-cinema.ps1 status`
 must work inside the sandbox (where the stack is at host.docker.internal) and on
 the Windows host (where it is at localhost). Getting that wrong made the tools
 sandbox-only, which is what these tests prevent regressing.

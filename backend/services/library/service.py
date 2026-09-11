@@ -176,6 +176,31 @@ class LibraryProvider(ABC):
         """
         return False
 
+    # --- Subtitles (SUBTITLES_OPENSUBTITLES_PLAN §3.3) -----------------------
+    def item_path(self, item_id: str) -> Optional[str]:
+        """The media FILE's path as the server reports it (``None`` if unknown).
+
+        The api runs with the media roots mounted read-write at the SAME container
+        paths the server reports, so this value is directly writable from the api —
+        that is what makes sidecar-``.srt`` delivery possible without a plugin.
+        """
+        return None
+
+    def refresh_item(self, item_id: str) -> bool:
+        """Re-index ONE item so a newly added sidecar file is picked up.
+
+        Deliberately NOT :meth:`refresh_library`: a library-wide scan is expensive
+        and CANCELS an in-flight scan (OPERATIONS.md), which is exactly how to leave
+        the user's library half-indexed.
+        """
+        return False
+
+    def upload_subtitle(self, item_id: str, file_name: str, content: bytes,
+                        language: str = "", format: str = "") -> bool:
+        """Attach a subtitle to the server directly (fallback when no sidecar write
+        is possible — e.g. the media file lives outside the api's mounts)."""
+        return False
+
 
 class LibraryService:
     """Unified library facade.
@@ -407,6 +432,40 @@ class LibraryService:
                     return True
             except Exception as e:
                 logger.warning("refresh_library failed for %s: %s", p.name, e)
+        return False
+
+    def item_path(self, item_id: str) -> Optional[str]:
+        """The media file's path from the first provider that knows it."""
+        for p in self._providers:
+            try:
+                path = p.item_path(item_id)
+            except Exception as e:
+                logger.warning("item_path failed for %s: %s", p.name, e)
+                continue
+            if path:
+                return path
+        return None
+
+    def refresh_item(self, item_id: str) -> bool:
+        """Re-index one item; ``True`` when a provider accepted it (never a scan)."""
+        for p in self._providers:
+            try:
+                if p.refresh_item(item_id):
+                    return True
+            except Exception as e:
+                logger.warning("refresh_item failed for %s: %s", p.name, e)
+        return False
+
+    def upload_subtitle(self, item_id: str, file_name: str, content: bytes,
+                        language: str = "", format: str = "") -> bool:
+        """Attach subtitle bytes via the server; ``True`` when a provider accepted it."""
+        for p in self._providers:
+            try:
+                if p.upload_subtitle(item_id, file_name, content,
+                                     language=language, format=format):
+                    return True
+            except Exception as e:
+                logger.warning("upload_subtitle failed for %s: %s", p.name, e)
         return False
 
     def get_poster(self, item_id: str, max_width: int = 500, kind: str = "Primary") -> Optional[dict]:

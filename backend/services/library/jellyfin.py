@@ -823,6 +823,98 @@ class JellyfinLibraryProvider(LibraryProvider):
             "audio": audio, "subtitles": subtitles,
         }
 
+    # --- Subtitles (SUBTITLES_OPENSUBTITLES_PLAN §3.3) ------------------------
+
+    def item_path(self, item_id: str) -> Optional[str]:
+        """The media file's path, as Jellyfin reports it.
+
+        Live-verified shape: ``GET /Users/{uid}/Items/{id}?Fields=Path`` returns a
+        single item with ``Path``. The bundled API container mounts the media roots
+        read-WRITE at these same container paths, which is what makes the sidecar
+        ``.srt`` design work without installing a plugin.
+        """
+        if not self._configured() or not item_id:
+            return None
+        uid = self._user_id()
+        if not uid:
+            return None
+        import json
+        url = (f"{self.config.JELLYFIN_URL}/Users/{uid}/Items/{item_id}"
+               f"?Fields=Path&api_key={self.config.JELLYFIN_API_KEY}")
+        try:
+            with urllib.request.urlopen(url, timeout=10) as r:
+                data = json.load(r)
+        except Exception as e:
+            logger.warning("Jellyfin item_path(%s) failed: %s", item_id, e)
+            return None
+        path = str((data or {}).get("Path") or "")
+        return path or None
+
+    def refresh_item(self, item_id: str) -> bool:
+        """Re-index ONE item so a newly written sidecar subtitle is indexed.
+
+        ``POST /Items/{id}/Refresh`` with the lightest modes: a metadata refresh to
+        pick up the sibling ``.srt`` and no image work, ``replaceAllMetadata=false``
+        so nothing already known about the item is thrown away. **Never** a
+        library-wide scan — that cancels an in-flight scan (OPERATIONS.md).
+        """
+        if not self._configured() or not item_id:
+            return False
+        url = (f"{self.config.JELLYFIN_URL}/Items/{item_id}/Refresh"
+               f"?metadataRefreshMode=Default&imageRefreshMode=None"
+               f"&replaceAllMetadata=false&replaceAllImages=false"
+               f"&api_key={self.config.JELLYFIN_API_KEY}")
+        try:
+            req = urllib.request.Request(url, data=b"", method="POST",
+                                         headers={"Content-Type": "application/json"})
+            with urllib.request.urlopen(req, timeout=20) as r:
+                ok = int(getattr(r, "status", 200)) < 300
+            self.invalidate()   # the next playback-info read must not serve a stale list
+            return ok
+        except Exception as e:
+            logger.warning("Jellyfin refresh_item(%s) failed: %s", item_id, e)
+            return False
+
+    def upload_subtitle(self, item_id: str, file_name: str, content: bytes,
+                        language: str = "", format: str = "") -> bool:
+        """Attach subtitle bytes to an item (``POST /Videos/{id}/Subtitles``).
+
+        The FALLBACK path, used when no sidecar file can be written (the media file
+        lives outside the api's mounts). Jellyfin indexes the upload with the item, so
+        the existing VTT proxy serves it unchanged.
+
+        ⚠ MEASURED, after a live 415: this endpoint is **JSON**, not multipart. The
+        server's own ``/api-docs/openapi.json`` declares an ``UploadSubtitleDto``
+        body (``Language``, ``Format``, ``IsForced``, ``IsHearingImpaired``, ``Data``)
+        and does not accept ``multipart/form-data`` at all — a hand-built multipart
+        post is answered with 415 Unsupported Media Type. ``Data`` is the file's bytes
+        as **base64**.
+        """
+        if not self._configured() or not item_id or not content:
+            return False
+        import base64
+        import json
+        ext = format or ((file_name or "").rsplit(".", 1)[-1].lower() if "." in (file_name or "") else "srt")
+        body = json.dumps({
+            "Language": language or "eng",
+            "Format": ext,
+            "IsForced": False,
+            "IsHearingImpaired": False,
+            "Data": base64.b64encode(content).decode("ascii"),
+        }).encode("utf-8")
+        url = (f"{self.config.JELLYFIN_URL}/Videos/{item_id}/Subtitles"
+               f"?api_key={self.config.JELLYFIN_API_KEY}")
+        try:
+            req = urllib.request.Request(url, data=body, method="POST",
+                                         headers={"Content-Type": "application/json"})
+            with urllib.request.urlopen(req, timeout=30) as r:
+                ok = int(getattr(r, "status", 200)) < 300
+            self.invalidate()
+            return ok
+        except Exception as e:
+            logger.warning("Jellyfin upload_subtitle(%s) failed: %s", item_id, e)
+            return False
+
     def item_detail(self, item_id: str) -> Optional[dict]:
         """Rich single-item metadata for the Plex-style preplay/detail view.
 

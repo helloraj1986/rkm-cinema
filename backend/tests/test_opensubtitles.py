@@ -70,7 +70,9 @@ SEARCH_PAYLOAD = {
     "data": [
         {"type": "subtitle", "attributes": {
             "subtitle_id": "111", "language": "en", "download_count": 4242,
-            "hearing_impaired": False, "format": "srt", "release": "Movie.2019.1080p.WEB-DL",
+            # ⚠ the vendor's `format` is FREE TEXT, not an extension (live 2026-09-12:
+            # eng-sdh / eng-full / x265-heteam / 23). The extension comes from file_name.
+            "hearing_impaired": False, "format": "eng-full", "release": "Movie.2019.1080p.WEB-DL",
             "files": [{"file_id": 111, "file_name": "Movie.2019.1080p.WEB-DL.srt"}],
             "feature_details": {"title": "The Movie", "year": 2019, "imdb_id": 133093}}},
         {"type": "subtitle", "attributes": {
@@ -119,6 +121,17 @@ class TestSearch:
         assert rows[0].display_title == "Movie.2019.1080p.WEB-DL"
         assert rows[0].download_count == 4242
         assert rows[1].hearing_impaired is True
+
+    def test_the_free_text_vendor_format_never_becomes_the_extension(self):
+        """Live finding: `attributes.format` is a label, not a file type.
+
+        Reading it as an extension mislabels every result ("eng-full"), and anything
+        that then branches on the format would be branching on prose.
+        """
+        c, _ = client(resp(body=SEARCH_PAYLOAD))
+        row = c.search(tmdb_id=603)[0]
+        assert row.format == "srt"                 # from files[0].file_name
+        assert row.vendor_format == "eng-full"     # the vendor's own label, display-only
 
     def test_the_row_without_a_file_is_dropped(self):
         c, _ = client(resp(body=SEARCH_PAYLOAD))

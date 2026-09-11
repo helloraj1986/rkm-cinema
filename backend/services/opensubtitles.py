@@ -128,7 +128,13 @@ class SubtitleResult:
     provider: str = "opensubtitles"
     download_count: int = 0
     hearing_impaired: bool = False
+    #: The FILE's extension (``srt``). This is what can actually be rendered.
+    #: ⚠ NOT the API's ``attributes.format``, which is free text describing the
+    #: upload (measured live 2026-09-12: ``eng-sdh``, ``eng-full``, ``x265-heteam``,
+    #: ``23``) — reading it as an extension would mislabel every result.
     format: str = ""
+    #: The vendor's own free-text format/release label, kept for display only.
+    vendor_format: str = ""
     feature_title: str = ""
     year: Optional[int] = None
 
@@ -147,6 +153,7 @@ class SubtitleResult:
             "download_count": self.download_count,
             "hearing_impaired": self.hearing_impaired,
             "format": self.format,
+            "vendor_format": self.vendor_format,
             "feature_title": self.feature_title,
             "year": self.year,
         }
@@ -586,14 +593,15 @@ def _normalise_row(row: Any) -> Optional[SubtitleResult]:
         return None
     feature = attrs.get("feature_details") or {}
     release = str(attrs.get("release") or file_name or f"file {file_id}")
-    fmt = str(attrs.get("format") or (file_name.rsplit(".", 1)[-1] if "." in file_name else ""))
+    ext = file_name.rsplit(".", 1)[-1].lower() if "." in file_name else ""
     return SubtitleResult(
         file_id=int(file_id),
         language=str(attrs.get("language") or ""),
         display_title=release,
         download_count=_as_int(attrs.get("download_count")) or 0,
         hearing_impaired=bool(attrs.get("hearing_impaired")),
-        format=fmt.lower(),
+        format=ext,
+        vendor_format=str(attrs.get("format") or "").lower(),
         feature_title=str(feature.get("title") or ""),
         year=_as_int(feature.get("year")),
     )

@@ -149,7 +149,7 @@ docker compose -p rkm-bundled down          # stop (keeps state)
 | `RKM_MEDIA_PATH` | Primary media root, mounted at `/data` (e.g. `D:/RKM_MEDIA`) |
 | `RKM_MEDIA_PATH_2`, `_3` | Extra physical drives, mounted at `/media2`, `/media3` — **two drives need two entries** |
 | `MEDIA_LIBRARY_N_NAME/_PATH/_TYPE` | Sidebar libraries. `PATH` is a host path (`D:/RKM_MEDIA/Movies`) or container path (`/data/Movies`); `TYPE` = `movie`/`tv`/`mixed`. Leave all empty to auto-discover every folder |
-| `MEDIA_SERVER` | Which media server the API reads. `jellyfin` (the default, and the only one the stack deploys) — `plex`/`emby` remain accepted for legacy configs only |
+| `MEDIA_SERVER` | Which media server the API reads. `jellyfin` is the default **and the only backend this build can wire** — a retired value (`plex`/`emby`) is still tolerated so an old `.env` keeps deploying, but it is warned about and rendered as `jellyfin` |
 | `RKM_DASHBOARD_PORT`, `RKM_JELLYFIN_PORT` | Host ports (defaults `8124` / `8098`) |
 | `WATCHLIST_DB_PATH` | Where the app's own watchlist JSON lives |
 | `RKM_PRUNE_LIBRARIES` | `true` (default) removes libraries the stack no longer declares — **files on disk are never touched** |

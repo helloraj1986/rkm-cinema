@@ -1,10 +1,13 @@
 # Remove Plex/Emby Support Plan — `refactor/remove-plex-emby`
 
-**Status: SCOPED 2026-09-11, NOT STARTED.** Branch `refactor/remove-plex-emby` created from
-`main` with this plan as its first commit. Do not start Phase 1 until
-`chore/retire-prod-stack` and `feat/player-layout` have merged (they touch README,
-`.env.example`, `docs/OPERATIONS.md` and `docs/PROGRESS.md`; starting first means resolving
-the same conflicts twice).
+**Status: EXECUTED 2026-09-11 — phases 1–5 all committed on this branch; awaiting the
+user's RKM-HP eyeball + merge.** Branch `refactor/remove-plex-emby` was created from
+`main` with this plan as its first commit, both prerequisites (`chore/retire-prod-stack`,
+`feat/player-layout`) were merged to `main` first, and the branch was rebased onto that
+`main` before phase 1 started. Result: **227 functional references / 38 files → 0** (see
+§8 for the allow-list of what deliberately survives), **1,562 lines deleted outright**,
+backend **502 → 482** tests (the deleted ones enumerated per commit), and the contract
+**39 → 38 paths**.
 
 **User decision it executes (2026-09-11):** *"i dont want use prod profile anymore as plex and
 emby's role is taken by jellyfin"* — the deployment path is already gone
@@ -307,3 +310,52 @@ The riskiest single step is the Phase 3 vocabulary rename — do it as its own c
 review it, because it touches the domain, the API models and the frontend's watch-link map at
 once. Second riskiest: `validate_required()` / `load_env()` in Phase 4, because both are read by
 scripts as well as the api.
+
+---
+
+## 8. Corrections found while EXECUTING (2026-09-11)
+
+The plan was a measurement, and three of its claims did not survive contact with the
+code. Each is recorded here rather than silently edited, because the next session will
+otherwise trust the original text.
+
+1. **§1 criterion 2 was wrong — `frontend/src` DOES have "Plex-style" idioms (~15).**
+   The criterion said the grep must reach zero because "no 'Plex-style' idiom [exists]
+   there today". It does: the preplay/detail/player design comments and the
+   `PLEX_UI_PLAN` / `PLEX_VIEWS_PLAN` doc names. The plan's own escape hatch applies —
+   *extend the criterion rather than rename a design comment*. So the surviving
+   frontend references are exactly: those design idioms, plus the retired key names
+   that appear inside tests asserting their ABSENCE. Every *functional* frontend
+   reference is gone (poster URL, watch links, Settings cards, config service map,
+   user-facing copy).
+2. **The contract move happened in phase 2, not phase 3.** Deleting
+   `api/routes/plex_thumb.py` removes the path from the OpenAPI schema immediately, so
+   39 → 38 landed with the deletion; the snapshot was regenerated in its own commit
+   right after the phase-3 rename (an interim commit otherwise carried a stale
+   artifact). The phase-3 contract commit then dropped the three response *fields* and
+   regenerated again — which also absorbed PRE-EXISTING client drift (`types.ts` had
+   not been regenerated since `/api/search/global` landed).
+3. **`render_config.py` needed more than "tolerate the legacy value" — and writing the
+   test first is what caught it.** `resolve_media_server()` returns a KNOWN retired
+   value *verbatim* (it maps only UNKNOWN values to jellyfin), so a pass-through left
+   `backend == "plex"` and **skipped the Jellyfin admin-password generation**, whose
+   gate is `backend == "jellyfin"`. That is the "provisioner finished, yet every
+   library is disabled" failure — it would have shipped silently behind a green
+   deploy. The renderer now always renders `jellyfin` and warns about the raw value;
+   the old `fail()` (which would strand a working box on an un-updated `.env`) is gone.
+
+Also worth knowing (not plan errors, just discovered):
+
+- Two *real* bugs fell out of the phase-3 rename: the reconciler hunted for a match
+  whose `provider == "plex"` (so `server_item_id` was silently always empty on a
+  Jellyfin stack), and `snapshot_to_status_result()` hardcoded the `plex` key of the
+  provider-keyed watch map.
+- `api/routes/config.py` reported the media server as DOWN whenever a retired
+  `MEDIA_SERVER` value was still in `.env` (it compared the *resolved name*). It now
+  reports whether the library provider is reachable.
+- `nginx/default.conf` + `tools/verify_nginx_artwork_cache.py` narrowed to the
+  jellyfin artwork paths, re-verified by EXECUTION (6/6 checks, `nginx -t` rc=0).
+- **Unrelated doc drift left alone on purpose** (out of this plan's scope, but a lie
+  the next session might trust): `docs/ARCHITECTURE.md` §10 still mentions
+  `dashboard-data.json` built by `scripts/rebuild_dashboard.py`, and §11 still
+  describes the removed `app.js`/`api.js` frontend.

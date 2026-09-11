@@ -19,10 +19,10 @@
 ## 1. What this is
 
 A self-hosted **media discovery + download dashboard**. It:
-- Shows what's in your **Plex** library (source of truth for availability) and recently added.
+- Shows what's in your **Jellyfin** library (source of truth for availability) and recently added.
 - Lets you **request** movies/series, which are added to **Radarr** (movies) or **Sonarr** (TV) and downloaded via **qBittorrent**.
 - Tracks each title through a lifecycle: requested → downloading → downloaded → available → recommended (history).
-- Deep-links each available title straight into **Plex** or **Emby** to watch (both share the same library).
+- Deep-links each available title straight into **Jellyfin**'s own web UI, and plays it in-app (same-origin HLS/MSE) where the server exposes an item id.
 - Fetches **posters/backdrops/genres** from **TMDB** and **trailers** by scraping `youtube.com` (no YouTube API key).
 
 Access is private over **Tailscale**. The browser talks to nginx on :8124; nginx proxies `/api/*` to the FastAPI container, which holds all secrets.
@@ -42,16 +42,16 @@ Access is private over **Tailscale**. The browser talks to nginx on :8124; nginx
                 ▼
  ┌──────────────────────────────┐
  │  FastAPI  api  container     │   uvicorn api.main:app  (modular)
- │  /api/health /config /status │   holds RADARR_KEY, PLEX_TOKEN, EMBY_KEY…
+ │  /api/health /config /status │   holds RADARR_KEY, SONARR_KEY, JELLYFIN_KEY…
  │  /api/download /search       │
- │  /api/library /plex/thumb    │
+ │  /api/library /jellyfin/*    │
  │  /api/quality                │
  └───────┬──────────┬───────────┘
          │          │   read /write
          ▼          ▼
  ┌────────────┐  ┌───────────────────────────────┐
- │ watchlist  │  │  External: Plex·Radarr·Sonarr  │
- │ .json (ro) │  │  TMDB·Emby·qBittorrent·YouTube  │
+ │ watchlist  │  │  External: Jellyfin·Radarr     │
+ │ .json (ro) │  │  Sonarr·TMDB·qBittorrent·YT    │
  └────────────┘  └───────────────────────────────┘
 ```
 
@@ -65,7 +65,7 @@ rkm-cinema/                       (full annotated tree in ../README.md)
 │   ├── api/                      main.py app factory + routes/ (thin routers)
 │   ├── services/                 external integrations + app services
 │   │   ├── library/ acquisition/ recommendation/ reconciliation/  (canonical)
-│   │   ├── plex.py radarr.py sonarr.py emby.py tmdb.py youtube.py
+│   │   ├── radarr.py sonarr.py tmdb.py youtube.py
 │   │   ├── qbittorrent.py watchlist.py media_status.py recommendations.py
 │   ├── domain/                   business layer: state machine + resolver
 │   ├── core/  config/  infrastructure/  application/  jobs/
@@ -97,7 +97,7 @@ Deploy stays at the root (`.\\bootstrap.ps1`, wrapped by `.\\rkm-cinema.ps1 depl
       ↓
  External service clients (services/*, core/http_client)  isolated URL/auth/HTTP
       ↓
- Plex · Radarr · Sonarr · Emby · TMDB · qBittorrent · YouTube
+ Jellyfin · Radarr · Sonarr · TMDB · qBittorrent · YouTube
 ```
 
 Rules:
@@ -111,13 +111,13 @@ Rules:
 
 | Endpoint | Purpose |
 |---|---|
-| `GET /api/health` | Service up/down flags (radarr, sonarr, tmdb, plex, emby, jellyfin, qbit) |
+| `GET /api/health` | Service up/down flags (radarr, sonarr, tmdb, qbit, jellyfin) |
 | `GET /api/config` | Public-safe booleans + dashboard freshness (never keys/URLs) |
-| `GET /api/status` | Per-title state via `MediaStatusService` → `domain.state_machine.resolve_status()`; includes `plexUrl`/`embyUrl` watch links |
+| `GET /api/status` | Per-title state via the `Reconciler` → `domain.status.resolve_status()`; includes `jellyfinUrl` + `jellyfinItemId` |
 | `POST /api/download` | Add movie→Radarr / series→Sonarr via `DownloadService` (title fallback, "pick one" ambiguity) |
 | `GET /api/search` | Watchlist + live TMDB search |
-| `GET /api/library` | Plex counts + recently-added (Emby fallback); per-item plexUrl/embyUrl/thumb |
-| `GET /api/plex/thumb` | Server-side proxy for Plex thumbnails (keeps token secret) |
+| `GET /api/library` | Library counts + recently-added (first provider that answers); per-item thumb |
+| `GET /api/jellyfin/poster` | Same-origin artwork proxy (person/backdrop variants too) — the api key stays server-side |
 | `GET /api/quality` | Radarr/Sonarr quality profiles for the download dialog |
 
 ---
@@ -127,7 +127,7 @@ Rules:
 The canonical resolution lives in `domain/state_machine.py::resolve_status`:
 
 ```
- Plex has media   → AVAILABLE        (with Plex/Emby watch links)
+ the server has it → AVAILABLE        (with the watch link + item id)
  else *arr has file → DOWNLOADED
  else qBittorrent active → DOWNLOADING (progress/speed/eta)
  else *arr queue  → DOWNLOADING
@@ -135,16 +135,18 @@ The canonical resolution lives in `domain/state_machine.py::resolve_status`:
  else             → NOT_ADDED
 ```
 
-**Plex is the source of truth** for availability. A title in Plex is `available`
-even if its *arr record is stale/missing. `MediaStatusService` gathers the
-external facts and feeds them to `resolve_status`; the domain module decides.
-The `WatchLinks` value object carries `plex_url`, `plex_key` (numeric ratingKey,
-not a URL), and `emby_url` for `available`/`downloaded` titles.
+**The media server (Jellyfin) is the source of truth** for availability. A title
+it holds is `available` even if its *arr record is stale/missing. The `Reconciler`
+gathers the external facts and feeds them to `resolve_status`; the domain module
+decides. The `WatchLinks` value object carries `library_available`, `watch_url`
+and `server_item_id` (the server's own item id, not a URL) for
+`available`/`downloaded` titles.
 
-> **Performance guard:** `PlexService.get_all_movies()/get_all_shows()` cache the
-> full library scan for **~60s**. The status pass calls `has_media` for every
-> watchlist entry; without this cache one `/api/status` request triggered 17 full
-> rescans and blew the request window. First scan ~1.3s, cached ~0.2s.
+> **Performance guard:** the Jellyfin provider caches its full item listing (60 s
+> window) and the reconciler caches its whole result on the watchlist file's
+> mtime. The status pass asks for every watchlist entry; without those caches one
+> `/api/status` request re-scanned the library per entry and blew the request
+> window.
 
 ---
 
@@ -161,46 +163,42 @@ not a URL), and `emby_url` for `available`/`downloaded` titles.
 
 ---
 
-## 8. Watch deep-links (Jellyfin; Plex/Emby are legacy)
+## 8. Watch links (Jellyfin only)
 
-Deep-links point **into the local server's own web UI** on the browser-reachable
-**Tailscale MagicDNS HTTPS** host — **not** Plex's `app.plex.tv` cloud app.
-The cloud app needs account login + remote relay and rarely auto-opens the item;
-the server's `/web/index.html` on the Tailnet host opens the item directly with no
-relay, using the same scheme the Emby links always used.
+There is exactly ONE media server (Jellyfin, bundled) and it is the only source of
+watch links — the Plex/Emby providers were removed on 2026-09-11
+(`adr/ADR-0004-remove-plex-emby-support.md`).
 
-- **Plex:** `https://rkm-hp.tail8d5e8.ts.net:32400/web/index.html#!/server/{machineId}/details?key=/library/metadata/{ratingKey}`
-  - Machine ID = Plex `machineIdentifier` (`/identity`), cached.
-  - `key` is the **raw** `/library/metadata/<rk>` path — **never `%2F`-encoded**
-    (encoding broke Plex's hash router). This is the #1 reason old links did nothing.
-  - No ratingKey found → fall back to `/web/search?query={title year}`.
-- **Emby:** `https://rkm-hp.tail8d5e8.ts.net:8096/web/index.html#!/item?id={itemId}&serverId={serverId}`
-  - Item id resolved via Emby search (per-title, cached), server id via `/System/Info/Public`.
-- **Browser-reachable base** is config-driven: `PLEX_BROWSER_URL` / `EMBY_BROWSER_URL`
-  (optional, defaults to the Tailscale host). LAN `PLEX_URL`/`EMBY_URL` are the
-  backend/API addresses and are **never** used to build user links. The builder
-  falls back to the documented Tailscale host automatically if unset.
-- `plexKey` in the status payload is the **numeric ratingKey** (e.g. `320819`),
-  used where a raw key is needed; `plexUrl` is the full deep link.
+Two ways to watch an available title, both same-origin:
 
----
+- **In-app playback** (`jellyfinItemId`): the recorded item id drives
+  `/api/jellyfin/stream|hls` through the same proxy the browser already talks to,
+  so no token or cross-origin request is involved.
+- **Deep link** (`jellyfinUrl`): `{browser base}/web/index.html#!/details?id={itemId}`
+  on the browser-reachable host. The base is config-driven — `JELLYFIN_BROWSER_URL`
+  (defaults to the Tailscale MagicDNS HTTPS host, see `TAILSCALE_HOSTING.md`). The
+  container-internal `JELLYFIN_URL` is the api's own address and is **never** used
+  to build a user link.
+
+The `/api/status` payload therefore carries `jellyfinUrl` + `jellyfinItemId`; the
+reconciler's snapshot keeps a `watch` map keyed by provider name, holding the
+`jellyfin` entry's `available` / `url` / `item_id`.
+
 
 ## 9. External integrations
 
 | Service | Responsibility |
 |---|---|
-| `PlexService` | Library counts, ownership (`has_media`), recently-added, `get_thumb` proxy, library-scan caching (~60s TTL), deep-link builders (`plex_url_for` → Plex **server web UI** on the browser-reachable Tailscale host; `emby_url_for` → Emby web UI), `plex_key_for` (numeric ratingKey) |
 | `RadarrService` | Movies, `lookup_movie`, `search_movies` (title fallback), `add_movie`, profiles/queue, indexer health |
 | `SonarrService` | Series, `lookup_series`, `search_series` (title fallback), `add_series`, tvdb resolve, profiles/queue |
 | `TMDBService` | Movie/show details, posters/backdrops/genres, search |
-| `EmbyService` | Emby library counts + deep links (`/web/index.html#!/item?id=..&serverId=..`) |
 | `YouTubeService` | Scrape youtube.com for the official trailer (no API key) |
 | `QBittorrentService` | Torrent list + download-state (used by status) |
 | `TrailerService` | Legacy trailer fallback |
 | `WatchlistService` | Atomic watchlist persistence + state validation |
 | `MediaStatusService` | Per-entry status via the domain state machine |
 | `DownloadService` | Movie/tv routing + add + fallback orchestration |
-| `RecommendationService` | Quality gates, Plex/duplicate checks, enrichment, add |
+| `RecommendationService` | Quality gates, library/duplicate checks, enrichment, add |
 
 All services accept injectable `config`/`http` (constructor DI) and are unit-tested
 with fakes — **no test touches the live LAN**.
@@ -209,7 +207,7 @@ with fakes — **no test touches the live LAN**.
 
 ## 10. Config & data
 
-- **`config/settings.py`** — single `Config` singleton from `/workspace/.env` (+ env overrides). Provides `has_emby()`, `has_tmdb()`, `validate_required()`, etc. **Never returns secrets via `/api/config`.** Exposes browser-reachable `PLEX_BROWSER_URL` / `EMBY_BROWSER_URL` used only for deep-links (fall back to the Tailscale host when unset).
+- **`config/settings.py`** — single `Config` singleton from the repo `.env` (+ env overrides). Provides `has_jellyfin()`, `has_tmdb()`, `validate_required()`, etc. **Never returns secrets via `/api/config`.** Exposes the browser-reachable `JELLYFIN_BROWSER_URL` used only for deep-links (falls back to the Tailscale host when unset), and the ONE media-server rule `resolve_media_server()` — jellyfin is the default AND the fallback for a blank/unknown value, so a missing key can never select a retired backend. `validate_required()` deliberately does **not** demand a media-server credential (a fresh install has none until the provisioner writes it; `/api/health` reports that state).
 - **`watchlist.json`** — source of truth; volume-mounted into the container at `/app/watchlist.json`. `WatchlistService` auto-resolves the correct path (container vs sandbox).
 - **`dashboard-data.json`** — published snapshot the SPA loads (built by `scripts/rebuild_dashboard.py`).
 - **`.env`** — canonical at `/workspace/.env`, never committed; see `.env.example`.
@@ -228,7 +226,7 @@ with fakes — **no test touches the live LAN**.
 
 - Deploy (RKM-HP / Windows): `.\\bootstrap.ps1` (or `.\\rkm-cinema.ps1 deploy`) → `docker compose -p rkm-bundled up -d --build`.
 - Two containers: `api` (FastAPI modular, holds secrets) + `web` (nginx :8124, static + `/api` proxy), plus the bundled `jellyfin` media server.
-- **Plex and Emby are both HTTPS-only** over Tailscale (`:32400` / `:8096`); deep-links must use `https://` and target the browser-reachable `PLEX_BROWSER_URL`/`EMBY_BROWSER_URL` host (see §8).
+- **The media server is reached over Tailscale** (HTTPS via the MagicDNS host); deep-links must target the browser-reachable `JELLYFIN_BROWSER_URL` host, not the container-internal `JELLYFIN_URL` (see §8).
 
 ---
 
@@ -246,6 +244,6 @@ with fakes — **no test touches the live LAN**.
 
 ## 14. Testing
 
-- `backend/tests/` cover: domain state machine, media-type resolver, Radarr/Sonarr routing + title fallback + ambiguity, duplicate prevention, error handling, trailer validation, Plex ownership, Plex library-scan caching, **Plex/Emby watch deep-link format** (`tests/test_watch_links.py`), recommendation pipeline, and API endpoints.
+- `backend/tests/` cover: the status resolver + state machine, media-type resolver, Radarr/Sonarr routing + title fallback + ambiguity, duplicate prevention, error handling, trailer validation, the library provider + factory (one backend: Jellyfin), the `LibraryService` collapse and watch-link failure containment, the reconciler, recommendation pipeline, and API endpoints.
 - All tests use **injected fakes** — no real LAN, no real API keys required.
-- Run: `cd backend && python -m pytest tests/ -q`. **292 tests, all green** (API/e2e modules verified in the container where fastapi is installed).
+- Run: `cd backend && python -m pytest tests/ -q` (all green; count moves with the suite — see `PROGRESS.md` for the current number).

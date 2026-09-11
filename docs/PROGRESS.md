@@ -1,3 +1,45 @@
+## ▶ LATEST SESSION (2026-09-11) — PLEX/EMBY CODE REMOVED (plan phases 1–5) ⏳ AWAITING THE RKM-HP EYEBALL (branch: `refactor/remove-plex-emby`, 7 commits `bb6a2e5` → this record; plan `docs/REMOVE_PLEX_EMBY_PLAN.md`, now marked EXECUTED with a §8 "corrections found while executing")
+**User instruction (2026-09-11):** *"continue with rkm-cinema app with next item in progress.md"* — the queued item was this plan. It executes the earlier decision *"i dont want use prod profile anymore as plex and emby's role is taken by jellyfin"*: the deployment went on `chore/retire-prod-stack`, this branch removes the **code** it left behind. Both prerequisites were already merged to `main`, and the branch was rebased onto that `main` before phase 1.
+
+**Numbers, measured at both ends (§5 of the plan):**
+
+| | before | after |
+|---|---|---|
+| functional Plex/Emby references (`grep` §5-1b) | **227 lines / 38 files** | **0** (allow-list in §8) |
+| lines deleted outright | — | **1,562** (10 files: providers, probe scripts, their tests) |
+| backend tests | 502 | **482** (every deleted test enumerated in its commit) |
+| `/api` contract paths | 39 | **38** (one route gone) |
+| frontend vitest | 164 | **163** |
+| `plexUrl` / `embyUrl` / `plexKey` in the contract | present | **absent** (asserted, not eyeballed) |
+
+**The 7 commits (one concern each, gates green after every one):**
+1. `bb6a2e5` **factory is Jellyfin-only** — one provider or `None`; the `plex=` passthrough seam and the `"plex" if plex is not None` rule are gone; MEDIA_SERVER stops selecting a backend (still accepted/reported so an old `.env` deploys). `suggest.py`'s live `from services.plex import PlexService` lazy import now goes through `build_library_service()` like every other call site.
+2. `06e313d` **delete the dead code** — `services/plex.py`, `plex_check.py`, `emby.py`, `library/plex.py`, `library/emby.py`, `api/routes/plex_thumb.py`, `scripts/verify_plex.py`, `add_with_plex_check.py` + 2 test files; `__init__` exports, `base.py::_plex_params()`, `PlexUnavailableError`/`EmbyUnavailableError`, the plex/emby `/api/health` services, and `library.py::_counts`' dead `_plex` branch. `db.py` is LIVE (repository.py uses it) so only its SQL comments changed — no persistence edit.
+3. `01be4ab` **server-neutral domain vocabulary** — `in_library`, `library_links`, `watch_url`, `server_item_id`; `WatchLinks` loses the emby pair; the user-visible detail copy becomes "Available on Jellyfin". The provider-keyed `watch` map is deliberately UNCHANGED (the frontend reads `watch.jellyfin`) — its plex/emby keys went with the frontend commit.
+4. `44eef23` **regenerate the OpenAPI snapshot** — the phase-2 route deletion had already moved 39 → 38, and the committed snapshot was stale.
+5. `35e820f` **contract** — `plexUrl`/`embyUrl`/`plexKey` dropped from `StatusEntry`, `nginx` artwork location narrowed to the jellyfin paths, **ADR-0004** written, snapshot + typed client regenerated (`npm run generate:types` also absorbed PRE-EXISTING client drift: types.ts predated `/api/search/global`).
+6. `9a0cb14` **frontend** — `posterUrl()` resolves by item id or null (the `/api/plex/thumb` fallback is gone; a bare image path has no proxy), `ResolvedState` loses plexUrl/embyUrl, `availableWatchLinks()` keeps only the jellyfin branch behind `type WatchProvider = "jellyfin"`, the dead "Watch on Plex/Emby" buttons are deleted, Settings `SERVICES` shrinks, and Discover/Folder/Home copy stops telling the user to connect Plex or Emby.
+7. `e39f052` **config keys** — the six annotations (incl. the easy-to-miss `PLEX_BROWSER_URL`/`EMBY_BROWSER_URL`), `PLEX_SCAN_TTL`, `has_emby()`, `load_env()`'s Plex entries, and `validate_required()`'s `PLEX_TOKEN` requirement; `render_config.py` no longer passes them into `.rkm.env` and no longer `fail()`s on a retired `MEDIA_SERVER`.
+
+**Three real bugs came out of this, none of them cosmetic:**
+- **The reconciler hunted for `provider == "plex"`** to read `metadata["rating_key"]`. On a Jellyfin stack that lookup could only ever return `None`, so `server_item_id` was **silently always empty** (no test noticed — the tests were Plex-shaped). It now reads the match it actually got and its `metadata["item_id"]`.
+- **`snapshot_to_status_result()` hardcoded the `plex` key** of the provider-keyed watch map; it now takes the first entry carrying a URL.
+- **`api/routes/config.py` reported the media server as DOWN** whenever a retired `MEDIA_SERVER` value was still in `.env` (it compared the *resolved name* against `"jellyfin"`). It now reports whether the library provider is reachable.
+- ⚠ **And the one that would have shipped worst:** `render_config.py`'s "tolerate the legacy value" step. `resolve_media_server()` returns a **known** retired value verbatim (it maps only UNKNOWN values to jellyfin), so a pass-through left `backend == "plex"` and **skipped the Jellyfin admin-password generation**, whose gate is `backend == "jellyfin"` — i.e. the "provisioner finished, yet every library is disabled" failure, behind a green deploy. Caught by writing the test FIRST; the renderer now always renders `jellyfin` (warn, never fail) and never passes the raw value through.
+
+**Verified by execution, not by reading (§5):** the §5-1b grep ends EMPTY of functional references; `openapi.v1.json` → `38 paths` with zero plex/emby paths and no `plexUrl`/`embyUrl`/`plexKey` anywhere in the file; a real `Config` reports `validate_required() == []` and no `PLEX_URL`/`PLEX_TOKEN`/`EMBY_URL`/`has_emby`/`PLEX_SCAN_TTL` attributes, so the api's startup log no longer prints the phantom `Missing required config: ['PLEX_TOKEN']`; `python3 tools/verify_nginx_artwork_cache.py` re-run against the REAL repo config → `nginx -t` rc=0 and **6/6 PASS** (3 artwork paths cacheable with exactly one `Cache-Control`, JSON still `no-store`). Gates: **482 pytest** · ruff clean · `tsc --noEmit` clean · **vitest 163/163** · `vite build` green · `tools/check_md_links.py` 33 files / 7 links all resolve.
+
+**What deliberately SURVIVES the grep (the plan's allow-list, now §8):** `X-Emby-Authorization` in `provisioner/provision.py` + the probes (that IS Jellyfin's own header — Jellyfin forked Emby), "Emby-derived API shape" notes, **"Plex-style" as a UI idiom** (the preplay/detail/player design comments and `PLEX_UI_PLAN.md`/`PLEX_VIEWS_PLAN.md` — those plans are KEPT), the `resolve_media_server()` legacy-value note, and the retired key NAMES inside tests that assert their absence. ⚠ The plan's §1 criterion 2 claimed `frontend/src` had no such idiom so the grep should reach zero; it has ~15 (all comments) — the plan's own rule for that case is to extend the criterion rather than rename a design comment, and that is what was done (corrections recorded in the plan's new §8).
+
+**⚠ Deploy + accept (RKM-HP) — api, web AND nginx changed, so rebuild both images:**
+```powershell
+cd D:\hermes_agent\hermes-workspace\projects\rkm-cinema
+docker compose -p rkm-bundled up -d --build api web
+```
+Prefer this over a full `bootstrap.ps1`: `render_config.py` changed, but its only effect is dropping now-unread keys from `.rkm.env`, and bootstrap would also re-run the provisioner and **cancel an in-flight library scan** (a `.rkm-cinema.ps1 status` first shows whether one is running; let it finish). A later `deploy` will tidy `.rkm.env` for free.
+**Eyeball:** browse a library → open an item page → **Settings** (health cards: radarr/sonarr/tmdb/jellyfin only, no Plex/Emby) → play a movie **and** a transcoded episode → switch subtitles → **"Watch on Jellyfin"** from a watchlist card → request a title end-to-end. Then merge: FF `refactor/remove-plex-emby` → `main`, FF `experiment/bundled-docker-stack`, push all three.
+
+**Found but deliberately NOT fixed (unrelated pre-existing doc drift, so the next session can do it on purpose):** `docs/ARCHITECTURE.md` §10 still describes `dashboard-data.json` built by `scripts/rebuild_dashboard.py`, and §11 still describes the removed `app.js`/`api.js` legacy frontend — both were deleted in 2026-09-08.
 ## ▶ LATEST SESSION (2026-09-11) — PLAYER FIT / ORIENTATION / FULLSCREEN ✅ (branch: `feat/player-layout`, commits `503d11f` → `31d6d31`, then this record; **ACCEPTED + MERGED to `main` 2026-09-11 — USER-CONFIRMED ON RKM-HP: "everything working"**)
 **User-reported (phone browser AND laptop browser):** *"it doesn't fit the screen — there's a border around it that looks blank/transparent"* · *"on mobile the controls of the player are not fitting the screen"* · *"on the laptop the controls go down below the bottom screen margin"*.
 

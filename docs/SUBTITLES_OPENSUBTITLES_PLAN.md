@@ -150,6 +150,18 @@ OPENSUBTITLES_ENABLED=auto      # auto = on when API key present; false = off
   `OpenSubtitles not configured — subtitle search disabled`.
 - `.env.example`: document all five with the quota note and where to get the key.
 
+> ⚠ **How a new `.env` key actually reaches the api — the render step.** The api container has no `.env`
+> file at all (it mounts `/app`, `/shared`, `/data`, `/media2`, `/media3`); its configuration arrives as
+> environment variables from `.rkm.env`, which is *generated* by `render_config.py` during
+> `bootstrap.ps1` / `.\rkm-cinema.ps1 deploy`. So editing `.env` and running only
+> `docker compose … up -d --build api` will **not** activate a new key — the container env is stale.
+> Activating these credentials needs a **full deploy**. Two consequences to document in OPERATIONS:
+> (a) bootstrap re-runs the provisioner, which **cancels an in-flight library scan** — deploy when the
+> scan is idle; (b) the stopgap for a scan-in-progress window is to append the same keys to `.rkm.env`
+> by hand (that file is the api's `env_file`) and restart just the api. Phase 5 must state this in the
+> deploy note, because "pasted the key, rebuilt api, nothing happened" is the exact failure this repo
+> has hit before (a value that never arrives, with a green deploy).
+
 ### 3.2 Service — `backend/services/opensubtitles.py` (isolated, no Jellyfin imports)
 
 - `OpenSubtitlesClient(config)`: `login()` (JWT cached with TTL, re-login on 401), `search(...)`,

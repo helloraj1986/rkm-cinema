@@ -6,6 +6,7 @@
  * See docs/PLAYER_LAYOUT_PLAN.md ("headless layout verification").
  */
 import { createRoot } from "react-dom/client";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import "../src/styles/index.css";
 import { Player } from "../src/features/playback/Player";
 import type { QueueEntry } from "../src/features/playback/lib";
@@ -25,6 +26,13 @@ const item =
     ? { item_id: "harness-movie", title: "Harness Movie — Very Long Title To Force Truncation Behaviour" }
     : { item_id: "harness-ep-2", title: "S01E02 — Second (harness episode title)" };
 
+// The Player invalidates the library queries when it closes, so the harness must
+// provide a client — without one `useQueryClient()` throws and the layout
+// measurement tool renders nothing. A bare client is enough (nothing is fetched).
+const queryClient = new QueryClient();
+
 createRoot(document.getElementById("root")!).render(
-  <Player item={item} resume={120} runtime={3480} queue={queue} onClose={() => {}} />,
+  <QueryClientProvider client={queryClient}>
+    <Player item={item} resume={120} runtime={3480} queue={queue} onClose={() => {}} />
+  </QueryClientProvider>,
 );

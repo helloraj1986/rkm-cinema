@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import Hls from "hls.js";
 import { api, type PlaybackInfo, type ProgressPayload } from "../../lib/api/client";
+import { useQueryClient } from "@tanstack/react-query";
 import { Icon } from "../../components/ui/Icon";
 import {
   nextEpisode, prevEpisode, queueEntryCode, qualityFor, AUTOPLAY_DELAY_MS,
@@ -897,6 +898,23 @@ export function Player({
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onClose]);
+
+  // The rows BEHIND the player (Continue Watching, Recently played/watched, the
+  // item's watched tick / resume point) do NOT remount when the player closes —
+  // Home stays mounted underneath it — so with `staleTime: 30s` and
+  // `refetchOnWindowFocus: false` nothing refetches them and they keep showing
+  // the state from before playback. That is why a title you just watched "isn't
+  // in Continue Watching" until a reload. Invalidate on unmount so the position
+  // just reported is on screen the moment the user is back in the app.
+  // (Invalidating an ACTIVE query refetches it immediately, so the row updates
+  // as the player closes, not on the next navigation.)
+  const queryClient = useQueryClient();
+  useEffect(
+    () => () => {
+      void queryClient.invalidateQueries({ queryKey: ["library"] });
+    },
+    [queryClient],
+  );
 
   // Cinema auto-hide timer: armed ONLY while actively playing with nothing
   // loading/error/up-next/settings open; hidden chrome is revealed by activity.

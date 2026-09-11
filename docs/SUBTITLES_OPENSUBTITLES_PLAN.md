@@ -1,6 +1,6 @@
 # OpenSubtitles + Jellyfin Subtitle Integration Plan — `feat/subtitles-opensubtitles`
 
-**Status: EXECUTING — EYEBALLED 2026-09-12; the one bug it found is FIXED (`5ba203a`) and needs one api+web rebuild to verify.** Phases 0–4 DONE (`4d08890`, `e27d28d`, `c7e4412`, `c29ce0b`, `9722d88`); the API key is configured. **Phase 5 (hardening/docs/ADR-0005) is next; the user's deploy + eyeball is the acceptance for 0–4.** Option A CONFIRMED by the user (2026-09-12). Branch `feat/subtitles-opensubtitles` cut from `main`
+**Status: Phases 0–4 MERGED to `main` (`710f678`, 2026-09-12) — deployed from `main` from now on.** The one bug the eyeball found is FIXED (`5ba203a`) and awaits its own verification after a rebuild. **Phase 5 (hardening · README/ARCHITECTURE/OPERATIONS · ADR-0005) is the only work left.** Phases 0–4 DONE (`4d08890`, `e27d28d`, `c7e4412`, `c29ce0b`, `9722d88`); the API key is configured. **Phase 5 (hardening/docs/ADR-0005) is next; the user's deploy + eyeball is the acceptance for 0–4.** Option A CONFIRMED by the user (2026-09-12). Branch `feat/subtitles-opensubtitles` cut from `main`
 (`ceddc50`) with this plan as its first commit, **rebased onto `main` @ `251ec63` on 2026-09-12** before any code landed. Execute phase by phase, one commit each, gates green
 after every phase — same cycle as every other branch in this repo.
 

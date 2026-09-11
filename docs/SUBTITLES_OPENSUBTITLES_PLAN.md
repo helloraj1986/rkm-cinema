@@ -1,14 +1,17 @@
 # OpenSubtitles + Jellyfin Subtitle Integration Plan — `feat/subtitles-opensubtitles`
 
-**Status: EXECUTING.** Phases 0–1 DONE (`4d08890`, `e27d28d`); **Phase 2 is blocked on the OpenSubtitles API key — the only outstanding input.** Option A CONFIRMED by the user (2026-09-12). Branch `feat/subtitles-opensubtitles` cut from `main`
+**Status: EXECUTING.** Phases 0–2 DONE (`4d08890`, `e27d28d`, `c7e4412`); the API key is configured. **Phase 3 is next and needs nothing from the user.** Option A CONFIRMED by the user (2026-09-12). Branch `feat/subtitles-opensubtitles` cut from `main`
 (`ceddc50`) with this plan as its first commit, **rebased onto `main` @ `251ec63` on 2026-09-12** before any code landed. Execute phase by phase, one commit each, gates green
 after every phase — same cycle as every other branch in this repo.
 
-> **Where it got to (2026-09-12, read the PROGRESS.md record for the detail):** Phase 0 declared the
-> five settings, made one BOM-tolerant `.env` parser for all three readers, and confirmed the
-> passthrough/render/dry-run behaviour; Phase 1 shipped `services/opensubtitles.py` with 58 fake-transport
-> tests and a **live** (zero-quota) check of the transport + error mapping against the real vendor API.
-> Backend gates: 589 passed / 1 pre-existing environmental failure, ruff clean.
+> **Where it got to (2026-09-12 — read the PROGRESS.md record for the detail):** Phase 0 declared the five
+> settings and made ONE BOM-tolerant `.env` parser for all three readers; Phase 1 shipped
+> `services/opensubtitles.py` (59 fake-transport tests, live search verified, one real download); Phase 2 shipped
+> `services/subtitles.py` + `item_path`/`refresh_item`/`upload_subtitle` on the provider, and was verified LIVE
+> end-to-end against RKM-HP — the subtitle appeared in `PlaybackInfo` and the app's own VTT proxy served real
+> content, then every trace was removed again. Gates: **631 pytest, 0 failures**, ruff clean. Three live
+> findings are baked into the code and listed in the record: the upload endpoint is JSON (not multipart, 415),
+> indexing lags a delivery, and `remaining` does not decrement on a repeat download of the same file.
 
 Executes the user's spec (2026-09-12): discover, apply and **persist** subtitles for movies and TV
 episodes, with a Plex-like in-player subtitle panel and per-subtitle usage counts.
@@ -328,9 +331,17 @@ Gate per phase: `cd backend && python -m pytest -q && python -m ruff check .`; f
   drive) belong on RKM-HP — no docker daemon in the sandbox; they are in the record's user runbook.
 - **Phase 1 — `services/opensubtitles.py` + tests. ✅ DONE (`e27d28d`)** — login/JWT cache (+one re-login on
   401), id-keyed search, download → bytes, `user_info` quota, the full typed taxonomy, retry policy (GETs once,
-  download POST never), redaction. 58 tests on a scripted fake transport — **no live calls in the suite** — plus
+  download POST never), redaction. 59 tests on a scripted fake transport — **no live calls in the suite** — plus
   one live zero-quota smoke of the real transport (403 on a bogus key → `AuthFailedError`).
-- **Phase 2 — attach to Jellyfin + dedupe. ⏳ BLOCKED ON THE API KEY** (one deliberate live download).
+- **Phase 2 — attach to Jellyfin + dedupe. ✅ DONE (`c7e4412`)** — `services/subtitles.py` (atomic sidecar write
+  + encoding normalisation, reuse-dedupe, item refresh — never a scan, upload fallback, identity→index
+  resolution) plus `item_path`/`refresh_item`/`upload_subtitle` on the library provider. Live-verified
+  end-to-end against RKM-HP: the track appears in `PlaybackInfo` and the app's VTT proxy serves real content;
+  every trace was then removed. ⚠ The SIDECAR write path is unit-tested only — its live check needs the api
+  container (the sandbox cannot see the media mounts), so the fallback is what ran live. Three measured
+  corrections are in the commit: `POST /Videos/{id}/Subtitles` is **JSON** (`UploadSubtitleDto`, `Data`
+  base64 — multipart gets 415), indexing **lags** the delivery (the track list must be re-read), and
+  `remaining` does **not** decrement for a repeat download of the same file.
 - **Phase 3 — store + routes + contract.** `services/subtitle_store.py` (atomic, corrupt-tolerant, usage
   increment, ranking) + the three endpoints + the additive `playback-info.preferred_subtitle`; regenerate
   snapshot + typed client; route/store tests.

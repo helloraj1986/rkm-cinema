@@ -76,13 +76,13 @@ rkm-cinema/                       (full annotated tree in ../README.md)
 ├── docs/                         architecture, plans, ADRs, API contract,
 │                                 OPERATIONS.md, PROGRESS.md, ARCHITECTURE.md
 ├── nginx/  scripts/  tools/      web config; backup/restore; diagnostics
-├── docker-compose.yml  bootstrap.ps1  bootstrap.sh  render_config.py  rkm.ps1
+├── docker-compose.yml  bootstrap.ps1  bootstrap.sh  render_config.py  rkm-cinema.ps1
 └── README.md  .env (single config)  .env.example (committed template)
 ```
 
 Run everything from the subdirs: `cd backend && python -m pytest tests/ -q`,
 `cd frontend && npm run typecheck && npx vitest run && npm run build`.
-Deploy stays at the root (`.\\bootstrap.ps1`, wrapped by `.\\rkm.ps1 deploy`).
+Deploy stays at the root (`.\\bootstrap.ps1`, wrapped by `.\\rkm-cinema.ps1 deploy`).
 
 ---
 
@@ -226,7 +226,7 @@ with fakes — **no test touches the live LAN**.
 
 ## 12. Deployment
 
-- Deploy (RKM-HP / Windows): `.\\bootstrap.ps1` (or `.\\rkm.ps1 deploy`) → `docker compose -p rkm-bundled up -d --build`.
+- Deploy (RKM-HP / Windows): `.\\bootstrap.ps1` (or `.\\rkm-cinema.ps1 deploy`) → `docker compose -p rkm-bundled up -d --build`.
 - Two containers: `api` (FastAPI modular, holds secrets) + `web` (nginx :8124, static + `/api` proxy), plus the bundled `jellyfin` media server.
 - **Plex and Emby are both HTTPS-only** over Tailscale (`:32400` / `:8096`); deep-links must use `https://` and target the browser-reachable `PLEX_BROWSER_URL`/`EMBY_BROWSER_URL` host (see §8).
 

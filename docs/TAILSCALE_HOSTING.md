@@ -9,7 +9,7 @@ longer exists.
 
 ```powershell
 cd D:\hermes_agent\hermes-workspace\projects\rkm-cinema
-.\rkm.ps1 status
+.\rkm-cinema.ps1 status
 ```
 
 Want `== verdict == everything looks healthy`. If it says `UNREACHABLE`, start it:
@@ -48,7 +48,7 @@ RKM_JELLYFIN_BROWSER=http://<rkm-hp>.ts.net:8098
 Then apply it (`render_config.py` writes it into `.rkm.env` for the api):
 
 ```powershell
-.\rkm.ps1 deploy
+.\rkm-cinema.ps1 deploy
 ```
 
 ## Security

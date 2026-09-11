@@ -86,10 +86,10 @@ copy .env.example .env
 notepad .env                      # set RKM_MEDIA_PATH + your media folders/keys
 
 # 2. Run it
-.\rkm.ps1 deploy
+.\rkm-cinema.ps1 deploy
 
 # 3. Check it
-.\rkm.ps1 status
+.\rkm-cinema.ps1 status
 ```
 
 Then open **http://localhost:8124/** — and Jellyfin itself at
@@ -98,7 +98,7 @@ Then open **http://localhost:8124/** — and Jellyfin itself at
 First run does a full library scan: **2–4 h** for a large collection. Leave it alone
 while it runs — see the rules below.
 
-Linux/macOS: `./bootstrap.sh` instead of `.\rkm.ps1 deploy`.
+Linux/macOS: `./bootstrap.sh` instead of `.\rkm-cinema.ps1 deploy`.
 
 **Optional extras** (`fullstack` profile — only if you have no *arr stack already):
 
@@ -110,23 +110,23 @@ docker compose -p rkm-bundled --profile fullstack up -d
 
 ## Important commands
 
-Everything is behind one entry point. `.\rkm.ps1 help` prints this list too.
+Everything is behind one entry point. `.\rkm-cinema.ps1 help` prints this list too.
 
 | Command | What it does |
 |---|---|
-| `.\rkm.ps1 status` | Containers, state volumes, app + media-server health, library counts, scan state — **start here when anything looks off** |
-| `.\rkm.ps1 deploy` | Build + start the stack, wire libraries, trigger a scan |
-| `.\rkm.ps1 backup` | Archive media-server state (users, watch history, libraries) to `D:\RKM_BACKUPS` |
-| `.\rkm.ps1 restore -Archive <file>` | Restore that state (defaults to the newest archive) |
-| `.\rkm.ps1 schedule` | Install the nightly 04:00 backup task |
-| `.\rkm.ps1 diagnose` | Classify every series: watched vs episodes present; find why a show looks wrong |
-| `.\rkm.ps1 logs` | Tail api + web + jellyfin |
-| `.\rkm.ps1 help` | The command list |
+| `.\rkm-cinema.ps1 status` | Containers, state volumes, app + media-server health, library counts, scan state — **start here when anything looks off** |
+| `.\rkm-cinema.ps1 deploy` | Build + start the stack, wire libraries, trigger a scan |
+| `.\rkm-cinema.ps1 backup` | Archive media-server state (users, watch history, libraries) to `D:\RKM_BACKUPS` |
+| `.\rkm-cinema.ps1 restore -Archive <file>` | Restore that state (defaults to the newest archive) |
+| `.\rkm-cinema.ps1 schedule` | Install the nightly 04:00 backup task |
+| `.\rkm-cinema.ps1 diagnose` | Classify every series: watched vs episodes present; find why a show looks wrong |
+| `.\rkm-cinema.ps1 logs` | Tail api + web + jellyfin |
+| `.\rkm-cinema.ps1 help` | The command list |
 
 Underlying scripts, if you prefer them directly:
 
 ```powershell
-.\bootstrap.ps1                 # same as .\rkm.ps1 deploy
+.\bootstrap.ps1                 # same as .\rkm-cinema.ps1 deploy
 .\bootstrap.ps1 -NoBackup       # skip the automatic pre-rebuild backup
 docker compose -p rkm-bundled ps
 docker compose -p rkm-bundled down          # stop (keeps state)
@@ -135,7 +135,7 @@ docker compose -p rkm-bundled down          # stop (keeps state)
 ### The three rules
 
 1. **Never `docker compose ... down -v`** — it deletes the state volumes (watch history, libraries). `down` alone is safe.
-2. **Don't restart the stack while a library scan runs.** A cancelled scan can leave shows present with no episodes attached, which reads as "everything watched". `.\rkm.ps1 status` shows scan state.
+2. **Don't restart the stack while a library scan runs.** A cancelled scan can leave shows present with no episodes attached, which reads as "everything watched". `.\rkm-cinema.ps1 status` shows scan state.
 3. **Always use `-p rkm-bundled`** (the scripts do). A different project name creates *fresh empty* volumes and orphans your real ones.
 
 ---
@@ -178,12 +178,12 @@ see it.
 
 | Symptom | Try | Likely cause |
 |---|---|---|
-| Library rows greyed out | `.\rkm.ps1 status` | The app can't authenticate to the media server, or a library path doesn't resolve — `status` prints the exact warning |
-| Every show shows as watched | `.\rkm.ps1 diagnose` | Series with no episodes attached read as "all played". Healthy series report `played=false` |
-| Episodes missing under a show | `.\rkm.ps1 status`, then `diagnose` | Scan still running, or a scan was cancelled mid-way |
-| Posters reload on every visit | — | Usually a stale `web` image: `.\rkm.ps1 deploy` |
-| A drive's content never appears | `.\rkm.ps1 status` | The drive isn't declared as a media root, or Docker Desktop can't share that drive |
-| `.\rkm.ps1 deploy` stopped at the provisioner | `.\rkm.ps1 logs` | The `[jellyfin]` line it stopped on names the cause |
+| Library rows greyed out | `.\rkm-cinema.ps1 status` | The app can't authenticate to the media server, or a library path doesn't resolve — `status` prints the exact warning |
+| Every show shows as watched | `.\rkm-cinema.ps1 diagnose` | Series with no episodes attached read as "all played". Healthy series report `played=false` |
+| Episodes missing under a show | `.\rkm-cinema.ps1 status`, then `diagnose` | Scan still running, or a scan was cancelled mid-way |
+| Posters reload on every visit | — | Usually a stale `web` image: `.\rkm-cinema.ps1 deploy` |
+| A drive's content never appears | `.\rkm-cinema.ps1 status` | The drive isn't declared as a media root, or Docker Desktop can't share that drive |
+| `.\rkm-cinema.ps1 deploy` stopped at the provisioner | `.\rkm-cinema.ps1 logs` | The `[jellyfin]` line it stopped on names the cause |
 
 Full runbook, failure modes and recovery: **[`docs/OPERATIONS.md`](docs/OPERATIONS.md)**.
 
@@ -205,7 +205,7 @@ scripts/          backup / restore / scheduled-task PowerShell
 tools/            status + diagnostics (Python, work on Windows and in containers)
 docs/             architecture, plans, ADRs, frozen API contract (docs/api/openapi.v1.json),
                   OPERATIONS.md, PROGRESS.md (session history)
-rkm.ps1           single entry point for running and operating the stack
+rkm-cinema.ps1    single entry point for running and operating the stack
 ```
 
 ---

@@ -65,18 +65,17 @@ class RecommendationService:
     FOREIGN_RT_GATE = 85
 
     def __init__(self, *, config=None, http=None,
-                 plex=None, library=None, trailers=None, tmdb=None, youtube=None, watchlist=None,
+                 library=None, trailers=None, tmdb=None, youtube=None, watchlist=None,
                  criteria=None):
         self.config = config if config is not None else get_config()
         self.http = http if http is not None else get_http_client()
-        # Canonical ownership source = LibraryService. Legacy ``plex=`` (a
-        # PlexService) is wrapped in a provider so every path funnels through
-        # the library abstraction — no parallel PlexService branch (§43).
+        # Canonical ownership source = LibraryService (the configured media
+        # server, Jellyfin). Every path funnels through the library abstraction —
+        # there is no parallel service branch (§43).
         self.library = library
         if self.library is None:
             from services.library import build_library_service
-            self.library = build_library_service(self.config, plex=plex)
-        self._plex = plex  # kept only for BC-inspection; ownership uses `library`
+            self.library = build_library_service(self.config)
         self.trailers = trailers if trailers is not None else TrailerService(config=self.config, http=self.http)
         self.tmdb = tmdb if tmdb is not None else TMDBService(config=self.config, http=self.http)
         self.youtube = youtube if youtube is not None else YouTubeService(config=self.config)

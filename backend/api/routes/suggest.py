@@ -446,40 +446,36 @@ def _get_watchlist_ids() -> set:
 
 
 def _get_library_ids() -> set:
-    """Get set of tmdb IDs currently in Plex library.
+    """Get set of tmdb IDs currently in the library (always empty today).
 
-    Plex GUIDs are internal (plex://...) so we can't extract TMDB IDs directly.
-    Instead, we return an empty set and rely on title+year matching in the
-    caller. The library check is done via a separate function.
+    The media server's own item ids are internal (its GUIDs are not TMDB ids),
+    so we cannot extract TMDB ids directly. Instead we return an empty set and
+    rely on title+year matching in the caller (:func:`_get_library_titles`).
     """
     return set()
 
 
 def _get_library_titles() -> set:
-    """Get normalized (title_lower, year) tuples from Plex library for dedup."""
+    """Get normalized (title_lower, year) tuples from the library for dedup.
+
+    Goes through :func:`build_library_service` like every other call site, so
+    the configured media server (Jellyfin) is the single source of ownership.
+    """
     try:
-        from services.plex import PlexService
         from config.settings import get_config
-        cfg = get_config()
-        if not cfg.PLEX_URL or not cfg.PLEX_TOKEN:
+        from services.library import build_library_service
+
+        service = build_library_service(get_config())
+        if service is None:
             return set()
 
-        plex = PlexService(config=cfg)
         titles = set()
-
-        for m in plex.get_all_movies():
-            t = (m.title or "").lower().strip()
-            y = m.year or 0
+        for item in service.all_items().get("items") or []:
+            t = (item.get("title") or "").lower().strip()
+            y = item.get("year") or 0
             if t:
                 titles.add((t, y))
                 titles.add((t, None))  # year-agnostic
-
-        for s in plex.get_all_shows():
-            t = (s.title or "").lower().strip()
-            y = s.year or 0
-            if t:
-                titles.add((t, y))
-                titles.add((t, None))
 
         return titles
     except Exception as e:

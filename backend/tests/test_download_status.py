@@ -3,7 +3,7 @@ import os
 import pytest
 from unittest.mock import Mock
 
-from services import RadarrService, SonarrService, PlexService, WatchlistService
+from services import RadarrService, SonarrService, WatchlistService
 from services.watchlist import WatchlistEntry
 from services.media_status import MediaStatusService
 from domain.state_machine import StatusFacts, WatchLinks, resolve_status
@@ -106,10 +106,9 @@ class TestDownloadStatus:
         radarr.get_indexer_health.return_value = None
         qbit = Mock()
         qbit.match.return_value = None
-        plex = None
         sonarr = None  # empty SONARR key -> no real SonarrService constructed
 
-        svc = MediaStatusService(watchlist=wl, plex=plex, radarr=radarr, sonarr=None,
+        svc = MediaStatusService(watchlist=wl, radarr=radarr, sonarr=None,
                                  qbit=qbit, config=cfg)
         snap = svc.compute_statuses()
         assert "tt0133093" in snap.results
@@ -193,18 +192,15 @@ class TestDownloadStatus:
 
         remove_tmp(path)
 
-    def test_legacy_plex_arg_is_wrapped_through_library(self):
-        """The legacy `plex=` PlexService is wrapped in a provider — no direct path."""
-        plex = Mock()
-        svc = MediaStatusService(plex=plex, config=Mock(
-            PLEX_URL="http://p", PLEX_TOKEN="t", EMBY_URL=None, EMBY_API_KEY=None,
-            RADARR_API_KEY="k", SONARR_API_KEY="",
-            RADARR_URL="http://r", SONARR_URL="http://s", QBITTORRENT_URL="http://q"))
-        assert svc._library is not None
-        assert [p.name for p in svc._library.providers] == ["plex"]
-        # Library is the only availability source — no `_plex` attribute remains
-        # on the service (the legacy direct member is gone).
-        assert not hasattr(svc, "_plex")
+    def test_legacy_plex_arg_is_rejected(self):
+        """The legacy `plex=` seam is gone from MediaStatusService.
+
+        It used to be wrapped into a provider by the factory. With one media
+        server there is nothing to wrap, and a caller still passing it is a
+        TypeError rather than a silently-ignored backend.
+        """
+        with pytest.raises(TypeError):
+            MediaStatusService(plex=Mock(), config=Mock())
 
 
 if __name__ == "__main__":

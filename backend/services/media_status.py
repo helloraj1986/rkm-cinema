@@ -41,13 +41,12 @@ class MediaStatusService:
     canonical :class:`MediaSnapshot` objects routes should consume going forward.
     """
 
-    def __init__(self, *, watchlist=None, library=None, plex=None, radarr=None,
+    def __init__(self, *, watchlist=None, library=None, radarr=None,
                  sonarr=None, qbit=None, config=None):
         self._reconciler = Reconciler(
-            watchlist=watchlist, library=library, plex=plex, radarr=radarr,
+            watchlist=watchlist, library=library, radarr=radarr,
             sonarr=sonarr, qbit=qbit, config=config)
-        # Expose the library seam for backward-compat introspection (the legacy
-        # direct PlexService member is gone).
+        # Expose the library seam for backward-compat introspection.
         self._library = self._reconciler._library
         # A thin facade only — every consumer funnels through the reconciler.
         logger.debug("MediaStatusService delegating to Reconciler")

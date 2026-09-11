@@ -99,23 +99,20 @@ def snapshot_to_status_result(snap: MediaSnapshot) -> StatusResult:
 class Reconciler:
     """Gathers facts for media item(s) and emits canonical MediaSnapshots."""
 
-    def __init__(self, *, watchlist=None, library=None, plex=None, radarr=None,
+    def __init__(self, *, watchlist=None, library=None, radarr=None,
                  sonarr=None, qbit=None, acquisition=None, config=None):
         from config.settings import get_config
         self.config = config if config is not None else get_config()
         self._watchlist = watchlist if watchlist is not None else WatchlistService()
         self._qbit = qbit if qbit is not None else QBittorrentService(config=self.config)
-        # Canonical availability/watch-link source. Legacy ``plex=`` (a
-        # PlexService) is wrapped in a PlexLibraryProvider so every path goes
-        # through LibraryService — no parallel PlexService branch (§43).
+        # Canonical availability/watch-link source. Every path goes through
+        # LibraryService — no parallel service branch (§43).
         self._library = library
         if self._library is None:
-            # Aggregate LibraryService for the configured backend(s) (Plex+Emby
-            # default, or a single Jellyfin/Emby in the bundled stack). Legacy
-            # ``plex=`` (a PlexService) is wrapped inside the factory so every
-            # path goes through LibraryService (§43).
+            # Aggregate LibraryService for the configured backend: Jellyfin,
+            # the only media server since 2026-09-11.
             from services.library import build_library_service
-            self._library = build_library_service(self.config, plex=plex)
+            self._library = build_library_service(self.config)
         # Canonical acquisition source. Legacy ``radarr=``/``sonarr=`` (the
         # low-level HTTP services) are wrapped in providers; everything funnels
         # through the single AcquisitionService router (§43, spec §14).

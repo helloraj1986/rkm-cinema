@@ -63,7 +63,7 @@ class RequestMediaCommand:
     """DI-ready idempotent request use case."""
 
     def __init__(self, *, library=None, acquisition=None, persist: Optional[Callable[[str, str, str], None]] = None,
-                 plex=None, radarr=None, sonarr=None, config=None):
+                 radarr=None, sonarr=None, config=None):
         from config.settings import get_config
         self.config = config if config is not None else get_config()
         self._persist = persist  # callable(id: str, provider: str, state: str) -> None
@@ -71,7 +71,7 @@ class RequestMediaCommand:
         self._library = library
         if self._library is None:
             from services.library import build_library_service
-            self._library = build_library_service(self.config, plex=plex)
+            self._library = build_library_service(self.config)
 
         self._acquisition = acquisition
         if self._acquisition is None:
@@ -186,10 +186,10 @@ class RequestMediaCommand:
 
 
 def request_media(media_id: str, *, title: str = "", year: Optional[int] = None,
-                  library=None, acquisition=None, persist=None, plex=None,
+                  library=None, acquisition=None, persist=None,
                   radarr=None, sonarr=None, config=None) -> RequestMediaResult:
     """Module-level convenience for the idempotent request command."""
     return RequestMediaCommand(
         library=library, acquisition=acquisition, persist=persist,
-        plex=plex, radarr=radarr, sonarr=sonarr, config=config,
+        radarr=radarr, sonarr=sonarr, config=config,
     ).run(media_id, title=title, year=year)

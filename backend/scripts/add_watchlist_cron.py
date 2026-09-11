@@ -47,7 +47,7 @@ def main() -> int:
     logger = logging.getLogger("rkm.cron.add_watchlist")
 
     from config.settings import get_config
-    from services.library import LibraryService, PlexLibraryProvider
+    from services.library import build_library_service
     from services.recommendation import RecommendationManager
     from jobs.daily_watchlist import DailyWatchlistJob
 
@@ -55,9 +55,7 @@ def main() -> int:
 
     # The configured library backend is the authority for ownership. Wire it
     # into the manager explicitly so already-owned titles are excluded BEFORE
-    # any write (the manager's default has no library gate). Uses the factory
-    # so a "jellyfin" MEDIA_SERVER works exactly like Plex here.
-    from services.library import build_library_service
+    # any write (the manager's default has no library gate).
     library = build_library_service(cfg)
     if library is None:
         print("ERROR: library backend not configured (set MEDIA_SERVER + its URL/key)")

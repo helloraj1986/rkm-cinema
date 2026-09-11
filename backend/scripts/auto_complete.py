@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Auto-complete script: move pending → recommended when downloaded + in Plex.
+"""Auto-complete script: move pending → recommended when downloaded + in the library.
 
 Checks each pending entry:
 - Radarr hasFile (movie) OR Sonarr has episode files (series)
-- Plex has the title (ground truth)
+- the media server (Jellyfin) has the title (ground truth)
 If both true, move to recommended with completed date.
 """
 import json
@@ -21,7 +21,7 @@ from core.logging import setup_logging
 from domain.enums import MediaType
 from domain.identity import MediaIdentity
 from services import RadarrService, SonarrService, WatchlistService
-from services.library import PlexLibraryProvider
+from services.library import build_library_service
 
 setup_logging(level="INFO", json_format=True)
 logger = logging.getLogger("rkm.auto_complete")
@@ -29,7 +29,7 @@ logger = logging.getLogger("rkm.auto_complete")
 
 def run_auto_complete(dry_run: bool = False) -> dict:
     """
-    Check pending entries and auto-complete those that are available in Plex.
+    Check pending entries and auto-complete those available in the library.
 
     Returns:
         Dict with completed entries and any errors.
@@ -51,11 +51,11 @@ def run_auto_complete(dry_run: bool = False) -> dict:
 
     radarr = RadarrService() if cfg.RADARR_API_KEY else None
     sonarr = SonarrService() if cfg.SONARR_API_KEY else None
-    plex = PlexLibraryProvider() if cfg.PLEX_URL and cfg.PLEX_TOKEN else None
+    library = build_library_service(cfg)
 
-    if not plex:
-        logger.error("Plex not configured - cannot verify ownership")
-        return {"success": False, "error": "Plex not configured"}
+    if library is None:
+        logger.error("Library backend not configured - cannot verify ownership")
+        return {"success": False, "error": "Library backend not configured"}
 
     completed = []
     errors = []
@@ -85,18 +85,14 @@ def run_auto_complete(dry_run: bool = False) -> dict:
                 logger.debug("%s: No file in *arr yet", title)
                 continue
 
-            # Check Plex (ground truth) via stable identity (never bare title).
-            if plex:
-                identity = MediaIdentity(
-                    media_type=MediaType.TV if is_series else MediaType.MOVIE,
-                    tmdb_id=tmdb_id,
-                    imdb_id=imdb_id,
-                )
-                in_plex = plex.find(identity, title=title, year=year) is not None
-            else:
-                in_plex = False
-            if not in_plex:
-                logger.debug("%s: File in *arr but not yet in Plex", title)
+            # Check the library (ground truth) via stable identity (never bare title).
+            identity = MediaIdentity(
+                media_type=MediaType.TV if is_series else MediaType.MOVIE,
+                tmdb_id=tmdb_id,
+                imdb_id=imdb_id,
+            )
+            if not library.has(identity, title=title, year=year):
+                logger.debug("%s: File in *arr but not yet in the library", title)
                 continue
 
             # Both conditions met - auto-complete

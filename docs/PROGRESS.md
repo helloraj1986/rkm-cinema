@@ -31,6 +31,16 @@ docker compose -p rkm-bundled up -d --build api web
 ```
 Then: play something for ~30 s, close the player, and it should appear in **Continue Watching** on Home (resume point ≈ where you stopped). Finish something to the end and it should leave CW and show as watched. This is web+api only — no full `deploy`, so a library scan is not touched.
 **Note for the merge:** this branch is stacked on `refactor/remove-plex-emby` (still awaiting its own eyeball). Merge that one first, then `fix/resume-progress` fast-forwards onto it, then FF `experiment/bundled-docker-stack`.
+### Follow-up 2 (2026-09-12 ~04:40 AEST) — "new entries never reach Home" was RESUME ORDERING, not the write (commit `3ae9fb5`)
+
+- User: *"it shows resume in the tv shows individual tab...but on the home tab the continue watching section doesn't update with new entries"*.
+- The server payload was FINE (8 rows, Spider-Verse present at 138s) — but sitting at **position 8 of 8**. **CAVEAT:** Jellyfin's `/Items/Resume` sorts by **`LastPlayedDate`** (newest first, **nulls LAST**) and does NOT derive that from the position; `POST /Users/{uid}/Items/{id}/UserData` does not set it implicitly. Every title written by the direct path therefore had a position and NO `LastPlayedDate` → the newest watch sank to the END of the rail (and off it entirely past the provider's limit of 12), so Home never showed a "new" entry. The item page looked right because it reads that item's own user data — no ordering involved. **"Resume shows on the item page but Home never lists the new entry" = Resume ORDERING, not a failed write.**
+- Fix: `set_playback_position` now sends `LastPlayedDate` (UTC now) alongside `PlaybackPositionTicks` — still never `Played` (verified live: the pair leaves `Played=True` alone, whereas an explicit `Played: false` un-marks a watched title). The provider test pins the exact body key set.
+- Verified: `LastPlayedDate` IS writable and IS the ordering key (setting it moved the item to the head of Resume); `null` does NOT clear it — a position-0 write is what removes an item from Resume.
+- ⚠ Self-inflicted, then cleaned up: `tools/verify_progress_reporting.py` resolved a bare `searchTerm` by Jellyfin's fuzzy score and wrote a phantom 138s resume position to **Spider-Man (2002)** while the user's actual watch was **Into the Spider-Verse**. Cleared (position 0) and the real 138s restored on the correct copy — `BRRip.mkv`, identified from Jellyfin's logs; the library holds TWO copies of that film and the `WEBRip.mp4` copy is untouched. The tool now prints every candidate and, unless exactly one matched, refuses and demands the item id.
+- Live after the fix: Resume order = `['Spider-Man: Into the Spider-Verse', '3 Deewarein', '3 Idiots', 'Disclosure Day', 'Chhaava', 'Hulchul', 'Rangbaazi', 'Episode 1']` and `/api/library/continue-watching` agrees. 487 pytest · ruff clean.
+- ⚠ Deploy for this one is **api only** — `docker compose -p rkm-bundled up -d --build api`. The frontend invalidation (`a14d449`) is already live on the box (verified: the served bundle hash is identical to a build of the current source).
+
 ### Follow-up (same session, 20:50 AEST) — Spider-Man "not appearing" was the CLIENT, not the write (commit `a14d449`)
 
 - User: *"i just watched spiderman into the spider versefor few couple of inutes but it didn't appear in continue watching"*.

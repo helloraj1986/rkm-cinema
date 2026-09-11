@@ -1,6 +1,6 @@
 # OpenSubtitles + Jellyfin Subtitle Integration Plan — `feat/subtitles-opensubtitles`
 
-**Status: EXECUTING.** Phases 0–2 DONE (`4d08890`, `e27d28d`, `c7e4412`); the API key is configured. **Phase 3 is next and needs nothing from the user.** Option A CONFIRMED by the user (2026-09-12). Branch `feat/subtitles-opensubtitles` cut from `main`
+**Status: EXECUTING.** Phases 0–3 DONE (`4d08890`, `e27d28d`, `c7e4412`, `c29ce0b`); the API key is configured. **Phase 4 (player UX) is next and needs nothing from the user.** Option A CONFIRMED by the user (2026-09-12). Branch `feat/subtitles-opensubtitles` cut from `main`
 (`ceddc50`) with this plan as its first commit, **rebased onto `main` @ `251ec63` on 2026-09-12** before any code landed. Execute phase by phase, one commit each, gates green
 after every phase — same cycle as every other branch in this repo.
 
@@ -11,7 +11,8 @@ after every phase — same cycle as every other branch in this repo.
 > end-to-end against RKM-HP — the subtitle appeared in `PlaybackInfo` and the app's own VTT proxy served real
 > content, then every trace was removed again. Gates: **631 pytest, 0 failures**, ruff clean. Three live
 > findings are baked into the code and listed in the record: the upload endpoint is JSON (not multipart, 415),
-> indexing lags a delivery, and `remaining` does not decrement on a repeat download of the same file.
+> indexing lags a delivery, and `remaining` does not decrement on a repeat download of the same FILE (it does
+> for a new one, so it is a real daily counter).
 
 Executes the user's spec (2026-09-12): discover, apply and **persist** subtitles for movies and TV
 episodes, with a Plex-like in-player subtitle panel and per-subtitle usage counts.
@@ -241,7 +242,7 @@ tolerant (log + start empty, never crash), and never rewritten by hand:
 | `POST /api/jellyfin/subtitle-disable` | `{item_id}` → persist `disabled: true` |
 | `playback-info` (existing) | **additive** field `preferred_subtitle` (`null` when none/disabled) so the player needs no extra round trip on load |
 
-Contract: 38 → **41 paths**; regenerate `docs/api/openapi.v1.json` + `frontend/src/lib/api/types.ts`
+Contract: 38 → **41 paths** (DONE in Phase 3); regenerate `docs/api/openapi.v1.json` + `frontend/src/lib/api/types.ts`
 (`npm run generate:types`) in the same commit, diff reviewed as additions only.
 
 ### 3.6 Auto-apply resolution — indices are POSITIONAL, identity is not
@@ -342,10 +343,16 @@ Gate per phase: `cd backend && python -m pytest -q && python -m ruff check .`; f
   corrections are in the commit: `POST /Videos/{id}/Subtitles` is **JSON** (`UploadSubtitleDto`, `Data`
   base64 — multipart gets 415), indexing **lags** the delivery (the track list must be re-read), and
   `remaining` does **not** decrement for a repeat download of the same file.
-- **Phase 3 — store + routes + contract.** `services/subtitle_store.py` (atomic, corrupt-tolerant, usage
-  increment, ranking) + the three endpoints + the additive `playback-info.preferred_subtitle`; regenerate
-  snapshot + typed client; route/store tests.
-- **Phase 4 — player UX.** Panel section as §3.7 (Off / local / OpenSubtitles rows, inline search,
+- **Phase 3 — store + routes + contract. ✅ DONE (`c29ce0b`)** — `services/subtitle_store.py` (atomic JSON
+  beside the watchlist, corrupt-tolerant, per-item prefs as IDENTITY, per-subtitle global usage, ranking) + the
+  three endpoints + the additive `playback-info.preferred_subtitle`. Contract 38 → **41 paths**, snapshot
+  (+183/−0) and typed client (+216/−0) purely additive. Two real bugs caught by the new tests: a usage-map key
+  mismatch made the usage ranking silently do nothing, and a route-level client injection was ignored because
+  the service built its own — so the tests were hitting the LIVE vendor API. Verified live through the real api
+  (`:8125`, isolated store, temp Jellyfin key, all traces removed): movie search 30 results, episode search 19
+  + its 2 local tracks, select → preferred resolved to index 0, re-search ranks it first used=1, disable → null.
+  ⚠ JSON store implemented as this plan recommended; SQLite stays a separate decision (§10.3).
+- **Phase 4 — player UX.** ⏳ NEXT. Panel section as §3.7 (Off / local / OpenSubtitles rows, inline search,
   per-row busy, toasts, active marker), auto-apply on load via the resolution rules, pure helpers
   (`rankSubtitleResults`, `resolveActiveSubtitle`, `usedCountLabel`) unit-tested with vitest, plus the
   harness still passing `tools/measure_player_layout.py` (10/10 viewports).

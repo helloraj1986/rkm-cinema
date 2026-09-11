@@ -67,36 +67,29 @@ def test_download_ambiguous_maps_to_404(mock_svc, client):
     assert "Multiple Radarr matches" in r.json()["detail"]
 
 
-@patch("api.routes.plex_thumb.PlexLibraryProvider")
-def test_plex_thumb_requires_path(mock_plex, client):
-    """Missing path -> 404, no service call."""
-    r = client.get("/api/plex/thumb")
-    assert r.status_code == 404
-    mock_plex.assert_not_called()
-
-
 @patch("api.routes.health.HealthChecker")
 def test_health_shape(mock_checker, client, monkeypatch):
     """Health returns the expected services map."""
     from config import settings as s
     class FakeCfg:
-        RADARR_API_KEY = "k"; SONARR_API_KEY = "k"; PLEX_URL = "http://p"; PLEX_TOKEN = "t"
+        RADARR_API_KEY = "k"; SONARR_API_KEY = "k"
         def has_tmdb(self): return True
-        def has_jellyfin(self): return False
+        def has_jellyfin(self): return True
     monkeypatch.setattr(s, "get_config", lambda: FakeCfg())
     # The checker reports per-service health (spec §28); one stub result keeps
     # the BC services bool map + structured detail + degraded flag.
     report = Mock()
-    report.services = {"radarr": True, "sonarr": True, "plex": True, "emby": False,
-                        "qbit": True, "tmdb": True, "jellyfin": False}
+    report.services = {"radarr": True, "sonarr": True,
+                       "qbit": True, "tmdb": True, "jellyfin": True}
     report.degraded = False
-    report.serviceDetail = {"radarr": {"ok": True}, "plex": {"ok": True}}
+    report.serviceDetail = {"radarr": {"ok": True}, "jellyfin": {"ok": True}}
     mock_checker.return_value.check.return_value = report
 
     r = client.get("/api/health")
     assert r.status_code == 200
     body = r.json()
     assert body["services"]["radarr"] is True
-    assert body["services"]["plex"] is True
+    assert body["services"]["jellyfin"] is True
+    assert "plex" not in body["services"] and "emby" not in body["services"]
     assert body["degraded"] is False
     assert body["serviceDetail"]["radarr"]["ok"] is True

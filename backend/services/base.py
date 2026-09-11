@@ -51,9 +51,6 @@ class BaseService(ABC):
     def _sonarr_headers(self) -> dict:
         return {"X-Api-Key": self.config.SONARR_API_KEY}
 
-    def _plex_params(self) -> dict:
-        return {"X-Plex-Token": self.config.PLEX_TOKEN}
-
     def health_check(self) -> bool:
         """Override in subclass."""
         raise NotImplementedError

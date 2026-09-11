@@ -33,7 +33,7 @@ class MediaStatus(str, enum.Enum):
 
     A title can only ever be in one of these states. The canonical resolver in
     ``domain.status`` derives ``MediaStatus`` from the external
-    (Plex/*arr/qBittorrent) facts — it is the one source of truth. ``ERROR`` and
+    (media server/*arr/qBittorrent) facts — it is the one source of truth. ``ERROR`` and
     ``AMBIGUOUS`` are the spec §12 recommended statuses; they are declared now
     (reserved) and produced by the resolver in later phases.
     """

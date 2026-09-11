@@ -12,16 +12,17 @@ from services.health import HealthChecker, ServiceHealth
 
 class TestTypedErrors:
     def test_per_service_error_types(self):
-        assert issubclass(exc.PlexUnavailableError, exc.ServiceUnavailableError)
         assert issubclass(exc.RadarrUnavailableError, exc.ServiceUnavailableError)
         assert issubclass(exc.SonarrUnavailableError, exc.ServiceUnavailableError)
-        assert issubclass(exc.EmbyUnavailableError, exc.ServiceUnavailableError)
         assert issubclass(exc.QBittorrentUnavailableError, exc.ServiceUnavailableError)
         assert issubclass(exc.TMDBUnavailableError, exc.ServiceUnavailableError)
+        # The retired media-server errors are gone — nothing should re-add a
+        # per-server exception for a backend this build cannot select.
+        assert not hasattr(exc, "PlexUnavailableError")
+        assert not hasattr(exc, "EmbyUnavailableError")
 
     def test_error_service_tag(self):
         assert exc.RadarrUnavailableError().service == "Radarr"
-        assert exc.PlexUnavailableError().service == "Plex"
 
     def test_ambiguous_and_not_found(self):
         a = exc.AmbiguousMediaError([{"title": "X"}], "pick one")
@@ -121,14 +122,11 @@ class TestHealthChecker:
     def _cfg(self):
         cfg = Mock()
         cfg.RADARR_API_KEY = "k"; cfg.SONARR_API_KEY = "k"
-        cfg.PLEX_URL = "http://p"; cfg.PLEX_TOKEN = "t"
-        cfg.EMBY_URL = None; cfg.EMBY_API_KEY = None
-        cfg.JELLYFIN_URL = None; cfg.JELLYFIN_API_KEY = None
+        cfg.JELLYFIN_URL = "http://j:8096"; cfg.JELLYFIN_API_KEY = "jk"
         cfg.QBITTORRENT_URL = "http://q"
         cfg.TMDB_API_KEY = "k"
         cfg.has_tmdb = lambda: True
-        cfg.has_jellyfin = lambda: False
-        cfg.has_emby = lambda: False
+        cfg.has_jellyfin = lambda: bool(cfg.JELLYFIN_URL and cfg.JELLYFIN_API_KEY)
         return cfg
 
     def test_all_healthy_not_degraded(self):
@@ -137,7 +135,7 @@ class TestHealthChecker:
 
         acq = Mock(); acq.health.return_value = {"radarr": True, "sonarr": True}
         qbit = Mock(); qbit.health.return_value = True
-        lib = Mock(); lib.providers = [self._provider("plex"), self._provider("emby")]
+        lib = Mock(); lib.providers = [self._provider("jellyfin")]
 
         checker._acquisition = acq
         checker._qbit = qbit
@@ -145,8 +143,10 @@ class TestHealthChecker:
 
         report = checker.check()
         assert report.services["radarr"] is True
-        assert report.services["plex"] is True
+        assert report.services["jellyfin"] is True
         assert report.services["qbit"] is True
+        # The retired media servers are not reported at all any more.
+        assert "plex" not in report.services and "emby" not in report.services
         assert report.degraded is False
 
     def test_one_provider_down_is_degraded_not_fatal(self):
@@ -154,7 +154,7 @@ class TestHealthChecker:
         checker = HealthChecker(config=cfg)
         acq = Mock(); acq.health.return_value = {"radarr": False, "sonarr": True}
         qbit = Mock(); qbit.health.return_value = True
-        lib = Mock(); lib.providers = [self._provider("plex"), self._provider("emby")]
+        lib = Mock(); lib.providers = [self._provider("jellyfin")]
         checker._acquisition = acq
         checker._qbit = qbit
         checker._library = lib
@@ -163,7 +163,7 @@ class TestHealthChecker:
         # Radarr down -> degraded, but the rest still reported (not an ERROR).
         assert report.services["radarr"] is False
         assert report.services["sonarr"] is True
-        assert report.services["plex"] is True
+        assert report.services["jellyfin"] is True
         assert report.degraded is True
         assert report.serviceDetail["radarr"]["ok"] is False
 
@@ -188,18 +188,15 @@ class TestHealthChecker:
 
         report = checker.check()        # must not raise
         assert report.services["jellyfin"] is False
-        assert report.services["plex"] is False
         assert report.services["radarr"] is True
 
     def test_unconfigured_service_skipped_from_degraded(self):
         cfg = Mock()
         cfg.RADARR_API_KEY = ""; cfg.SONARR_API_KEY = ""
-        cfg.PLEX_URL = ""; cfg.PLEX_TOKEN = ""
-        cfg.EMBY_URL = None; cfg.EMBY_API_KEY = None
         cfg.JELLYFIN_URL = None; cfg.JELLYFIN_API_KEY = None
         cfg.QBITTORRENT_URL = "http://q"
         cfg.TMDB_API_KEY = ""; cfg.has_tmdb = lambda: False
-        cfg.has_jellyfin = lambda: False; cfg.has_emby = lambda: False
+        cfg.has_jellyfin = lambda: False
 
         # unconfigured services => not degraded
         checker = HealthChecker(config=cfg)
@@ -211,7 +208,7 @@ class TestHealthChecker:
         assert report.degraded is False            # but configured set empty
 
     def test_service_health_shape(self):
-        h = ServiceHealth("plex", configured=True, ok=True)
+        h = ServiceHealth("jellyfin", configured=True, ok=True)
         d = h.to_dict()
         assert d["configured"] is True
         assert d["ok"] is True

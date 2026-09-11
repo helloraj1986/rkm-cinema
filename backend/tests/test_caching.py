@@ -140,12 +140,6 @@ class TestTMDBMetadataCache:
         assert http.get.call_count == 1
 
 
-class TestEmbyScanTTL:
-    def test_scan_ttl_is_spec_60s(self):
-        from services.library.emby import EmbyLibraryProvider
-        assert EmbyLibraryProvider.EMBY_SCAN_TTL == 60
-
-
 class TestArrWritePathInvalidation:
     def test_radarr_add_invalidates_http_cache(self):
         from services.radarr import RadarrService, RadarrMovie, QualityProfile, RootFolder, AddResult
@@ -273,13 +267,12 @@ class TestInvalidateHooks:
         from services.acquisition import AcquisitionService
         from services.reconciliation import Reconciler
 
-        lp = _FakeLibProvider("plex")
+        lp = _FakeLibProvider("jellyfin")
         ap = _FakeAcqProvider("radarr")
         rec = Reconciler(
             watchlist=Mock(), library=LibraryService(providers=[lp]),
             acquisition=AcquisitionService(providers=[ap]),
-            config=Mock(PLEX_URL="", PLEX_TOKEN="", EMBY_URL="", EMBY_API_KEY="",
-                        RADARR_API_KEY="", SONARR_API_KEY="", QBITTORRENT_URL=""))
+            config=Mock(RADARR_API_KEY="", SONARR_API_KEY="", QBITTORRENT_URL=""))
         rec.invalidate()
         assert lp.invalidate_calls == 1
         assert ap.invalidate_calls == 1

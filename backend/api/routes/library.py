@@ -1,7 +1,7 @@
-"""Library endpoint — unified library info for the configured backend(s).
+"""Library endpoint — unified library info for the configured backend.
 
 Thin route: delegates to :meth:`services.library.build_library_service`, so it
-serves Plex+Emby (default) OR a single Jellyfin/Emby (bundled stack) with no
+serves Jellyfin (the only media server since 2026-09-11) with no
 provider-specific branches here. Preserves the legacy semantics: the first
 provider that yields a valid read becomes the view; a provider failure falls
 through to the next; if ALL fail the endpoint returns a partial 200
@@ -100,17 +100,14 @@ def get_folder_items(folder_id: str):
 
 
 def _counts(provider) -> dict:
-    """Counts from a provider; RAISES on failure so the route can fall through.
+    """Counts from the provider's own item listing; RAISES on failure.
 
-    Handles the three provider shapes generically: the Plex shape
-    (``provider._plex.get_library_counts()``) or Emby/Jellyfin's ``_get_items``
-    listing. We deliberately do NOT probe a provider-level ``get_library_counts``
-    attribute, because some test fakes' ``__getattr__`` raises (not ``AttributeError``)
-    and would trip the probe; the real backends are covered by the two branches here.
+    The route falls through to the next provider on an exception, and with one
+    provider it degrades to a partial 200. We deliberately do NOT probe a
+    provider-level ``get_library_counts`` attribute, because some test fakes'
+    ``__getattr__`` raises (not ``AttributeError``) and would trip the probe;
+    the item listing is the honest source and is covered by tests.
     """
-    plex = getattr(provider, "_plex", None)
-    if plex is not None and hasattr(plex, "get_library_counts"):
-        return plex.get_library_counts() or {"movie": 0, "show": 0}
     if hasattr(provider, "_get_items"):
         return {
             "movie": len(provider._get_items("Movie")),

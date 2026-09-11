@@ -5,12 +5,12 @@ Library match
     → WatchLink
 
 A ``WatchLink`` captures the *capability* to watch a given available item on one
-provider. The spec §10 shape the API returns is::
+provider. The spec §10 shape the API returns is a map keyed by provider name::
 
     {
       "watch": {
-        "plex":  {"available": true,  "url": "..."},
-        "emby":  {"available": false, "url": null, "error": "no browser url"}
+        "jellyfin": {"available": true,  "url": "...", "item_id": "..."},
+        "other":    {"available": false, "url": null,  "error": "no browser url"}
       }
     }
 
@@ -45,9 +45,9 @@ class WatchLink:
     available: bool
     url: Optional[str] = None
     error: Optional[str] = None
-    #: Provider-native item id (e.g. the Jellyfin ``item_id``) used for in-app
+    #: Provider-native item id (the Jellyfin ``item_id``) used for in-app
     #: playback through the same-origin /api stream proxy. Optional; absent for
-    #: providers whose playback is deep-link-only (Plex/Emby).
+    #: a provider whose playback is deep-link-only.
     item_id: Optional[str] = None
     #: Playback facts (watched flag + resume position in seconds) so the UI can
     #: paint a resume bar / watched tick. Seconds, derived from Jellyfin ticks.
@@ -87,8 +87,9 @@ class WatchLinkResolver:
         """Resolve watch links for one available item.
 
         ``matches`` is a single :class:`LibraryMatch` or an iterable of them
-        (use ``LibraryService.find_all`` to surface both Plex and Emby links for
-        the same item). Returns the spec §10 ``watch`` map keyed by provider.
+        (use ``LibraryService.find_all`` to surface every matching provider's
+        link for the same item). Returns the spec §10 ``watch`` map keyed by
+        provider.
         """
         watch: dict = {}
         if not matches:
@@ -129,8 +130,8 @@ class WatchLinkResolver:
     def _pick_url(built: dict) -> Optional[str]:
         """Pull the single URL out of a provider build_watch_link() result.
 
-        Providers return ``{"plex_url": ...}`` / ``{"emby_url": ...}`` (or a
-        bare ``{"url": ...}``). We take the first string that actually looks
+        Providers return ``{"<provider>_url": ...}`` (e.g. ``{"jellyfin_url": ...}``)
+        or a bare ``{"url": ...}``. We take the first string that actually looks
         like an http(s) URL so the resolver is agnostic to a provider's exact
         dict key and rejects empty/None values.
         """

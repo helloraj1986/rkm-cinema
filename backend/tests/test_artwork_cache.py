@@ -23,8 +23,7 @@ LAST_MODIFIED = "Thu, 10 Sep 2026 01:39:37 GMT"
 
 
 def _cfg(**over):
-    vals = {"JELLYFIN_URL": "http://jellyfin:8096", "JELLYFIN_API_KEY": "sekret",
-            "PLEX_URL": "", "PLEX_TOKEN": ""}
+    vals = {"JELLYFIN_URL": "http://jellyfin:8096", "JELLYFIN_API_KEY": "sekret"}
     vals.update(over)
     return SimpleNamespace(**vals)
 
@@ -86,28 +85,6 @@ def test_etag_list_and_plain_etag_both_match():
         r = _poster_get({"content": JPEG, "content_type": "image/jpeg", "etag": '"abc123"'},
                         headers={"If-None-Match": sent})
         assert r.status_code == 304, sent
-
-
-def test_provider_without_validators_still_gets_the_cache_policy():
-    """Plex thumbs report no validators — they must still be cacheable."""
-    import api.routes.plex_thumb as tmod
-    cfg = _cfg(PLEX_URL="http://plex:32400", PLEX_TOKEN="tok")
-    thumb = SimpleNamespace(get_thumb=lambda path, width: {
-        "content": JPEG, "content_type": "image/jpeg"})
-    with patch.object(tmod, "get_config", lambda: cfg), \
-            patch.object(tmod, "PlexLibraryProvider", return_value=thumb):
-        r = client.get("/api/plex/thumb?path=%2Flibrary%2Fart%2F1&width=500")
-    assert r.status_code == 200
-    assert r.content == JPEG
-    assert r.headers["cache-control"] == ARTWORK_CACHE_CONTROL
-
-
-def test_plex_thumb_missing_config_is_404_and_never_cached():
-    import api.routes.plex_thumb as tmod
-    with patch.object(tmod, "get_config", lambda: _cfg()):  # no PLEX_URL/TOKEN
-        r = client.get("/api/plex/thumb?path=%2Flibrary%2Fart%2F1")
-    assert r.status_code == 404
-    assert "cache-control" not in r.headers
 
 
 def test_missing_id_is_404_and_never_cached():

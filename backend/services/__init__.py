@@ -1,14 +1,10 @@
 """Services package - unified exports."""
 from services.base import BaseService
-from services.plex import PlexService, PlexMovie, PlexShow
 from services.radarr import RadarrService, RadarrMovie, RadarrQueueItem, QualityProfile as RadarrQualityProfile, RootFolder as RadarrRootFolder, AddResult as RadarrAddResult
 from services.sonarr import SonarrService, SonarrSeries, SonarrQueueItem, QualityProfile as SonarrQualityProfile, RootFolder as SonarrRootFolder, LanguageProfile, AddResult as SonarrAddResult
 from services.trailers import TrailerService, TrailerInfo
 from services.tmdb import TMDBService
-from services.emby import EmbyService, EmbyItem
 from services.library.service import LibraryProvider, LibraryMatch, LibraryService
-from services.library.plex import PlexLibraryProvider
-from services.library.emby import EmbyLibraryProvider
 from services.acquisition.service import AcquisitionProvider, AcquisitionService, AcquisitionStatus, AcquisitionRequestResult, build_acquisition_service
 from services.acquisition.radarr import RadarrAcquisitionProvider
 from services.acquisition.sonarr import SonarrAcquisitionProvider
@@ -21,14 +17,11 @@ from services.download import DownloadService
 
 __all__ = [
     "BaseService",
-    "PlexService", "PlexMovie", "PlexShow",
     "RadarrService", "RadarrMovie", "RadarrQueueItem", "RadarrQualityProfile", "RadarrRootFolder", "RadarrAddResult",
     "SonarrService", "SonarrSeries", "SonarrQueueItem", "SonarrQualityProfile", "SonarrRootFolder", "LanguageProfile", "SonarrAddResult",
     "TrailerService", "TrailerInfo",
     "TMDBService",
-    "EmbyService", "EmbyItem",
     "LibraryProvider", "LibraryMatch", "LibraryService",
-    "PlexLibraryProvider", "EmbyLibraryProvider",
     "AcquisitionProvider", "AcquisitionService", "AcquisitionStatus", "AcquisitionRequestResult", "build_acquisition_service",
     "RadarrAcquisitionProvider", "SonarrAcquisitionProvider",
     "YouTubeService",

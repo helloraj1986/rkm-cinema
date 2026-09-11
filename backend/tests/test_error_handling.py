@@ -9,7 +9,7 @@ import socket
 
 from core.exceptions import ServiceUnavailableError, ConfigurationError
 from core.http_client import HTTPError, NetworkError
-from services import RadarrService, SonarrService, PlexService
+from services import RadarrService, SonarrService
 from config.settings import Config
 
 
@@ -25,13 +25,6 @@ def make_sonarr(http):
     c.SONARR_URL = "http://sonarr.test:8989"
     c.SONARR_API_KEY = "key"
     return SonarrService(config=c, http=http)
-
-
-def make_plex(http):
-    c = Mock()
-    c.PLEX_URL = "http://plex.test:32400"
-    c.PLEX_TOKEN = "token"
-    return PlexService(config=c, http=http)
 
 
 class TestErrorHandling:
@@ -59,23 +52,14 @@ class TestErrorHandling:
             sonarr.get_series()
         assert "sonarr" in str(exc_info.value).lower()
 
-    def test_plex_unavailable_raises_service_error(self):
-        """Plex connection failure: health_check degrades; get_library_counts not crash."""
-        http = Mock()
-        http.get.side_effect = NetworkError("http://plex.test", "Connection refused")
-        plex = make_plex(http)
-        assert plex.health_check() is False
-
     def test_missing_config_raises_validation_error(self):
         """Missing required config should be detected."""
         cfg = Config()
         cfg.RADARR_API_KEY = ""
         cfg.SONARR_API_KEY = ""
-        cfg.PLEX_TOKEN = ""
         missing = cfg.validate_required()
         assert "RADARR_API_KEY" in missing
         assert "SONARR_API_KEY" in missing
-        assert "PLEX_TOKEN" in missing
 
     def test_radarr_timeout_handled(self):
         """Radarr timeout should be handled gracefully."""

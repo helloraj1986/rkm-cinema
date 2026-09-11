@@ -59,7 +59,7 @@ CREATE TABLE IF NOT EXISTS recommendations (
 
 CREATE TABLE IF NOT EXISTS library_items (
     media_id         TEXT NOT NULL REFERENCES media(id),
-    provider         TEXT NOT NULL,           -- 'plex' | 'emby'
+    provider         TEXT NOT NULL,           -- 'jellyfin'
     provider_item_id TEXT NOT NULL,
     title            TEXT,
     year             INTEGER,
@@ -80,7 +80,7 @@ CREATE TABLE IF NOT EXISTS acquisitions (
 
 CREATE TABLE IF NOT EXISTS watch_links (
     media_id         TEXT NOT NULL REFERENCES media(id),
-    provider         TEXT NOT NULL,           -- 'plex' | 'emby'
+    provider         TEXT NOT NULL,           -- 'jellyfin'
     provider_item_id TEXT,
     url              TEXT,
     status           TEXT NOT NULL DEFAULT 'unknown',

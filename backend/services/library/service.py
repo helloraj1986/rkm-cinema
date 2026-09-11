@@ -1,7 +1,7 @@
 """Library provider abstraction and the unified LibraryService.
 
-Spec §4/§6: ``LibraryProvider`` is the interface every library backend (Plex,
-Emby) implements. The app talks to the library through ``LibraryService``,
+Spec §4/§6: ``LibraryProvider`` is the interface a library backend implements
+(Jellyfin today). The app talks to the library through ``LibraryService``,
 which treats all providers as views of ONE logical library (spec §9) so a
 single media item collapses to a single ``LibraryMatch`` / ``AVAILABLE`` state.
 
@@ -29,11 +29,12 @@ LIBRARY_CONFIRMATION_TTL = 24 * 60 * 60  # 24 hours in seconds
 class LibraryMatch:
     """A concrete item found inside one library provider.
 
-    ``provider`` is the provider name (``"plex"`` / ``"emby"``);
+    ``provider`` is the provider name (``"jellyfin"`` today — the media server
+    the app is wired to);
     ``provider_item_id`` is that provider's stable id for the item
-    (Plex ``ratingKey`` / Emby ``itemId``). ``metadata`` carries provider
-    extras (Plex ``guid``/``machine_identifier``/``library_section``; Emby
-    ``server_id``) so watch-link builders never re-query.
+    (Jellyfin ``ItemId``). ``metadata`` carries provider
+    extras (Jellyfin ``item_id``/``played``/``playback_position``) so watch-link
+    builders never re-query.
     """
 
     provider: str
@@ -52,7 +53,7 @@ class LibraryMatch:
 class LibraryProvider(ABC):
     """Interface implemented by each physical library backend."""
 
-    #: stable provider name ("plex" / "emby")
+    #: stable provider name (e.g. "jellyfin")
     name: str = "base"
 
     @abstractmethod
@@ -78,7 +79,7 @@ class LibraryProvider(ABC):
 
     @abstractmethod
     def build_watch_link(self, match: LibraryMatch) -> dict:
-        """Build the watch links (e.g. ``plex``/``emby`` browser URLs) for a match."""
+        """Build the watch links (e.g. a ``jellyfin`` browser URL) for a match."""
 
     # ----------------------------------------------- capability surface (Phase 1)
     # Newer providers (Jellyfin) implement richer views; others inherit the
@@ -118,7 +119,7 @@ class LibraryProvider(ABC):
         Returns display rows ``[{id, title, year, kind, score, poster,
         backdrop}]``, ``[]`` when the backend answers with no similar titles,
         or ``None`` when the backend can't answer for this item. Default
-        ``None`` (not supported — Plex/Emby slot left for later).
+        ``None`` (not supported by this backend for this item).
         """
         return None
 
@@ -172,8 +173,8 @@ class LibraryService:
 
     Providers are views of ONE logical library (spec §9): ``find`` returns the
     first match across providers (a single AVAILABLE state). ``watch_links``
-    still returns per-provider links so the UI can offer "Watch on Plex" and
-    "Watch on Emby" for the same (one) available item.
+    still returns per-provider links, so the UI can offer the right "Watch on
+    <server>" action for the same (one) available item.
     """
 
     def __init__(self, providers: Optional[list[LibraryProvider]] = None):
@@ -267,7 +268,7 @@ class LibraryService:
         return self.find(identity, title=title, year=year) is not None
 
     def find_all(self, identity: MediaIdentity, *, title: str = "", year: Optional[int] = None) -> list[LibraryMatch]:
-        """All provider matches (e.g. same film in Plex and Emby).
+        """All provider matches (e.g. the same film found twice).
 
         Defensive like :meth:`find`: a failing provider is skipped with a warning
         so one broken backend can't block the whole reconciler.
@@ -322,8 +323,8 @@ class LibraryService:
         """Build the spec §10 ``watch`` map for one available item.
 
         ``matches`` is a single :class:`LibraryMatch` or an iterable of them
-        (pass ``find_all(...)`` to surface both Plex and Emby links for the same
-        item). Returns ``{provider: {"available": bool, "url": str|None,
+        (pass ``find_all(...)`` to surface every matching provider's links for
+        the same item). Returns ``{provider: {"available": bool, "url": str|None,
         "error": str|None}}``.
 
         Failure containment (spec §10): a failed provider watch-link resolver
@@ -350,8 +351,8 @@ class LibraryService:
     # Collapse the provider capability surface into "first provider with a
     # meaningful result", so routes call the service, not ``getattr`` instances.
     # A provider that exposes the method but returns the ABC default ``[]``/``False``
-    # (e.g. Plex/Emby for the Jellyfin-only views) is skipped in favour of the
-    # backend that actually implements it — preserving the old "first provider
+    # is skipped in favour of the backend that actually implements it —
+    # preserving the old "first provider
     # WITH the method" semantics without feature-detection.
     def all_items(self, limit: Optional[int] = None) -> dict:
         """Poster-wall library: ``{"provider": str|None, "items": [...]}``."""

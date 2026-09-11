@@ -1,9 +1,10 @@
 """Jellyfin library provider.
 
 Implements the :class:`LibraryProvider` interface for Jellyfin (the bundled,
-self-contained media server). Mirrors ``services/library/emby.py`` because
-Jellyfin is Emby-derived and shares the same API shape (``/Items``,
-``/System/Info/Public``, provider ids ``Imdb``/``Tmdb``/``Tvdb``). This module
+self-contained media server). The API shape is Emby-derived — Jellyfin forked
+Emby and keeps ``/Items``, ``/System/Info/Public`` and the
+``Imdb``/``Tmdb``/``Tvdb`` provider ids — so the header and endpoint naming
+follow Emby's, which is Jellyfin's own protocol, not a second backend. This module
 is the single home for Jellyfin item matching, item-id / server-id resolution
 and deep-link building — no other code path reverses Jellyfin's URL format.
 

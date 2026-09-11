@@ -98,20 +98,12 @@ class HealthChecker:
             detail="configured" if self.config.SONARR_API_KEY else "not configured",
         )
 
-        # Library providers — per-provider health from whatever the factory built.
-        # `lib` is None when the CONFIGURED backend isn't configured yet, which is a
-        # real boot state (a Jellyfin stack before the provisioner has written its API
-        # key, or a wrong MEDIA_SERVER): that is "degraded", never a crash. The old
-        # code walked `lib.providers` unguarded, so /api/health raised AttributeError
-        # and the whole app looked dead instead of reporting one service down.
-        plex = ServiceHealth(
-            "plex", configured=bool(self.config.PLEX_URL and self.config.PLEX_TOKEN),
-            detail="configured" if (self.config.PLEX_URL and self.config.PLEX_TOKEN) else "not configured",
-        )
-        emby = ServiceHealth(
-            "emby", configured=self.config.has_emby(),
-            detail="configured" if self.config.has_emby() else "not configured",
-        )
+        # Library provider health — from whatever the factory built. `lib` is
+        # None when Jellyfin isn't configured yet, which is a real boot state (a
+        # fresh stack before the provisioner has written its API key): that is
+        # "degraded", never a crash. The old code walked `lib.providers`
+        # unguarded, so /api/health raised AttributeError and the whole app
+        # looked dead instead of reporting one service down.
         jellyfin = ServiceHealth(
             "jellyfin", configured=self.config.has_jellyfin(),
             ok=bool(self.config.has_jellyfin()),
@@ -120,11 +112,7 @@ class HealthChecker:
         lib = self._safe(self._lib, default=None)
         for p in (lib.providers if lib is not None else []):
             h = self._safe(lambda: p.health(), default=False)
-            if p.name == "plex":
-                plex.ok = bool(h)
-            elif p.name == "emby":
-                emby.ok = bool(h)
-            elif p.name == "jellyfin":
+            if p.name == "jellyfin":
                 jellyfin.ok = bool(h)
 
         # qBittorrent.
@@ -139,7 +127,7 @@ class HealthChecker:
         )
 
         healths = {
-            "radarr": radarr, "sonarr": sonarr, "plex": plex, "emby": emby,
+            "radarr": radarr, "sonarr": sonarr,
             "qbit": qbit, "tmdb": tmdb, "jellyfin": jellyfin,
         }
         if not include_tmdb:

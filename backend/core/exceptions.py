@@ -25,14 +25,6 @@ class ServiceUnavailableError(RKMError):
 # --- Phase 14: typed per-service errors (spec §28). One failed service must
 # never destroy the whole response — callers catch the specific type and keep
 # other providers working.
-class PlexUnavailableError(ServiceUnavailableError):
-    def __init__(self, message: str = "Plex is unreachable", status_code: Optional[int] = None):
-        super().__init__("Plex", message, status_code)
-
-class EmbyUnavailableError(ServiceUnavailableError):
-    def __init__(self, message: str = "Emby is unreachable", status_code: Optional[int] = None):
-        super().__init__("Emby", message, status_code)
-
 class RadarrUnavailableError(ServiceUnavailableError):
     def __init__(self, message: str = "Radarr is unreachable", status_code: Optional[int] = None):
         super().__init__("Radarr", message, status_code)

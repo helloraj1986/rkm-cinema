@@ -43,6 +43,7 @@ export function PasswordView() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [confirmation, setConfirmation] = useState<Confirmation | undefined>();
+  const [account, setAccount] = useState("");
 
   // Which profile this is, and whether it HAS a password — the server's answer, not a guess. The
   // same route the picker uses; null until it arrives, and null is treated as "don't require the
@@ -56,7 +57,7 @@ export function PasswordView() {
   const hasPassword: HasPassword = profiles.data ? Boolean(mine?.has_password) : null;
 
   const decision = changeIssue(current, next, confirm, hasPassword);
-  const confirmed = confirmationMessage(confirmation);
+  const confirmed = confirmationMessage(confirmation, account);
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
@@ -69,6 +70,7 @@ export function PasswordView() {
       // unprotected (or still protected) until something else invalidates the cache.
       await queryClient.invalidateQueries({ queryKey: ["auth", "profiles"] });
       setConfirmation(result.confirmation);
+      setAccount(result.name ?? "");
       setCurrent("");
       setNext("");
       setConfirm("");

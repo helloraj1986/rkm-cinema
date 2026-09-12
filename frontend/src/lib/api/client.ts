@@ -911,7 +911,9 @@ export const api = {
    * to match, so this never invents that rule.
    */
   changeMyPassword: (newPassword: string, currentPassword = "") =>
-    postJson<{ ok: boolean; confirmation?: PasswordConfirmation }>("/auth/profile/password", {
+    postJson<{ ok: boolean; confirmation?: PasswordConfirmation; name?: string }>(
+      "/auth/profile/password",
+      {
       current_password: currentPassword,
       new_password: newPassword,
     }),

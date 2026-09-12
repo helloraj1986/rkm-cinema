@@ -78,6 +78,14 @@ describe("confirmationMessage", () => {
     expect(confirmationMessage("verified")).toEqual({ ok: true, text: "Password changed." });
   });
 
+  it("names the account it changed, so a wrong target is never silent", () => {
+    // Measured: a change meant for one profile landed on another. Naming the account is what makes
+    // that visible the moment it happens.
+    expect(confirmationMessage("verified", "meenu").text).toMatch(/for meenu/);
+    expect(confirmationMessage("refused", "meenu").text).toMatch(/for meenu/);
+    expect(confirmationMessage("unavailable", "meenu").text).toMatch(/for meenu/);
+  });
+
   it("does NOT call a refusal applied, and does not call it a failure of the user either", () => {
     const m = confirmationMessage("refused");
     expect(m.ok).toBe(false);

@@ -323,7 +323,10 @@ def change_own_password(payload: ChangePasswordRequest, request: Request):
         confirmation = "unavailable"
     logger.info("auth.password accepted: target id=%s name=%r confirmation=%s",
                 target_id, server_name, confirmation)
-    return JSONResponse({"ok": True, "confirmation": confirmation})
+    # The account is named in the answer on purpose: the target is the PROFILE IN EFFECT, and if the
+    # session was on a different profile than the user believed, this is what makes it visible
+    # instead of silent (measured 2026-09-12: a change meant for one profile landed on another).
+    return JSONResponse({"ok": True, "confirmation": confirmation, "name": server_name or session_name})
 
 
 @router.post("/auth/logout")

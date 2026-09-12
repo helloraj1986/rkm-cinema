@@ -50,6 +50,17 @@ previous token, and the app signs in on ONE device id for everyone. Separate fro
 worth its own pass: when Jellyfin answers 401, the app should degrade honestly ("switch profile again")
 rather than looking broken.
 
+**THE ANSWER (measured, read-only): the change landed on the WRONG PROFILE.** Login tests with the
+value he typed: `raj + 'raj1234'` refused, `meenu + 'raj1234'` **LOGS IN**, `rkm + 'raj1234'` refused.
+So his "raj" change went to **meenu** — the PROFILE IN EFFECT at the time — and two things hid it: the
+check was unreliable (it could sign in as the owner, now fixed) and nothing in the answer said which
+account was changed. Now the response carries `name` and the screen says *"Password changed for
+meenu."* / *"…accepted the change for meenu but could not confirm it."* on EVERY outcome, so a wrong
+target is visible the moment it happens.
+
+⚠ Open question for him: whether the app was showing meenu (the screen's label names the account) or
+the session was on meenu from earlier. The label + the named answer together make it self-evident now.
+
 **What settles the remaining question:** the api log line now names the account it checked —
 `auth.password accepted: target id=<id> name=<name> confirmation=<state>`. For a failing attempt:
 `name='raj'` + `refused` = the sign-in genuinely failed for that account (a real problem to chase);

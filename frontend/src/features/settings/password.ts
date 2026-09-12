@@ -34,23 +34,26 @@ export type HasPassword = boolean | null;
  */
 export type Confirmation = PasswordConfirmation;
 
-export function confirmationMessage(confirmation: Confirmation | undefined): {
-  ok: boolean;
-  text: string;
-} {
-  if (confirmation === "verified") return { ok: true, text: "Password changed." };
+export function confirmationMessage(
+  confirmation: Confirmation | undefined,
+  /** The account the change was made against, as the server names it. Shown ALWAYS: if the profile
+   *  in effect is not the one the user thought, that must be visible, not silent. */
+  account = "",
+): { ok: boolean; text: string } {
+  const who = account ? ` for ${account}` : "";
+  if (confirmation === "verified") return { ok: true, text: `Password changed${who}.` };
   if (confirmation === "refused") {
     return {
       ok: false,
-      text: "The server accepted the change but would not sign in with the new password, so it " +
-        "may not have been applied. Sign in with the new password to check — if that fails, your " +
-        "old one is unchanged and the administrator can set one from Household.",
+      text: `The server accepted the change${who} but would not sign in with the new password, ` +
+        "so it may not have been applied. Sign in with the new password to check — if that fails, " +
+        "your old one is unchanged and the administrator can set one from Household.",
     };
   }
   return {
     ok: false,
-    text: "The server accepted the change but it could not be confirmed. Sign in with the new " +
-      "password to check — if that fails, the administrator can set one from Household.",
+    text: `The server accepted the change${who} but it could not be confirmed. Sign in with the ` +
+      "new password to check — if that fails, the administrator can set one from Household.",
   };
 }
 

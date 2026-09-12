@@ -412,7 +412,7 @@ class TestChangeMyOwnPassword:
         r = api.client.post("/api/auth/profile/password",
                             json={"current_password": "old-pw", "new_password": "new-pw"})
         assert r.status_code == 200
-        assert r.json() == {"ok": True, "confirmation": "verified"}
+        assert r.json() == {"ok": True, "confirmation": "verified", "name": "Kid"}
         assert "new-pw" not in r.text and "old-pw" not in r.text
 
     def test_a_session_with_no_profile_choice_cannot_change_a_password(self, api):
@@ -444,7 +444,11 @@ class TestChangeMyOwnPassword:
             r = api.client.post("/api/auth/profile/password",
                                 json={"current_password": "", "new_password": "new-pw"})
             assert r.status_code == 200, f"{answer} must still be a successful change"
-            assert r.json() == {"ok": True, "confirmation": expected}
+            body = r.json()
+            assert body["ok"] is True and body["confirmation"] == expected
+            # The account is named back so a WRONG TARGET is visible, not silent: a change meant for
+            # one profile has landed on another (measured 2026-09-12).
+            assert body["name"] == "Kid"
         assert api.library.password_changes == [("", "new-pw")] * 3
 
     def test_the_verification_uses_the_SERVERS_name_for_the_account(self, api, monkeypatch):

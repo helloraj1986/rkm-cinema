@@ -1,42 +1,57 @@
-## ▶ NEXT SESSION — START HERE: auth Phase 1 (frontend login view + guard — STILL nothing enforced). Branch `feat/auth-multiuser` @ `dd921ed`; plan `docs/AUTH_MULTIUSER_PLAN.md`.
+## ▶ NEXT SESSION — START HERE: auth Phase 1 (frontend login view + guard — STILL nothing enforced), then Phase 1b (household accounts from the app). Branch `feat/auth-multiuser`; plans `docs/AUTH_MULTIUSER_PLAN.md` + **new** `docs/HOUSEHOLD_USERS_PLAN.md`.
 
-**Where the plan stands:** **Phase 0 ✅ DONE** (`dd921ed`, pushed 2026-09-12) — server-side
-sessions, `/api/auth/login|logout|me`, the `async def` contextvar seam, `RKM_AUTH_REQUIRED`
-plumbing, and a REAL login proven against the live Jellyfin. Phases 1–5 remain. Nothing is
-enforced yet, so the running stack is unchanged: **the user has nothing to deploy for Phase 0.**
+**Where things stand (2026-09-12):**
+- ✅ **Auth Phase 0 DONE and pushed** (`dd921ed` code + `608e873` record) — sessions, `/api/auth/*`, the `async def`
+  contextvar seam, `RKM_AUTH_REQUIRED` plumbing; contract 41 → 44 paths. **Nothing is enforced**, so the running
+  stack is unchanged and there is nothing to deploy.
+- ✅ **The subtitle eyeball PASSED** — the user confirmed ("this is done") and the two older blocks are marked in
+  place. `main` @ `c0ae65e` is accepted; nothing on the subtitle feature is outstanding.
+- 📋 **Phase 1b SCOPED, NOT STARTED** — `HOUSEHOLD_USERS_PLAN.md` + the read-only probe
+  `tools/probe_jellyfin_users.py`, which has ALREADY been run against the live server; its numbers (3 libraries with
+  their ItemIds, 1 user, the real endpoint spellings) are IN the plan — do not re-measure.
 
-**Next task = PHASE 1** (`AUTH_MULTIUSER_PLAN.md` §6): `frontend/src/features/auth/LoginView.tsx`
-+ `AuthProvider.tsx` + `lib.ts`/`lib.test.ts`, the `/login` route **outside** the shell,
-`lib/api/client.ts` `login()/logout()/me()` with `credentials: "same-origin"` and ONE 401
-interceptor (fire once, not per request), a user chip + **Sign out** with `queryClient.clear()`
-on both, a skeleton while `me()` is pending, and the new `tools/check_login_flow.py` DOM check
-(Playwright, mirrors `check_subtitle_panel.py`). **Do NOT flip `RKM_AUTH_REQUIRED` in Phase 1**
-— that is Phase 2, and only after the login screen is on the user's screen (§5, the lockout rule).
+**DECISIONS WAITING ON THE USER before 1b starts** (`HOUSEHOLD_USERS_PLAN.md` §8 — asked 2026-09-12): how a new
+member's password is chosen (he types it / the app suggests one it shows once / none), the default library access,
+the v1 scope (add+grant+disable+reset+delete, or add only), and whether 1b runs BEFORE or AFTER Phase 2
+enforcement (recommendation: before). **Phase 1 does not need any of these** — it can start now.
 
-**Two things to settle with the user before Phase 3 — ASK, don't assume:**
-1. The **subtitle eyeball** (`main` @ `c0ae65e`) is STILL outstanding as of 2026-09-12. It does not
-   block this branch (no subtitle code is touched until Phase 4) but it must not be lost.
-2. **Phase 3's live proof needs a SECOND Jellyfin user** — the server has exactly ONE (`admin`;
-   re-confirmed by a real login in Phase 0, user id `1760c9b047d444d39c94a99d082773ed`). Creating
-   another account changes HIS server, so it is his call (Jellyfin dashboard → Users → Add user).
+**Next task = PHASE 1** (`AUTH_MULTIUSER_PLAN.md` §6): `frontend/src/features/auth/LoginView.tsx` +
+`AuthProvider.tsx` + `lib.ts`/`lib.test.ts`, the `/login` route **outside** the shell, `lib/api/client.ts`
+`login()/logout()/me()` with `credentials: "same-origin"` and ONE 401 interceptor (fire once, not per request), a
+user chip + **Sign out** with `queryClient.clear()` on both, a skeleton while `me()` is pending, and the new
+`tools/check_login_flow.py` DOM check (Playwright, mirrors `check_subtitle_panel.py`). **Do NOT flip
+`RKM_AUTH_REQUIRED` in Phase 1** — that is Phase 2 only, after the login screen is on his screen (§5, lockout rule).
 
-**Lockout recovery — VERIFIED MECHANISM (measured in Phase 0):** the api's config comes from the
-RENDERED `.rkm.env`, so editing `.env` and recreating the api would NOT have picked a new value up.
-`docker-compose.yml` now interpolates `RKM_AUTH_REQUIRED` from the repo `.env`, so
-`docker compose -p rkm-bundled up -d --force-recreate api` really does apply the change — no render,
-no provisioner, so it cannot cancel an in-flight library scan. If he ever cannot get in: set
-`RKM_AUTH_REQUIRED=false` and run that.
+**Lockout recovery — VERIFIED MECHANISM (measured in Phase 0):** the api's config comes from the RENDERED
+`.rkm.env`, so editing `.env` and recreating the api would NOT have picked a new value up. `docker-compose.yml`
+now interpolates `RKM_AUTH_REQUIRED` from the repo `.env`, so
+`docker compose -p rkm-bundled up -d --force-recreate api` really does apply it — no render, no provisioner, so it
+cannot cancel an in-flight library scan. If he ever cannot get in: set `RKM_AUTH_REQUIRED=false` and run that.
 
-**Per-user vs shared is decided (§4) — do not "fix" it:** watch state, resume, watched flags and
-library visibility per user (free from Jellyfin); subtitle PREFERENCES per user; subtitle USAGE
-counts and the watchlist stay **household-shared**.
+**Per-user vs shared is decided (§4) — do not "fix" it:** watch state, resume, watched flags and library
+visibility per user (free from Jellyfin); subtitle PREFERENCES per user; subtitle USAGE counts and the watchlist
+stay **household-shared**.
 
 **Gates every phase:** `cd backend && python -m pytest -q && python -m ruff check .`; plus
-`cd frontend && npx tsc --noEmit && npx vitest run && npm run build` (the typed client is
-regenerated whenever the contract changes). Contract check:
-`python -c "import json;d=json.load(open('docs/api/openapi.v1.json'));print(len(d['paths']),'paths')"` → 44.
+`cd frontend && npx tsc --noEmit && npx vitest run && npm run build` (the typed client is regenerated whenever the
+contract changes). Contract check:
+`python -c "import json;d=json.load(open('docs/api/openapi.v1.json'));print(len(d['paths']),'paths')"` → 44 now, 49
+after 1b.0.
 
 **Also queued after this:** native Jellyfin collections (app-authored, visible in Jellyfin's own apps).
+## ▶ LATEST SESSION (2026-09-12) — SUBTITLE EYEBALL CLOSED ✅ + HOUSEHOLD ACCOUNTS SCOPED 📋 (plan `docs/HOUSEHOLD_USERS_PLAN.md`, probe `tools/probe_jellyfin_users.py`; branch `feat/auth-multiuser`, **NOT STARTED — nothing deployed, nothing enforced**)
+
+**User:** *"THIS IS DONE"* (the outstanding subtitle eyeball) and *"I WANT TO DO IT FROM THE UI, CREATING NEW USER AND STUFF..LET ME KNOW"* — so the SECOND Jellyfin user that Phase 3's live proof needs will be created from the app's own UI, not the Jellyfin dashboard.
+
+- ✅ **Subtitle eyeball CLOSED.** The two older blocks are marked in place (the Phase 5 block and the selection-fix block): `main` @ `c0ae65e` is accepted, the tick / Off / "N downloads left today" checks passed, and nothing on the subtitle feature is outstanding. No code changed for this — it was a RECORD fix, and until now that record was lying to the next session.
+- 📋 **Phase 1b scoped: household accounts from inside the app** (`HOUSEHOLD_USERS_PLAN.md`, promoted out of AUTH_MULTIUSER_PLAN §6 Phase 5's *optional* row). It creates and manages Jellyfin users: see the household, add a member (name + password + library tick-boxes), change library access, reset a password, delete with a typed confirmation.
+- 🔍 **Measured BEFORE planning, and the measurement changed the design** — new read-only probe `tools/probe_jellyfin_users.py`: users + their library grants, every library's ItemId, and the RUNNING server's own contract for the endpoints. Against the live server: **3 libraries** (`Movies` `f137a2dd…`, `TV Shows` `767bffe4…`, `Movies Kids` `7e9b296e…`) and **1 user** (`admin`, `EnableAllFolders=true`). Three findings, each of which would have shipped as a silent bug:
+  1. **`POST /Users/{userId}/Policy` REPLACES the whole 47-field `UserPolicy`** ⇒ read-modify-write only; a partial body would quietly reset permissions.
+  2. **`POST /Users/Password?userId=`** — the target is a **QUERY** parameter (a path-form call 404s); body `UpdateUserPassword {CurrentPassword, CurrentPw, NewPw, ResetPassword}`. This is how an admin resets a member's password.
+  3. **`GET /Users/{userId}/Views` still answers but is NOT in the server's own contract** ⇒ the app must read `/UserViews?userId=`. (The probe now prints a loud `NOT in this server's contract` line for that class of trap; its first draft reported three endpoints as "not present" because it matched the wrong spellings — fixed before it was believed.)
+- **Design calls recorded in the plan:** authorization is checked LIVE against Jellyfin (`GET /Users/{session.user_id}` → `Policy.IsAdministrator`), never from a stored flag; the admin routes are **session-STRICT from day one** regardless of `RKM_AUTH_REQUIRED` (they can create accounts, so they must never answer an anonymous caller); the calls are made as the SIGNED-IN admin (attributable in Jellyfin's own log, and its 403 stays the backstop); the password is used once and never stored, logged or returned (test-pinned); and deleting the LAST administrator is refused.
+- **Ordering decided and written into AUTH_MULTIUSER_PLAN §5/§6:** Phase 1 (login UI) → **1b (this)** → Phase 2 (enforcement) → Phase 3 (identity) → 4 → 5. He exercises account creation while the app is still permissive, and Phase 2 then protects the new admin routes along with everything else.
+- **Waiting on him (4 decisions, plan §8):** password handling, default library access, v1 scope, and 1b before or after Phase 2.
 ## ▶ LATEST SESSION (2026-09-12) — AUTH PHASE 0 OF 6: SERVER-SIDE SESSIONS + `/api/auth/*` ✅ (branch `feat/auth-multiuser`, commit `dd921ed`, pushed; **NOTHING ENFORCED — nothing to deploy**)
 
 **User instruction:** *"PICKUP THE WORK FROM PROGRESS.MD IN RKM-CINEMA APP"* — execute
@@ -70,7 +85,7 @@ store on disk:         keys are 64-hex sha256, the raw cookie value is absent fr
 The login created one device entry in HIS Jellyfin; it was purged afterwards (`DELETE /Devices?Id=rkm-cinema-web` → **204**, re-listed and confirmed absent). One earlier purge attempt answered 401 — because Jellyfin ROTATES a device's token on every login, so the row the script picked was already dead, not because of the header style.
 
 **Nothing to deploy.** Phase 0 is additive and unenforced; the running stack is behaviourally identical. Next: Phase 1 (frontend login view, still nothing enforced).
-## ▶ LATEST SESSION (2026-09-12) — SUBTITLES PHASE 5: HARDENING + DOCS + ADR-0005 ✅ **PLAN COMPLETE (all 6 phases)** (branch `feat/subtitles-hardening`; the four earlier commits are on `main` at `710f678`)
+## ▶ LATEST SESSION (2026-09-12) — SUBTITLES PHASE 5: HARDENING + DOCS + ADR-0005 ✅ **PLAN COMPLETE (all 6 phases)** (branch `feat/subtitles-hardening`; the four earlier commits are on `main` at `710f678`) → ✅ **EYEBALLED + ACCEPTED by the user 2026-09-12** ("this is done")
 
 **Hardening — the plan's criterion 10 as TESTS, not as hope.** Seven new API tests + three client tests pin the failure paths end to end: a dead network, a vendor payload nobody expected, blank credentials, quota exhausted, and a rate limit. What they enforce: the search listing **degrades to the item's own tracks on a 200** (never a 500, never an empty panel), select answers **503** not configured / **502** credentials & transport / **429** quota & rate limit, nothing is attached or remembered when the download failed, and "off" still works with the vendor dead. `tools/check_subtitle_panel.py --fail-search` proves the same thing in the BROWSER: with the online search returning 502, the item's own subtitles are still listed and still appliable, the Off row survives, and the notice says why.
 - ⚠ **A real gap, found by writing those tests rather than by a user report:** the client's retry loop only caught our own `TransportError`, so a **raw `OSError`** (connection refused — what `urllib` actually raises) escaped **un-typed and un-retried**. Consequence: the select route returned **HTTP 500** (it maps the typed taxonomy only) and GETs silently skipped their retry budget. Fixed in `_request`: raw network errors are wrapped into `TransportError` and get the same single retry as a 5xx. The wrapped message carries the exception **CLASS, never its text** — a `urllib` error stringifies its URL and our URLs can be the pre-signed download link (the redaction test now covers exactly that).
@@ -90,7 +105,7 @@ docker compose -p rkm-bundled up -d --build api web
 Check: the tick lands on the row you clicked (**3 Deewarein (2003)**), the delivered row reads `English - SUBRIP - External · downloaded`, **Off** sticks across a reload, "N downloads left today" matches what the API actually reports, and — the new bit — with the api key blanked or the vendor unreachable, **everything else still plays** and the picker explains itself instead of failing.
 
 **Phase status: 0 ✅ · 1 ✅ · 2 ✅ · 3 ✅ · 4 ✅ (incl. the eyeball's selection fix) · 5 ✅.** Plan doc marked COMPLETE.
-## ▶ LATEST SESSION (2026-09-12) — SUBTITLE SELECTION FIX (found by the user's eyeball) ✅ FIXED → **MERGED to `main` 2026-09-12** (`710f678`; `main` `251ec63` → `710f678`, deploy branch `experiment/bundled-docker-stack` FF'd to match, all three pushed). ⚠ The fix itself is not yet eyeballed — it needs the rebuild below; the PRE-FIX branch build is what the user saw (commit `5ba203a`, branch `feat/subtitles-opensubtitles`)
+## ▶ LATEST SESSION (2026-09-12) — SUBTITLE SELECTION FIX (found by the user's eyeball) ✅ FIXED → **MERGED to `main` 2026-09-12** (`710f678`; `main` `251ec63` → `710f678`, deploy branch `experiment/bundled-docker-stack` FF'd to match, all three pushed). ✅ **EYEBALLED + ACCEPTED 2026-09-12** (the user: "this is done") — the rebuild happened and the fix is confirmed; nothing on the subtitle feature is outstanding
 
 **The user's report, verbatim:** *"i did this for 3 deewarein movie...i searched-> selected->it says downloaded-> but i dont see the selection on the subtitle(the round box?)...can you have look"* — i.e. the download reported success and the picker showed NO selection.
 

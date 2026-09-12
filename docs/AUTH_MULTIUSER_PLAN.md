@@ -101,6 +101,12 @@ user — while the app's own stores gain a user key only where they genuinely ne
 never lock the user out of an app with no way to sign in. Order: **0 store+endpoints → 1 login UI →
 2 enforcement → 3 identity → 4 subtitle prefs → 5 docs/record**.
 
+**UPDATED 2026-09-12 (user request): a new Phase 1b — household accounts managed from inside the app — slots in
+after Phase 1 and before Phase 3**, so the SECOND Jellyfin user Phase 3's live proof needs is created from the
+app's own UI rather than the Jellyfin dashboard. Its full plan (routes, live admin check, the measured endpoint
+shapes, the traps) is [HOUSEHOLD_USERS_PLAN.md](HOUSEHOLD_USERS_PLAN.md). Phase 1b does not need enforcement:
+its routes are session-strict from day one, independent of `RKM_AUTH_REQUIRED`.
+
 **Prerequisites to START Phase 0** (nothing else blocks):
 - `main` is at `c0ae65e` (subtitles complete) and the user's subtitle eyeball has either passed or is still
   outstanding — that must not be silently skipped, but it does not block this branch (this branch touches
@@ -220,7 +226,7 @@ Contract check every phase: `python -c "import json;d=json.load(open('docs/api/o
 | ADR | **ADR-0006** — this is a **BREAKING contract change** (every app path now requires a session), which ADR-0001 requires be explicit and recorded: the decision, the rejected alternatives (shared password; app-owned accounts; IP bypass), the cookie/session design, the machine token, and the escape hatch |
 | Docs | `ARCHITECTURE.md` (auth section + endpoint table + the contextvar rule), `OPERATIONS.md` (symptom rows: **locked out**, add a household member, rotate `RKM_API_TOKEN`, "logged out on my phone" = different cookie jar), `README.md` (features + config rows), `.env.example` (`RKM_AUTH_REQUIRED`, `RKM_API_TOKEN`, `RKM_CORS_ORIGINS`) |
 | Record | PROGRESS block + mark this plan EXECUTING→COMPLETE |
-| **Optional** | admin-only **"add Jellyfin user"** flow (`POST /Users/New` + grant libraries) so a household member can be added from inside the app; additive, Jellyfin-admin only, ships separately if the user wants it |
+| **MOVED FORWARD** | The admin-only **"add Jellyfin user"** flow (`POST /Users/New` + grant libraries) was the *optional* item here; the user asked for it explicitly on 2026-09-12 ("from the UI"), so it is now its own phase — **Phase 1b**, planned in full in [HOUSEHOLD_USERS_PLAN.md](HOUSEHOLD_USERS_PLAN.md), running after Phase 1 and before Phase 3. Nothing else about this phase changes. |
 | Eyeball | user deploys and signs in as **two accounts on two devices**: separate Continue Watching, separate subtitle choices, sign out works, and `status` still works |
 
 ---

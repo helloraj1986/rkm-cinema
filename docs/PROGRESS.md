@@ -1,4 +1,126 @@
-## ▶ NEXT SESSION — START HERE: the password bug is FIXED (`6e34438`) — his live "set a password" never worked · next: deploy api+web, then Phase 4
+## ▶ NEXT SESSION — START HERE: password work is MID-FLIGHT — 4 fixes pushed, HIS RETRY + ONE LOG LINE still outstanding
+
+**His instruction, verbatim:** *"record the session issues....we will take up in the next session
+this session is too long · record ur findings and issues in progress.md to take it up later"*
+
+**Branch:** `feat/auth-multiuser`, working tree CLEAN, everything pushed. `main` untouched at
+`c0ae65e`. Nothing is merged — he asks for merges.
+
+---
+
+### ⚠ DO THIS FIRST NEXT SESSION (two questions for him, nothing else matters until they are answered)
+
+1. **After deploying, did My password on `rajeev` work?** Deploy =
+   `cd D:\hermes_agent\hermes-workspace\projects\rkm-cinema` then
+   `docker compose -p rkm-bundled up -d --build api web`.
+2. **If it still fails, the api log names the answer:**
+   `docker compose -p rkm-bundled logs api | Select-String "auth.password|password verification"`
+   * the `target id=` in that line is the account the change was made against — compare it with the
+     account table below; if it is the administrator's id, the cause is a session with NO profile
+     chosen (the owner fallback), and the rail added in `be5c282` should now refuse that anyway;
+   * the verification failure logs the exception **class**: `InvalidCredentialsError` = the server
+     REFUSED the new password (the change really did not take) · `AuthUnavailableError` = we could not
+     ask, i.e. a false alarm.
+
+### The account table (read-only, from the live server, 2026-09-12)
+
+| name | has_password | admin | folders | id |
+|---|---|---|---|---|
+| `rkm` (renamed from `admin`) | True | **True** | 0 (sees all) | 1760c9b0… |
+| Geetanjali | True | False | 1 | b556e3f2… |
+| rajeev | True | False | 3 | 96ad5947… |
+| sharanya | False | False | 1 | bbae2602… |
+
+⚠ **`rajeev` currently has the password `AppPath-Bbb2`** — this session's probes set it to a known
+value to measure. Change it from Household, or ask the agent to clear it. `rkm` and Geetanjali are
+untouched. `.env` already carries `RKM_JELLYFIN_ADMIN_USER=rkm` (he updated it — that is what let
+this session read the server at all).
+
+---
+
+### What this session established (each one MEASURED, never inferred)
+
+**1. `ResetPassword: true` is destructive — the original "Set a password does nothing" bug.**
+Jellyfin 10.11.11 returns **204, sets NOTHING, and CLEARS a password that existed**; the working body
+is `ResetPassword: false` (an administrator resetting a password it does NOT know works too — the
+caller's privilege authorises it, not the flag). The codebase believed the opposite. Fixed in
+`6e34438`: the flag is gone from provider/ABC/facade, and the write now re-reads to confirm.
+→ Full matrix: `docs/ADMIN_CREDENTIALS_PLAN.md` §6c.
+
+**2. The self-change path works; the OWNER fallback is the dangerous one.**
+With the profile set in the session, the app's own `change_own_password()` lands (verified by logging
+in). With **no** profile set, every call falls back to the OWNER — so a change could be reported that
+landed on the **administrator's** account while the screen showed a member's profile. Rails added:
+`be5c282` refuses a password change when the session has no profile (409, "Choose a profile first").
+→ §6d.
+
+**3. A session remembers the account's NAME from when the profile was selected — and that name was
+used to verify the change.** This is the answer to *"it works for geetanjali but only doesn't work for
+rajeev"*: `rajeev` was renamed at some point, Geetanjali never was, so the verification signed in under
+a name the server no longer has and refused a change that may have landed. Fixed in `1000bbe` (the api
+resolves the name from the server, **by id**) and `a978f87` (the screen labels the account with the
+server's current name). Same class as the Phase 2 rename trap, one surface further out.
+
+**4. A 2xx from Jellyfin is not evidence.** The screen said "Password changed" while nothing had
+changed; the route now **proves** it by signing in with the new password, on its own
+`rkm-password-verify` device (never the app's device — Jellyfin rotates a `(device, user)` token on
+every login, and verifying on it would kill the session asking). Failure is reported as what was
+measured ("could not be confirmed"), never as a conclusion.
+
+**5. The password-in-the-Network-tab question, answered.** A browser must send the password for the
+server to check it; it appears in the Network tab for ANY web login form (Jellyfin's own UI, Plex,
+Gmail). What matters, all verified in this app: never in a URL/query string · never in
+`localStorage`/`sessionStorage` · never written to logs (pinned by a test) · never echoed in a
+response · masked on screen. **The real caveat is plain HTTP on `:8124`** — loopback-only on his
+machine, encrypted over the tailnet; it would need TLS in front if ever exposed beyond that.
+
+---
+
+### Open issues to pick up
+
+1. **rajeev's My-password result** — awaiting his deploy + retry (see the two questions above). The
+   stale-name fix probably resolves it, but it is **NOT confirmed** — do not claim it works.
+2. **Stale names in other surfaces.** The header chip and the picker show the session's remembered
+   `profile.name`, so a rename made elsewhere leaves them stale too. Candidate follow-up: resolve the
+   display name server-side wherever a profile name is shown, or refresh the session's stored name on
+   activation. (`rename_identity` in `services/auth.py` already updates the CURRENT session — this is
+   about OTHER sessions/devices.)
+3. **Phase 1's fresh-install test on a throwaway stack** — still never run (no Docker daemon in the
+   sandbox). Own project name, own ports, empty volumes, then `down -v`.
+4. **Phase 4** — `rkm-cinema.ps1 reset-admin-password` from the volume key + an OPERATIONS runbook.
+   More valuable now: it is the break-glass when nobody knows the administrator's password.
+5. **Phase 5 / Phase E** — ADR-0006, the 401/403 enforcement sweep, docs truth pass, PROGRESS record.
+6. **Enforcement is still OFF** (`RKM_AUTH_REQUIRED=false`): a signed-out visitor still sees the app.
+   Arming it stays HIS explicit opt-in.
+
+### Tooling added this session (reusable, read-only by default)
+
+`tools/probe_password_write.py` — prints what Jellyfin holds for every account; with
+`--target X --password Y` it drives the **app's own** `set_user_password()` and confirms by logging in
+with the new value. It is the verifier for any future password work. It speaks JSON properly now (its
+first version 415'd itself, and the tool now shouts when it sees a 415 so its own bug can never be
+mistaken for the app's).
+
+### Commits this session (all pushed on `feat/auth-multiuser`)
+
+`57dd122` Phase 3 "My password" · `0b8ee20` its record · `09d466a` picker lock cache ·
+`6e34438` the destructive password flag · `11eaa91` its record · `0e2c38d` prove the change ·
+`be5c282` refuse without a profile · `1000bbe` verify with the server's name · `a978f87` show the
+server's name.
+
+**Gates at hand-off:** 933 backend pytest · ruff clean · 266 vitest · tsc + build clean · openapi 53
+paths (unchanged) · docs links resolve · `check_password_change.py` 4/4, `check_household_ui.py` 4/4,
+`check_profile_picker.py` + `check_login_flow.py` green.
+
+### The lesson worth carrying (it cost a full live round-trip per combination)
+
+**Every unit test passed — 900+ of them — while the feature did nothing on a real server.** A 2xx from
+`/Users/Password` was never evidence, and neither was re-reading `HasPassword` (true already when an
+account had a password, so it cannot tell a real change from a silent no-op — that misread cost one
+whole round). The only proof is **logging in with the value you just set**. Same family as the
+`/Sessions/Playing*` trap (204, stores nothing).
+
+## ▶ NEXT SESSION — START HERE: the password bug is FIXED (`6e34438`) — his live "set a passwo  → ✅ **SUPERSEDED 2026-09-12 by the block above** (the verification and the stale-name fixes landed after it, `1000bbe` + `a978f87`); kept for its detail — strd" never worked · next: deploy api+web, then Phase 4
 
 **His report (verbatim):** *"password for user profile rajeev didn't work...when i set a new passord..it
 says password changed but when i switch profile it doesnt have the lock icon and i can login just by

@@ -1397,20 +1397,41 @@ class JellyfinLibraryProvider(LibraryProvider):
         return self.mutate_user_policy(
             user_id, lambda policy: policy.update({"IsDisabled": bool(disabled)}))
 
-    def set_user_password(self, user_id: str, new_password: str, *,
-                          reset: bool = True) -> bool:
-        """Set or RESET another account's password.
+    def set_user_password(self, user_id: str, new_password: str) -> bool:
+        """Set or reset another account's password (the administrator's path).
 
-        ⚠ The target is a QUERY parameter (``/Users/Password?userId=``), NOT a path
-        segment — the path form 404s (measured live). ``ResetPassword: true`` is what lets
-        an administrator change somebody else's password without knowing the old one.
+        ⚠ The target is a QUERY parameter (``/Users/Password?userId=``), NOT a path segment —
+        the path form 404s (measured live).
+
+        ⚠⚠ ``ResetPassword`` is sent as **false**, ALWAYS, and this method deliberately has no
+        parameter to change that. Measured against this server (Jellyfin 10.11.11, 2026-09-12):
+
+            ResetPassword: true   -> HTTP 204, sets NOTHING, and CLEARS a password that existed
+            ResetPassword: false  -> HTTP 204, the password is really set
+
+        verified by logging in with the new value. The earlier belief here — that ``true`` is what
+        lets an administrator change somebody else's password without knowing the old one — is
+        wrong on this server: **the administrator's own privilege is what authorises the reset**,
+        not the flag, and the flag is actively destructive. It is what made "Set a password" on
+        the Household screen report success and change nothing (and wipe passwords set elsewhere).
+
+        A self-change by the account itself is ``change_own_password`` — same shape, and there the
+        current password IS checked (403 when wrong).
         """
-        if not self._configured() or not user_id:
+        if not self._configured() or not user_id or not str(new_password or ""):
             return False
         ok, _ = self._api(
             "POST", f"/Users/Password?userId={urllib.parse.quote(str(user_id))}",
-            {"CurrentPw": "", "NewPw": str(new_password), "ResetPassword": bool(reset)})
-        return ok
+            {"CurrentPw": "", "NewPw": str(new_password), "ResetPassword": False})
+        if not ok:
+            return False
+        # A 2xx from this endpoint is not proof: it answered 204 while storing nothing for the
+        # whole life of this feature. Re-read the account — the write has to leave a trace
+        # (``HasPassword`` true) or it did not happen.
+        code, payload = self._api("GET", f"/Users/{urllib.parse.quote(str(user_id))}")
+        if not code or not isinstance(payload, dict):
+            return False
+        return bool(payload.get("HasPassword"))
 
     def change_own_password(self, current_password: str, new_password: str) -> Optional[str]:
         """Change the password OF THE IDENTITY THIS CALL IS MADE AS. ``None`` means it worked.

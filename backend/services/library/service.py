@@ -142,9 +142,12 @@ class LibraryProvider(ABC):
         """Enable/disable an account. Default ``None`` (not supported)."""
         return None
 
-    def set_user_password(self, user_id: str, new_password: str, *,
-                          reset: bool = True) -> bool:
-        """Set or reset another account's password. Default ``False`` (not supported)."""
+    def set_user_password(self, user_id: str, new_password: str) -> bool:
+        """Set or reset another account's password. Default ``False`` (not supported).
+
+        No ``reset`` flag on purpose — see the Jellyfin provider: on this server that flag is
+        destructive (204, stores nothing, clears an existing password), so it is not offered.
+        """
         return False
 
     def change_own_password(self, current_password: str, new_password: str) -> Optional[str]:
@@ -661,11 +664,15 @@ class LibraryService:
                 return updated
         return None
 
-    def set_user_password(self, user_id: str, new_password: str, *, reset: bool = True) -> bool:
-        """Set or RESET another account's password. ``True`` means the server accepted it."""
+    def set_user_password(self, user_id: str, new_password: str) -> bool:
+        """Set or RESET another account's password. ``True`` means the write is CONFIRMED.
+
+        ``True`` is not "the server said 200" — the provider re-reads the account, because this
+        endpoint has answered 204 while storing nothing (measured 2026-09-12).
+        """
         for p in self._providers:
             try:
-                if p.set_user_password(user_id, new_password, reset=reset):
+                if p.set_user_password(user_id, new_password):
                     return True
             except Exception as e:
                 logger.warning("set_user_password failed for %s: %s", p.name, e)

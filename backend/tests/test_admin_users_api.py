@@ -116,7 +116,7 @@ class FakeLibrary:
                 return dict(user)
         return None
 
-    def set_user_password(self, user_id, new_password, *, reset=True):
+    def set_user_password(self, user_id, new_password):
         self.passwords.append({"user_id": user_id, "new_password": new_password})
         return True
 
@@ -557,7 +557,7 @@ class TestNoSecretLeaks:
 class TestProviderPolicyWrite:
     """The provider-level trap: the policy is REPLACED wholesale, so writes must merge."""
 
-    def _provider(self, policy):
+    def _provider(self, policy, *, has_password=True):
         provider = JellyfinLibraryProvider(config=SimpleNamespace(
             JELLYFIN_URL="http://jellyfin:8096", JELLYFIN_API_KEY="key"))
         calls = []
@@ -565,7 +565,8 @@ class TestProviderPolicyWrite:
         def fake_api(method, path, body=None):
             calls.append({"method": method, "path": path, "body": body})
             if method == "GET":
-                return True, {"Id": "uid-1", "Name": "Guest", "Policy": dict(policy)}
+                return True, {"Id": "uid-1", "Name": "Guest", "Policy": dict(policy),
+                              "HasPassword": has_password}
             return True, {}
 
         provider._api = fake_api
@@ -605,11 +606,33 @@ class TestProviderPolicyWrite:
         assert provider.set_folder_access("uid-1", ["f1"]) is None
         assert calls == []
 
-    def test_the_password_route_uses_the_query_form(self):
+    def test_the_password_write_uses_the_working_shape_and_proves_itself(self):
+        """Measured against Jellyfin 10.11.11 on 2026-09-12 — the shape matters more than it looks.
+
+        `ResetPassword: true` answers **204, sets nothing, and CLEARS a password that existed**;
+        the shape that really writes is `ResetPassword: false` (the administrator's own privilege
+        is what authorises a reset, not the flag). That is what made "Set a password" on the
+        Household screen report success and change nothing.
+
+        So the flag is not a parameter any more — this test pins that it cannot come back — and a
+        2xx alone is NOT accepted as success: the provider re-reads the account and reports True
+        only when a password is really there.
+        """
         provider, calls = self._provider({})
-        provider.set_user_password("uid-1", "new-pw")
-        assert calls[-1]["path"] == "/Users/Password?userId=uid-1"
-        assert calls[-1]["body"] == {"CurrentPw": "", "NewPw": "new-pw", "ResetPassword": True}
+        assert provider.set_user_password("uid-1", "new-pw") is True
+        assert calls[0]["path"] == "/Users/Password?userId=uid-1"
+        assert calls[0]["body"] == {"CurrentPw": "", "NewPw": "new-pw", "ResetPassword": False}
+        assert calls[1]["method"] == "GET", "the write must be confirmed, not assumed"
+
+    def test_a_204_that_stored_nothing_is_not_success(self):
+        """The exact live failure: accepted, reported OK, and the account still had no password."""
+        provider, _ = self._provider({}, has_password=False)
+        assert provider.set_user_password("uid-1", "new-pw") is False
+
+    def test_an_empty_password_is_never_sent(self):
+        provider, calls = self._provider({})
+        assert provider.set_user_password("uid-1", "") is False
+        assert calls == []
 
     def test_creating_without_a_password_omits_the_key_entirely(self):
         """`Password: ""` is a different request from omitting it."""

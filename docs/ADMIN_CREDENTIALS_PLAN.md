@@ -112,6 +112,47 @@ Renaming the account breaks anything that assumes the name:
 | **4** | **Recovery, documented and tested**: `rkm-cinema.ps1 reset-admin-password` → reads the API key from the volume (never from `.env`), prompts for a new password, calls `POST /Users/Password?userId=…&ResetPassword=true`, then VERIFIES by signing in; `OPERATIONS.md` gains the runbook and the "forgot everything" ladder | the tool's own verification output; pytest for its pure parts |
 | **5** | ADR (the credential model), docs truth pass (`ARCHITECTURE`, `OPERATIONS`, `README`), PROGRESS record | full suite + docs links |
 
+### 6c. ⚠ MEASURED: `ResetPassword: true` is a silent no-op that CLEARS passwords
+
+**Found live 2026-09-12**, from his report: *"i have logged in as admin(rkm) -> household -> set a
+password in rajeev -> it still says no password"*. Measured on Jellyfin **10.11.11** by driving every
+combination against a real account, each attempt verified by **logging in with the intended value**
+(never by the status code):
+
+| credential | body | result |
+|---|---|---|
+| admin session token | `ResetPassword: true`, `CurrentPw: ""` | **204 — sets nothing, CLEARS an existing password** |
+| app API key (what Household sent) | `ResetPassword: true` | **204 — sets nothing** |
+| app API key | `ResetPassword: false`, `CurrentPw: ""` | **204 — the password IS set** ✔ |
+| admin session token | `ResetPassword: false`, `CurrentPw: "guessing"` | **204 — still sets it** ✔ (privilege, not the flag, authorises a reset) |
+| member's own token | `ResetPassword: false`, correct `CurrentPw` | **204 — set** ✔ |
+| member's own token | `ResetPassword: false`, wrong `CurrentPw` | **403** ✔ (refused, as the screen says) |
+
+**So the app had it exactly backwards.** The belief recorded in this codebase — *"`ResetPassword: true`
+is what lets an administrator change somebody else's password without knowing the old one"* — is
+false here: the flag does nothing, **and wipes passwords set elsewhere**, which is why the same
+account could be "set" repeatedly and still have none. The administrator's own privilege is what
+authorises a reset.
+
+**What changed** (`backend/services/library/{jellyfin,service}.py`):
+
+* `set_user_password()` sends **`ResetPassword: false`, always**, and the parameter is **gone** — a
+  flag that must never be true should not exist for someone to pass by accident. `change_own_password`
+  already sent the working shape; only Household's path was broken.
+* The write now **proves itself**: after the 2xx the provider re-reads the account and reports
+  success only when a password is really there. This endpoint has answered 204 while storing nothing
+  for the whole life of the feature — a 2xx from it is not evidence.
+* Regression tests pin both: the body carries `ResetPassword: false`, and a 204 with no password
+  afterwards is a **failure**, not a success.
+
+**Verified live, end to end, against his server** — the app's own `set_user_password()` on a real
+member: `accepted=True`, `has_password` flips to true, and a real login with the new value succeeds.
+`tools/probe_password_write.py` is the repeatable verifier (read-only by default; `--target X
+--password Y` drives the app's own code and checks it by logging in).
+
+⚠ **Nothing about this was provable from unit tests** — every test in the suite passed while the
+feature did nothing on a real server. It took one live round-trip per combination.
+
 ### 6b. Phase 3 as built — "Settings → My password"
 
 **Shipped 2026-09-12.** Contract **52 → 53 paths** (one additive route). `POST /api/auth/profile/password`,

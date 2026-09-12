@@ -99,15 +99,25 @@ def login_works(env: dict, name: str, password: str) -> bool:
 def try_shape(env: dict, token: str, user_id: str, label: str, body: dict) -> tuple[int, bool | None]:
     """POST one call shape, then re-read whether the account HAS a password now."""
     res = http_json(f"{jellyfin_base(env)}/Users/Password?userId={user_id}",
-                    data=body, token=token, method="POST")
+                    data=body, token=token, method="POST",
+                    headers={"Content-Type": "application/json"})
     status = 200
+    detail = ""
     if isinstance(res, dict):
         if "__http_error__" in res:
             status = int(res["__http_error__"])
+            detail = str(res.get("body") or "")[:120]
         elif "__error__" in res:
             status = 0
+            detail = str(res.get("__error__"))[:120]
     after = has_password(env, token, user_id)
     print(f"    {label:52} HTTP {status:<4} has_password now: {after}")
+    if detail:
+        print(f"      body: {detail}")
+    if status == 415:
+        print("      !! 415 = WE sent a body the server could not read (missing JSON content "
+              "type). This is a PROBE bug, not the app's — fix the probe before drawing any "
+              "conclusion from it.")
     return status, after
 
 
@@ -147,36 +157,38 @@ def main() -> int:
     print(f"    administrator={pol.get('IsAdministrator')} "
           f"has_password={target.get('HasPassword')}")
 
-    sha1_empty = hashlib.sha1(b"").hexdigest()  # noqa: S324 - Jellyfin's own field format
-    shapes = [
-        ("1. what Phase 3 (My password) sends: CurrentPw + ResetPassword:false",
-         {"CurrentPw": "", "NewPw": args.password, "ResetPassword": False}),
-        ("2. what Household sends: ResetPassword:true (elevated)",
-         {"CurrentPw": "", "NewPw": args.password, "ResetPassword": True}),
-        ("3. legacy field: CurrentPassword (sha1) + ResetPassword:false",
-         {"CurrentPassword": sha1_empty, "NewPw": args.password, "ResetPassword": False}),
-    ]
+    # THE APP'S OWN CODE, not a hand-made request: this is what Household calls, so a pass here
+    # means the screen works. (Measured 2026-09-12: the working body is `ResetPassword: false` —
+    # `true` answers 204, stores nothing and CLEARS an existing password.)
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "backend"))
+    from services.library.jellyfin import JellyfinLibraryProvider  # noqa: E402
 
-    landed: str | None = None
-    for label, body in shapes:
-        status, after = try_shape(env, token, user_id, label, body)
-        if after:
-            if login_works(env, name, args.password):
-                landed = label
-                print(f"    -> LANDED: a real login with the new password succeeded")
-                break
-            print("    -> HasPassword is true but the new password does NOT log in "
-                  "(the account had a different one)")
+    class _Cfg:
+        JELLYFIN_URL = jellyfin_base(env)
+        JELLYFIN_API_KEY = token
+        JELLYFIN_BROWSER_URL = ""
+        JELLYFIN_SCAN_TTL = 60
+
+    provider = JellyfinLibraryProvider(config=_Cfg())
+    accepted = provider.set_user_password(user_id, args.password)
+    after = has_password(env, token, user_id)
+    print(f"    app's own set_user_password()  accepted={accepted}  has_password now={after}")
+    if provider.last_api_error():
+        print(f"      last api error: {provider.last_api_error()}")
+
+    landed = bool(after and login_works(env, name, args.password))
     print()
-
     if landed:
-        print(f"VERDICT: this shape works -> {landed}")
+        print("VERDICT: the password is set — a real login with the new value succeeded.")
         if pol.get("IsAdministrator"):
             print("⚠ that account is the ADMINISTRATOR: put this password into .env as "
                   "RKM_JELLYFIN_ADMIN_PASSWORD so the tooling can sign in again")
+    elif after:
+        print("VERDICT: the account HAS a password, but not the one passed here — it was left as "
+              "it was, or something else set it. Re-run and log in to check.")
     else:
-        print("VERDICT: NO shape changed the password. The write is being accepted and stored "
-              "nowhere — the bug to fix (do NOT trust a 2xx from /Users/Password).")
+        print("VERDICT: the write did NOT land — the account still has no password. Do NOT trust "
+              "a 2xx from /Users/Password; the provider re-reads and should have said False.")
 
     # leave nothing behind: purge the probe device with the ADMIN token (never our own credential)
     http_json(f"{jellyfin_base(env)}/Devices?api_key={token}", method="DELETE")

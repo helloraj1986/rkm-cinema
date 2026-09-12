@@ -1,4 +1,4 @@
-## ▶ LATEST SESSION (2026-09-13, later) — HOUSEHOLD WAS HIDDEN FROM THE ADMIN TOO (fixed) + the account menu · next = his eyeball, then queue item #2
+## ▶ LATEST SESSION (2026-09-13, later) — HOUSEHOLD WAS HIDDEN FROM THE ADMIN TOO (fixed, ✅ CONFIRMED by him) + the account menu · next = queue item #2
 
 **His report, verbatim:** *"you have removed the household from rkm(admin) as well, now i can change
 profile passwords and access for other users...it was supposed to be aviable only to admin user and
@@ -55,6 +55,11 @@ the sidebar nav + the mobile "More" sheet are **navigation only** — nothing du
 opening the gate: `mayManageHousehold` true for a member fails both member surfaces);
 `check_profile_picker.py` and `check_login_flow.py` were updated to open the menu, since they looked
 for a standalone "Switch profile" link and "Sign out" button.
+
+### ✅ HE CONFIRMED (2026-09-13): *"yes it works as intended"*
+
+Household is back in the account menu for the administrator, absent for a member's profile, and the
+account-menu consolidation reads as designed. The steps below are the record of what he verified.
 
 ### Waiting on HIM, in order
 

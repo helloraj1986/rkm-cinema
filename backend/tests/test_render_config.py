@@ -166,10 +166,17 @@ def test_ensure_storage_warns_when_no_root_is_configured(rc, tmp_path, capsys):
     assert "no RKM_MEDIA_PATH configured" in capsys.readouterr().out
 
 
-def test_generated_password_is_persisted_once(rc):
-    """A blank password is generated + written back to .env exactly once."""
-    rc.build_api_vars({"MEDIA_SERVER": "jellyfin", "TMDB_API_KEY": "k"})
-    assert any(k == "RKM_JELLYFIN_ADMIN_PASSWORD" for _, k, _ in rc._test_writes)
+def test_the_admin_password_is_never_generated_or_written(rc):
+    """Phase 1 (ADMIN_CREDENTIALS_PLAN.md §6): the repo must NOT carry the admin's password.
+
+    It used to be generated into .env when blank — which is how the value got there, and why
+    deleting the line never stuck. The provisioner generates it on a fresh install and prints it
+    once instead, and the api never receives it at all.
+    """
+    api = rc.build_api_vars({"MEDIA_SERVER": "jellyfin", "TMDB_API_KEY": "k"})
+    assert not any(k == "RKM_JELLYFIN_ADMIN_PASSWORD" for _, k, _ in rc._test_writes), \
+        rc._test_writes
+    assert "JELLYFIN_ADMIN_PASSWORD" not in api, "the api must not be handed a password"
 
 
 # ---------------------------------------------------------------- subtitles (Phase 0)
@@ -244,14 +251,14 @@ def test_retired_media_server_still_renders_and_resolves_to_jellyfin(rc, capsys)
     assert "MEDIA_SERVER=plex is not a live backend" in out   # warned, not failed
 
 
-def test_retired_media_server_still_generates_the_admin_password(rc, monkeypatch):
-    """The password generation is gated on the backend — a legacy value must not skip it."""
+def test_a_retired_media_server_writes_no_admin_password_either(rc, monkeypatch):
+    """A legacy MEDIA_SERVER is still normalised to jellyfin — and still writes no password."""
     writes = []
     monkeypatch.setattr(rc, "write_env_key", lambda path, k, v: writes.append((k, v)))
-    env = {"MEDIA_SERVER": "emby", "TMDB_API_KEY": "k"}   # no JELLYFIN admin password yet
+    env = {"MEDIA_SERVER": "emby", "TMDB_API_KEY": "k"}   # no JELLYFIN admin password anywhere
     api = rc.build_api_vars(env)
     assert api["MEDIA_SERVER"] == "jellyfin"
-    assert any(k == "RKM_JELLYFIN_ADMIN_PASSWORD" and v for k, v in writes), writes
+    assert not [k for k, _ in writes if "ADMIN_PASSWORD" in k], writes
 
 
 def test_unknown_media_server_warns_instead_of_failing(rc, capsys):

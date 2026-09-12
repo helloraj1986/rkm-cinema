@@ -23,7 +23,8 @@ if (!(Test-Path .\.env)) {
     if (Test-Path .\.env.example) { Copy-Item .\.env.example .\.env }
     Write-Host "Created .env from .env.example." -ForegroundColor Yellow
     Write-Host "Open .env and fill in your keys (TMDB_API_KEY, RADARR/SONARR/PLEX/EMBY/JELLYFIN ...), then re-run bootstrap." -ForegroundColor Yellow
-    Write-Host "Jellyfin backend: leave RKM_JELLYFIN_ADMIN_PASSWORD blank on first run - a password is generated and saved to .env automatically." -ForegroundColor Yellow
+    Write-Host "Jellyfin backend: leave RKM_JELLYFIN_ADMIN_PASSWORD blank. On the first run the provisioner" -ForegroundColor Yellow
+    Write-Host "GENERATES the admin password and prints it ONCE in this console - record it then. It is NOT saved to .env." -ForegroundColor Yellow
 }
 
 # --- Docker present? ---

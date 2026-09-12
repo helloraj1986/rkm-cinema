@@ -45,10 +45,28 @@ Expected in the deploy output:
 ```
 [env] media root: D:/RKM_MEDIA -> /data (ok)
 [env] media root: B:/RKM_MEDIA -> /media2 (extra drive ...)
-[jellyfin] admin created + authenticated 'admin'
+[jellyfin] using the stored API key - no admin password needed (administrator: admin)
 [jellyfin] libraries to wire: ['Movies Kids', 'Movies', 'TV Shows'] (source: configured)
 [jellyfin] triggered library scan (POST /Library/Refresh) -> 204
 ```
+
+`using the stored API key` is what every run AFTER the first one says: the key minted on the first
+run lives in the `rkm_shared` volume, so **bootstrap needs no admin password at all**
+(ADMIN_CREDENTIALS_PLAN.md §6). On the very FIRST run you instead see
+`[jellyfin] admin created + authenticated 'admin'`, immediately followed by a boxed
+
+```
+======================================================================
+ JELLYFIN ADMIN PASSWORD - SHOWN ONCE. Record it now.
+   user:     admin
+   password: <the generated password>
+======================================================================
+```
+
+**Record it then** (a password manager, or paper): it is shown once, it is NOT written to `.env`,
+and `.env` is not the place to go looking for it. It is rotatable at any time in the app
+(`Settings -> Household -> Reset password`). `RKM_JELLYFIN_ADMIN_PASSWORD` still works if you set it
+— it overrides both, and it is also what the local Python tools sign in with.
 
 ### Starting Jellyfin completely fresh (damaged database)
 

@@ -101,6 +101,7 @@ finally {
 Write-Step "Done"
 Write-Ok "state restored from $archiveName"
 Write-Ok "next: hard-refresh the app (Ctrl+Shift+R) and check Continue Watching /"
-Write-Ok "      the libraries. Jellyfin login is RKM_JELLYFIN_ADMIN_USER /"
-Write-Ok "      RKM_JELLYFIN_ADMIN_PASSWORD from .env (both travel in /config)."
+Write-Ok "      the libraries. Jellyfin sign-in uses the ADMIN ACCOUNT AS IT WAS IN THE BACKUP"
+Write-Ok "      (users and their password hashes travel inside /config), NOT whatever .env says:"
+Write-Ok "      RKM_JELLYFIN_ADMIN_PASSWORD is only an override and may well be blank."
 exit 0

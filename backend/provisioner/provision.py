@@ -7,25 +7,33 @@ Idempotent. Steps (validated against jellyfin/jellyfin:latest 10.11.x):
   1. Wait for Jellyfin (System/Info/Public → 200).
   2. Read StartupWizardCompleted from System/Info/Public (NOT from
      Startup/Configuration, whose body has no such flag).
-  3. Try to authenticate the configured admin. If it works → already set up.
-  4. Else, if the wizard is pending, run the headless Startup sequence:
-       GET  /Startup/Configuration        # arm the startup session
-       GET  /Startup/User                 # arm user creation (required on 10.11)
-       POST /Startup/User {Name, Password: SHA1-HEX}   # Password IS the SHA1, not plaintext
-       POST /Startup/Complete
-     then re-authenticate.
+  3. Pick a credential, in this order (ADMIN_CREDENTIALS_PLAN.md §6, Phase 1):
+       a. the STORED API key from /shared/runtime.json — no password needed at all, which is what
+          every run after the first one takes;
+       b. the configured password (JELLYFIN_ADMIN_PASSWORD) — the manual override;
+       c. the headless Startup sequence, on a genuinely FRESH install, which GENERATES a strong
+          password, sets it, and PRINTS IT ONCE for the user to record. Nothing is written to any
+          file — the repo must not carry the admin's password:
+            GET  /Startup/Configuration      # arm the startup session
+            GET  /Startup/User               # arm user creation (required on 10.11)
+            POST /Startup/User {Name, Password}   # Password is PLAINTEXT, not a SHA1
+            POST /Startup/Complete
+          then re-authenticate.
+  4. The administrator is resolved BY POLICY (an enabled ``IsAdministrator``), never by the literal
+     name 'admin': renaming the account must not break provisioning.
   5. Create / reuse an RKM API key (POST /Auth/Keys).
   6. Register Movies + TV Shows libraries at /data/media/_movie, /data/media/_tv.
   7. Write /shared/runtime.json so the rkm `api` container can read the key
      (chicken-and-egg: it doesn't exist until here).
 
-Env: JELLYFIN_URL, JELLYFIN_ADMIN_USER, JELLYFIN_ADMIN_PASSWORD,
-JELLYFIN_BROWSER_URL, TZ. Verbose stdout for troubleshooting.
+Env: JELLYFIN_URL, JELLYFIN_ADMIN_USER (a FIRST-RUN HINT only), JELLYFIN_ADMIN_PASSWORD
+(OPTIONAL override), JELLYFIN_BROWSER_URL, TZ. Verbose stdout for troubleshooting.
 """
 from __future__ import annotations
 
 import json
 import os
+import secrets
 import sys
 import time
 import urllib.parse
@@ -37,6 +45,10 @@ ADMIN_USER = os.environ.get("JELLYFIN_ADMIN_USER", "admin")
 ADMIN_PASSWORD = os.environ.get("JELLYFIN_ADMIN_PASSWORD", "")
 BROWSER_URL = os.environ.get("JELLYFIN_BROWSER_URL", "http://localhost:8098")
 RUNTIME_PATH = "/shared/runtime.json"
+
+#: The password generated for the admin on a FRESH install, or "" when none was generated. Only
+#: set once it is proven to work (see ensure_admin) — it is never written to a file.
+GENERATED_ADMIN_PASSWORD = ""
 
 
 def _request(method, path, *, token=None, body=None, q=None, timeout=15):
@@ -105,9 +117,11 @@ def wizard_pending() -> bool | None:
     return None
 
 
-def authenticate(quiet: bool = False):
+def authenticate(password: str | None = None, quiet: bool = False):
+    """Sign in as the admin. ``password=None`` means "the configured one"."""
+    pw = ADMIN_PASSWORD if password is None else password
     code, data = _request("POST", "/Users/AuthenticateByName",
-                          body={"Username": ADMIN_USER, "Pw": ADMIN_PASSWORD})
+                          body={"Username": ADMIN_USER, "Pw": pw})
     if code == 200 and isinstance(data, dict):
         return data.get("AccessToken")
     if not quiet:
@@ -116,7 +130,77 @@ def authenticate(quiet: bool = False):
     return None
 
 
-def run_startup() -> bool:
+def stored_api_key() -> str:
+    """The API key a previous run recorded, or "" when there is none.
+
+    This is the credential that removes the password from the bootstrap path entirely: it lives in
+    the ``rkm_shared`` volume, survives rebuilds, and is never typed by a human.
+    """
+    try:
+        with open(RUNTIME_PATH, encoding="utf-8") as fh:
+            return str((json.load(fh) or {}).get("JELLYFIN_API_KEY") or "")
+    except Exception:
+        return ""
+
+
+def key_works(key: str) -> bool:
+    """Is a stored key still accepted for an ADMINISTRATOR-level call?
+
+    ``GET /Library/VirtualFolders`` is the probe because it requires elevation: a member's session
+    token answers 403 while a server API key answers 200 (measured 2026-09-12). It mutates nothing,
+    and a failure only means "fall through to the password paths" — never an error.
+    """
+    code, _ = _request("GET", "/Library/VirtualFolders", token=key, timeout=8)
+    return code == 200
+
+
+def enabled_admin(credential: str) -> str:
+    """Name of an ENABLED administrator, found BY POLICY — never by the name 'admin'.
+
+    A rename must not break provisioning (ADMIN_CREDENTIALS_PLAN.md §5), so ``ADMIN_USER`` is a
+    first-run hint and nothing more. Returns "" when the server cannot be asked: this is a log
+    line, never a gate.
+    """
+    code, users = _request("GET", "/Users", token=credential, timeout=8)
+    if code != 200 or not isinstance(users, list):
+        return ""
+    for row in users:
+        policy = (row or {}).get("Policy") or {}
+        if policy.get("IsAdministrator") and not policy.get("IsDisabled"):
+            return str((row or {}).get("Name") or "")
+    return ""
+
+
+def generate_password() -> str:
+    """A strong random password for the admin account on a FRESH install.
+
+    The same shape ``render_config`` used to generate for ``.env`` (url-safe, 18 bytes). What
+    changed is where it goes: onto the account and into the console, never into a file.
+    """
+    return secrets.token_urlsafe(18)
+
+
+def print_password_notice(name: str, password: str) -> None:
+    """Show the freshly generated admin password — the ONE time it is ever displayed.
+
+    Printed only after the wizard step succeeded AND the account authenticated with it, so it can
+    never announce a password that was not actually set. Nothing is written to ``.env``; bootstrap
+    writes no log file either (measured 2026-09-12), so this is not a secret at rest — but a
+    console IS a transcript, which is why it says outright that it is shown once.
+    """
+    line = "=" * 70
+    print(line)
+    print(" JELLYFIN ADMIN PASSWORD - SHOWN ONCE. Record it now.")
+    print(f"   user:     {name}")
+    print(f"   password: {password}")
+    print(" It is NOT saved in any file. You can change it any time in the app:")
+    print(" Settings -> Household -> Reset password.")
+    print(line)
+
+
+def run_startup(password: str | None = None) -> bool:
+    """Create the admin via the headless startup wizard, with ``password`` (or the configured one)."""
+    pw = ADMIN_PASSWORD if password is None else password
     print("[jellyfin] first-run: setting first-user admin password via Startup wizard")
     # POST /Startup/User RENAMES the pre-existing first user + sets its password
     # via UserManager.ChangePassword, which hashes the value it's given. So the
@@ -128,7 +212,7 @@ def run_startup() -> bool:
         code, _ = _request("GET", step, timeout=8)
         print(f"[jellyfin] GET {step} -> {code}")
     code, body = _request("POST", "/Startup/User", body={
-        "Name": ADMIN_USER, "Password": ADMIN_PASSWORD})
+        "Name": ADMIN_USER, "Password": pw})
     print(f"[jellyfin] POST /Startup/User -> {code} {body if code not in (200, 204) else ''}")
     code2, _ = _request("POST", "/Startup/RemoteAccess",
                         body={"EnableRemoteAccess": True, "EnableAutomaticPortMapping": False})
@@ -139,14 +223,29 @@ def run_startup() -> bool:
 
 
 def ensure_admin(retries=40, delay=3.0) -> str | None:
-    """Create or authenticate the admin user, waiting out a fresh install.
+    """Return a credential for the whole provisioning run — password-free when possible.
 
-    A brand-new /config volume needs time: authentication can keep returning 503
-    (the HTML startup page) for a minute or more AFTER /System/Info/Public starts
-    answering JSON. Only give up early when Jellyfin says the wizard is COMPLETE
-    and auth STILL fails — that is a credentials problem, and retrying will not
-    fix it.
+    The order (ADMIN_CREDENTIALS_PLAN.md §6, Phase 1):
+
+    1. **the STORED API key** from ``/shared/runtime.json``, if it still works. No password is
+       needed at all, which is what every run after the first one takes — so a password that the
+       user later changed (or never had) cannot break a bootstrap;
+    2. **the configured password** (the optional ``.env`` override);
+    3. **the startup wizard**, on a genuinely fresh install: GENERATE a strong password, set it,
+       and print it once for the user to record.
+
+    A brand-new /config volume needs time: authentication can keep returning 503 (the HTML startup
+    page) for a minute or more AFTER /System/Info/Public starts answering JSON. Only give up early
+    when Jellyfin says the wizard is COMPLETE and auth STILL fails — that is a credentials problem,
+    and retrying will not fix it.
     """
+    stored = stored_api_key()
+    if stored and key_works(stored):
+        admin = enabled_admin(stored)
+        print("[jellyfin] using the stored API key - no admin password needed"
+              + (f" (administrator: {admin})" if admin else ""))
+        return stored
+
     for attempt in range(1, retries + 1):
         token = authenticate(quiet=attempt > 1)
         if token:
@@ -155,17 +254,30 @@ def ensure_admin(retries=40, delay=3.0) -> str | None:
 
         pending = wizard_pending()
         if pending is True:
-            if run_startup():
-                token = authenticate(quiet=True)
+            password = ADMIN_PASSWORD or generate_password()
+            if run_startup(password):
+                token = authenticate(password=password, quiet=True)
                 if token:
                     print(f"[jellyfin] admin created + authenticated '{ADMIN_USER}'")
+                    if not ADMIN_PASSWORD:
+                        # Generated HERE, so this is the only place it can ever be shown — and it
+                        # is shown only now that it is proven to work. Never written to a file.
+                        global GENERATED_ADMIN_PASSWORD
+                        GENERATED_ADMIN_PASSWORD = password
+                        print_password_notice(ADMIN_USER, password)
                     return token
                 print("[jellyfin] created user but could not authenticate "
                       "(password hash mismatch?)")
         elif pending is False:
             print(f"[jellyfin] the startup wizard is COMPLETE but '{ADMIN_USER}' could "
-                  "not authenticate — check RKM_JELLYFIN_ADMIN_PASSWORD in .env "
-                  "(it must match the password Jellyfin was set up with)")
+                  "not authenticate. NOTHING WAS CHANGED. Fix it with ONE of these:")
+            print("[jellyfin]   * put the password that account actually has into the repo .env "
+                  "as RKM_JELLYFIN_ADMIN_PASSWORD, then re-run bootstrap;")
+            print(f"[jellyfin]   * reset it from Jellyfin's own dashboard ({BROWSER_URL}/web -> "
+                  "Dashboard -> Users), if you can still sign in there;")
+            print("[jellyfin]   * or, if this stack holds nothing you need, throw it away and "
+                  "start clean: docker compose -p <project> down -v  (this DELETES watch state) "
+                  "then re-run bootstrap.")
             return None
 
         if attempt < retries:
@@ -548,18 +660,16 @@ def ensure_libraries(admin_token):
 
 
 def main():
-    if not ADMIN_PASSWORD:
-        print("ERROR: JELLYFIN_ADMIN_PASSWORD not set (generated by render_config.py).")
-        sys.exit(1)
+    # NOTE: there is deliberately NO "JELLYFIN_ADMIN_PASSWORD must be set" guard any more. The repo
+    # must not have to carry the admin's password: a fresh install generates one (and prints it
+    # once), and every later run uses the API key already in the rkm_shared volume.
     wait_ready()
 
     token = ensure_admin()
     if not token:
-        print(f"[jellyfin] ERROR: could not create or authenticate the admin user "
-              f"'{ADMIN_USER}'.")
-        print("          If Jellyfin is sitting on its first-run wizard, complete it at "
-              f"{BROWSER_URL}/web with username '{ADMIN_USER}' and the password from "
-              ".env (RKM_JELLYFIN_ADMIN_PASSWORD), then re-run bootstrap.")
+        print(f"[jellyfin] ERROR: no usable credential for the admin account "
+              f"'{ADMIN_USER}' — see the options above. Bootstrap stops here rather than "
+              "half-provisioning the stack.")
         sys.exit(1)
 
     api_key = ensure_api_key(token)

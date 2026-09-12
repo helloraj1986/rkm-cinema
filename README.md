@@ -94,7 +94,8 @@ notepad .env                      # set RKM_MEDIA_PATH + your media folders/keys
 ```
 
 Then open **http://localhost:8124/** — and Jellyfin itself at
-**http://localhost:8098/web** (user `admin`, password from `RKM_JELLYFIN_ADMIN_PASSWORD`).
+**http://localhost:8098/web** (user `admin`; the password is set on the account — a fresh
+install prints it once during bootstrap, and you can change it any time in the app).
 
 First run does a full library scan: **2–4 h** for a large collection. Leave it alone
 while it runs — see the rules below.
@@ -157,7 +158,7 @@ docker compose -p rkm-bundled down          # stop (keeps state)
 | `RADARR_URL` / `SONARR_URL` / `PROWLARR_URL` + API keys | Your acquisition stack (bundled or existing on the LAN) |
 | `TMDB_API_KEY` | Metadata, artwork, discovery, similar titles |
 | `OPENSUBTITLES_API_KEY` | Online subtitle search + downloads. Free key from opensubtitles.com → *API Consumers*. Searching is unmetered; **downloads are** (5/day anonymous, more with the optional `OPENSUBTITLES_USERNAME`/`OPENSUBTITLES_PASSWORD` login). Leave blank and everything else works, without online subtitles |
-| `RKM_JELLYFIN_ADMIN_PASSWORD` | The bundled media server's admin password |
+| `RKM_JELLYFIN_ADMIN_PASSWORD` | **Optional.** The bundled media server's admin password. Leave blank — a fresh install generates one and prints it once, and later runs use the stored API key. Set it only to override the account's password, or for the local Python tools |
 
 **A container can only read what is bind-mounted.** Declaring a *library* on a drive
 is not enough — the *drive* must also be declared as a media root, or nothing can

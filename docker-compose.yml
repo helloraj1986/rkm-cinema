@@ -200,7 +200,12 @@ services:
     environment:
       JELLYFIN_URL: "http://jellyfin:8096"
       JELLYFIN_ADMIN_USER: "${RKM_JELLYFIN_ADMIN_USER:-admin}"
-      JELLYFIN_ADMIN_PASSWORD: "${RKM_JELLYFIN_ADMIN_PASSWORD:?set JELLYFIN_ADMIN_PASSWORD in the repo .env (render_config auto-generates it on first run)}"
+      # OPTIONAL (ADMIN_CREDENTIALS_PLAN.md Phase 1). A fresh install GENERATES the admin password
+      # in the provisioner and prints it once for the user to record; every later run uses the API
+      # key already in the rkm_shared volume, so bootstrap needs no password at all. Setting this
+      # overrides both — it is the escape hatch, and it is also what the local Python tools sign in
+      # with. It is never generated and never written back to .env.
+      JELLYFIN_ADMIN_PASSWORD: "${RKM_JELLYFIN_ADMIN_PASSWORD:-}"
       JELLYFIN_BROWSER_URL: "${RKM_JELLYFIN_BROWSER:-http://localhost:8098}"
       TZ: "${RKM_TIMEZONE:-Australia/Melbourne}"
       # Media libraries (MEDIA_LIBRARIES_PLAN): the provisioner wires every

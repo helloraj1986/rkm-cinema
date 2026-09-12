@@ -15,7 +15,8 @@ if [ ! -f .env ]; then
     if [ -f .env.example ]; then cp .env.example .env; fi
     echo "Created .env from .env.example."
     echo "Open .env and fill in your keys (TMDB_API_KEY, RADARR/SONARR/PLEX/EMBY/JELLYFIN ...), then re-run bootstrap."
-    echo "Jellyfin backend: leave RKM_JELLYFIN_ADMIN_PASSWORD blank on first run - a password is generated and saved to .env automatically."
+    echo "Jellyfin backend: leave RKM_JELLYFIN_ADMIN_PASSWORD blank. On the first run the provisioner"
+    echo "GENERATES the admin password and prints it ONCE below - record it then. It is NOT saved to .env."
 fi
 
 command -v docker >/dev/null || { echo "Docker is not installed/run."; exit 1; }

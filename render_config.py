@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import json
 import re
-import secrets
 import sys
 from pathlib import Path
 
@@ -298,13 +297,13 @@ def build_api_vars(env: dict) -> dict:
     if not tmdb_key:
         fail("TMDB_API_KEY is empty — add it to .env (TMDB dashboard -> API).")
 
-    # Jellyfin admin password: generate only when the backend is the bundled
-    # Jellyfin (persisted into .env so it stays stable).
-    admin_pw = str(env.get("RKM_JELLYFIN_ADMIN_PASSWORD") or "").strip()
-    if backend == "jellyfin" and not admin_pw:
-        admin_pw = secrets.token_urlsafe(18)
-        write_env_key(ENV_PATH, "RKM_JELLYFIN_ADMIN_PASSWORD", admin_pw)
-        print(f"[env] generated RKM_JELLYFIN_ADMIN_PASSWORD -> saved to {ENV_PATH.name}")
+    # Jellyfin admin password: deliberately NOT touched here any more
+    # (ADMIN_CREDENTIALS_PLAN.md Phase 1). The repo must not carry the admin's password, so there is
+    # nothing to generate and nothing to write back: a fresh install GENERATES one in the
+    # provisioner and prints it once for the user to record, and every later run uses the API key
+    # already stored in the rkm_shared volume. RKM_JELLYFIN_ADMIN_PASSWORD in .env still works as
+    # an override (and for the local Python tools) — it reaches the provisioner through compose's
+    # own interpolation of the repo .env, so no value is read or defaulted here.
 
     jf_browser = str(env.get("RKM_JELLYFIN_BROWSER") or "").strip() or (
         f"http://localhost:{env.get('RKM_JELLYFIN_PORT') or '8098'}"
@@ -405,8 +404,9 @@ def main() -> None:
     print(f"\nConfig rendered from {ENV_PATH.name} (single source). Next: run bootstrap.sh "
           f"(or .\\bootstrap.ps1).")
     if api["MEDIA_SERVER"] == "jellyfin":
-        print(f"Jellyfin admin: user={env.get('RKM_JELLYFIN_ADMIN_USER') or 'admin'} — "
-              f"password in {ENV_PATH.name} (RKM_JELLYFIN_ADMIN_PASSWORD).")
+        print(f"Jellyfin admin: user hint={env.get('RKM_JELLYFIN_ADMIN_USER') or 'admin'} — "
+              "the password is set on the account (a fresh install prints it once), and "
+              "RKM_JELLYFIN_ADMIN_PASSWORD in .env overrides it.")
 
 
 if __name__ == "__main__":

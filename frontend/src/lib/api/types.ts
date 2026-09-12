@@ -24,6 +24,77 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/auth/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Login
+         * @description Exchange Jellyfin credentials for an app session (and nothing else).
+         *
+         *     Identity is DELEGATED: the username/password go to Jellyfin's
+         *     ``/Users/AuthenticateByName`` and are never stored; what we keep is the access
+         *     token Jellyfin handed back, behind an opaque id this app invented.
+         */
+        post: operations["login_api_auth_login_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Logout
+         * @description Revoke THIS session server-side and clear the cookie.
+         *
+         *     Deleting the row is what makes sign-out real: the id is useless the moment it
+         *     goes, unlike a stateless token that stays valid until it expires.
+         */
+        post: operations["logout_api_auth_logout_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Me
+         * @description Who is signed in on this browser, or 401.
+         *
+         *     Strict on purpose, and independent of ``RKM_AUTH_REQUIRED``: this is the route the
+         *     frontend guard asks, so it must answer truthfully about the session rather than
+         *     about enforcement — "signed out" and "not enforced yet" are different states.
+         */
+        get: operations["me_api_auth_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/config": {
         parameters: {
             query?: never;
@@ -1347,6 +1418,52 @@ export interface components {
             } | null;
         };
         /**
+         * LoginRequest
+         * @description Sign in as a Jellyfin user (AUTH_MULTIUSER_PLAN §3.7, Phase 0).
+         *
+         *     Identity is DELEGATED: these credentials are used once, against Jellyfin's
+         *     ``/Users/AuthenticateByName``, and never stored. What the app keeps is the access
+         *     token Jellyfin returned, behind an opaque id it invented itself.
+         */
+        LoginRequest: {
+            /**
+             * Username
+             * @default
+             */
+            username: string;
+            /**
+             * Password
+             * @default
+             */
+            password: string;
+        };
+        /** LoginResponse */
+        LoginResponse: {
+            /**
+             * Ok
+             * @default true
+             */
+            ok: boolean;
+            user?: components["schemas"]["SessionUser"];
+            /**
+             * Expires
+             * @default
+             */
+            expires: string;
+        };
+        /**
+         * MeResponse
+         * @description ``GET /api/auth/me`` — who this browser is signed in as.
+         */
+        MeResponse: {
+            user?: components["schemas"]["SessionUser"];
+            /**
+             * Expires
+             * @default
+             */
+            expires: string;
+        };
+        /**
          * MediaResponse
          * @description The canonical single-item object the frontend renders from (§18).
          *
@@ -1512,6 +1629,22 @@ export interface components {
             snippet: string;
             /** Voteaverage */
             voteAverage?: number | null;
+        };
+        /**
+         * SessionUser
+         * @description The signed-in user, as much of them as the browser is allowed to see.
+         */
+        SessionUser: {
+            /**
+             * Id
+             * @default
+             */
+            id: string;
+            /**
+             * Name
+             * @default
+             */
+            name: string;
         };
         /** StatusEntry */
         StatusEntry: {
@@ -1915,6 +2048,79 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HealthResponse"];
+                };
+            };
+        };
+    };
+    login_api_auth_login_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoginRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    logout_api_auth_logout_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    me_api_auth_me_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeResponse"];
                 };
             };
         };

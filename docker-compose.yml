@@ -50,6 +50,13 @@ services:
       - .rkm.env
     environment:
       RKM_RUNTIME_PATH: /shared/runtime.json
+      # Auth guard (AUTH_MULTIUSER_PLAN). Compose reads the repo `.env` for
+      # interpolation, so this value can be flipped and applied by RECREATING the api
+      # alone — no render, and above all no provisioner run (which would cancel an
+      # in-flight library scan). `.rkm.env` also carries the key for the rendered
+      # path; this override exists so the documented lockout recovery is a real
+      # one-command escape hatch rather than a claim that only holds after a deploy.
+      RKM_AUTH_REQUIRED: "${RKM_AUTH_REQUIRED:-false}"
     volumes:
       - rkm_shared:/shared
       - *media

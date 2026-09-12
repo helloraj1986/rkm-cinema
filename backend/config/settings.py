@@ -128,6 +128,15 @@ class Config:
     OPENSUBTITLES_LANGUAGES: str    # comma list, e.g. "en" or "en,hi"
     OPENSUBTITLES_ENABLED: str      # 'auto' (default) | true | false
 
+    # --- Auth / multi-user (AUTH_MULTIUSER_PLAN §3, Phase 0) ---
+    # Enforcement is a FLAG, not a code path: 'false' (the default) means a request
+    # with no session behaves exactly as it did before this feature existed, which is
+    # the escape hatch the lockout recovery relies on. Phase 2 flips the default in
+    # .env.example; the live .env keeps its own value. Annotated HERE so the real-env
+    # passthrough carries it — an undeclared key is dropped silently (the 2026-09-10
+    # RKM_MEDIA_PATH bug, which greyed out every library).
+    RKM_AUTH_REQUIRED: str
+
     # --- Media libraries (MEDIA_LIBRARIES_PLAN) ---
     # Parsed from MEDIA_LIBRARY_N_NAME/PATH .env keys. Empty when the user has
     # not configured any — the UI then falls back to the server's own folders.
@@ -241,6 +250,11 @@ class Config:
         self.OPENSUBTITLES_LANGUAGES = (env.get("OPENSUBTITLES_LANGUAGES") or "en").strip() or "en"
         self.OPENSUBTITLES_ENABLED = (env.get("OPENSUBTITLES_ENABLED") or "auto").strip().lower()
 
+        # Auth / multi-user (AUTH_MULTIUSER_PLAN Phase 0). Default FALSE: nothing is
+        # enforced until the login UI has shipped (Phase 2 arms it), so an
+        # un-updated `.env` keeps working exactly as before.
+        self.RKM_AUTH_REQUIRED = (env.get("RKM_AUTH_REQUIRED") or "false").strip().lower()
+
         # Media libraries (MEDIA_LIBRARIES_PLAN Phase 1): parsed here in the
         # dedicated settings layer — never read MEDIA_LIBRARY_* anywhere else.
         self.media_libraries, self.media_library_warnings = parse_media_libraries(env)
@@ -344,6 +358,17 @@ class Config:
         upgrade to the anonymous tier, not a requirement.
         """
         return bool(self.OPENSUBTITLES_USERNAME and self.OPENSUBTITLES_PASSWORD)
+
+    # --- Auth / multi-user ------------------------------------------------
+    def auth_required(self) -> bool:
+        """True when a request without a session must be answered with a 401.
+
+        Read PER REQUEST (never cached at startup) so the documented lockout recovery
+        — set ``RKM_AUTH_REQUIRED=false`` and recreate the api — takes effect at once.
+        Default is False: Phase 0 ships the endpoints with NOTHING enforced, and the
+        login UI ships (Phase 1) before Phase 2 arms this.
+        """
+        return self.RKM_AUTH_REQUIRED in ("1", "true", "yes", "on")
 
 
 @lru_cache(maxsize=1)

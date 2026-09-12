@@ -259,3 +259,26 @@ def test_unknown_media_server_warns_instead_of_failing(rc, capsys):
     api = rc.build_api_vars(dict(BASE, MEDIA_SERVER="typo-backend"))
     assert api["MEDIA_SERVER"] == "jellyfin"
     assert "is not a live backend" in capsys.readouterr().out
+
+
+# --- Auth / multi-user (AUTH_MULTIUSER_PLAN Phase 0) --------------------------
+# The api container's environment is the RENDERED .rkm.env, so a key that is not
+# carried here cannot be set by the user at all — `RKM_AUTH_REQUIRED` would read
+# false forever, and the lockout recovery would silently do nothing.
+
+def test_auth_required_defaults_to_false(rc):
+    """Absent = not enforced. An un-updated `.env` must keep working as it does now."""
+    assert rc.build_api_vars(dict(BASE))["RKM_AUTH_REQUIRED"] == "false"
+
+
+def test_auth_required_is_carried_when_armed(rc):
+    api = rc.build_api_vars(dict(BASE, RKM_AUTH_REQUIRED="true"))
+    assert api["RKM_AUTH_REQUIRED"] == "true"
+
+
+def test_auth_required_is_normalised_and_a_typo_renders_false(rc, capsys):
+    """`.rkm.env` must be unambiguous, and a typo must fail OPEN, never closed."""
+    assert rc.build_api_vars(dict(BASE, RKM_AUTH_REQUIRED=" TRUE "))["RKM_AUTH_REQUIRED"] == "true"
+    api = rc.build_api_vars(dict(BASE, RKM_AUTH_REQUIRED="yes"))
+    assert api["RKM_AUTH_REQUIRED"] == "false"
+    assert "RKM_AUTH_REQUIRED" in capsys.readouterr().out

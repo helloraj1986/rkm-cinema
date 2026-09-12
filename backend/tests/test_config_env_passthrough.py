@@ -12,7 +12,10 @@ These tests go through the real Config method, not a copy of its logic, so a
 future edit to that filter fails here.
 """
 from config.media_libraries import parse_media_libraries
+from config import settings as settings_mod
 from config.settings import Config, is_env_passthrough_key
+
+import pytest
 
 
 class TestConfigKeysCoverage:
@@ -39,6 +42,10 @@ class TestConfigKeysCoverage:
         # with no error anywhere.
         "OPENSUBTITLES_API_KEY", "OPENSUBTITLES_USERNAME", "OPENSUBTITLES_PASSWORD",
         "OPENSUBTITLES_LANGUAGES", "OPENSUBTITLES_ENABLED",
+        # Auth / multi-user (AUTH_MULTIUSER_PLAN Phase 0, 2026-09-12) — the guard
+        # switch. Declared so the passthrough carries it; a dropped key means the
+        # escape hatch silently stops working (or enforcement silently stays on).
+        "RKM_AUTH_REQUIRED",
     }
 
     #: Settings that must NOT come back: retired with the Plex/Emby providers.
@@ -147,3 +154,42 @@ class TestConfigEnvPassthrough:
         """The media families are ADDITIVE — normal keys must keep working."""
         passed = Config()._env_passthrough({"TMDB_API_KEY": "k", "RADARR_URL": "http://x:7878"})
         assert passed == {"TMDB_API_KEY": "k", "RADARR_URL": "http://x:7878"}
+
+
+class TestAuthRequiredFlag:
+    """Phase 0 ships the endpoints with NOTHING enforced (AUTH_MULTIUSER_PLAN §5).
+
+    The DEFAULT matters more than the parsing: an un-updated `.env` must not lock the
+    household out of an app whose login screen has not shipped yet, and the escape
+    hatch has to be a plain value a user can set by hand.
+    """
+
+    def _cfg(self, monkeypatch, tmp_path, text):
+        env = tmp_path / ".env"
+        env.write_text(text, encoding="utf-8")
+        monkeypatch.delenv("RKM_AUTH_REQUIRED", raising=False)
+        monkeypatch.setattr(settings_mod, "canonical_env_paths", lambda: [env])
+        return Config()
+
+    def test_absent_means_not_enforced(self, monkeypatch, tmp_path):
+        cfg = self._cfg(monkeypatch, tmp_path, "TMDB_API_KEY=k\n")
+        assert cfg.RKM_AUTH_REQUIRED == "false"
+        assert cfg.auth_required() is False
+
+    @pytest.mark.parametrize("value", ["true", "TRUE", "1", "yes", "on"])
+    def test_the_arming_values(self, monkeypatch, tmp_path, value):
+        cfg = self._cfg(monkeypatch, tmp_path, f"RKM_AUTH_REQUIRED={value}\n")
+        assert cfg.auth_required() is True
+
+    @pytest.mark.parametrize("value", ["false", "0", "no", "off", "", "maybe"])
+    def test_anything_else_fails_open(self, monkeypatch, tmp_path, value):
+        """A typo must never lock the user out of his own app."""
+        cfg = self._cfg(monkeypatch, tmp_path, f"RKM_AUTH_REQUIRED={value}\n")
+        assert cfg.auth_required() is False
+
+    def test_the_value_stays_live_rather_than_being_baked_in(self, monkeypatch, tmp_path):
+        """It is read PER REQUEST — that is what makes the recovery a one-command fix."""
+        cfg = self._cfg(monkeypatch, tmp_path, "RKM_AUTH_REQUIRED=true\n")
+        assert isinstance(cfg.RKM_AUTH_REQUIRED, str)
+        cfg.RKM_AUTH_REQUIRED = "false"
+        assert cfg.auth_required() is False

@@ -351,6 +351,17 @@ def build_api_vars(env: dict) -> dict:
     # RKM_PRUNE_LIBRARIES=false to keep libraries the app does not declare.
     api["RKM_PRUNE_LIBRARIES"] = str(env.get("RKM_PRUNE_LIBRARIES") or "").strip()
 
+    # Auth / multi-user (AUTH_MULTIUSER_PLAN Phase 0). The api reads this PER REQUEST,
+    # so the lockout recovery is a value change rather than a code change — but the
+    # api container's environment comes from THIS rendered file, so the key has to be
+    # carried here or setting it in `.env` would have no effect at all. Normalised to
+    # a literal true/false so `.rkm.env` is unambiguous to read.
+    api["RKM_AUTH_REQUIRED"] = str(env.get("RKM_AUTH_REQUIRED") or "false").strip().lower()
+    if api["RKM_AUTH_REQUIRED"] not in ("true", "false"):
+        print(f"[env] WARNING: RKM_AUTH_REQUIRED={api['RKM_AUTH_REQUIRED']!r} is not a "
+              f"boolean; rendering false (auth not enforced).")
+        api["RKM_AUTH_REQUIRED"] = "false"
+
     # Subtitles / OpenSubtitles (SUBTITLES_OPENSUBTITLES_PLAN §3.1). The api is the
     # ONLY consumer of these credentials — never a web build arg, never the frontend
     # bundle (the plan's §1 criterion 11). Blank is a supported state: no API key

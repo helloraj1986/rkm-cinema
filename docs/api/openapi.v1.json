@@ -25,6 +25,81 @@
         }
       }
     },
+    "/api/auth/login": {
+      "post": {
+        "summary": "Login",
+        "description": "Exchange Jellyfin credentials for an app session (and nothing else).\n\nIdentity is DELEGATED: the username/password go to Jellyfin's\n``/Users/AuthenticateByName`` and are never stored; what we keep is the access\ntoken Jellyfin handed back, behind an opaque id this app invented.",
+        "operationId": "login_api_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/logout": {
+      "post": {
+        "summary": "Logout",
+        "description": "Revoke THIS session server-side and clear the cookie.\n\nDeleting the row is what makes sign-out real: the id is useless the moment it\ngoes, unlike a stateless token that stays valid until it expires.",
+        "operationId": "logout_api_auth_logout_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/me": {
+      "get": {
+        "summary": "Me",
+        "description": "Who is signed in on this browser, or 401.\n\nStrict on purpose, and independent of ``RKM_AUTH_REQUIRED``: this is the route the\nfrontend guard asks, so it must answer truthfully about the session rather than\nabout enforcement \u2014 \"signed out\" and \"not enforced yet\" are different states.",
+        "operationId": "me_api_auth_me_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/config": {
       "get": {
         "summary": "Get Config Endpoint",
@@ -2435,6 +2510,57 @@
         ],
         "title": "LibraryResponse"
       },
+      "LoginRequest": {
+        "properties": {
+          "username": {
+            "type": "string",
+            "title": "Username",
+            "default": ""
+          },
+          "password": {
+            "type": "string",
+            "title": "Password",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "LoginRequest",
+        "description": "Sign in as a Jellyfin user (AUTH_MULTIUSER_PLAN \u00a73.7, Phase 0).\n\nIdentity is DELEGATED: these credentials are used once, against Jellyfin's\n``/Users/AuthenticateByName``, and never stored. What the app keeps is the access\ntoken Jellyfin returned, behind an opaque id it invented itself."
+      },
+      "LoginResponse": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok",
+            "default": true
+          },
+          "user": {
+            "$ref": "#/components/schemas/SessionUser"
+          },
+          "expires": {
+            "type": "string",
+            "title": "Expires",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "LoginResponse"
+      },
+      "MeResponse": {
+        "properties": {
+          "user": {
+            "$ref": "#/components/schemas/SessionUser"
+          },
+          "expires": {
+            "type": "string",
+            "title": "Expires",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "MeResponse",
+        "description": "``GET /api/auth/me`` \u2014 who this browser is signed in as."
+      },
       "MediaResponse": {
         "properties": {
           "id": {
@@ -2882,6 +3008,23 @@
           "snippet"
         ],
         "title": "SearchResult"
+      },
+      "SessionUser": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "default": ""
+          },
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "SessionUser",
+        "description": "The signed-in user, as much of them as the browser is allowed to see."
       },
       "StatusEntry": {
         "properties": {

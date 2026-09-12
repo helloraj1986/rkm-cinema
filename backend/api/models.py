@@ -56,6 +56,39 @@ class SubtitleDisableRequest(BaseModel):
     item_id: str = ""
 
 
+class LoginRequest(BaseModel):
+    """Sign in as a Jellyfin user (AUTH_MULTIUSER_PLAN §3.7, Phase 0).
+
+    Identity is DELEGATED: these credentials are used once, against Jellyfin's
+    ``/Users/AuthenticateByName``, and never stored. What the app keeps is the access
+    token Jellyfin returned, behind an opaque id it invented itself.
+    """
+
+    username: str = ""
+    password: str = ""
+
+
+class SessionUser(BaseModel):
+    """The signed-in user, as much of them as the browser is allowed to see."""
+
+    id: str = ""
+    name: str = ""
+
+
+class LoginResponse(BaseModel):
+    ok: bool = True
+    user: SessionUser = Field(default_factory=SessionUser)
+    #: ISO-8601 UTC; the cookie's Max-Age carries the same lifetime.
+    expires: str = ""
+
+
+class MeResponse(BaseModel):
+    """``GET /api/auth/me`` — who this browser is signed in as."""
+
+    user: SessionUser = Field(default_factory=SessionUser)
+    expires: str = ""
+
+
 class JellyfinProgressRequest(BaseModel):
     """Playback progress reported by the in-app player (Jellyfin Sessions API).
 

@@ -6,6 +6,7 @@ from config.settings import get_config
 from core.logging import setup_logging
 
 from api.routes import health, config, status, download, search, library, quality, suggest
+from api.routes import auth as auth_routes
 from api.routes import search_global as search_global_routes
 from api.routes import jellyfin_poster as jellyfin_poster_routes
 from api.routes import jellyfin_stream as jellyfin_stream_routes
@@ -43,6 +44,10 @@ def create_app() -> FastAPI:
 
     # Include routes
     app.include_router(health.router, prefix="/api")
+    # Auth / multi-user (AUTH_MULTIUSER_PLAN Phase 0): sign in/out + who am I. NOT
+    # enforced yet — RKM_AUTH_REQUIRED is false until Phase 2 arms it (the login UI
+    # ships first, so an enforcement deploy can never lock the user out).
+    app.include_router(auth_routes.router, prefix="/api")
     app.include_router(config.router, prefix="/api")
     app.include_router(status.router, prefix="/api")
     app.include_router(download.router, prefix="/api")

@@ -84,6 +84,37 @@ docker volume rm rkm-bundled_jellyfin-config # the database only
 Media files are never touched by this. Watch state and library definitions go,
 and a full scan takes **2-4 h** (~850 movies, 116 series, 5000+ episodes).
 
+## Locked out? The ladder, in order
+
+Nobody-knows-the-password is the ONE failure with no UI way out: you cannot reach Household without
+an administrator, and you cannot be an administrator without the password. The break-glass removes
+the need for it.
+
+```powershell
+cd D:\hermes_agent\hermes-workspace\projects\rkm-cinema
+.\rkm-cinema.ps1 reset-admin-password -DryRun   # read-only: names the account it would reset
+.\rkm-cinema.ps1 reset-admin-password           # then this, and type the new password twice
+```
+
+What it does, and why it can: the stack's own **API key** lives in the `rkm_shared` volume (written
+by the provisioner, never typed by a human, never `.env`), and an administrator's **privilege** is
+what authorises a password reset — the old password is not needed and not asked for. It then **proves
+the change by signing in** with the new password, and says so only if that worked.
+
+| You are locked out of | Do this |
+|---|---|
+| **The administrator account** (this stack) | `.\rkm-cinema.ps1 reset-admin-password` — one command, no old password |
+| **A member's password** | Sign in as the administrator → **avatar → Household → Reset password**. (Or that person changes it themselves: avatar → My password.) Resetting a member from the break-glass is refused on purpose — it is the lockout recovery, not a household tool |
+| **The administrator, and no API key in the volume** (`rkm_shared` wiped) | `.\rkm-cinema.ps1 deploy` — the provisioner re-provisions and, on a stack with no admin, **prints a new admin password once**. Watch the bootstrap output, not `.env` |
+| **Everything** (state volume also lost) | `.\rkm-cinema.ps1 restore` from the newest archive in `D:\RKM_BACKUPS` — the archive carries the accounts, so the passwords come back as they were |
+| **Everything, and no backup** | Out of scope here, and destructive: the accounts live in Jellyfin's own database (`jellyfin-config` volume). Nothing in this repo does that automatically — do not improvise it. Ask me, or see Jellyfin's own recovery docs |
+| **`rkm`, because you renamed it and forgot the name** | `.\rkm-cinema.ps1 reset-admin-password -DryRun` prints the account it would reset, whatever it is called (the tool finds administrators by POLICY, never by the name `admin`) |
+
+Two things it deliberately does NOT do: it never takes the password as a command-line argument (that
+would sit in your PowerShell history and the process list), and it never prints it. `ResetPassword:
+true` appears nowhere in it — that flag is a silent no-op that **clears** a password rather than
+setting one (measured, `ADMIN_CREDENTIALS_PLAN.md` §6c).
+
 ## When something looks wrong
 
 | Symptom | Run | Most likely cause |

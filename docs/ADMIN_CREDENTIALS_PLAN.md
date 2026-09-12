@@ -108,9 +108,55 @@ Renaming the account breaks anything that assumes the name:
 | **0** | This plan + the throwaway-stack recipe (§7); amend `PLEX_PROFILE_AUTH_PLAN.md` §7 rows D/E to point here | docs links |
 | **1** ✅ | **No password needed after the first run, and the first-run one is PRINTED, never stored.** The generation MOVES from `render_config` (which runs on every bootstrap and cannot tell a fresh install from a re-run) to `provision.py::run_startup()` (which knows it is creating the admin because that is what it is doing): generate `token_urlsafe(18)`, set it on the account, and print it in a boxed, unmissable notice **only when the wizard step actually succeeded** (`200/204`), never on a re-run. `ensure_admin()` tries the STORED credential first (`JELLYFIN_API_KEY` / `runtime.json`) and resolves the admin by id; compose `:?` → `:-`; `render_config` stops generating or writing the key; `.env.example` documents it as OPTIONAL (tooling) with the reason. If it IS set in `.env`, it is used and nothing is printed — the manual override survives | pytest (provisioner: fresh install prints + sets; re-run prints nothing and needs no password; a rename does not break it), ruff, docs links |
 | **2** ✅ | **Household: role vs name.** An **Administrator** badge and the account's real name; rename (`POST /Users?userId=`) with the rails; the picker/header/sidebar never label a person by their role — **BUILT 2026-09-12**; see §6a | tsc, vitest, `check_household_ui.py` + `check_profile_picker.py` (new scenarios), build |
-| **3** | **Self-service password screen** for every profile (Phase D's other half): change my own password with `CurrentPw` + `NewPw`; honest messaging for a password-less member | gates + DOM check |
-| **4** | **Recovery, documented and tested**: `rkm-cinema.ps1 reset-admin-password` → reads the API key from the volume (never from `.env`), prompts for a new password, calls `POST /Users/Password?userId=…&ResetPassword=true`, then VERIFIES by signing in; `OPERATIONS.md` gains the runbook and the "forgot everything" ladder | the tool's own verification output; pytest for its pure parts |
+| **3** ✅ | **Self-service password screen** for every profile (Phase D's other half): change my own password with `CurrentPw` + `NewPw`; honest messaging for a password-less member — **BUILT 2026-09-12** (`57dd122`); see §6b/§6h | gates + DOM check |
+| **4** ✅ | **Recovery, documented and tested** — **BUILT 2026-09-13**: `rkm-cinema.ps1 reset-admin-password` reads the API key from the `rkm_shared` volume (never `.env`), finds the administrator **by policy** (never the literal name `admin`), prompts for a new password (never an argument — history and the process list), writes it with **`ResetPassword: false`** ⚠ (this row said `true` until §6c measured that `true` is a silent no-op that CLEARS a password), then **proves it by signing in**. `OPERATIONS.md` gained the "Locked out? The ladder" section. See §6i | the tool's own verification output; **38 pytest** for its rules and its whole flow against a stub server |
 | **5** | ADR (the credential model), docs truth pass (`ARCHITECTURE`, `OPERATIONS`, `README`), PROGRESS record | full suite + docs links |
+
+### 6i. ✅ Phase 4 — the break-glass (`rkm-cinema.ps1 reset-admin-password`), and the plan row that was wrong
+
+Built 2026-09-13. Locked out of the administrator account is the one failure with **no UI way out**:
+Household needs an administrator, and being one needs the password. `tools/reset_admin_password.py`
+(invoked through the single entry point) removes the need for it — the stack's own **API key** lives
+in the `rkm_shared` volume, and an administrator's **privilege** is what authorises a reset, so
+nothing remembered is required.
+
+⚠ **The plan's own Phase 4 row said `ResetPassword=true`, written BEFORE §6c measured it.** On
+Jellyfin 10.11.11 `true` answers 204, sets nothing, and **CLEARS a password that existed**. The tool
+sends **`false`, always**; there is no parameter to change it, and a test asserts the flag can never
+be true in the body. The row itself is corrected in place — a future session reading the plan would
+otherwise have implemented the destructive shape it described.
+
+* **The administrator is found BY POLICY** (`IsAdministrator` and not disabled), never by the name
+  `admin` — §5: the account was renamed to `rkm`, and a MEMBER can perfectly well be called "admin"
+  (that case has its own test).
+* **The password is never an argument and never printed**: it is typed at the tool's own prompt,
+  twice, and sent straight to the media server. An argument would sit in PowerShell history and in
+  the process list.
+* **It proves the change by signing in** with the new value (§6d), and exits non-zero when it cannot:
+  `0` verified · `2` no key · `3` key refused · `4` no usable administrator · `5` server refused the
+  reset · `6` accepted but sign-in refused (not taken) · `7` accepted but unprovable (**stated as
+  exactly that** — never as success).
+* **Two ways to the key**, because the break-glass must work in the state he is actually in:
+  `docker compose exec` on the running api container, then `docker run` with the volume mounted
+  read-only — the same pattern `backup-rkm-state.ps1` uses, so it works with the stack stopped.
+* **`-DryRun` is genuinely read-only** — proved by the stub test (one GET, zero writes) — and it is
+  the first thing the wrapper tells him to run.
+* **A MEMBER cannot be targeted with `-Name`**: it refuses and says where that is done instead
+  (Household, or My password). The break-glass is the lockout recovery, not a household tool.
+* **`OPERATIONS.md` gained "Locked out? The ladder"**: administrator (this tool) → a member
+  (Household / My password) → no key in the volume (a deploy re-provisions and prints once) → state
+  volume lost (restore from backup) → no backup at all (**explicitly out of scope and destructive**:
+  the accounts live in Jellyfin's own database, and nothing here improvises that).
+
+**Evidence.** **38 pytest** (`backend/tests/test_reset_admin_password.py`) — the pure rules AND the
+whole flow driven against a real local HTTP stub: the measured body on the wire, the
+proof-by-sign-in, the password-mismatch retry, the refused API key, an empty account list and a
+member-by-name dead end. **Falsified**: with the destructive flag restored and administrators picked
+by name, 8 tests fail.
+
+⚠ **Not covered by execution:** the `.ps1` wrapper itself (there is no PowerShell in the sandbox). It
+is deliberately a thin, obvious forwarding wrapper for that reason, and the runbook's first step is
+`-DryRun`. The tool's CLI and its no-docker failure path WERE run here (`--help`, `--dry-run`).
 
 ### 6h. ✅ A STALE TOKEN IS NOT A WRONG PASSWORD — and the message never reached the screen anyway
 

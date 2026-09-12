@@ -7,6 +7,7 @@
 #   .\rkm-cinema.ps1 restore    restore from an archive (-Archive <file>, else newest)
 #   .\rkm-cinema.ps1 schedule   install the nightly 04:00 state backup
 #   .\rkm-cinema.ps1 diagnose   why a library / episode / watch-state looks wrong
+#   .\rkm-cinema.ps1 reset-admin-password   locked out? set a new admin password (-DryRun to look)
 #   .\rkm-cinema.ps1 logs       last lines from api + web + jellyfin
 #   .\rkm-cinema.ps1 help       this list
 #
@@ -20,10 +21,15 @@
 param(
     [Parameter(Position = 0)]
     [ValidateSet("status", "deploy", "backup", "restore", "schedule",
-                 "diagnose", "logs", "help")]
+                 "diagnose", "reset-admin-password", "logs", "help")]
     [string]$Command = "help",
 
     [string]$Archive,
+    # -Name: the administrator's account name. Only needed when the server has more
+    # than one enabled administrator (it may have been renamed - never assume "admin").
+    [string]$Name,
+    # -DryRun: read-only. Names the account it WOULD reset, changes nothing.
+    [switch]$DryRun,
     [switch]$Yes
 )
 
@@ -52,6 +58,9 @@ function Show-Help {
     Write-Host "  .\rkm-cinema.ps1 restore    -Archive <file>  (default: newest archive)"
     Write-Host "  .\rkm-cinema.ps1 schedule   install the nightly 04:00 backup task"
     Write-Host "  .\rkm-cinema.ps1 diagnose   investigate a library, episode or watch-state"
+    Write-Host "  .\rkm-cinema.ps1 reset-admin-password [-DryRun] [-Name <admin>]"
+    Write-Host "                             locked out of the ADMINISTRATOR account: set a new password"
+    Write-Host "                             using the stack's own API key (the old one is not needed)"
     Write-Host "  .\rkm-cinema.ps1 logs       tail api + web + jellyfin"
     Write-Host ""
     Write-Host "  Dashboard: http://localhost:8124/   Jellyfin: http://localhost:8098/web"
@@ -114,6 +123,19 @@ function Invoke-Diagnose {
     Write-Host "  $py tools\probe_jellyfin_state.py --library ""TV Shows"" --series 20"
 }
 
+function Invoke-ResetAdminPassword {
+    # The break-glass (ADMIN_CREDENTIALS_PLAN.md Phase 4). The password is TYPED at the tool's own
+    # prompt, never passed here: an argument would sit in your PowerShell history and in the process
+    # list. Nothing is changed until you have typed it twice.
+    $py = Get-Python
+    if (-not $py) { throw "python not found on PATH - needed for the reset." }
+    # Not `$args`: that name is PowerShell's own automatic variable.
+    $toolArgs = @("$PSScriptRoot\tools\reset_admin_password.py")
+    if ($Name) { $toolArgs += @("--name", $Name) }
+    if ($DryRun) { $toolArgs += "--dry-run" }
+    & $py @toolArgs
+}
+
 switch ($Command) {
     "status"   { Show-Status }
     "deploy"   { & "$PSScriptRoot\bootstrap.ps1" }
@@ -121,6 +143,7 @@ switch ($Command) {
     "restore"  { Invoke-Restore }
     "schedule" { & "$PSScriptRoot\scripts\install-backup-task.ps1" }
     "diagnose" { Invoke-Diagnose }
+    "reset-admin-password" { Invoke-ResetAdminPassword }
     "logs"     { docker compose -p $Project logs --tail 40 api web jellyfin }
     "help"     { Show-Help }
 }

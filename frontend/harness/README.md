@@ -76,3 +76,19 @@ development; if a scenario fails, check the stub before the app.
 `window.__probe()` and `window.__authCalls` expose what rendered and every stubbed call.
 ⚠ **Restart the dev server after editing app source** (the same watcher trap as above): a
 stale module gave a false FAIL here until the vite PID holding :5199 was killed.
+
+## `household-frame.html` — the Household screen (Phase 1b)
+
+`python3 tools/check_household_ui.py` mounts the REAL `HouseholdView` (plus the real query client
+and auth provider) over a stubbed api and drives it in a browser:
+
+| Query | What it asserts |
+|---|---|
+| `?admin=1` | the household lists; access resolves to library **names**; a password-less member says so; **Remove is disabled for your own account with the reason on screen**; the typed name arms the confirm button only on an exact match |
+| `?admin=0` | a non-administrator session sees the requirement stated plainly — no accounts, no add form, and **no write is attempted** |
+| `?admin=1` + add | adding a member posts the name, a **blank password**, and **only the ticked libraries** — the default is everything, and unticking one sticks |
+
+The stub is deliberately generous but honest: it echoes the created member back the way the API
+does, so a refresh is visible. `window.__calls` records every request (url, method, body) and
+`window.__probe()` reports the rendered rows, whether the add form is open, whether the confirm
+button is armed, and any `role="alert"` text.

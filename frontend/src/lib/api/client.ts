@@ -384,6 +384,40 @@ export interface MeResult {
   expires: string;
 }
 
+// ------------------------------------------------- household accounts (Phase 1b)
+/** One account on the media server, as the household screen shows it (never a password). */
+export interface HouseholdUserShape {
+  id: string;
+  name: string;
+  is_admin: boolean;
+  disabled: boolean;
+  has_password: boolean;
+  enable_all_folders: boolean;
+  enabled_folders: string[];
+  last_login: string;
+}
+
+/** GET /api/admin/users — `warning` explains an EMPTY list (refused, unreachable). */
+export interface HouseholdShape {
+  users: HouseholdUserShape[];
+  signed_in_as: string;
+  warning: string;
+}
+
+/** One grantable library: `id` is the ItemId a grant stores, `name` is what a person reads. */
+export interface GrantableLibraryShape {
+  id: string;
+  name: string;
+  collection_type: string;
+  path: string;
+}
+
+/** GET /api/admin/libraries — the tick-box list. */
+export interface GrantableLibrariesShape {
+  libraries: GrantableLibraryShape[];
+  warning: string;
+}
+
 // ---------------------------------------------------------------- legacy parity
 // Rich watchlist-entry surface used by Discover/Watchlist/Search/Suggest.
 // `GET /api/watchlist/entries` returns these (live; same mapper as the legacy
@@ -713,6 +747,20 @@ async function postJson<T>(path: string, body: unknown, options: RequestOptions 
   );
 }
 
+/** DELETE with a body — the household delete carries the typed-name confirmation. */
+async function deleteJson<T>(path: string, body: unknown, options: RequestOptions = {}): Promise<T> {
+  return request<T>(
+    path,
+    {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(20_000),
+    },
+    options,
+  );
+}
+
 /** Best human message from a failed API response: FastAPI's `detail` (string
  *  or {message}) or `message`, else a `METHOD path -> status` fallback. */
 async function errorDetail(res: Response, fallback: string): Promise<string> {
@@ -750,6 +798,37 @@ export const api = {
     postJson<{ ok: boolean; revoked: boolean }>("/auth/logout", {}, { skipAuthRedirect: true }),
   /** Who this browser is signed in as. 401 while signed out — a normal state. */
   me: () => getJson<MeResult>("/auth/me", { skipAuthRedirect: true }),
+
+  // ------------------------------------------------- household accounts (1b, admin-only)
+  /** The household as the SERVER reports it — 403 for anyone who is not an administrator. */
+  getHousehold: () => getJson<HouseholdShape>("/admin/users"),
+  /** The libraries a member can be granted (the tick-box list). */
+  getGrantableLibraries: () => getJson<GrantableLibrariesShape>("/admin/libraries"),
+  /** Create a member. `password` may be blank ON PURPOSE; omit ids to grant every library. */
+  createHouseholdUser: (payload: { name: string; password?: string; library_ids?: string[] }) =>
+    postJson<{ ok: boolean; user: HouseholdUserShape; granted: string[]; warning: string }>(
+      "/admin/users",
+      payload,
+    ),
+  /** Change what a member may see and/or whether they are enabled (omitted = untouched). */
+  updateHouseholdPolicy: (
+    userId: string,
+    payload: { library_ids?: string[]; disabled?: boolean },
+  ) =>
+    postJson<{ ok: boolean; user: HouseholdUserShape; was: string }>(
+      `/admin/users/${encodeURIComponent(userId)}/policy`,
+      payload,
+    ),
+  /** Set or reset a member's password — sent once, never returned, never stored here. */
+  setHouseholdPassword: (userId: string, newPassword: string) =>
+    postJson<{ ok: boolean }>(`/admin/users/${encodeURIComponent(userId)}/password`, {
+      new_password: newPassword,
+    }),
+  /** Remove a member — the name must be typed out (the server checks it too). */
+  deleteHouseholdUser: (userId: string, confirmName: string) =>
+    deleteJson<{ ok: boolean; name: string }>(`/admin/users/${encodeURIComponent(userId)}`, {
+      confirm_name: confirmName,
+    }),
   getConfig: () => getJson<ConfigShape>("/config"),
   getHealth: () => getJson<HealthShape>("/health"),
   getLibraryItems: () => getJson<LibraryItemsShape>("/library/items"),

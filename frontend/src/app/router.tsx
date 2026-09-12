@@ -3,6 +3,7 @@ import { AppShell } from "./layout/AppShell";
 import { LoginView } from "../features/auth/LoginView";
 import { RequireSession } from "../features/auth/RequireSession";
 import { ConfigHealthView } from "../features/settings/ConfigHealthView";
+import { HouseholdView } from "../features/admin/HouseholdView";
 import { LibraryLayout } from "../features/library/LibraryLayout";
 import { LibraryHomeView } from "../features/library/LibraryHomeView";
 import { LibraryFolderView } from "../features/library/LibraryFolderView";
@@ -40,6 +41,10 @@ export const router = createBrowserRouter([
     children: [
       { index: true, element: <Navigate to="/library/home" replace /> },
       { path: "settings", element: <ConfigHealthView /> },
+      // Household accounts (AUTH_MULTIUSER_PLAN Phase 1b). The route needs no client-side
+      // gate of its own: the API answers 401/403 and the screen says so plainly — a hidden
+      // link is not security, and this way nothing pretends a refusal is a broken page.
+      { path: "settings/household", element: <HouseholdView /> },
       {
         path: "library",
         element: <LibraryLayout />,

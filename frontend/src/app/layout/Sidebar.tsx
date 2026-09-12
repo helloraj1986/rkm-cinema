@@ -170,6 +170,22 @@ export function Sidebar() {
             </>
           )}
         </NavLink>
+        {/* Household accounts (AUTH_MULTIUSER_PLAN Phase 1b). Shown to everyone on purpose:
+            the API refuses a non-administrator with a plain 403 and the screen says so, so
+            hiding the link would only make the refusal look like a broken app. */}
+        <NavLink
+          to="/settings/household"
+          title="Household"
+          className={({ isActive }) => linkCls(isActive)}
+        >
+          {({ isActive }) => (
+            <>
+              <NavIndicator active={isActive} />
+              <Icon name="users" size={19} className="shrink-0" />
+              <span className="hidden truncate xl:inline">Household</span>
+            </>
+          )}
+        </NavLink>
       </div>
 
       <div className="mt-3 hidden items-center gap-2.5 border-t border-white/[.06] px-3 pt-4 xl:flex">

@@ -1,44 +1,51 @@
-## ▶ NEXT SESSION — START HERE: auth Phase 1 (frontend login view + guard — STILL nothing enforced), then Phase 1b (household accounts from the app). Branch `feat/auth-multiuser`; plans `docs/AUTH_MULTIUSER_PLAN.md` + **new** `docs/HOUSEHOLD_USERS_PLAN.md`.
+## ▶ NEXT SESSION — START HERE: auth Phase 1b (household accounts from the app), then Phase 2 (enforcement). Branch `feat/auth-multiuser`; plans `docs/AUTH_MULTIUSER_PLAN.md` + `docs/HOUSEHOLD_USERS_PLAN.md`.
 
-**Where things stand (2026-09-12):**
-- ✅ **Auth Phase 0 DONE and pushed** (`dd921ed` code + `608e873` record) — sessions, `/api/auth/*`, the `async def`
-  contextvar seam, `RKM_AUTH_REQUIRED` plumbing; contract 41 → 44 paths. **Nothing is enforced**, so the running
-  stack is unchanged and there is nothing to deploy.
-- ✅ **The subtitle eyeball PASSED** — the user confirmed ("this is done") and the two older blocks are marked in
-  place. `main` @ `c0ae65e` is accepted; nothing on the subtitle feature is outstanding.
-- 📋 **Phase 1b SCOPED, NOT STARTED** — `HOUSEHOLD_USERS_PLAN.md` + the read-only probe
-  `tools/probe_jellyfin_users.py`, which has ALREADY been run against the live server; its numbers (3 libraries with
-  their ItemIds, 1 user, the real endpoint spellings) are IN the plan — do not re-measure.
+**Where things stand (2026-09-12):** auth **Phase 0 ✅** (`dd921ed`) · **Phase 1 ✅** (`b360b38`) · **Phase 1b SCOPED, NOT STARTED** (`HOUSEHOLD_USERS_PLAN.md`). **Nothing is enforced**, so the running stack behaves exactly as it did before any of this, and the only deploy outstanding is the user's WEB-ONLY one for Phase 1.
 
-**DECISIONS WAITING ON THE USER before 1b starts** (`HOUSEHOLD_USERS_PLAN.md` §8 — asked 2026-09-12): how a new
-member's password is chosen (he types it / the app suggests one it shows once / none), the default library access,
-the v1 scope (add+grant+disable+reset+delete, or add only), and whether 1b runs BEFORE or AFTER Phase 2
-enforcement (recommendation: before). **Phase 1 does not need any of these** — it can start now.
+**THE USER'S DEPLOY FOR PHASE 1 (web only — the api did not change):**
+```powershell
+cd D:\hermes_agent\hermes-workspace\projects\rkm-cinema
+.\rkm-cinema.ps1 status
+docker compose -p rkm-bundled up -d --build web
+```
+Eyeball at http://localhost:8124: top bar → **Sign in** → the Jellyfin admin credentials; the sidebar card must show HIS name (it used to be hardcoded "Rajeev"); **Sign out** returns to the signed-out app, which still works — because enforcement is still OFF. Nothing else in the app should look different.
 
-**Next task = PHASE 1** (`AUTH_MULTIUSER_PLAN.md` §6): `frontend/src/features/auth/LoginView.tsx` +
-`AuthProvider.tsx` + `lib.ts`/`lib.test.ts`, the `/login` route **outside** the shell, `lib/api/client.ts`
-`login()/logout()/me()` with `credentials: "same-origin"` and ONE 401 interceptor (fire once, not per request), a
-user chip + **Sign out** with `queryClient.clear()` on both, a skeleton while `me()` is pending, and the new
-`tools/check_login_flow.py` DOM check (Playwright, mirrors `check_subtitle_panel.py`). **Do NOT flip
-`RKM_AUTH_REQUIRED` in Phase 1** — that is Phase 2 only, after the login screen is on his screen (§5, lockout rule).
+**Decisions already taken for 1b (user, 2026-09-12: "1a 2a 3a"):** he types the new member's password in the form; a new member defaults to the creating admin's library access; v1 = add + grant + disable + password reset + delete. The 4th question (1b before or after Phase 2) was never answered — **this session took the recommendation: 1b BEFORE Phase 2**, so he can create the second account while the app is still permissive. Say so if that is wrong.
 
-**Lockout recovery — VERIFIED MECHANISM (measured in Phase 0):** the api's config comes from the RENDERED
-`.rkm.env`, so editing `.env` and recreating the api would NOT have picked a new value up. `docker-compose.yml`
-now interpolates `RKM_AUTH_REQUIRED` from the repo `.env`, so
-`docker compose -p rkm-bundled up -d --force-recreate api` really does apply it — no render, no provisioner, so it
-cannot cancel an in-flight library scan. If he ever cannot get in: set `RKM_AUTH_REQUIRED=false` and run that.
+**Next task = PHASE 1b** (`HOUSEHOLD_USERS_PLAN.md` §4): **1b.0** provider methods + `/api/admin/users{,/libraries,/{id}/policy,/{id}/password}` + DELETE — strict session **and** a LIVE `GET /Users/{session.user_id}` → `Policy.IsAdministrator` check (never a stored flag); the policy is **READ-MODIFY-WRITE** (47 fields are replaced wholesale); the password is used once and never stored/logged/returned; delete must refuse the LAST administrator. Contract 44 → 49 paths + typed client. **1b.1** the Settings → Household UI + `tools/check_household_ui.py` (mirrors `check_login_flow.py`). **1b.2** docs + record. The read-only probe `tools/probe_jellyfin_users.py` has ALREADY been run live — its numbers are in the plan; do not re-measure.
 
-**Per-user vs shared is decided (§4) — do not "fix" it:** watch state, resume, watched flags and library
-visibility per user (free from Jellyfin); subtitle PREFERENCES per user; subtitle USAGE counts and the watchlist
-stay **household-shared**.
+**Then PHASE 2** (enforcement + `RKM_API_TOKEN` + the 401 sweep test — the lockout-risk phase): the login UI has now shipped, which is what Phase 2 was waiting for. Keep `/api/health` public (the Dockerfile HEALTHCHECK calls it) and keep the admin token as the provider fallback.
 
-**Gates every phase:** `cd backend && python -m pytest -q && python -m ruff check .`; plus
-`cd frontend && npx tsc --noEmit && npx vitest run && npm run build` (the typed client is regenerated whenever the
-contract changes). Contract check:
-`python -c "import json;d=json.load(open('docs/api/openapi.v1.json'));print(len(d['paths']),'paths')"` → 44 now, 49
-after 1b.0.
+**Lockout recovery — VERIFIED MECHANISM (measured in Phase 0):** the api's config is the RENDERED `.rkm.env`, so a bare `.env` edit + rebuild does NOT apply a new value; `docker-compose.yml` now interpolates `RKM_AUTH_REQUIRED` from the repo `.env`, so
+`docker compose -p rkm-bundled up -d --force-recreate api` really does flip it — no render, no provisioner, so it cannot cancel an in-flight library scan.
+
+**Per-user vs shared is decided (§4) — do not "fix" it:** watch state, resume, watched flags and library visibility per user (free from Jellyfin); subtitle PREFERENCES per user; subtitle USAGE counts and the watchlist stay **household-shared**.
+
+**Gates every phase:** `cd backend && python -m pytest -q && python -m ruff check .`; plus `cd frontend && npx tsc --noEmit && npx vitest run && npm run build`; and for any auth/UI change, `cd frontend && npx vite --port 5199 --strictPort &` then `python3 tools/check_login_flow.py` (restart vite after editing source — the watcher does not fire on this mount).
 
 **Also queued after this:** native Jellyfin collections (app-authored, visible in Jellyfin's own apps).
+## ▶ LATEST SESSION (2026-09-12) — AUTH PHASE 1 OF 6: LOGIN VIEW, GUARD, SIGN OUT ✅ (branch `feat/auth-multiuser`, commit `b360b38`; **FRONTEND ONLY, nothing enforced — the app is unchanged for a signed-out visitor**)
+
+**User instruction:** *"Let me know"* on the in-app household flow, answered with **"1a 2a 3a"** — and, earlier in the same session, *"wait the password do you have it or i need to provide you"*, i.e. he wanted to be sure the app asks HIM for a new member's password rather than expecting him to hand one to the agent. It does: the form is his, the value goes browser → api → Jellyfin once, and nothing is stored. This session then executed **Phase 1** (the plan's own order: the login UI ships BEFORE anything is enforced).
+
+**What landed (`b360b38`, 15 files, +1137/−37 — no api, no contract, so the deploy is web-only):**
+- `features/auth/lib.ts` + 12 tests: the guard rule (`guardDecision`) and the messages, pure. It needs TWO facts — do we have a session, and has the SERVER ever refused an app call — and only the second justifies taking the app away. That is how Phase 2 will arm the frontend **without a frontend change**: the first 401 is the signal.
+- `AuthProvider` (keeps those facts apart; a 401 from `/api/auth/me` is the ordinary signed-out answer, never a sign-out event; `queryClient.clear()` on sign-in and sign-out so the previous user's rows cannot flash), `RequireSession` (skeleton → app or login), `LoginView` (outside the shell, so it renders when nothing else can).
+- `lib/api/client.ts`: `credentials: "same-origin"`, `api.login/logout/me`, and ONE 401 handler fired ONCE per burst — six queries failing together are one sign-out. The auth routes are EXEMPT: a wrong password is the form's business. 7 new tests pin those edges.
+- The app's identity surface is honest now: the SIDEBAR card was hardcoded ("R / Rajeev / Personal library" from the design mockup) — with real sessions that is a lie the moment a second person signs in — so it reads the session, and says "Not signed in" when there is none.
+
+**Two things the verification changed (both worth keeping):**
+1. **The provider PROBES enforcement once at startup** (`me()` → 401 → one ordinary app call). Without it, a signed-out visitor in an ENFORCED world would watch the app mount and then get bounced to the login view. `tools/check_login_flow.py` asserts with a **MutationObserver** that app content NEVER appears in that world, so the fix is pinned rather than assumed.
+2. That tool's first run FAILED scenario C — **and the stub was wrong, not the app**: it refused app calls even for a VALID session. Fixed the stub (a cruder-than-reality stub makes a correct app look broken — the mirror image of the subtitle-era "check the probe stubs it"). Its second run produced a FALSE FAIL for a different reason: **vite was serving the PRE-EDIT module** (the documented watcher trap) — killed the PID holding `:5199`, verified the new module was being served, re-ran. Both false results are recorded here because the next session will hit the same two traps.
+
+**Gates:** tsc clean · **204** vitest (19 new) · vite build green · `tools/check_login_flow.py` **3/3** scenarios (unenforced stays usable / enforced goes straight to login with no flash / a valid session is left alone) · **the REAL app in Chromium** against a local api: shell renders signed-out, Sign in offered, `/login` renders with its honest hint ("Nothing is enforced yet: the app stays usable signed out"), no page errors.
+
+**⚠ DEPLOY + EYEBALL (user, web only — the api did NOT change):**
+```powershell
+cd D:\hermes_agent\hermes-workspace\projects\rkm-cinema
+docker compose -p rkm-bundled up -d --build web
+```
+Check: top bar shows **Sign in**; signing in with the Jellyfin admin names HIM in the sidebar card instead of "Rajeev"; a wrong password shows one generic message and does NOT bounce the app; **Sign out** returns to the signed-out app, which still works (**nothing is enforced yet** — that is Phase 2, deliberately).
 ## ▶ LATEST SESSION (2026-09-12) — SUBTITLE EYEBALL CLOSED ✅ + HOUSEHOLD ACCOUNTS SCOPED 📋 (plan `docs/HOUSEHOLD_USERS_PLAN.md`, probe `tools/probe_jellyfin_users.py`; branch `feat/auth-multiuser`, **NOT STARTED — nothing deployed, nothing enforced**)
 
 **User:** *"THIS IS DONE"* (the outstanding subtitle eyeball) and *"I WANT TO DO IT FROM THE UI, CREATING NEW USER AND STUFF..LET ME KNOW"* — so the SECOND Jellyfin user that Phase 3's live proof needs will be created from the app's own UI, not the Jellyfin dashboard.

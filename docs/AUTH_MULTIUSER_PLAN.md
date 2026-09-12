@@ -159,7 +159,7 @@ Contract check every phase: `python -c "import json;d=json.load(open('docs/api/o
 | Proof | `print(len(d['paths']))` → 44 · the sweep test below stays green because enforcement is off · a curl with no cookie still returns 200 (unchanged behaviour) |
 | Risk | Low — nothing is enforced, so the running app cannot break. The one real risk is **storing the session id unhashed** or returning the token in a body; both are test-pinned |
 
-### Phase 1 — frontend login screen + guard **(still nothing enforced)**
+### Phase 1 — frontend login screen + guard **(still nothing enforced)** → ✅ **DONE 2026-09-12**
 
 **Commit:** `feat(auth): login view, auth provider, sign out and 401 handling (not enforced yet)`
 
@@ -173,6 +173,18 @@ Contract check every phase: `python -c "import json;d=json.load(open('docs/api/o
 | Gates | `tsc`, `vitest` (new pure helpers get tests), `npm run build`; plus a DOM check: `tools/check_login_flow.py` (new, Playwright, mirrors `check_subtitle_panel.py`) driving login → Home → sign out against a stubbed api |
 | Proof | With enforcement OFF the app still works signed-out; the login page loads, a wrong password shows an error, a good one lands on Home, sign out returns to `/login` |
 | Risk | Medium-low; isolated to the frontend until Phase 2. **Do not** flip enforcement in this phase |
+
+**As built (2026-09-12) — two additions worth knowing about:**
+
+1. **The provider PROBES enforcement once at startup** (`me()` ⇒ 401 ⇒ one ordinary app call
+   such as `/api/config`). Without it, a signed-out visitor in an ENFORCED world would see
+   the app mount and then get bounced to the login view; the probe means the guard goes
+   straight there. `tools/check_login_flow.py` asserts app content **never** appears in that
+   world (`MutationObserver`), and the extra call costs a signed-out visitor nothing in the
+   unenforced world.
+2. **The sidebar's user card now reads the SESSION.** It held a hardcoded name ("Rajeev",
+   "Personal library") from the design mockup — with real sign-in that is a lie the moment a
+   second person logs in, so it shows the signed-in user, or "RKM Cinema / Not signed in".
 
 ### Phase 2 — enforcement + machine token + the 401 sweep **(the lockout-risk phase)**
 

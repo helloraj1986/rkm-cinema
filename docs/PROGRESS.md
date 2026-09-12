@@ -1,4 +1,95 @@
-## ▶ NEXT SESSION — START HERE: Plex profile auth — Phase C (identity threading, the phase that makes it real)
+## ▶ LATEST SESSION (2026-09-12) — PLEX PROFILE AUTH PHASE C: THE IDENTITY IS THREADED ✅ (branch `feat/auth-multiuser`, commits `3c08e65` + `5e303e0`; **api only — no frontend file changed**; nothing merged)
+
+**His instruction:** *"start phase c from progress.md in rkm-cinema"* — the plan's §7 row C, the phase that
+makes the profile model real rather than cosmetic.
+
+### What landed
+
+* **Every media call now goes out as the SELECTED PROFILE.** ONE rule decides the credential
+  (`api/session.py::acting_media_token`) and two kinds of caller use it: the provider
+  (`JellyfinLibraryProvider._api_token` — behind ALL 21 `api_key=` URL builds) and the four routes that build
+  a raw upstream URL (`jellyfin_stream`, `jellyfin_tracks`, both `jellyfin_hls`). `acting_user_id()` sources
+  the Jellyfin user id from the SAME session, so the id and the token cannot disagree.
+* **Two calls stay the administrator's ON PURPOSE, both non-content** (`owner_media_token`): reading the
+  server's library LIST (the display metadata a profile's own views are enriched with) and triggering a
+  library-wide scan. Neither returns an item, a position or a watched flag.
+* **The seam had to be ARMED: `require_session` was referenced by NO route** — nothing ever published the
+  contextvar, so the threading alone would have changed nothing. It is now a router-level dependency of every
+  app router (`api/main.py::SESSION_SCOPED`), health + auth excepted, with a structural test that fails if a
+  new router forgets it.
+* **Sidebar = the profile's GRANTS.** A profile's libraries come from its own `/UserViews`
+  (`/Library/VirtualFolders` is **403** for a non-administrator — measured), enriched with
+  `collection_type`/`path` from the folder list the app already holds, then filtered down to the views. New
+  pure helper `media_libraries.visible_libraries()`: an UNGRANTED configured library is OMITTED (not reported
+  as a config fault) and a granted library absent from `.env` still shows under the server's own name.
+* New tool **`tools/prove_profile_isolation.py`** — the phase's acceptance, measured live (below).
+* The plan gained **§4d** (the measurements) and **§4e** (the bug the proof found); row C is marked ✅.
+
+### ⚠ A bug the live proof found, and it was SILENT
+
+The proof's FIRST run failed *"the administrator's sidebar is whole again"*: after switching back to his own
+profile, `/api/library/folders` returned **empty** and the api log said
+`Jellyfin library_folders failed: HTTP Error 401`. Cause — **Jellyfin invalidates the previous token for a
+device+user on every login**, and the app signs in on ONE device id (`rkm-cinema-web`), so the administrator
+selecting their OWN profile re-authenticates as them on this device and kills the token the session has held
+since sign-in. `set_profile()` kept the owner token by design (Phase A's rule), so the session then held a
+DEAD one: every administrator-level call 401'd while the acting token stayed valid — which is why item detail
+and Continue Watching kept working and NOTHING raised. Fix: `set_profile(..., owns_session=…)` replaces the
+owner token when, and only when, the switch authenticated as the account owning the session; the store checks
+the id itself, so a mismatched flag cannot write a member's token over the administrator's credential.
+**Known limit, recorded not fixed** (§4e): because every app session signs in on the same device id, signing
+in twice (phone + laptop) rotates the token under the first session; it needs per-session device ids.
+
+### Evidence (all measured)
+
+* **887 backend pytest (+80)** · ruff clean · tsc clean · **243 vitest** · vite build · openapi **51 paths**
+  (only a route docstring changed) · docs links resolve (38 files).
+* The new suite `backend/tests/test_profile_identity.py` (76 tests) was run against the PRE-change source and
+  **36 of them FAILED** — including the guard that drives EVERY provider media method with a profile selected
+  and asserts every URL it builds carries that profile's token, plus its fail-safe mirror (no session ⇒ the app
+  key, exactly as before).
+* Browser checks unchanged and green: `check_profile_picker.py` **6/6** · `check_login_flow.py` **4/4** ·
+  `check_household_ui.py` **3/3** (vite restarted on :5199, served module verified, port released after).
+* **`tools/prove_profile_isolation.py` = 24/24 against the LIVE server**, two real accounts (`admin`, and
+  `Geetanjali` — non-admin, no password, granted `Movies` only): her sidebar is `['Movies']` vs his
+  `['Movies', 'TV Shows', 'Movies Kids']` with `warnings=[]`; the TV item requested **by id, typed by hand**
+  is **404** for her and **200** for him; a resume position written as her appears in HER Continue Watching
+  (1 row) and **NOT** in his (10 rows, that item absent); everything reverted, the temporary API key deleted,
+  the probe devices purged. The api for that run was local with `WATCHLIST_DB_PATH=/tmp/…`, so nothing was
+  written into the household's real state.
+* **The second user EXISTS and is already granted**: created from the app's own Household screen, exactly as
+  he decided — no account was created by this session.
+
+### ⚠ DEPLOY + EYEBALL — api only (no frontend file changed)
+
+```powershell
+cd D:\hermes_agent\hermes-workspace\projects\rkm-cinema
+.\rkm-cinema.ps1 status
+docker compose -p rkm-bundled up -d --build api
+```
+
+api-only on purpose: `up -d --build api` cannot cancel an in-flight library scan, and there is no frontend
+change to ship. Expected at http://localhost:8124 — **Sign in** as the administrator → **Who's watching?** →
+his profile (password again — decision 3) → the app as before, then **Switch profile** → **Geetanjali**: the
+sidebar shows **only `Movies`** (TV Shows and Movies Kids gone, not greyed), Continue Watching is **hers**, and
+a TV title cannot be opened even with its URL typed by hand. Switch back with his password: everything returns.
+
+⚠ **If he was signed in on RKM-HP while the proof ran**, that session's token was rotated (same app device id
+— §4e) and it will need a fresh sign-in. The proof itself leaves nothing behind.
+
+### Honest state after this session
+
+* **Per-profile watch state, resume, watched flags and LIBRARY ACCESS are now ENFORCED** — the point of the
+  phase. A member's folder grants are real: Jellyfin refuses an ungranted item on every URL shape this app
+  builds.
+* Still true, unchanged: **the app is OPEN when nobody is signed in** (`RKM_AUTH_REQUIRED=false` is his
+  deliberate opt-in, and no default was flipped). Arming it is Phase 2/E; `/api/health` and sign-in stay
+  reachable even then (pinned by a test that arms the flag).
+* **Phase D is next**: Settings → Household gains *rename* (`POST /Users?userId=`) and the profile's own
+  *change my password* (`CurrentPw` + `NewPw`). Then **Phase E**: the 401/403 sweep, ADR-0006, and the docs
+  truth pass (ARCHITECTURE/OPERATIONS/README still describe pre-auth behaviour).
+
+## ▶ NEXT SESSION — START HERE: Plex profile auth — Phase C (identity threading, the phase that makes it real)  → ✅ **DONE 2026-09-12** (commits `3c08e65` + `5e303e0`; kept for the map it carries)
 
 **Plan:** `docs/PLEX_PROFILE_AUTH_PLAN.md` §7. **Phase A ✅ `78f139e` · Phase B ✅ `af8033c` — both pushed**
 on `feat/auth-multiuser`; nothing merges until he asks.

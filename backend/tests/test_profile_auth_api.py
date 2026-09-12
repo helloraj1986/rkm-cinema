@@ -415,6 +415,19 @@ class TestChangeMyOwnPassword:
         assert r.json() == {"ok": True}
         assert "new-pw" not in r.text and "old-pw" not in r.text
 
+    def test_a_session_with_no_profile_choice_cannot_change_a_password(self, api):
+        """Without this rail a half-signed-in session would change the ADMINISTRATOR's password.
+
+        Every other call in this app falls back to the owner when no profile is chosen; a password
+        change must not do that silently.
+        """
+        _sign_in(api)   # signed in, nobody has picked a profile yet
+        r = api.client.post("/api/auth/profile/password",
+                            json={"current_password": "x", "new_password": "new-pw"})
+        assert r.status_code == 409
+        assert "choose a profile" in r.json()["detail"].lower()
+        assert api.library.password_changes == []
+
     def test_a_change_the_server_did_not_really_apply_is_a_502(self, api):
         """The live failure, pinned: Jellyfin answered 204 and the old password kept working.
 
@@ -453,8 +466,13 @@ class TestChangeMyOwnPassword:
 
     def test_the_administrator_changes_their_own_password_too(self, api):
         """On the administrator's own profile the same route changes THEIR password — no separate
-        admin path is needed, and no old password is bypassed either."""
+        admin path is needed, and no old password is bypassed either.
+
+        The profile must be SELECTED first (decision 3), which is also what stops a half-signed-in
+        session from changing the administrator's password by accident.
+        """
         _sign_in(api)
+        _select(api, "uid-admin", ADMIN_PW)
         r = api.client.post("/api/auth/profile/password",
                             json={"current_password": ADMIN_PW, "new_password": "fresh"})
         assert r.status_code == 200, r.text

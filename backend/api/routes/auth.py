@@ -258,6 +258,14 @@ def change_own_password(payload: ChangePasswordRequest, request: Request):
     context = session_context_from_request(request)
     if context is None:
         raise HTTPException(status_code=401, detail="Sign in to change your password")
+    # A session with no profile chosen falls back to the OWNER everywhere else in this app, so
+    # without this rail a change made from a half-signed-in session would silently land on the
+    # ADMINISTRATOR's account (measured 2026-09-12). Refuse and say why.
+    if not context.profile_user_id:
+        raise HTTPException(
+            status_code=409,
+            detail="Choose a profile first — this changes the password of the profile in effect, "
+                   "and no profile is selected on this device.")
     if not (payload.new_password or ""):
         raise HTTPException(
             status_code=400,

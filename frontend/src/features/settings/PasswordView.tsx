@@ -16,7 +16,7 @@
  *    call takes no user id at all.
  */
 import { useState, type FormEvent } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { api } from "../../lib/api/client";
 import { useAuth } from "../auth/AuthProvider";
@@ -29,6 +29,7 @@ const PRIMARY =
 
 export function PasswordView() {
   const { profile } = useAuth();
+  const queryClient = useQueryClient();
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -55,6 +56,10 @@ export function PasswordView() {
     setBusy(true);
     try {
       await api.changeMyPassword(next, current);
+      // The picker shows a lock from the SAME cached list this screen reads, so a change must
+      // refresh it — otherwise the lock is remembered from before the change and the profile looks
+      // unprotected (or still protected) until something else invalidates the cache.
+      await queryClient.invalidateQueries({ queryKey: ["auth", "profiles"] });
       setDone(true);
       setCurrent("");
       setNext("");

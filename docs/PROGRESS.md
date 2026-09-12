@@ -1,4 +1,85 @@
-## ▶ NEXT SESSION — START HERE: Plex profile auth — Phase B (the "Who's watching?" picker)
+## ▶ NEXT SESSION — START HERE: Plex profile auth — Phase C (identity threading, the phase that makes it real)
+
+**Plan:** `docs/PLEX_PROFILE_AUTH_PLAN.md` §7. **Phase A ✅ `78f139e` · Phase B ✅ `af8033c` — both pushed**
+on `feat/auth-multiuser`; nothing merges until he asks.
+
+### Waiting on HIM, in this order
+
+1. **The household fix from `61d6b67` is STILL not deployed** (independent of this plan).
+2. **This session's Phase B needs a deploy + eyeball — api AND web** (Phase B added one api field):
+   ```powershell
+   cd D:\hermes_agent\hermes-workspace\projects\rkm-cinema
+   .\rkm-cinema.ps1 status
+   docker compose -p rkm-bundled up -d --build api web
+   ```
+   Expected at http://localhost:8124 — the app opens signed-out EXACTLY as before (nothing is
+   enforced); top bar → **Sign in** → the Jellyfin admin credentials → **"Who's watching?" appears**
+   (that is new: sign-in now asks); HIS profile shows a **lock** and asks the password again (that IS
+   decision 3 — plan §4c, do not "fix" it by weakening the rule); then the app as before, his name in
+   the chip, and **Switch profile** in the top bar brings the picker back. **Household** should now
+   list accounts (that is the `61d6b67` fix riding along).
+   ⚠ **If he was already signed in on that browser**, a session from Phase 0/1 has no profile, so the
+   picker appears on the next page load. That is the feature working, not a bug.
+3. **Then Phase C — say go.**
+
+### Phase C (the riskiest, and the one that matters)
+
+`acting_token()` through the provider's `_token()` seam (21 `api_key=` sites, 18 `build_library_service`
+call sites — the contextvar seam exists so this is ONE diff point), a profile's libraries from its own
+`/UserViews`, and **the live two-profile proof**: two real profiles with different watch positions —
+resume a title as one and show the other does NOT see it; a profile granted only `Movies` gets an
+empty/404 for a TV item even when the item URL is typed by hand. The SECOND Jellyfin user is created
+from the app's own Household screen (his decision), so Phase C can start the moment that exists.
+Mint any tooling key on its **own** device id — Jellyfin rotates a device's token on every login.
+
+### The map (nothing to re-derive)
+
+* Repo `/workspace/projects/rkm-cinema` (= his `D:\hermes_agent\hermes-workspace\projects\rkm-cinema`),
+  branch **`feat/auth-multiuser`**, working tree clean, all pushed; **`main` untouched** (`c0ae65e`).
+* Phase table `docs/PLEX_PROFILE_AUTH_PLAN.md` §7: **A ✅ · B ✅ · C ⏭ NEXT · D · E.**
+  Phase C = identity threading · D = rename + the profile's own change-my-password · E = the 401/403
+  sweep + ADR-0006 + docs.
+* ⚠ **Phase A's route table is aspirational — read §4a before looking for routes that are not there.**
+  Shipped: `GET /api/auth/profiles`, `POST /api/auth/profile` (that is the whole of "the picker").
+  NOT built: `DELETE /api/auth/profile` (not needed — switching back IS `POST /api/auth/profile` with
+  the admin's password), `POST /api/auth/profile/password` and `rename` (both Phase D).
+* Gates before every commit in this workstream:
+  ```bash
+  cd backend  && python -m pytest -q && python -m ruff check .
+  cd frontend && npx tsc --noEmit && npx vitest run && npm run build
+  python3 backend/scripts/snapshot_openapi.py   # 51 paths is the current state
+  python3 tools/check_md_links.py
+  cd frontend && npx vite --port 5199 --strictPort &   # kill the PID holding 5199 FIRST
+  python3 tools/check_profile_picker.py && python3 tools/check_login_flow.py
+  ```
+  ⚠ Restart vite after ANY source edit AND confirm the SERVED module is the edited one —
+  `curl -s localhost:5199/src/features/profiles/ProfilesView.tsx | grep -c profile-picker`.
+* Six traps this workstream has already paid for — do not repeat them:
+  1. **A new provider capability needs a FACADE delegation** (`services/library/service.py`), or the
+     route raises `AttributeError` and the gate reports it as "not an administrator".
+  2. **A test fake must mirror what the ROUTE receives** (the facade's shapes), not what the provider
+     returns.
+  3. `grantable_rows()` (`api/session.py`) is the ONE shape handler — do not inline the isinstance
+     dance again.
+  4. Vite serves stale modules on this mount (both false FAILs and false PASSes come from it).
+  5. Never offer an admin route to a non-administrator profile, and never arm `RKM_AUTH_REQUIRED` for him.
+  6. **A "you shouldn't be here" redirect is a claim about INTENT** — the header's *Switch profile*
+     bounced straight off the picker's own redundant-visit rule until a deliberate `?switch=1` made the
+     two visits distinguishable. Keep that distinction when Phase C touches navigation.
+
+### The honest state of the whole feature (say this, do not oversell it)
+
+* The picker, the lock badges, the password prompt, the switcher and the admin-only server login are
+  **real**, and the picker's trigger is a SERVER fact (`profile_selected`), not a remembered click.
+* **Per-profile watch state, resume, watched flags and LIBRARY ACCESS are still NOT enforced** — every
+  media call goes out on the ADMIN's credential until **Phase C threads the identity**. A member's
+  folder grants are cosmetic today; the new picker must not be read as making them real.
+* Nothing is enforced: a signed-out visitor sees the whole app exactly as before. Arming
+  `RKM_AUTH_REQUIRED` remains his explicit opt-in (`.env` + `--force-recreate api`).
+* Platform limit, recorded in code: Jellyfin has **no impersonation** — a profile's password is what
+  lets the app act as it; the administrator's path to a forgotten one is **reset**, never bypass.
+
+## ▶ NEXT SESSION — START HERE: Plex profile auth — Phase B (the "Who's watching?" picker)  → ✅ **BUILT + PUSHED 2026-09-12** (`af8033c`; see the record below). The deploy + eyeball it was waiting on is now in the pointer ABOVE this one.
 
 **Plan:** `docs/PLEX_PROFILE_AUTH_PLAN.md` (four decisions taken by the user 2026-09-12, all built
 into Phase A). **Phase A is DONE and pushed** — `78f139e` (backend, contract 49 → 51).
@@ -83,6 +164,99 @@ the `POST /api/auth/profile` response, which already resolves them to names.
   lets the app act as it; the administrator's path is RESET, never bypass), and with an administrator
   account that has NO password a deliberate non-empty attempt still succeeds — the blank refusal is a
   check on intent there, which is why the picker only shows a lock when one exists.
+
+## ▶ LATEST SESSION (2026-09-12) — PLEX PROFILE AUTH PHASE B: "WHO'S WATCHING?" ✅ BUILT (branch `feat/auth-multiuser`, commit `af8033c`; **api AND web — ONE additive field**; nothing enforced, nothing merged)
+
+**His instruction:** *"for rkm-cinema pickup next from progress.md"* — i.e. execute the plan's next
+phase. Sign-in now asks who is watching, and the answer is a server fact.
+
+### What landed
+
+* **Backend, ONE additive field** (`+10/−0`, contract **51 paths unchanged**): `me()` and
+  `/api/auth/profiles` report **`profile_selected`**. ⚠ **The plan's §7 row B claimed "frontend:" and
+  that was FALSIFIED while building it** — `SessionContext.profile_id()` falls back to the OWNER, so
+  "nobody chosen yet" and "the administrator chose themselves" were byte-identical payloads. Without
+  a server fact the picker's trigger could only be a remembered click, and the session lasts 30 days
+  across tabs and devices. Rejected alternative (sessionStorage) recorded in the plan's new **§4b**.
+  3 tests, each verified to **fail against the pre-change source** (stashed the two source files and
+  ran them: 3 failed).
+* `frontend/src/features/profiles/{lib.ts,lib.test.ts,ProfilesView.tsx}` — the picker, OUTSIDE the
+  shell like `/login`; a row per profile carrying only the SERVER's facts (lock, disabled + the
+  reason, "Watching now" only when `profile_selected`); an inline password prompt; Sign out (nobody
+  is trapped). Pure rules + 17 tests.
+* `features/auth/lib.ts` — `guardDecision` gained a **third answer**: signed in with no profile ⇒
+  `picker`. `profileSelected` is a **required** input, so no caller inherits a default that silently
+  means "admin". Plus `watchingName()`: the Header chip and Sidebar card name the **PROFILE** — the
+  identity media actually runs as.
+* `features/auth/AuthProvider.tsx` — `profile`/`profileSelected` state and `selectProfile()` (clears
+  the React Query cache: the next person's rows must not flash); a fresh sign-in confirms against
+  `me()` instead of assuming.
+* `RequireSession` carries the interrupted deep link through the picker (`/profiles?next=…`);
+  `LoginView` lands there after a sign-in; `/profiles` is a top-level route. `Header` gained a profile
+  chip + **Switch profile**; `Icon` gained a Lucide `lock`.
+* New verifier **`tools/check_profile_picker.py`** (6 scenarios) + `frontend/harness/profile-frame.*`;
+  **`tools/check_login_flow.py` and `login-frame.tsx` were UPDATED** because the flow genuinely changed
+  (sign-in → picker → app). The harness README documents both.
+
+### Two bugs the checks caught before shipping
+
+1. **"Switch profile" bounced straight back into the app.** `ProfilesView` sends a redundant visit home
+   when somebody is already watching — which is exactly what the header link looked like. Fixed with an
+   explicit `?switch=1`; scenario E now asserts the picker STAYS. Generalise: a "you shouldn't be here"
+   redirect is a claim about INTENT, and a deliberate navigation must be distinguishable from an
+   accidental one.
+2. **The first `pick_profile` click hit the container, not a row** — `data-testid="profile-picker"` also
+   starts with `profile-`, so the login check timed out on a prompt that never opened. Rows are now
+   selected by `[data-profile-name]`.
+
+### Evidence (all green, measured)
+
+* **807** backend pytest (+3) · ruff clean · tsc clean · **243** vitest (221 → +22) · vite build green ·
+  openapi **51 paths**, `+10/−0` additive (two boolean fields).
+* `tools/check_profile_picker.py` **6/6** — (A) the picker is shown and **app content NEVER appears**
+  (MutationObserver); locks only where the server needs one, including an administrator with NO password
+  of its own; the disabled row is inert even to a programmatic click and says why; no row claims
+  "Watching now" before a choice; **zero `/api/admin/*` calls** (that route is refused while somebody
+  else's profile is selected). (B) a password-less profile posts `{"user_id":"uid-guest","password":""}`
+  and lands as `Watching as Guest`. (C) a protected one asks FIRST (0 requests before the prompt), a
+  blank and a wrong attempt both answer the generic message, the right one lands. (D) the owner's
+  profile asks even with no password set. (E) a chosen profile goes straight to the app and the header
+  switcher brings the picker back with `admin` marked. (F) disabled = no call at all.
+* `tools/check_login_flow.py` **4/4** (updated): signed-out stays usable · a correct password now lands
+  on the **PICKER**, then profile → app with the right chip · a BLANK-password account still signs in and
+  picks its profile · the enforced world goes straight to the login view with app content never appearing.
+* `tools/check_household_ui.py` **3/3** — no regression from the Header/AuthProvider changes.
+* docs links: 38 files, 9 relative links resolve.
+* ⚠ **Not verified visually.** `vision_analyze` failed twice on this provider (server disconnected), so
+  the picker's LOOK is uneyeballed; the content assertions above are the evidence, and acceptance is his
+  RKM-HP eyeball anyway.
+
+### Honest state after this session
+
+* The picker, the locks, the prompt, the switcher and the admin-only login are **real**, and the picker's
+  trigger is a server fact.
+* **Per-profile watch state, resume, watched flags and LIBRARY ACCESS are still NOT enforced** — every
+  media call goes out on the ADMIN's credential until **Phase C threads `acting_token()`**. A member's
+  folder grants remain cosmetic; the new screen must not be read as making them real.
+* Nothing is enforced (a signed-out visitor still sees the whole app), and arming `RKM_AUTH_REQUIRED`
+  stays his explicit opt-in.
+* **New, deliberate cost:** on a fresh sign-in the administrator types their password TWICE — once to
+  open the server, again to select their own profile — because a blank attempt on that profile is always
+  refused. That IS decision 3, written into the plan's new **§4c** so a future session does not "fix" it
+  by weakening the rule.
+
+### ⚠ DEPLOY + EYEBALL (api AND web — Phase B added one api field)
+
+```powershell
+cd D:\hermes_agent\hermes-workspace\projects\rkm-cinema
+.\rkm-cinema.ps1 status
+docker compose -p rkm-bundled up -d --build api web
+```
+Expected: the signed-out app unchanged · **Sign in** → **Who's watching?** · his profile shows a lock and
+asks the password again · the app as before with his name in the chip · **Switch profile** returns to the
+picker · **Household** lists accounts (the `61d6b67` fix riding along).
+
+**Phase status: A ✅ · B ✅ · C ⏭ NEXT · D · E.** Nothing merges to `main` until he asks.
 
 ## ▶ LATEST SESSION (2026-09-12) — PLEX PROFILE AUTH: PLAN + PHASE A (backend) ✅
 

@@ -71,7 +71,7 @@ window.fetch = (async (input: RequestInfo | URL, init: RequestInit = {}) => {
       return send(502, { detail: "The media server refused the password change" });
     }
     if (REFUSE === "silent") return send(502, {});
-    return send(200, { ok: true });
+    return send(200, { ok: true, confirmation: "verified" });
   }
   return send(200, {});
 }) as typeof fetch;

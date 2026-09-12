@@ -122,7 +122,7 @@ def api(tmp_path, monkeypatch):
     # The route PROVES a password change by signing in with the new value (a 204 is not evidence).
     # Tests stand in for the media server here; `seen["password_verify"]` decides the answer.
     monkeypatch.setattr(auth_route, "password_change_took_effect",
-                        lambda name, pw, **kw: seen.get("password_verify", True))
+                        lambda name, pw, **kw: seen.get("password_verify", "verified"))
     monkeypatch.setattr(admin_route, "build_library_service", lambda *a, **k: library)
     monkeypatch.setattr(session_mod, "session_store", lambda config=None: store)
     monkeypatch.setattr(session_mod, "build_library_service", lambda *a, **k: library)
@@ -412,7 +412,7 @@ class TestChangeMyOwnPassword:
         r = api.client.post("/api/auth/profile/password",
                             json={"current_password": "old-pw", "new_password": "new-pw"})
         assert r.status_code == 200
-        assert r.json() == {"ok": True}
+        assert r.json() == {"ok": True, "confirmation": "verified"}
         assert "new-pw" not in r.text and "old-pw" not in r.text
 
     def test_a_session_with_no_profile_choice_cannot_change_a_password(self, api):
@@ -428,22 +428,24 @@ class TestChangeMyOwnPassword:
         assert "choose a profile" in r.json()["detail"].lower()
         assert api.library.password_changes == []
 
-    def test_a_change_the_server_did_not_really_apply_is_a_502(self, api):
-        """The live failure, pinned: Jellyfin answered 204 and the old password kept working.
+    def test_the_verification_is_reported_and_never_blocks_the_change(self, api):
+        """A status code is not evidence, and a MISSING answer is not a failure either.
 
-        A status code is not evidence. The route signs in with the new value before claiming
-        anything, and says so honestly when that fails — which is what the screen used to get
-        wrong ("Password changed" while nothing had changed).
+        Live lesson (2026-09-12): Jellyfin answered 204 while the screen said the change had not
+        been applied, and the change HAD landed. So the answer is carried back as a fact
+        (`confirmation`) and the client says what it knows — it must never turn "I could not check"
+        into "it did not work".
         """
         _sign_in(api)
         _select(api, "uid-kid")
-        api.seen["password_verify"] = False
-        r = api.client.post("/api/auth/profile/password",
-                            json={"current_password": "", "new_password": "new-pw"})
-        assert r.status_code == 502
-        # It says what was MEASURED ("could not be confirmed"), not a conclusion we cannot support.
-        assert "could not be confirmed" in r.json()["detail"]
-        assert api.library.password_changes == [("", "new-pw")], "it did reach the server"
+        for answer, expected in (("verified", "verified"), ("refused", "refused"),
+                                 ("unavailable", "unavailable")):
+            api.seen["password_verify"] = answer
+            r = api.client.post("/api/auth/profile/password",
+                                json={"current_password": "", "new_password": "new-pw"})
+            assert r.status_code == 200, f"{answer} must still be a successful change"
+            assert r.json() == {"ok": True, "confirmation": expected}
+        assert api.library.password_changes == [("", "new-pw")] * 3
 
     def test_the_verification_uses_the_SERVERS_name_for_the_account(self, api, monkeypatch):
         """`profile_name()` falls back to the OWNER, so verifying with it could check the wrong
@@ -456,7 +458,7 @@ class TestChangeMyOwnPassword:
                                      {"id": "uid-admin", "name": "admin"}])
         seen_args: list[tuple[str, str]] = []
         monkeypatch.setattr(auth_route, "password_change_took_effect",
-                            lambda name, pw, **kw: seen_args.append((name, pw)) or True)
+                            lambda name, pw, **kw: seen_args.append((name, pw)) or "verified")
         api.client.post("/api/auth/profile/password",
                         json={"current_password": "", "new_password": "new-pw"})
         assert seen_args == [("RenamedSinceLogin", "new-pw")]
@@ -467,7 +469,7 @@ class TestChangeMyOwnPassword:
         _select(api, "uid-kid")
         seen_args: list[tuple[str, str]] = []
         monkeypatch.setattr(auth_route, "password_change_took_effect",
-                            lambda name, pw, **kw: seen_args.append((name, pw)) or True)
+                            lambda name, pw, **kw: seen_args.append((name, pw)) or "verified")
         api.client.post("/api/auth/profile/password",
                         json={"current_password": "", "new_password": "new-pw"})
         assert seen_args == [("Kid", "new-pw")]
@@ -506,7 +508,7 @@ class TestChangeMyOwnPassword:
                             json={"current_password": "old-secret", "new_password": "new-secret"})
         text = caplog.text
         assert "old-secret" not in text and "new-secret" not in text
-        assert "auth.password changed" in text
+        assert "auth.password accepted" in text
 
 
 class TestTheProvidersOwnPasswordCall:

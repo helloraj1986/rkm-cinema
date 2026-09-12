@@ -201,7 +201,7 @@ class UrllibTransport:
 
 # ------------------------------------------------------------------ jellyfin call
 def password_change_took_effect(username: str, password: str, *,
-                                 config=None, transport=None) -> bool:
+                                 config=None, transport=None) -> str:
     """Did a password change really land? Ask the SERVER, never the status code.
 
     Measured 2026-09-12 against Jellyfin 10.11.11: ``POST /Users/Password`` answers **204 while
@@ -220,20 +220,24 @@ def password_change_took_effect(username: str, password: str, *,
     try:
         identity = authenticate_jellyfin(username, password, config=config, transport=transport,
                                         device_id=VERIFY_DEVICE_ID)
-    except Exception as exc:  # noqa: BLE001 - "not proved" must never 500 a route
-        # The CLASS is the whole diagnostic, and it is the difference between two very different
-        # truths: InvalidCredentialsError = the server REFUSED the new password (the change really
-        # did not take), AuthUnavailableError = we could not ask (the change may be perfectly fine
-        # and this is a false alarm). Never the exception text — it can carry the URL.
-        logger.warning("password verification failed for %r: %s", username, type(exc).__name__)
-        return False
+    except InvalidCredentialsError as exc:
+        # The server REFUSED the new password: the change did not take. That is a real answer.
+        logger.warning("password verification refused for %r: %s", username, type(exc).__name__)
+        return "refused"
+    except Exception as exc:  # noqa: BLE001 - "could not ask" must never 500 a route
+        # Could not ASK. We know nothing about whether the change landed, so this must never be
+        # reported as a failure of the change — the live symptom of getting that wrong was a user
+        # being told their change had not been applied when it may well have been. Never the
+        # exception text: it can carry the URL.
+        logger.warning("password verification unavailable for %r: %s", username, type(exc).__name__)
+        return "unavailable"
     token = str(getattr(identity, "token", "") or "")
     if token:
         try:
             revoke_jellyfin_session(token, config=config, transport=transport)
         except Exception:  # noqa: BLE001 - a leftover token is not worth failing the request over
             logger.info("could not log the verification session out; it expires on its own")
-    return True
+    return "verified"
 
 
 def authenticate_jellyfin(username: str, password: str, *, config=None,

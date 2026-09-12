@@ -10,7 +10,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { changeErrorMessage, changeIssue, MIN_HINT } from "./password";
+import { changeErrorMessage, changeIssue, confirmationMessage, MIN_HINT } from "./password";
 
 describe("changeIssue", () => {
   it("allows a well-formed change when the account HAS a password", () => {
@@ -70,6 +70,36 @@ describe("changeIssue", () => {
 
   it("allows re-setting the SAME password (the server does; nothing here blocks it)", () => {
     expect(changeIssue("same", "same", "same", true).allowed).toBe(true);
+  });
+});
+
+describe("confirmationMessage", () => {
+  it("claims a change only when the new password actually signed in", () => {
+    expect(confirmationMessage("verified")).toEqual({ ok: true, text: "Password changed." });
+  });
+
+  it("does NOT call a refusal applied, and does not call it a failure of the user either", () => {
+    const m = confirmationMessage("refused");
+    expect(m.ok).toBe(false);
+    expect(m.text).toMatch(/may not have been applied/i);
+    expect(m.text).toMatch(/administrator/i);
+  });
+
+  it("treats 'could not ask' as unknown, never as 'not applied'", () => {
+    // The live lesson: a check that could not be completed said "it was not applied" to somebody
+    // whose change HAD landed.
+    const m = confirmationMessage("unavailable");
+    expect(m.ok).toBe(false);
+    expect(m.text).not.toMatch(/not been applied|not applied/i);
+    expect(m.text).toMatch(/could not be confirmed/i);
+  });
+
+  it("does NOT read a MISSING confirmation as success", () => {
+    // An api that says nothing has told us nothing. Defaulting to "changed" here is exactly the
+    // lie this whole round of work was about, so silence falls into the honest branch.
+    const m = confirmationMessage(undefined);
+    expect(m.ok).toBe(false);
+    expect(m.text).toMatch(/could not be confirmed/i);
   });
 });
 

@@ -22,6 +22,32 @@ this session is too long · record ur findings and issues in progress.md to take
      REFUSED the new password (the change really did not take) · `AuthUnavailableError` = we could not
      ask, i.e. a false alarm.
 
+### 🔴 LATEST FINDING (end of session): the change LANDS — the VERIFICATION was the thing lying
+
+His log proved the targets are **correct** (`rajeev` / `sharanya` ids, not the administrator's),
+Geetanjali **succeeds**, and rajeev + sharanya fail at the **verification** step. Then this session
+measured that `sharanya` — `has_password: False` in the table below when he tried — **now HAS a
+password**: the change landed and the check reported otherwise. A FALSE NEGATIVE, twice.
+
+So the verification is **ADVISORY, never a gate**. The route returns **200** with the answer carried
+back as a fact:
+
+```
+{"ok": true, "confirmation": "verified" | "refused" | "unavailable"}
+  verified    -> "Password changed."
+  refused     -> the server would NOT sign in with the new password (likely not applied)
+  unavailable -> we could not ask; nothing is known either way -> amber wording, never "not applied"
+```
+
+An **absent** confirmation is NOT success (that default was a lie in the other direction). The screen
+shows the amber wording for the last two, and `confirmationMessage()` in
+`frontend/src/features/settings/password.ts` owns that wording (unit-tested both ways).
+
+⚠ **Still unknown:** why the api container cannot complete the verification login while the same call
+from the sandbox succeeds with the exact same header, device id and password (measured). The build now
+logs the exception **CLASS** — `password verification refused|unavailable for '<name>': <Class>` — so
+the next attempt names it. **Do NOT revert to blocking on the verification.**
+
 ### The account table (read-only, from the live server, 2026-09-12)
 
 | name | has_password | admin | folders | id |
@@ -106,7 +132,9 @@ mistaken for the app's).
 `57dd122` Phase 3 "My password" · `0b8ee20` its record · `09d466a` picker lock cache ·
 `6e34438` the destructive password flag · `11eaa91` its record · `0e2c38d` prove the change ·
 `be5c282` refuse without a profile · `1000bbe` verify with the server's name · `a978f87` show the
-server's name.
+server's name · **then the end-of-session round: the advisory confirmation (`confirmation` field +
+`confirmationMessage`), prompted by his log showing the verification had been reporting false
+negatives** — see LATEST FINDING above.
 
 **Gates at hand-off:** 933 backend pytest · ruff clean · 266 vitest · tsc + build clean · openapi 53
 paths (unchanged) · docs links resolve · `check_password_change.py` 4/4, `check_household_ui.py` 4/4,

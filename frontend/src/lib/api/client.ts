@@ -404,6 +404,14 @@ export interface MeResult {
   expires: string;
 }
 
+/**
+ * What the server answered about a password change it ACCEPTED:
+ *   verified    signing in with the new password worked
+ *   refused     the server would not sign in with it — it likely did not take
+ *   unavailable we could not ask, so nothing is known either way
+ */
+export type PasswordConfirmation = "verified" | "refused" | "unavailable";
+
 // ------------------------------------------------------- profiles (Phase B, "Who's watching?")
 /** One selectable profile. Never carries a credential — only whether one is NEEDED. */
 export interface ProfileUserShape {
@@ -903,7 +911,7 @@ export const api = {
    * to match, so this never invents that rule.
    */
   changeMyPassword: (newPassword: string, currentPassword = "") =>
-    postJson<{ ok: boolean }>("/auth/profile/password", {
+    postJson<{ ok: boolean; confirmation?: PasswordConfirmation }>("/auth/profile/password", {
       current_password: currentPassword,
       new_password: newPassword,
     }),

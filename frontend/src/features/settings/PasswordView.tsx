@@ -20,7 +20,14 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { api } from "../../lib/api/client";
 import { useAuth } from "../auth/AuthProvider";
-import { changeErrorMessage, changeIssue, MIN_HINT, type HasPassword } from "./password";
+import {
+  changeErrorMessage,
+  changeIssue,
+  confirmationMessage,
+  MIN_HINT,
+  type Confirmation,
+  type HasPassword,
+} from "./password";
 
 const INPUT =
   "w-full rounded-lg border border-white/10 bg-canvas px-3 py-2 text-sm outline-none focus:border-accent";
@@ -35,7 +42,7 @@ export function PasswordView() {
   const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [done, setDone] = useState(false);
+  const [confirmation, setConfirmation] = useState<Confirmation | undefined>();
 
   // Which profile this is, and whether it HAS a password — the server's answer, not a guess. The
   // same route the picker uses; null until it arrives, and null is treated as "don't require the
@@ -49,18 +56,19 @@ export function PasswordView() {
   const hasPassword: HasPassword = profiles.data ? Boolean(mine?.has_password) : null;
 
   const decision = changeIssue(current, next, confirm, hasPassword);
+  const confirmed = confirmationMessage(confirmation);
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
     setError("");
     setBusy(true);
     try {
-      await api.changeMyPassword(next, current);
+      const result = await api.changeMyPassword(next, current);
       // The picker shows a lock from the SAME cached list this screen reads, so a change must
       // refresh it — otherwise the lock is remembered from before the change and the profile looks
       // unprotected (or still protected) until something else invalidates the cache.
       await queryClient.invalidateQueries({ queryKey: ["auth", "profiles"] });
-      setDone(true);
+      setConfirmation(result.confirmation);
       setCurrent("");
       setNext("");
       setConfirm("");
@@ -126,7 +134,7 @@ export function PasswordView() {
           autoComplete="new-password"
           onChange={(e) => {
             setNext(e.target.value);
-            setDone(false);
+            setConfirmation(undefined);
           }}
         />
 
@@ -155,13 +163,15 @@ export function PasswordView() {
           <button type="submit" className={PRIMARY} disabled={!decision.allowed || busy}>
             {busy ? "Saving…" : "Change password"}
           </button>
-          {done ? (
+          {confirmation ? (
             <span
               role="status"
               data-testid="password-done"
-              className="text-xs text-emerald-400"
+              className={
+                confirmed.ok ? "text-xs text-emerald-400" : "text-xs text-amber-300"
+              }
             >
-              Password changed.
+              {confirmed.text}
             </span>
           ) : null}
         </div>

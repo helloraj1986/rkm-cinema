@@ -304,19 +304,16 @@ def change_own_password(payload: ChangePasswordRequest, request: Request):
         logger.info("auth.password: session called profile id=%s %r, the server calls it %r",
                     target_id, session_name, server_name)
 
-    if not password_change_took_effect(verify_name, payload.new_password, config=cfg):
-        # Say what was MEASURED, not a conclusion we cannot support: the server accepted the call,
-        # and signing in with the new password did not work. Whether the change was applied is
-        # exactly what we could not confirm.
-        logger.warning("auth.password NOT confirmed: target id=%s name=%r", target_id, verify_name)
-        raise HTTPException(
-            status_code=502,
-            detail="The media server accepted the change, but signing in with the new password "
-                   "failed, so it could not be confirmed. Try signing in with the new password — "
-                   "if that fails, your old one is unchanged or the administrator can set one from "
-                   "Household.")
-    logger.info("auth.password changed and confirmed: target id=%s name=%r", target_id, verify_name)
-    return JSONResponse({"ok": True})
+    # The check is ADVISORY, never a gate: the server has already accepted the change, and a
+    # verification that cannot be completed says nothing about whether it landed — refusing on that
+    # basis tells a person their password was not changed when it may well have been.
+    #   verified    -> we signed in with the new password
+    #   refused     -> the server would not let us: the change did NOT take
+    #   unavailable -> we could not ask (network/config); unknown either way
+    confirmation = password_change_took_effect(verify_name, payload.new_password, config=cfg)
+    logger.info("auth.password accepted: target id=%s name=%r confirmation=%s",
+                target_id, verify_name, confirmation)
+    return JSONResponse({"ok": True, "confirmation": confirmation})
 
 
 @router.post("/auth/logout")

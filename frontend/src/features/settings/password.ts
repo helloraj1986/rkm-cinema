@@ -13,6 +13,8 @@
  * the exact bug that once made them unable to sign in.
  */
 
+import type { PasswordConfirmation } from "../../lib/api/client";
+
 export interface ChangeDecision {
   allowed: boolean;
   /** Why not — shown beside the button, and the same shape the server's refusal would take. */
@@ -21,6 +23,36 @@ export interface ChangeDecision {
 
 /** Does this account currently have a password? `null` = the server has not told us yet. */
 export type HasPassword = boolean | null;
+
+/**
+ * What the server answered about a change it accepted: did signing in with the new password work?
+ *
+ * `refused` and `unavailable` are NOT the same thing and must never be worded as one: the first says
+ * the server would not let us in with the new password (so it likely did not take), the second says
+ * we could not ask (so we know nothing). Both are reported as what they are — the live lesson from
+ * 2026-09-12 was a screen telling somebody their change had not been applied when it had.
+ */
+export type Confirmation = PasswordConfirmation;
+
+export function confirmationMessage(confirmation: Confirmation | undefined): {
+  ok: boolean;
+  text: string;
+} {
+  if (confirmation === "verified") return { ok: true, text: "Password changed." };
+  if (confirmation === "refused") {
+    return {
+      ok: false,
+      text: "The server accepted the change but would not sign in with the new password, so it " +
+        "may not have been applied. Sign in with the new password to check — if that fails, your " +
+        "old one is unchanged and the administrator can set one from Household.",
+    };
+  }
+  return {
+    ok: false,
+    text: "The server accepted the change but it could not be confirmed. Sign in with the new " +
+      "password to check — if that fails, the administrator can set one from Household.",
+  };
+}
 
 export const MIN_HINT =
   "Use something you have not used here before. There is no length rule — the media server " +

@@ -66,6 +66,31 @@ the session was on meenu from earlier. The label + the named answer together mak
 `name='raj'` + `refused` = the sign-in genuinely failed for that account (a real problem to chase);
 `name=''` + `unavailable` = we could not name it and deliberately did not check.
 
+### ✅ HE CONFIRMED THE PASSWORD WORK ("seems to be working now") + two nav requests, both done
+
+After `14c06bf` he confirmed it works. He then asked for two things, shipped in `16391fc`:
+
+1. **"household path should not be available to non admin users"** — the desktop sidebar offered
+   Household to EVERYONE (on the reasoning that the server's 403 explained itself). Now gated on the
+   profile in effect being an administrator, via `mayManageHousehold()` (fails CLOSED while the
+   server's answer is unknown). The server still refuses the routes — this only decides what the app
+   offers.
+2. **"and also it should be available on ui"** — the MOBILE "More" sheet had **no route to Household
+   or My password at all**; both screens existed only in the desktop sidebar. Both are now there, with
+   Household gated the same way.
+
+The admin fact comes from the same `["auth","profiles"]` payload the picker and My-password screen
+read (`useCurrentProfile`) — the server's answer, not an inference from a name.
+
+New browser check **`tools/check_nav_access.py`** over `frontend/harness/nav-frame.tsx`: administrator
+sees Household on both surfaces, a member sees it on neither (keeping My password), and a member's
+navigation fires **zero** `/api/admin/*` calls. Falsified: with the gates opened, the member scenario
+fails on both surfaces. `frontend/harness/README.md` documents the new frame.
+
+⚠ Still open from this round (unchanged): a stale profile token surfaces as "that current password is
+not correct" — the honest degrade is "switch profile again"; and a guard so the provider can never
+substitute the first account when a session exists but no identity was published.
+
 ### 🎯 ROOT CAUSE FOUND AND FIXED (2026-09-12): the auth route was not session-scoped
 
 `POST /api/auth/profile/password` lives on the auth router, which is deliberately NOT session-scoped

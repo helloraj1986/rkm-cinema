@@ -1,4 +1,95 @@
-## ▶ NEXT SESSION — START HERE: password work is MID-FLIGHT — 4 fixes pushed, HIS RETRY + ONE LOG LINE still outstanding
+## ▶ NEXT SESSION — START HERE: the auth workstream is COMPLETE and CONFIRMED · next = the identity/token hardening pass (#1) · everything stays on `feat/auth-multiuser`
+
+**His instruction, verbatim:** *"update the progress.md to take it up in the next session...commit and
+merge all the changes to feature branch not the main"* — so: record the queue, commit, push, and
+**do NOT merge to `main`**. He asks for merges explicitly.
+
+---
+
+### State at hand-off (2026-09-12/13)
+
+| | |
+|---|---|
+| Branch | **`feat/auth-multiuser`**, worktree CLEAN, local tip == remote tip (`35c3480`) |
+| Ahead of `main` | **46 commits** — `main` is still `c0ae65e` and is fully contained in this branch (nothing to merge in, nothing merged out) |
+| Confirmed working by him | profile picker · per-profile libraries · per-profile watch state · rename + Administrator badge · **My password** · Household set/reset · navigation gating |
+| Only outstanding deploy | the nav change (`16391fc`) is frontend-only → `docker compose -p rkm-bundled up -d --build web` |
+| Gates at hand-off | **935 backend pytest** · ruff · **274 vitest** · tsc · build · **5 browser checks** (`check_household_ui`, `check_profile_picker`, `check_login_flow`, `check_password_change`, `check_nav_access`) · openapi **53 paths** · docs links resolve |
+
+**Commits of the final round:** `14c06bf` the root-cause fix (auth route not session-scoped) ·
+`16391fc` nav gating + mobile menu · `35c3480` its record. Plan sections to read first:
+`docs/ADMIN_CREDENTIALS_PLAN.md` **§6c** (`ResetPassword: true` is destructive) · **§6d** (a 2xx is not
+evidence) · **§6e** (⚠ THE ROOT CAUSE: a silent fallback substituted a different identity).
+
+---
+
+### THE QUEUE — in priority order (risk first, not size)
+
+**1. Guard the identity fallback** — the provider must **never** substitute `_user_id()`'s "first
+account on the server" lookup when a session exists but no identity was published. This is the exact
+bug that cost the last two sessions: one mis-wired route silently wrote a password to the wrong
+person's account, and it looked intermittent because the "first account" moves as profiles are made.
+Fix the CLASS: a route that should act as somebody must fail **loudly** instead of acting as a
+stranger. Suggested shape: a contextvar flag set wherever a session is resolved, checked in
+`_user_id()`/`_api_token()`; plus a test per session-bearing route. **Effort M, value highest.**
+
+**2. Stale-token degrade** — when Jellyfin answers 401 the app currently surfaces it as the nearest
+human message, which for the password screen is *"that current password is not correct"* (wrong, and
+confusing). The honest degrade is **"switch profile again"**. Same family: Jellyfin's log showed ~20
+`"Invalid token"` errors in one second — the app hammering a token that its own next login rotated
+away. Consider **per-session device ids** (`PLEX_PROFILE_AUTH_PLAN.md` §4e) so the app stops killing
+its own tokens. **Effort M.**
+
+**3. Phase 4 — `rkm-cinema.ps1 reset-admin-password`** from the API key in the `rkm_shared` volume,
+plus the OPERATIONS runbook. The break-glass: today, a forgotten administrator password is a manual
+recovery. **Effort S–M.**
+
+**4. Phase 1's fresh-install test on a throwaway stack** — the ONE path never executed. **Only he can
+run it** (no Docker in the sandbox). Own project name, own ports, empty volumes, then `down -v`:
+
+```powershell
+cd D:\hermes_agent\hermes-workspace\projects\rkm-cinema
+$env:RKM_PROJECT="rkm-test"; $env:RKM_DASHBOARD_PORT="8125"; $env:RKM_JELLYFIN_PORT="8099"
+# bootstrap, confirm the printed-once admin password works, then:
+Remove-Item Env:\RKM_PROJECT, Env:\RKM_DASHBOARD_PORT, Env:\RKM_JELLYFIN_PORT
+docker compose -p rkm-test down -v
+```
+⚠ Never run this against the real stack; it needs no library scan in progress.
+
+**5. Merge to `main`** — 46 accepted commits. Do it when HE asks (and per the repo procedure: FF the
+feature branch → `main`, then FF `experiment/bundled-docker-stack`, push all three; the PROGRESS
+record lands on `main` afterwards, leaving `main` deliberately one commit ahead).
+
+**6. Phase E + Phase 5** — the 401/403 sweep across every router, **ADR-0006**, and the docs truth pass
+(`ARCHITECTURE.md`, `OPERATIONS.md`, `README.md` still describe pre-auth behaviour). Prerequisite for
+him *arming* `RKM_AUTH_REQUIRED` — the app is open to anyone who can reach it today, which is his
+explicit opt-in choice, not an oversight.
+
+**XS, noticed while checking the ports:** `BROWSER_RADARR_URL` / `BROWSER_SONARR_URL` point at
+`rkm-hp.tail8d5e8.ts.net:7878` / `:8989` while the bundled compose publishes **7879** / **8988** on the
+host. Those two dashboard links likely refuse from the tailnet.
+
+---
+
+### Open follow-ups already recorded in code/plan (do not re-derive)
+
+* the identity-fallback lesson and its generalisation — plan §6e;
+* `docs/ADMIN_CREDENTIALS_PLAN.md` §6b — the 401/403 → "wrong password" mapping was confirmed live,
+  but a *stale token* now produces the same message, which is item 2 above;
+* `frontend/harness/README.md` documents every harness (nav, password, household, profile, login);
+* the queue landed on a live server measurement each time — **measure before fixing**, this workstream
+  has repeatedly shown that unit tests pass while a feature does nothing (929 passed while the
+  password write was a no-op).
+
+### Live server state (if the next session needs it)
+
+Accounts: `rkm` (administrator, renamed from `admin`), `meenu`, `raj`. `.env` carries
+`RKM_JELLYFIN_ADMIN_USER=rkm` with a working password (he updated it) — that is what lets the agent's
+tools read the server. **Password state:** `raj` = `RAJ1234` (set by this session's proof, then
+restored); `meenu` = his own value. `tools/probe_password_write.py` is the read-only-first verifier
+for any future password work.
+
+## ▶ NEXT SESSION — START HERE: password work is MID-FLIGHT — 4 fixes pushed, HIS RETRY + ONE LOG LINE still outstanding  → ✅ **RESOLVED 2026-09-12/13** (root cause found and fixed, `14c06bf`; he confirmed it works). Kept for the diagnostic detail it carries — see the block above.
 
 **His instruction, verbatim:** *"record the session issues....we will take up in the next session
 this session is too long · record ur findings and issues in progress.md to take it up later"*

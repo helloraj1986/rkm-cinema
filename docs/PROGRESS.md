@@ -1,4 +1,90 @@
-## ▶ NEXT SESSION — START HERE: deploy the household fix, create the member, then Phase 2
+## ▶ NEXT SESSION — START HERE: Plex profile auth — Phase B (the "Who's watching?" picker)
+
+**Plan:** `docs/PLEX_PROFILE_AUTH_PLAN.md` (four decisions taken by the user 2026-09-12, all built
+into Phase A). **Phase A is DONE and pushed** — `78f139e` (backend, contract 49 → 51).
+
+### Two independent things are waiting on HIM
+
+1. **The household fix from earlier is still not deployed** (`61d6b67`): `docker compose -p
+   rkm-bundled up -d --build api web`, then Household must list accounts. Independent of this plan.
+2. **Phase B is the picker UI** — say go.
+
+### Phase B (next, frontend)
+
+Per the plan §7: a "Who's watching?" screen after sign-in, a lock badge on a protected profile, a
+disabled profile greyed out, a password prompt, a header profile switcher, and the guard sending a
+signed-in session with no profile to the picker. Verifier: `tools/check_profile_picker.py` over a
+harness, the same shape as `check_login_flow.py` / `check_household_ui.py`.
+
+Routes Phase B consumes (all live on `78f139e`):
+* `GET  /api/auth/profiles` → `{profiles: [{id, name, is_admin, has_password, disabled, last_login}],
+  current: {id, name}, warning}`
+* `POST /api/auth/profile` `{user_id, password}` → `{ok, profile, libraries: [{id, name}]}`
+* `GET  /api/auth/me` → `{user, profile, on_own_profile, expires}`
+
+⚠ **The picker must not offer `/api/admin/libraries` to a non-administrator profile**: that route is
+refused the moment somebody else's profile is selected (decision 3). A profile's libraries come from
+the `POST /api/auth/profile` response, which already resolves them to names.
+
+### The honest state of the whole feature (say this, do not oversell it)
+
+* Profile selection, the admin-only login and the shared-device rule are **real** and backend-enforced.
+* **Per-profile watch state, resume, watched flags and LIBRARY ACCESS are not yet enforced** — every
+  media call still goes out on the ADMIN's credential, so a member's folder grants are display-only
+  until **Phase C threads the identity** (`profile_token` through the provider's `_token()` seam).
+  The contextvar seam, `SessionContext.acting_token()` and `grantable_rows()` are all in place for it.
+* Arming `RKM_AUTH_REQUIRED` stays his explicit opt-in (`.env` + `--force-recreate api`).
+* Platform limits, recorded in code: Jellyfin has **no impersonation** (a profile's password is what
+  lets the app act as it; the administrator's path is RESET, never bypass), and with an administrator
+  account that has NO password a deliberate non-empty attempt still succeeds — the blank refusal is a
+  check on intent there, which is why the picker only shows a lock when one exists.
+
+## ▶ LATEST SESSION (2026-09-12) — PLEX PROFILE AUTH: PLAN + PHASE A (backend) ✅
+
+**His spec, in his words:** *"Implement authentication similar to Plex, where only the admin controls
+access to the RKM-Cinema server… Once the admin is authenticated, users can select their own profile
+from the profile-selection screen… The implementation should be production-grade, secure, and
+backend-enforced. User permissions must never rely solely on frontend UI restrictions."*
+
+**Plan:** `docs/PLEX_PROFILE_AUTH_PLAN.md` (`120b22d`) — the model, the phase table, the honest
+"already built vs cosmetic" table, and the measurements behind it.
+**Phase A:** `78f139e` — backend, contract 49 → 51 (nothing removed), 804 backend pytest (+19).
+
+### Four decisions he made (all implemented, none guessed)
+
+1. **A profile's password IS its Jellyfin user's password** — no app-owned PIN store.
+2. **`POST /api/auth/login` refuses non-administrators** — "only the admin can log in" is backend-true;
+   the unused token is revoked rather than left live.
+3. **The shared-device rule** — while somebody else's profile is selected, admin routes are refused and
+   switching back needs the administrator's password (a blank attempt is always refused).
+4. **The profile persists with the session** (30-day sliding), so a restart keeps a person on it.
+
+### Two measurements that decided the design (not preferences — platform facts)
+
+* **Jellyfin has NO impersonation.** The only user-scoped token endpoint is
+  `/Users/AuthenticateByName`; `/Auth/Keys` is server-wide. So the app must authenticate AS the
+  profile, the profile's password must be its Jellyfin password, and the administrator's recovery
+  path for a forgotten one is **reset** (already built in 1b), never bypass.
+* `UpdateUserPassword {CurrentPassword, CurrentPw, NewPw, ResetPassword}` → "a user changes their own
+  password" is native and requires the old one (Phase D wires the screen).
+
+### What is REAL today, and what is still display-only
+
+* Real and backend-enforced: profile selection, the administrator-only login, the shared-device rule,
+  the profile list sitting behind a session.
+* **NOT yet enforced: per-profile watch state, resume, watched flags and library access.** Every media
+  call still runs on the ADMIN's credential, so a member's folder grants are display-only until
+  **Phase C threads the identity**. The seam is ready: `SessionContext.acting_token()`, the Phase 0
+  contextvar, and `grantable_rows()`. The plan says this plainly, and so must any status report.
+* Arming `RKM_AUTH_REQUIRED` remains his explicit opt-in.
+
+### Cross-cutting fix carried in this session
+
+`grantable_rows()` now lives in `api/session.py` — the facade-dict-vs-provider-list shape handler that
+had 500'd `/api/admin/libraries` and would have 500'd the create-with-every-library grant. Both the
+admin routes and the new profile routes use the ONE helper.
+
+## ▶ NEXT SESSION — START HERE: deploy the household fix, create the member, then Phase 2  → ✅ the fix shipped (`61d6b67`); this pointer is SUPERSEDED by the PLAN BELOW — Plex profile auth is now the active workstream (`120b22d` plan, Phase A `78f139e`). The household deploy itself is STILL outstanding.
 
 **The Household screen was BROKEN in the 1b build and is FIXED** — commit `61d6b67` (pushed).
 He signed in as `admin` and the screen said *"Only a Jellyfin administrator can manage household

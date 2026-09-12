@@ -1,4 +1,75 @@
-## ▶ LATEST SESSION (2026-09-13) — THE IDENTITY RAIL IS IN (queue item #1) · next = item #2 (stale-token degrade) · everything stays on `feat/auth-multiuser`
+## ▶ LATEST SESSION (2026-09-13, later) — HOUSEHOLD WAS HIDDEN FROM THE ADMIN TOO (fixed) + the account menu · next = his eyeball, then queue item #2
+
+**His report, verbatim:** *"you have removed the household from rkm(admin) as well, now i can change
+profile passwords and access for other users...it was supposed to be aviable only to admin user and
+removed from non admin users...also we need tweaks in ui , for example "my password" option doesn't
+need to be sitting on the left side bar it can simply reside when user click its avatar so
+consolidate the ui elements to make it premium user experience just like any other world class app"*
+
+| | |
+|---|---|
+| Branch | `feat/auth-multiuser`, worktree CLEAN, local tip == remote — **51 commits ahead of `main`** (`c0ae65e`) |
+| This session's commit | `064df72` (+ this record). Full mechanism: `docs/ADMIN_CREDENTIALS_PLAN.md` **§6g** |
+| Gates | **960 backend pytest** · ruff clean · **tsc** clean · **280 vitest** · `npm run build` · **5 browser checks** · openapi **53 paths** · docs links resolve |
+| His deploy | `docker compose -p rkm-bundled up -d --build api web` — **BOTH containers this time** |
+
+### The bug — WHY Household vanished for the administrator
+
+`GET /api/auth/profiles` built its `current` row as `ProfileUser(id=…, name=…)` — **name only**.
+`ProfileUser.is_admin` defaults to **False**, so `current.is_admin` was false for **every** profile in
+effect, and the nav's `mayManageHousehold` **fails closed by design** — so the gate that exists to
+protect members hid Household from the one person entitled to it. `current` is now the SERVER's own
+row for the profile in effect (the same `_profile()` converter the list uses); when the account is not
+in the list the id/name survive and the flags stay **False** (an unknown answer must not OFFER an
+administrator's screen). `TestProfiles::test_the_current_profile_carries_the_SERVERS_own_answer` fails
+against the old code; `test_an_unknown_current_profile_fails_closed` pins the other half.
+
+⚠ **Why every check was green anyway:** every harness stub supplied `current.is_admin = true` — a
+payload the server was **incapable of producing**. Same family as §6e: a stub cannot reveal what the
+real code does, and a check that cannot fail is documentation. The stubs now mirror the server.
+
+### The UI consolidation (his second request, same message)
+
+ONE account menu (`frontend/src/features/auth/AccountMenu.tsx`), opened from the **avatar**: an
+identity block (monogram · name · role · *"signed in as X"* only when the profile differs from the
+account) over **Switch profile · My password (every profile) · Household (administrators only) ·
+Sign out**. The items are a pure rule, `accountDestinations(isAdmin, profileSelected)`, behind the ONE
+`mayManageHousehold` gate, so the surfaces cannot drift. The header is one control now (the name span,
+the static avatar, the "Switch profile" link and the "Sign out" button are gone); the sidebar footer's
+decorative identity card became the same menu (`variant="wide"`, name/role/chevron only at `xl`); and
+the sidebar nav + the mobile "More" sheet are **navigation only** — nothing duplicated anywhere.
+
+**Screenshots for his eyeball:** `/workspace/rkm-ux-shots/account-menu-*.png` and
+`mobile-sheet-navigation-only.png`.
+
+### ⚠ Two harness faults this exposed (they affect EVERY future UI check)
+
+1. **`frontend/harness/nav-frame.tsx` loaded NO stylesheet** (the other four frames do). Text
+   assertions passed while every screenshot and geometry measurement of that frame was *unstyled* —
+   the account menu measured 1424px wide, and the mobile "More" button was clickable at a desktop
+   width where CSS hides it. It imports `../src/styles/index.css` now.
+2. Therefore the mobile scenarios must run on a **phone viewport**, and `open_frame` must wait for the
+   **header** (the sidebar's `nav[aria-label="Primary"]` is `hidden md:flex` — it times out on a phone).
+
+`tools/check_nav_access.py` now proves the menu from every trigger in **5 scenarios** (falsified by
+opening the gate: `mayManageHousehold` true for a member fails both member surfaces);
+`check_profile_picker.py` and `check_login_flow.py` were updated to open the menu, since they looked
+for a standalone "Switch profile" link and "Sign out" button.
+
+### Waiting on HIM, in order
+
+1. **Deploy both containers** (see the table above).
+2. **Sign in as `rkm`** → the avatar menu must offer **Household** (this is the regression).
+3. **Household screen** lists the accounts; **My password** still opens from the menu.
+4. **Pick a member's profile** → the menu must NOT offer Household, and My password must still be
+   there. That is the whole admin-only rule, on one surface, in one place.
+5. Then the queue continues at **#2 — stale-token degrade** (a Jellyfin 401 still reads as "that
+   current password is not correct"; the honest degrade is "switch profile again", and per-session
+   device ids would stop the app rotating its own tokens away — `PLEX_PROFILE_AUTH_PLAN.md` §4e);
+   after that #3 `reset-admin-password`, #4 his throwaway-stack test, #5 merge (51 commits), #6 Phase E.
+
+
+## ▶ LATEST SESSION (2026-09-13) — THE IDENTITY RAIL IS IN (queue item #1) · next = item #2 (stale-token degrade) · everything stays on `feat/auth-multiuser`  → ✅ **SAME SESSION, LATER:** his first live look found Household hidden from the ADMIN too (`064df72`, plan §6g) and asked for the account-menu consolidation — both done; see the block above.
 
 **His instruction, verbatim:** *"continue from progress.md in rkm-cinema app"* — take up the queue at
 the top of this file. Item **#1 (guard the identity fallback)** is now DONE, committed (`b4c5c47`) and

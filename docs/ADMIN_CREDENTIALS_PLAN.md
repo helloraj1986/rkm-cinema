@@ -54,10 +54,11 @@ in a repo file — so it is the credential a **recovery command** can rely on wh
 forgotten. This is the real answer to "no fear of losing the password": recording the printed value
 is convenience, the volume key is the guarantee.
 
-⚠ Still to be PROVEN (not assumed), on the throwaway stack of §7: that an API key is accepted by
-`POST /Users/Password?userId=…` with `ResetPassword: true` (`/Users/Password` is in the server's own
-contract; Jellyfin expresses its elevation policy in code, not in the OpenAPI document, so the
-proxy above is strong evidence and not proof).
+✅ **PROVEN (2026-09-13)** — an API key IS accepted by `POST /Users/Password?userId=…`, and the app
+itself runs on exactly that credential (§6c, `set_user_password` set a real member's password live,
+verified by signing in). ⚠ **With `ResetPassword: false`** — this paragraph said `true` until §6c
+measured that `true` answers 204, sets nothing and CLEARS a password that existed. The break-glass
+rail is therefore built and tested (`§6i`, `tools/reset_admin_password.py`).
 
 ## 4. The lockout that the REJECTED design would have produced (kept as history — it is why §2 decision 1 was reversed)
 
@@ -577,7 +578,9 @@ What must be PROVEN there, in order, with the console output quoted in the recor
 
 1. an empty `jellyfin-config` creates the admin, and the **printed password signs in** (blank fails);
 2. a SECOND run needs no password, prints nothing, and provisions normally (the API-key-first path);
-3. an API key resets that password (`ResetPassword: true`) — proving the break-glass rail;
+3. an API key resets that password ⚠ **with `ResetPassword: false`** (this step said `true` until
+   §6c measured that `true` CLEARS a password — it is the destructive shape, not the working one);
+   this is the break-glass rail, now built and tested (§6i);
 4. **renaming** the admin does not break the next bootstrap run (the id-not-name rule);
 5. `down -v`, and the real stack is untouched.
 

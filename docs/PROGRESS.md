@@ -1,4 +1,55 @@
-## ▶ LATEST SESSION (2026-09-13, later) — HOUSEHOLD WAS HIDDEN FROM THE ADMIN TOO (fixed, ✅ CONFIRMED by him) + the account menu · next = queue item #2
+## ▶ SAME SESSION (2026-09-13) — a STALE TOKEN is not a wrong password (queue #2, first half done, `18caa20`) · next = his eyeball of the wording, then queue #3
+
+Took queue **item #2's first half** (the honest 401), and deliberately left the second half
+(per-session device ids) for **Phase E** — see below for why. Full detail: plan
+`docs/ADMIN_CREDENTIALS_PLAN.md` **§6h**.
+
+| | |
+|---|---|
+| Branch | `feat/auth-multiuser`, clean, **53 commits ahead of `main`** (`c0ae65e`) |
+| Commit | `18caa20` (+ this record) |
+| Gates | **966 backend pytest** · ruff · tsc · **282 vitest** · build · **5 browser checks** · openapi **53 paths** · docs links |
+| Deploy | `docker compose -p rkm-bundled up -d --build api web` |
+
+### Three faults, one family: the app named the wrong culprit
+
+1. **401 and 403 are different answers.** Measured (§6c): the profile's own token + a wrong
+   `CurrentPw` → **403**; a token Jellyfin no longer accepts → **401**. Both were reported as
+   *"that current password is not correct"* — a false accusation AND a dead end, since retyping can
+   never revive a token. Now: 401 → *"This profile is no longer signed in to the media server — use
+   **Switch profile** in the account menu, then retry."*
+2. **⚠ The message could never have appeared live: the FACADE dropped the provider's reason.** It
+   kept only `None`/`"unreachable"`, so with the real provider a *wrong password* was reported as
+   *"the media server refused the password change"* — the server blamed for the user's typo. Every
+   unit test passed because the fake library returned the reason itself. This is the third time in
+   this workstream that a FAKE has hidden a real-path fault (§6e, §6g, now §6h).
+3. **⚠ Answering 401 honestly would have made things WORSE.** `api.changeMyPassword` was the one
+   auth call without `skipAuthRedirect`, so a 401 from it fired the global "the session is dead"
+   rule — **signed the person out of the whole app and cleared the query cache**, for a typo and now
+   for a stale token too. Found by checking the blast radius of change #1 before shipping it.
+
+Both faults 2 and 3 were found by *reading the path*, not by a test — and each now has a test that
+fails without its fix (backend: revert the 3 files → 4 failures; frontend: drop `skipAuthRedirect` →
+1 failure).
+
+### ⏭ STILL OPEN — and deliberately deferred to Phase E
+
+* On a **MEDIA** call a stale profile token is still indistinguishable from a dead session, so the
+  client signs the browser out and cannot say *"switch profile again"* there. The fix needs the API to
+  tell **session-401** (cookie gone) from **profile-token-401** (cookie fine, credential stale)
+  across the media routes — that is the 401/403 sweep, Phase E.
+* **Per-session device ids**: `_client_header()` uses ONE device id (`rkm-cinema-web`) for every
+  session, so two browsers signed in as the same account rotate each other's tokens away. Real, but
+  no reported symptom (the burst he saw was in-session and already fixed by `owns_session`), and it
+  changes authentication for every session — so it goes with Phase E, not twice.
+
+**Recommendation for the next session (unchanged):** the remaining queue is #3 `reset-admin-password`
+(break-glass, S-M), #4 his throwaway-stack fresh-install test (only he can run it), #5 merge (53
+commits), #6 Phase E (the 401/403 sweep + ADR-0006 + docs truth pass) — and #6 now has this block's
+two items attached to it.
+
+
+## ▶ LATEST SESSION (2026-09-13, later) — HOUSEHOLD WAS HIDDEN FROM THE ADMIN TOO (fixed, ✅ CONFIRMED by him) + the account menu · next = queue item #2  → ✅ **SAME SESSION, HEADLINE 2:** queue #2's first half is in (`18caa20`, plan §6h) — a stale token no longer reads as a wrong password; the block above records it.
 
 **His report, verbatim:** *"you have removed the household from rkm(admin) as well, now i can change
 profile passwords and access for other users...it was supposed to be aviable only to admin user and

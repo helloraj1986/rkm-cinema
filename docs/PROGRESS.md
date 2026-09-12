@@ -1,4 +1,70 @@
-## ▶ NEXT SESSION — START HERE: admin credentials — Phase 1 ✅ BUILT (`bc018e1`) · next Phase 2 (rename + role) · and Phase C still needs HIS deploy
+## ▶ NEXT SESSION — START HERE: admin credentials — Phase 2 ✅ BUILT (`8233012`, rename) · next Phase 3 (self-service password screen)
+
+**His instruction:** *"step 2 is working as intended proceed with phase 2"* — i.e. **Phase C accepted on RKM-HP**
+(the picker, the per-profile library grants and per-profile watch state all confirmed by his own eyeball), then
+Phase 2 of `docs/ADMIN_CREDENTIALS_PLAN.md`.
+
+### Waiting on HIM, in this order
+
+1. **Deploy Phase 1 + Phase 2 — api AND web** (Phase 2 changed both):
+   ```powershell
+   cd D:\hermes_agent\hermes-workspace\projects\rkm-cinema
+   .\rkm-cinema.ps1 status
+   docker compose -p rkm-bundled up -d --build api web
+   ```
+   Then **Settings → Household**: each row now has **Rename**. Rename the `admin` account to his own name — the
+   **Administrator** badge must stay on that row, the top-bar chip must change with it, and the picker must show
+   the new name. A blank name, the account's own current name, and a name another account already has are all
+   refused on the spot with the reason (no request is sent). Nothing else about the account changes: not its
+   libraries, not its password, not its watch state.
+2. **Phase 1's fresh-install half still needs his throwaway-stack test** (no Docker daemon here) —
+   `ADMIN_CREDENTIALS_PLAN.md` §7. Unchanged from the previous pointer, still not run.
+3. Then **Phase 3 — say go**: the self-service "change my password" screen for every profile (Phase D's other
+   half), then Phase 4 (`reset-admin-password` recovery from the volume key) and Phase 5 (ADR + docs).
+
+### What landed (Phase 2, `8233012`)
+
+* **`POST /api/admin/users/{id}/rename`** (contract **51 → 52**, purely additive) → provider `rename_user()` →
+  Jellyfin's `POST /Users?userId=`. Two traps were MEASURED from the server's own contract (315 paths, live):
+  * the target is a **QUERY** parameter, not a path segment — the same query-vs-path trap the password route
+    already paid for;
+  * the body is a `UserDto`, which carries **`Policy`**. Since `/Users/{id}/Policy` is known to REPLACE all 47
+    fields, a `{"Name": …}` body would wipe `IsAdministrator` **if** `POST /Users` shares those semantics — a
+    **LOCKOUT**. The payload carries the id, the name **and the policy the server just reported**, so it is
+    correct under EITHER semantics; `HasPassword` is deliberately never sent.
+* **A silent trap of its own:** a session stores the NAME it was handed and nothing re-reads Jellyfin per
+  request, so the header chip would have kept the OLD name after a rename. The route now calls
+  `SessionStore.rename_identity()` for the session making the request; **another device corrects itself at its
+  next profile selection** (a name is display — tolerable; a token would not be).
+* **UI:** a **Rename** action + inline panel per household row, with the pure rails (`renameIssue`) mirroring the
+  server so a refused rename is disabled WITH the reason before any request. **No client-side length or
+  character rule on purpose** — that would be a second implementation of the server's contract, the trap that
+  once made a password-LESS account unusable.
+* **Rails, each with a test:** 401 anonymous · 403 a non-administrator (the shared gate, which also refuses while
+  somebody else's profile is selected) · 404 unknown id · 400 blank name · 409 duplicate · 502 when the server
+  refuses (never a false success) · same-name rename is an idempotent no-op that reaches no server · a rename
+  never touches a password.
+
+### Evidence
+
+* **913 backend pytest (+14)** — the rename set verified to **FAIL against the pre-change source** — **249
+  vitest (+6)** · ruff, tsc, build clean · openapi **52 paths**, additive only · docs links resolve.
+* `tools/check_household_ui.py` **4/4**: its new scenario D proves a REFUSED rename sends no request, a good one
+  sends **only** the name, and the **Administrator badge survives** the rename of the admin account itself.
+* `check_profile_picker.py` and `check_login_flow.py` unchanged and green (vite restarted, served module
+  verified, port released).
+
+### Honest gaps
+
+* **`POST /Users` semantics are still unproven** — the read-modify-write is safe under both readings, but which
+  one Jellyfin implements needs a no-op rename against the live server, and that WRITES to his account, so it
+  needs his consent. Ask before doing it.
+* The **fresh-install path** (§7) and the **compose change's semantics** are still unverified (no Docker here).
+* `RKM_JELLYFIN_ADMIN_USER` in `.env` is unaffected by a rename: it is a **first-run hint** only. If he ever
+  re-provisions from an EMPTY volume, the wizard would use the hint and create a second, differently-named
+  administrator — worth one sentence if he asks what the env var still does.
+
+## ▶ NEXT SESSION — START HERE: admin credentials — Phase 1 ✅ BUILT (`bc018e1`) · next Phase 2 (rename + role) · and Phase C still needs HIS deploy  → ✅ **PHASE 2 ALSO BUILT 2026-09-12** (`8233012`); kept for the map and the Phase 1 detail it carries — see the block above
 
 **His instruction:** *"yes build it now"* → Phase 1 of `docs/ADMIN_CREDENTIALS_PLAN.md`. Earlier in the same
 session he revised the fresh-install decision (*"fresh install will create a admin with password.. which

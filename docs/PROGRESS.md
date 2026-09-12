@@ -1,4 +1,77 @@
-## ▶ NEXT SESSION — START HERE: admin credentials — Phase 2 ✅ BUILT (`8233012`, rename) · next Phase 3 (self-service password screen)
+## ▶ NEXT SESSION — START HERE: admin credentials — Phase 3 ✅ BUILT (`57dd122`, "My password") · next Phase 4 (reset-admin-password CLI)
+
+**His instruction:** *"go phase 3"* — Phase 3 of `docs/ADMIN_CREDENTIALS_PLAN.md` §6 (self-service
+password). Committed `57dd122`, pushed on `feat/auth-multiuser`; `main` still untouched at `c0ae65e`.
+
+### What landed (17 files, +1169/−8; contract 52 → 53, additive)
+
+**`POST /api/auth/profile/password`** — the one screen every profile has. Until now a password could
+only be changed by an ADMINISTRATOR (Household → Reset password), for somebody else. A member's
+password IS their Jellyfin credential and the lock on their profile; they had no way to change it.
+
+* **One credential rule**: the target is the PROFILE in effect (`context.profile_id()`), and the
+  provider's `change_own_password(current, new)` takes **no user id at all** — there is no parameter
+  a caller could fill in with somebody else's account, so "change my own" cannot become "change
+  theirs". `ResetPassword: false` **always** (that flag is the administrator's path and would be an
+  escalation here); sending the OLD password is what makes it a genuine self-change.
+* **Facade delegation** added (`LibraryService.change_own_password`) — the trap this workstream has
+  paid for twice: a provider-only capability raises `AttributeError` on every route call and the
+  admin gate reports that as "you are not an administrator".
+* **Rails**: session required · non-empty new password · the OLD one required whenever the account
+  has one, with **Jellyfin as the judge** · neither value logged, echoed or returned.
+* **Two deliberate NON-rules**: a whitespace-only password is ALLOWED (Jellyfin accepts it; forbidding
+  it here would be a second implementation of the server's contract — the trap that once made
+  password-less accounts unable to sign in) and there is **no length rule**. Only a truly empty value
+  is refused: the app's model is an account *created* without a password, not emptied afterwards.
+* **Frontend**: `features/settings/password.ts` (pure rules) + `PasswordView.tsx`, route
+  `/settings/password`, sidebar **My password** (every profile). The current-password field is
+  required only when the SERVER says the account has one — a password-less account is never blocked.
+
+### A real bug the new browser check found (not theorised)
+
+With a 502 and **no response body**, the screen showed `POST /auth/profile/password -> 502` — the
+HTTP client's own fallback, in front of a person. Structural cause: `ApiError` carried no way to tell
+the server's `detail` from that fallback, so a screen could only string-match. **Fixed at the
+source**: `ApiError` now carries `detail: string | null` (the server's own words, or null), and the
+screen shows the server's words when it has them, its own when it does not — *"…your old password
+still works"*, because a refusal must never read as a lockout. The client's own 9 tests still pass
+(the change is additive).
+
+### Evidence (all green)
+
+**927** backend pytest (**+14**, all 14 verified to FAIL against the pre-change source) · **266**
+vitest (**+17**) · ruff, tsc, `npm run build` clean · openapi **53 paths**, additive · docs links
+resolve · **`tools/check_password_change.py` 4/4** — A: required while the account has one, blank and
+mismatch refused **before any request**, the good case posts exactly `{current_password,
+new_password}` · B: a password-LESS account sets one and is never blocked · C: a 401 reads as "that
+current password is not correct" and echoes neither value · D: a refusal that is not a typo is not
+blamed on the user, including when the server says nothing · `check_household_ui.py` 4/4 ·
+`check_profile_picker.py` + `check_login_flow.py` unchanged.
+
+### ⚠ Waiting on HIM, in order
+
+1. **Deploy** — `docker compose -p rkm-bundled up -d --build api web` (new route *and* new screen).
+   Then sidebar → **My password**: set/change a password as a member, sign out, pick that profile —
+   it should now ask for the new one.
+2. **The two-minute test that settles the one unproven thing** (plan §6b): change a member's password
+   with a deliberately **wrong** current password (expect *"that current password is not correct"*),
+   then with the **right** one (expect it changes). This confirms Jellyfin's 403 really means "wrong
+   password" for a self-change rather than "not allowed". **Do NOT** disambiguate by signing in as the
+   profile again — that rotates the app device's token for that user and breaks the session asking.
+3. **Phase 1's fresh-install test on a throwaway stack** is still pending (never run) — `.env`-free
+   admin password, own project name/ports/empty volumes, then `down -v`.
+4. Then **Phase 4**: `rkm-cinema.ps1 reset-admin-password` from the volume key + OPERATIONS runbook.
+
+### Workflow lesson paid for this session (vite, again)
+
+The check ran against a **pre-edit** vite twice: `--strictPort` made each NEW vite die silently while
+an OLD one held `:5199`, and **killing the background wrapper does not kill the `node …/vite` child**.
+The tell was the check's own stale-check (`curl … | grep -c <new identifier>` = 0) — without it, D's
+failure would have been misread as a code bug. Always: `kill -9 $(ss -ltnp | grep 5199 | grep -oP
+'pid=\K[0-9]+')`, confirm the port is free, start ONE vite, then grep the SERVED module for a string
+that only exists after the edit.
+
+## ▶ NEXT SESSION — START HERE: admin credentials — Phase 2 ✅ BUILT (`8233012`, rename) · next Phase 3 (self-service password screen)  → ✅ **PHASE 3 ALSO BUILT 2026-09-12** (`57dd122`); kept for the Phase 2 map it carries
 
 **His instruction:** *"step 2 is working as intended proceed with phase 2"* — i.e. **Phase C accepted on RKM-HP**
 (the picker, the per-profile library grants and per-profile watch state all confirmed by his own eyeball), then

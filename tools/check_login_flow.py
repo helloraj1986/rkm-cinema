@@ -171,6 +171,37 @@ def scenario_c(page, base: str) -> None:
         problem(f"C: the chip does not name the session user: {state['chipLabel']!r}")
 
 
+def scenario_d(page, base: str) -> None:
+    """A password-LESS household account must be able to sign in through the form.
+
+    The browser's own form validation is the risk here: a `required` password field blocks an
+    empty submit, which would make an account with no password impossible to use — and that is
+    exactly the account the household flow is being built to create.
+    """
+    load(page, base, "enforce=0&signedIn=0")
+    page.click('a[href="/login"]')
+    page.wait_for_selector("#rkm-username", timeout=5_000)
+    page.fill("#rkm-username", "guest")
+    page.fill("#rkm-password", "")  # blank ON PURPOSE
+    page.click("button[type=submit]")
+    page.wait_for_timeout(700)
+    state = probe(page)
+    sent = [c for c in state["calls"] if c["url"] == "/api/auth/login"]
+    print("\n=== D. a Jellyfin account with NO password ===")
+    print(f"  form still shown     : {state['hasLoginForm']} (want False)")
+    print(f"  chip                 : {state['chipLabel']!r} (want the password-less user)")
+    print(f"  posted body          : {sent[-1]['body'] if sent else '(no login call!)'}")
+
+    if not sent:
+        problem("D: the blank-password submit never reached the API — browser validation blocked it")
+    elif '"password":""' not in sent[-1]["body"].replace(" ", ""):
+        problem(f"D: the request did not carry an empty password: {sent[-1]['body']!r}")
+    if state["hasLoginForm"]:
+        problem("D: a blank password was rejected by the form instead of the API")
+    if "No-Password User" not in state["chipLabel"]:
+        problem(f"D: signing in with a blank password did not establish that session: {state['chipLabel']!r}")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--base", default="http://localhost:5199")
@@ -187,6 +218,7 @@ def main() -> int:
         scenario_a(page, args.base, args.shots)
         scenario_b(page, args.base, args.shots)
         scenario_c(page, args.base)
+        scenario_d(page, args.base)
 
         if errors:
             print("\n=== browser errors ===")
@@ -201,8 +233,9 @@ def main() -> int:
         for line in PROBLEMS:
             print(f"  - {line}")
         return 1
-    print("\nOK: signed-out stays usable, sign-in is optional and honest, the enforced world "
-          "goes straight to the login view, and a valid session is left alone.")
+    print("\nOK: signed-out stays usable, sign-in is optional and honest, a password-LESS "
+          "account can sign in, the enforced world goes straight to the login view, and a "
+          "valid session is left alone.")
     return 0
 
 

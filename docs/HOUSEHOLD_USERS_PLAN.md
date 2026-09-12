@@ -145,16 +145,31 @@ two-account live proof uses.
    ability to manage accounts with it ⇒ refuse to delete the last admin, and require the
    account's name typed to confirm.
 6. **`POST /Users/Password?userId=`** — query param, not a path segment (a path-form call 404s).
-7. A created account with no password cannot sign in; the create form requires one.
+7. A created account with **no password** signs in with a BLANK password — so the app's login form
+   must not block an empty submit (it did until `b360b38`; scenario D pins it), and such an account
+   must never be an administrator (§8.1).
 8. Any provider-level cache added later must be keyed by USER (the standing Phase 3 rule).
 
-## 8. Decisions needed from the user
+## 8. Decisions — DECIDED by the user 2026-09-12
 
-1. **Password**: he types it in the app (recommended) / the app suggests a strong one it shows
-   once / create with none and set it later.
-2. **Library access default for a new member**: same as the creating admin (recommended) vs none ticked.
-3. **Scope of v1**: add + grant + disable + password reset + delete (recommended) — or add only?
-4. **Order**: 1b before Phase 2 (recommended) or after.
+1. **Password: NO password (option 1c).** The user's instruction was *"i want to create the second
+   user without password"* — a real Jellyfin case (their own apps let such an account in with just a
+   username). Consequences, which are now build requirements rather than choices:
+   - the create form's password field is **optional**;
+   - the app's **login form must accept a blank password** (a `required` field would block the empty
+     submit and make such an account impossible to use — fixed in Phase 1, `b360b38`, and pinned by
+     scenario D of `tools/check_login_flow.py`);
+   - a password-less account must **NEVER** be granted administrator: anyone who can reach the app
+     would then be able to create and delete accounts. The create route refuses it (there is no
+     admin checkbox in v1) and Jellyfin's own policy default is non-admin;
+   - the honest reach picture stays what makes this acceptable: the app is reachable on `localhost`,
+     the LAN and the Tailscale tailnet, and **tailnet-only** (`docs/TAILSCALE_HOSTING.md`, never
+     funnel). Adding a password later is a Jellyfin policy change, not an app change.
+2. **Library access default for a new member: same as the creating admin** (option 2a).
+3. **v1 scope: add + grant + disable + password reset + delete** (option 3a).
+4. **Order:** the user did not answer this one; the session took the recommendation —
+   **1b BEFORE Phase 2** (`RKM_AUTH_REQUIRED` stays false while 1b is tested). Noted in PROGRESS so
+   he can reverse it in one sentence; it only changes the order of two independent phases.
 
 ## 9. Verification commands
 

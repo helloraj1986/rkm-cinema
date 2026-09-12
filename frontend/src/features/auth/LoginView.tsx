@@ -90,16 +90,22 @@ export function LoginView() {
             <label htmlFor="rkm-password" className="block text-xs font-medium text-zinc-300">
               Password
             </label>
+            {/* NOT `required`: a Jellyfin account can legitimately have NO password (that is
+                how a household member can be added without one), and the browser would block
+                an empty submit — making that account impossible to sign in with. The API
+                decides; the form must not. */}
             <input
               id="rkm-password"
               name="password"
               type="password"
               autoComplete="current-password"
-              required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className="w-full rounded-lg border border-white/10 bg-canvas px-3 py-2 text-sm outline-none focus:border-accent"
             />
+            <p className="text-[11px] leading-relaxed text-zinc-500">
+              Leave this blank if your Jellyfin account has no password.
+            </p>
           </div>
 
           {error ? (

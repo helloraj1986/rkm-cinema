@@ -36,7 +36,11 @@ interface Call {
   url: string;
   method: string;
   status: number;
+  /** The request body as sent (so a check can prove what the form POSTed). */
+  body: string;
 }
+
+const PASSWORDLESS_USER = { id: "harness-uid-nopw", name: "No-Password User" };
 
 const calls: Call[] = [];
 (window as unknown as { __authCalls: Call[] }).__authCalls = calls;
@@ -69,7 +73,7 @@ window.fetch = (async (input: RequestInfo | URL, init: RequestInit = {}) => {
 
   const send = (status: number, payload: unknown = null) => {
     const text = payload === null ? "" : JSON.stringify(payload);
-    calls.push({ url: path, method, status });
+    calls.push({ url: path, method, status, body: String(init.body ?? "") });
     return new Response(text, { status, headers: { "content-type": "application/json" } });
   };
 
@@ -80,9 +84,12 @@ window.fetch = (async (input: RequestInfo | URL, init: RequestInit = {}) => {
   }
   if (path === "/api/auth/login") {
     const body = JSON.parse(String(init.body || "{}")) as { password?: string };
-    if (body.password === GOOD_PASSWORD) {
+    // A BLANK password is a real Jellyfin case: an account can have no password at all
+    // (the household "create without password" decision), and it must authenticate.
+    if (body.password === GOOD_PASSWORD || body.password === "") {
       hasSession = true;
-      return send(200, { ok: true, user: USER, expires: "2026-10-12T00:00:00Z" });
+      const user = body.password === "" ? PASSWORDLESS_USER : USER;
+      return send(200, { ok: true, user, expires: "2026-10-12T00:00:00Z" });
     }
     return send(401, { detail: "Incorrect username or password" });
   }

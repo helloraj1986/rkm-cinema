@@ -83,10 +83,58 @@ class LoginResponse(BaseModel):
 
 
 class MeResponse(BaseModel):
-    """``GET /api/auth/me`` — who this browser is signed in as."""
+    """``GET /api/auth/me`` — who this browser is, and which profile is in effect."""
 
     user: SessionUser = Field(default_factory=SessionUser)
+    #: The profile in effect (the owner's own when none was chosen) — PLEX_PROFILE_AUTH_PLAN §3.
+    profile: SessionUser = Field(default_factory=SessionUser)
+    #: False while somebody else's profile is selected: administrative screens are refused then.
+    on_own_profile: bool = True
     expires: str = ""
+
+
+class ProfileUser(BaseModel):
+    """One selectable profile, as the "Who's watching?" picker needs it.
+
+    Deliberately carries no credential and no token: a profile's password is only ever *asked*
+    for, never returned (PLEX_PROFILE_AUTH_PLAN §4).
+    """
+
+    id: str = ""
+    name: str = ""
+    is_admin: bool = False
+    has_password: bool = False
+    disabled: bool = False
+    last_login: str = ""
+
+
+class ProfilesResponse(BaseModel):
+    """``GET /api/auth/profiles`` — every profile on the server, for the picker."""
+
+    profiles: List[ProfileUser] = Field(default_factory=list)
+    #: Which profile is in effect right now.
+    current: ProfileUser = Field(default_factory=ProfileUser)
+    warning: str = ""
+
+
+class SelectProfileRequest(BaseModel):
+    """``POST /api/auth/profile`` — switch this session to a profile.
+
+    ``password`` is that profile's own password (its Jellyfin credential): optional for a
+    password-less profile, **required for the administrator's own profile** so a shared device
+    cannot walk into it (decision 3, 2026-09-12).
+    """
+
+    user_id: str = ""
+    password: str = ""
+
+
+class SelectProfileResponse(BaseModel):
+    """The profile now in effect, and the libraries it may see."""
+
+    ok: bool = True
+    profile: ProfileUser = Field(default_factory=ProfileUser)
+    libraries: List[dict] = Field(default_factory=list)
 
 
 class AdminCreateUserRequest(BaseModel):

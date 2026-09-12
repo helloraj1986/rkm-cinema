@@ -42,6 +42,12 @@ class SessionContext:
 
     ``session_id`` is the opaque cookie value (in-process only, never logged);
     ``token`` is the Jellyfin access token — server-side only, never in a response.
+
+    **Owner vs profile** (PLEX_PROFILE_AUTH_PLAN §3): ``user_id``/``token`` belong to the account
+    that signed in to the SERVER (always an administrator now), and ``profile_*`` to the selected
+    profile — the identity every media call is made as. With no profile selected the profile
+    defaults to the owner, so an existing session (or one created before this feature) behaves
+    exactly as it did: the administrator browsing as themselves.
     """
 
     session_id: str
@@ -49,6 +55,29 @@ class SessionContext:
     user_name: str
     token: str
     expires: str = ""
+    profile_user_id: str = ""
+    profile_user_name: str = ""
+    profile_token: str = ""
+
+    def profile_id(self) -> str:
+        """The id of the profile in effect (the owner when none was chosen)."""
+        return self.profile_user_id or self.user_id
+
+    def profile_name(self) -> str:
+        """The display name of the profile in effect."""
+        return self.profile_user_name or self.user_name
+
+    def acting_token(self) -> str:
+        """The credential media calls must use (the profile's, else the owner's)."""
+        return self.profile_token or self.token
+
+    def on_own_profile(self) -> bool:
+        """Is the administrator's OWN profile the one in effect?
+
+        False the moment somebody else's profile is selected — which is what makes the shared
+        device safe: administrative routes and the switch back both require this to be True.
+        """
+        return self.profile_id() == self.user_id
 
 
 #: The current request's session. Default ``None`` is meaningful: "no request
@@ -96,7 +125,29 @@ def session_context_from_request(request: Request, *, config=None) -> Optional[S
         user_name=str(record.get("user_name") or ""),
         token=str(record.get("jellyfin_token") or ""),
         expires=str(record.get("expires") or ""),
+        profile_user_id=str(record.get("profile_user_id") or ""),
+        profile_user_name=str(record.get("profile_user_name") or ""),
+        profile_token=str(record.get("profile_token") or ""),
     )
+
+
+def grantable_rows(library) -> list[dict]:
+    """The media server's libraries, from EITHER shape the provider stack can answer.
+
+    The routes are handed ``LibraryService`` (a **facade**), whose ``library_folders()`` returns
+    ``{"provider": …, "folders": [...]}``; the provider underneath returns a plain list. Reading
+    only one of the two produced a 500 in production on 2026-09-12 — TWICE — so the shape dance
+    lives in one place, here, where the administrative routes and the profile routes both reach it.
+    """
+    if library is None:
+        return []
+    try:
+        folders = library.library_folders()
+    except Exception:  # a server that cannot answer must not 500 the caller
+        logger.warning("could not read the media server's libraries", exc_info=True)
+        return []
+    rows = folders.get("folders") if isinstance(folders, dict) else folders
+    return [f for f in (rows or []) if isinstance(f, dict)]
 
 
 async def require_session(request: Request) -> Optional[SessionContext]:
@@ -196,4 +247,16 @@ async def require_admin_session(request: Request) -> SessionContext:
         raise HTTPException(
             status_code=403,
             detail="Only a Jellyfin administrator can manage household accounts")
+    if not context.on_own_profile():
+        # Decision 3 (user, 2026-09-12): on a shared device the ADMINISTRATOR'S session is held by
+        # the device, so administrative access must not be reachable while somebody else's profile
+        # is selected. Switching back is a deliberate, password-checked act (POST /api/auth/profile
+        # with the administrator's password) — which is what stops the family iPad from handing
+        # every guest full server control.
+        logger.info("household route refused: profile %s is selected, not the administrator's own",
+                    context.profile_id())
+        raise HTTPException(
+            status_code=403,
+            detail=("Switch back to your own profile to manage the household — a different "
+                    "profile is selected on this device."))
     return context

@@ -48,6 +48,63 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/auth/profiles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Profiles
+         * @description Every profile on the server, for "Who's watching?".
+         *
+         *     A SESSION is required — the list itself sits behind the server login, which is what makes
+         *     "members have no independent access" true rather than merely unlinked: without the
+         *     administrator's sign-in there is no way to even see who exists.
+         *
+         *     Reports whether each profile is password-protected and enabled, so the picker can show a lock
+         *     and grey out a disabled profile BEFORE anyone tries to enter it.
+         */
+        get: operations["profiles_api_auth_profiles_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Select Profile
+         * @description Switch this session to a profile — the whole of "who is watching".
+         *
+         *     Why it can only work this way: **Jellyfin has no impersonation** (measured 2026-09-12 — the
+         *     only user-scoped token endpoint is ``/Users/AuthenticateByName``), so the app asks Jellyfin to
+         *     authenticate AS the chosen profile. A password-less profile signs in with a blank password; a
+         *     protected one needs its own. **The administrator knowing a member's password is not the
+         *     mechanism — resetting it from Settings → Household is**, which is why that rail exists.
+         *
+         *     Selecting the ADMINISTRATOR'S OWN profile requires the administrator's password: the device
+         *     holds their session, so this is what stops a guest on the shared iPad from walking into it
+         *     (decision 3, 2026-09-12). Switching back is therefore always deliberate, never automatic.
+         */
+        post: operations["select_profile_api_auth_profile_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/logout": {
         parameters: {
             query?: never;
@@ -1633,10 +1690,16 @@ export interface components {
         };
         /**
          * MeResponse
-         * @description ``GET /api/auth/me`` — who this browser is signed in as.
+         * @description ``GET /api/auth/me`` — who this browser is, and which profile is in effect.
          */
         MeResponse: {
             user?: components["schemas"]["SessionUser"];
+            profile?: components["schemas"]["SessionUser"];
+            /**
+             * On Own Profile
+             * @default true
+             */
+            on_own_profile: boolean;
             /**
              * Expires
              * @default
@@ -1688,6 +1751,59 @@ export interface components {
             qbitState?: string | null;
             /** Qbitname */
             qbitName?: string | null;
+        };
+        /**
+         * ProfileUser
+         * @description One selectable profile, as the "Who's watching?" picker needs it.
+         *
+         *     Deliberately carries no credential and no token: a profile's password is only ever *asked*
+         *     for, never returned (PLEX_PROFILE_AUTH_PLAN §4).
+         */
+        ProfileUser: {
+            /**
+             * Id
+             * @default
+             */
+            id: string;
+            /**
+             * Name
+             * @default
+             */
+            name: string;
+            /**
+             * Is Admin
+             * @default false
+             */
+            is_admin: boolean;
+            /**
+             * Has Password
+             * @default false
+             */
+            has_password: boolean;
+            /**
+             * Disabled
+             * @default false
+             */
+            disabled: boolean;
+            /**
+             * Last Login
+             * @default
+             */
+            last_login: string;
+        };
+        /**
+         * ProfilesResponse
+         * @description ``GET /api/auth/profiles`` — every profile on the server, for the picker.
+         */
+        ProfilesResponse: {
+            /** Profiles */
+            profiles?: components["schemas"]["ProfileUser"][];
+            current?: components["schemas"]["ProfileUser"];
+            /**
+             * Warning
+             * @default
+             */
+            warning: string;
         };
         /** QualityProfileResponse */
         QualityProfileResponse: {
@@ -1809,6 +1925,42 @@ export interface components {
             snippet: string;
             /** Voteaverage */
             voteAverage?: number | null;
+        };
+        /**
+         * SelectProfileRequest
+         * @description ``POST /api/auth/profile`` — switch this session to a profile.
+         *
+         *     ``password`` is that profile's own password (its Jellyfin credential): optional for a
+         *     password-less profile, **required for the administrator's own profile** so a shared device
+         *     cannot walk into it (decision 3, 2026-09-12).
+         */
+        SelectProfileRequest: {
+            /**
+             * User Id
+             * @default
+             */
+            user_id: string;
+            /**
+             * Password
+             * @default
+             */
+            password: string;
+        };
+        /**
+         * SelectProfileResponse
+         * @description The profile now in effect, and the libraries it may see.
+         */
+        SelectProfileResponse: {
+            /**
+             * Ok
+             * @default true
+             */
+            ok: boolean;
+            profile?: components["schemas"]["ProfileUser"];
+            /** Libraries */
+            libraries?: {
+                [key: string]: unknown;
+            }[];
         };
         /**
          * SessionUser
@@ -2252,6 +2404,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LoginResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    profiles_api_auth_profiles_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfilesResponse"];
+                };
+            };
+        };
+    };
+    select_profile_api_auth_profile_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SelectProfileRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SelectProfileResponse"];
                 };
             };
             /** @description Validation Error */

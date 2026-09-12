@@ -64,6 +64,64 @@
         }
       }
     },
+    "/api/auth/profiles": {
+      "get": {
+        "summary": "Profiles",
+        "description": "Every profile on the server, for \"Who's watching?\".\n\nA SESSION is required \u2014 the list itself sits behind the server login, which is what makes\n\"members have no independent access\" true rather than merely unlinked: without the\nadministrator's sign-in there is no way to even see who exists.\n\nReports whether each profile is password-protected and enabled, so the picker can show a lock\nand grey out a disabled profile BEFORE anyone tries to enter it.",
+        "operationId": "profiles_api_auth_profiles_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfilesResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/profile": {
+      "post": {
+        "summary": "Select Profile",
+        "description": "Switch this session to a profile \u2014 the whole of \"who is watching\".\n\nWhy it can only work this way: **Jellyfin has no impersonation** (measured 2026-09-12 \u2014 the\nonly user-scoped token endpoint is ``/Users/AuthenticateByName``), so the app asks Jellyfin to\nauthenticate AS the chosen profile. A password-less profile signs in with a blank password; a\nprotected one needs its own. **The administrator knowing a member's password is not the\nmechanism \u2014 resetting it from Settings \u2192 Household is**, which is why that rail exists.\n\nSelecting the ADMINISTRATOR'S OWN profile requires the administrator's password: the device\nholds their session, so this is what stops a guest on the shared iPad from walking into it\n(decision 3, 2026-09-12). Switching back is therefore always deliberate, never automatic.",
+        "operationId": "select_profile_api_auth_profile_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SelectProfileRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SelectProfileResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/auth/logout": {
       "post": {
         "summary": "Logout",
@@ -2851,6 +2909,14 @@
           "user": {
             "$ref": "#/components/schemas/SessionUser"
           },
+          "profile": {
+            "$ref": "#/components/schemas/SessionUser"
+          },
+          "on_own_profile": {
+            "type": "boolean",
+            "title": "On Own Profile",
+            "default": true
+          },
           "expires": {
             "type": "string",
             "title": "Expires",
@@ -2859,7 +2925,7 @@
         },
         "type": "object",
         "title": "MeResponse",
-        "description": "``GET /api/auth/me`` \u2014 who this browser is signed in as."
+        "description": "``GET /api/auth/me`` \u2014 who this browser is, and which profile is in effect."
       },
       "MediaResponse": {
         "properties": {
@@ -2986,6 +3052,65 @@
         ],
         "title": "MediaResponse",
         "description": "The canonical single-item object the frontend renders from (\u00a718).\n\nThe frontend must NOT reconstruct status/capabilities from scattered\nfields \u2014 this is one complete, backend-derived resource."
+      },
+      "ProfileUser": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "default": ""
+          },
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "default": ""
+          },
+          "is_admin": {
+            "type": "boolean",
+            "title": "Is Admin",
+            "default": false
+          },
+          "has_password": {
+            "type": "boolean",
+            "title": "Has Password",
+            "default": false
+          },
+          "disabled": {
+            "type": "boolean",
+            "title": "Disabled",
+            "default": false
+          },
+          "last_login": {
+            "type": "string",
+            "title": "Last Login",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "ProfileUser",
+        "description": "One selectable profile, as the \"Who's watching?\" picker needs it.\n\nDeliberately carries no credential and no token: a profile's password is only ever *asked*\nfor, never returned (PLEX_PROFILE_AUTH_PLAN \u00a74)."
+      },
+      "ProfilesResponse": {
+        "properties": {
+          "profiles": {
+            "items": {
+              "$ref": "#/components/schemas/ProfileUser"
+            },
+            "type": "array",
+            "title": "Profiles"
+          },
+          "current": {
+            "$ref": "#/components/schemas/ProfileUser"
+          },
+          "warning": {
+            "type": "string",
+            "title": "Warning",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "ProfilesResponse",
+        "description": "``GET /api/auth/profiles`` \u2014 every profile on the server, for the picker."
       },
       "QualityProfileResponse": {
         "properties": {
@@ -3308,6 +3433,46 @@
           "snippet"
         ],
         "title": "SearchResult"
+      },
+      "SelectProfileRequest": {
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "title": "User Id",
+            "default": ""
+          },
+          "password": {
+            "type": "string",
+            "title": "Password",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "SelectProfileRequest",
+        "description": "``POST /api/auth/profile`` \u2014 switch this session to a profile.\n\n``password`` is that profile's own password (its Jellyfin credential): optional for a\npassword-less profile, **required for the administrator's own profile** so a shared device\ncannot walk into it (decision 3, 2026-09-12)."
+      },
+      "SelectProfileResponse": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok",
+            "default": true
+          },
+          "profile": {
+            "$ref": "#/components/schemas/ProfileUser"
+          },
+          "libraries": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Libraries"
+          }
+        },
+        "type": "object",
+        "title": "SelectProfileResponse",
+        "description": "The profile now in effect, and the libraries it may see."
       },
       "SessionUser": {
         "properties": {

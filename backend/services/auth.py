@@ -248,6 +248,33 @@ def authenticate_jellyfin(username: str, password: str, *, config=None,
                             token=token)
 
 
+# ------------------------------------------------------------- revoking a token
+def revoke_jellyfin_session(token: str, *, config=None, transport=None) -> bool:
+    """Best-effort: end the Jellyfin session a token belongs to. Never raises.
+
+    Used when the app has just obtained a token it will NOT use — the refused non-administrator
+    login in `api/routes/auth.py`. Leaving a live token behind would be a small but real hole
+    (a credential sitting in Jellyfin's session list that nothing in the app can see or expire),
+    and Jellyfin offers `POST /Sessions/Logout` for exactly this.
+    """
+    cfg = config if config is not None else get_config()
+    base = str(getattr(cfg, "JELLYFIN_URL", "") or "").rstrip("/")
+    if not base or not token:
+        return False
+    try:
+        request = urllib.request.Request(
+            f"{base}/Sessions/Logout",
+            data=b"",
+            method="POST",
+            headers={"X-Emby-Authorization": CLIENT_HEADER, "Authorization": token},
+        )
+        with urllib.request.urlopen(request, timeout=DEFAULT_TIMEOUT) as response:
+            return 200 <= int(getattr(response, "status", 200)) < 300
+    except Exception as exc:  # noqa: BLE001 - revocation is best-effort by definition
+        logger.info("could not revoke an unused media-server session (%s)", type(exc).__name__)
+        return False
+
+
 # ------------------------------------------------------------------ session store
 class SessionStore:
     """Atomic, corrupt-tolerant sessions.
@@ -338,12 +365,15 @@ class SessionStore:
         """Every session's METADATA — never the Jellyfin token (plan §3.1).
 
         This is the shape anything diagnostic (a status page, a probe tool) may
-        print: who is signed in and until when, with no credential in it.
+        print: who is signed in, which profile is active, and until when, with no
+        credential in it.
         """
         return [
             {
                 "user_id": str(row.get("user_id") or ""),
                 "user_name": str(row.get("user_name") or ""),
+                "profile_user_id": str(row.get("profile_user_id") or ""),
+                "profile_user_name": str(row.get("profile_user_name") or ""),
                 "created": str(row.get("created") or ""),
                 "expires": str(row.get("expires") or ""),
                 "last_seen": str(row.get("last_seen") or ""),
@@ -351,6 +381,35 @@ class SessionStore:
             for row in (self.load().get("sessions") or {}).values()
             if isinstance(row, dict)
         ]
+
+    def set_profile(self, session_id: str, *, user_id: str, user_name: str,
+                    token: str) -> Optional[dict]:
+        """Point this session at a PROFILE — the Jellyfin identity it now acts as.
+
+        The OWNER fields stay untouched: the server login that authorised this session remains
+        identifiable, so administrator access can be re-granted without a fresh login (the switch
+        back to the administrator is password-checked at the route) and a shared device cannot
+        lose track of whose session it is holding.
+
+        Returns the updated record, or ``None`` when the session no longer exists.
+        """
+        key = hash_session_id(session_id or "")
+        if not session_id:
+            return None
+
+        def mutate(data):
+            sessions = data.setdefault("sessions", {})
+            row = sessions.get(key)
+            if not isinstance(row, dict):
+                return None
+            row["profile_user_id"] = str(user_id or "")
+            row["profile_user_name"] = str(user_name or "")
+            row["profile_token"] = str(token or "")
+            sessions[key] = row
+            return row
+
+        result = self._mutate(mutate)
+        return dict(result) if isinstance(result, dict) else None
 
     def count(self) -> int:
         return len(self.load().get("sessions") or {})

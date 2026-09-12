@@ -47,6 +47,10 @@ def api(tmp_path, monkeypatch):
     monkeypatch.setattr(auth_route, "authenticate_jellyfin", fake_auth)
     monkeypatch.setattr(auth_route, "default_session_store", lambda config=None: store)
     monkeypatch.setattr(session_mod, "session_store", lambda config=None: store)
+    # Since PLEX_PROFILE_AUTH_PLAN Phase A, a login ALSO has to be an administrator: this fixture
+    # declares "the account this fake returns is an admin" so these tests stay about the SESSION
+    # mechanics. The refusals themselves are pinned in test_profile_auth_api.py.
+    monkeypatch.setattr(auth_route, "admin_status", lambda cfg, uid: True)
     return SimpleNamespace(client=TestClient(app), store=store, seen=seen)
 
 

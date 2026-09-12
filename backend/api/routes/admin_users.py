@@ -30,7 +30,7 @@ from fastapi.responses import JSONResponse
 
 from api.models import (AdminCreateUserRequest, AdminDeleteUserRequest,
                         AdminSetPasswordRequest, AdminUserPolicyRequest)
-from api.session import SessionContext, require_admin_session
+from api.session import SessionContext, grantable_rows, require_admin_session
 from config.settings import get_config
 from services.library.factory import build_library_service
 
@@ -85,17 +85,12 @@ def list_users(session: SessionContext = Depends(require_admin_session)):
 
 
 def _library_rows(library) -> list[dict]:
-    """The grantable libraries, from EITHER shape the provider stack can answer.
+    """Kept as a local alias so this module's call sites read naturally.
 
-    The route is handed ``LibraryService`` (the **facade**), whose ``library_folders()`` returns
-    ``{"provider": …, "folders": [...]}``; the provider underneath returns a plain list. Reading
-    only one of the two produced a 500 in production on 2026-09-12 — TWICE (the tick-box list and
-    the create-with-every-library grant), which is why this is a helper rather than two copies of
-    the same ``isinstance`` dance.
+    The implementation lives in ``api/session.py`` now (`grantable_rows`) because the profile
+    routes need the same shape handling — one helper, one home, no second copy to drift.
     """
-    folders = library.library_folders()
-    rows = folders.get("folders") if isinstance(folders, dict) else folders
-    return [f for f in (rows or []) if isinstance(f, dict)]
+    return grantable_rows(library)
 
 
 @router.get("/admin/libraries")

@@ -146,6 +146,39 @@ next session does not "fix" a non-problem or re-open a settled one:
    (`/api/health` and `/api/auth/*` excepted — the healthcheck and the sign-in must stay public),
    which is ONE line per router instead of a `Depends` on ~40 endpoints.
 
+### 4e. The bug the live proof found — and it was silent (2026-09-12)
+
+`tools/prove_profile_isolation.py` failed its FIRST run, on the check *"the administrator's sidebar
+is whole again"*: after switching back to their own profile, `/api/library/folders` returned an
+**empty** list. The api log named the cause in one line —
+`Jellyfin library_folders failed: HTTP Error 401: Unauthorized`.
+
+**Mechanism.** Jellyfin invalidates the previous token for a given **device + user** on every login.
+The app signs in on ONE device id, so the administrator selecting their own profile — which
+re-authenticates AS THEM, on this device — kills the token the session has been holding since
+sign-in. `SessionStore.set_profile()` deliberately left the owner fields untouched (Phase A's rule:
+"the owner is never overwritten by a profile switch"), so from that moment the session held a **dead
+owner token**, and every administrator-level call answered 401. It is silent by construction: the
+acting token (the freshly-logged-in profile token) is valid, so item detail, Continue Watching and
+everything else keep working — only the calls that need the ADMINISTRATOR's own credential fail, and
+they degrade to "no libraries" rather than raising.
+
+**Fix.** `set_profile(..., owns_session=True)` replaces the owner's token when — and only when — the
+switch authenticated as the account that owns the session. The store checks the id itself rather than
+trusting the flag, so a caller whose flag and id disagree cannot overwrite the administrator's
+credential with a member's. The route passes
+`owns_session=(identity.user_id == context.user_id)`.
+
+**Generalise.** A session must never hold two credentials for the same identity: when the server
+re-authenticates an identity, every stored copy of its old token is dead. The same class of bug
+applies to ANY second login of that (device, user) pair — see the known limit below.
+
+**Known limit, recorded rather than fixed here** (it predates Phase C and needs per-session device
+ids to solve): because every app session authenticates on the SAME Jellyfin device id, signing in
+twice — a phone and a laptop — rotates the token under the first session, whose media calls then
+401 until it signs in again. Nothing in Phase C made this worse, and the household's normal path
+(sign in once, switch profiles) is unaffected.
+
 ### 4.3 The shared-device rule (recommended, decision 3)
 The device holds the administrator's session, so "anyone can walk up and administer" is the real risk
 of this model — Plex's answer is a PIN on the Home admin, and the backend equivalent is: **admin
@@ -189,7 +222,7 @@ non-administrator profile is selected.** Enforced in `require_admin_session`, no
 |---|---|---|
 | **A** | backend: admin-only login, profile list/select/clear, profile self-password, session record grows `owner`/`profile`, rename, `me` gains `profile`; tests for every refusal (non-admin login, wrong/blank profile password, disabled profile, admin route with a non-admin profile selected, switch-back requires the password) | pytest, ruff, contract snapshot + typed client |
 | **B** | frontend: "Who's watching?" picker (lock badge, disabled greyed, password prompt), header profile switcher, guard sends a server session with no profile to the picker; browser check `tools/check_profile_picker.py` — **plus ONE additive backend field** (`profile_selected` on `me()`/`profiles()`, see §4b: this row used to claim B was frontend-only, and that was wrong) | tsc, vitest, build, DOM check |
-| **C** | **identity threading — the enforcement:** provider `_token()` prefers `profile_token`; every media/progress/resume/watched/subtitle/stream call goes out as the profile; sidebar libraries come from that profile's `/UserViews`; **live proof with two real profiles that their state and libraries do not leak into each other** | pytest (+ a test per route family), frontend, live two-profile proof |
+| **C** | **identity threading — the enforcement:** provider `_token()` prefers `profile_token`; every media/progress/resume/watched/subtitle/stream call goes out as the profile; sidebar libraries come from that profile's `/UserViews`; **live proof with two real profiles that their state and libraries do not leak into each other** — ✅ **BUILT + PROVEN LIVE 2026-09-12** (`tools/prove_profile_isolation.py` 24/24 against the real server; see §4d/§4e and the PROGRESS record) | pytest (+ a test per route family), frontend, live two-profile proof |
 | **D** | admin extras in `Settings → Household`: rename, "has password" state, and the profile's own "change my password" screen | gates + DOM check |
 | **E** | enforcement sweep (401/403 for every router; a profile cannot reach admin routes), ADR-0006, docs (`ARCHITECTURE`, `OPERATIONS`, `README`), PROGRESS record | full suite + docs links |
 

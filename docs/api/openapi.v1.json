@@ -535,7 +535,7 @@
     "/api/library/folders": {
       "get": {
         "summary": "Get Library Folders",
-        "description": "Configured media libraries + the server folders they resolve to.\n\nMEDIA_LIBRARIES_PLAN: the sidebar's Libraries group is built from\n``libraries`` \u2014 the resolved MEDIA_LIBRARY_N_* list when any are configured\n(names shown as-is, never the env keys), otherwise the server's OWN folder\nnames (no hardcoded Movies/TV Shows). ``folders`` carries every server\nfolder for reference; ``warnings`` surfaces config problems.",
+        "description": "Configured media libraries + the server folders they resolve to.\n\nMEDIA_LIBRARIES_PLAN: the sidebar's Libraries group is built from\n``libraries`` \u2014 the resolved MEDIA_LIBRARY_N_* list when any are configured\n(names shown as-is, never the env keys), otherwise the server's OWN folder\nnames (no hardcoded Movies/TV Shows). ``folders`` carries every server\nfolder for reference; ``warnings`` surfaces config problems.\n\n**Phase C (plan \u00a74d):** while somebody ELSE's profile is selected, the provider hands back that\nprofile's own ``/UserViews`` and the list is resolved with :func:`visible_libraries` \u2014 the\nprofile's GRANTS, not the administrator's config. An ungranted configured library is omitted\n(its PATH is not broken; this person simply may not see it) and ``warnings`` is empty for the\nsame reason: the administrator's config problems are not this person's screen.",
         "operationId": "get_library_folders_api_library_folders_get",
         "responses": {
           "200": {

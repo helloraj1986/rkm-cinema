@@ -183,13 +183,39 @@ class JellyfinLibraryProvider(LibraryProvider):
     # PrimaryImageItemId}]; a folder's titles come from /Users/{uid}/Items with
     # ParentId=<folder ItemId>&Recursive=true&IncludeItemTypes=Movie,Series.
     def library_folders(self) -> list[dict]:
-        """The server's media folders (Virtual Folders) as display rows.
+        """The media folders **this identity** may see, as display rows.
 
-        ``[{id, name, collection_type, path, locations}]`` where ``id`` is the
-        folder ItemId (the ParentId scope used by :meth:`items_in_folder`),
-        ``path`` is the first location and ``locations`` every reported one.
-        Uses the SAME admin api_key the app already holds for every call (the
-        bundled provisioner installs an admin AccessToken as the api key).
+        ``[{id, name, collection_type, path, locations}]`` where ``id`` is the folder ItemId (the
+        ParentId scope used by :meth:`items_in_folder`), ``path`` is the first location and
+        ``locations`` every reported one.
+
+        **Phase C (plan §4d):** the two identities are answered by two different server calls, and
+        the difference is a platform fact, not a preference — ``/Library/VirtualFolders`` needs
+        elevation and answers **403** to a profile's token, so:
+
+        * **somebody else's profile selected** ⇒ that profile's own ``/UserViews?userId=``, i.e.
+          the server's GRANT list. Those rows carry no ``CollectionType`` and only a
+          Jellyfin-internal path, so each is enriched from the administrator's folder list (display
+          metadata the app already holds — it is what ``MEDIA_LIBRARY_N_PATH`` is matched against)
+          and then **filtered down to the views**, so nothing an ungranted library says is
+          returned.
+        * **the administrator's own profile, or no session at all** ⇒ ``/Library/VirtualFolders``
+          exactly as before (that call IS elevated for the administrator's own session token —
+          measured). Every tool, the provisioner and the bootstrap take this path.
+        """
+        from api.session import current_session
+        context = current_session()
+        if context is not None and not context.on_own_profile():
+            return self._profile_folders(context.profile_id())
+        return self._server_folders()
+
+    def _server_folders(self) -> list[dict]:
+        """Every media folder on the server (Jellyfin ``/Library/VirtualFolders``).
+
+        Administrator-level metadata: it lists folders this person may not be allowed to watch,
+        which is why the caller filters it down to a profile's own views before returning anything
+        (:meth:`library_folders`). Uses the ADMINISTRATOR's credential — the folder list itself is
+        never what grants access, so reading it changes nothing about who may watch what.
         """
         import time
         now = time.time()
@@ -197,8 +223,9 @@ class JellyfinLibraryProvider(LibraryProvider):
             return self._folders_cache
         if not self._configured():
             return []
+        from api.session import owner_media_token
         url = (f"{self.config.JELLYFIN_URL}/Library/VirtualFolders"
-               f"?api_key={self.config.JELLYFIN_API_KEY}")
+               f"?api_key={owner_media_token(self.config)}")
         try:
             raw = self._fetch_list_or_items(url)
         except Exception as e:
@@ -223,6 +250,39 @@ class JellyfinLibraryProvider(LibraryProvider):
         self._folders_expiry = now + self.JELLYFIN_SCAN_TTL
         return rows
 
+    def _profile_folders(self, user_id: str) -> list[dict]:
+        """The libraries ONE PROFILE may see — its own ``/UserViews``, enriched for display.
+
+        Not cached: the provider is built per request, and a cache keyed by anything less than the
+        user id would be a cross-profile leak waiting to happen.
+        """
+        if not self._configured() or not user_id:
+            return []
+        url = (f"{self.config.JELLYFIN_URL}/UserViews"
+               f"?userId={urllib.parse.quote(str(user_id))}"
+               f"&api_key={self._api_token()}")
+        try:
+            views = self._fetch_list_or_items(url)
+        except Exception as e:
+            logger.warning("Jellyfin UserViews(%s) failed: %s", user_id, e)
+            return []
+        known = {str(f.get("id") or ""): f for f in self._server_folders()}
+        rows = []
+        for view in views:
+            view_id = str(view.get("Id") or "")
+            if not view_id:
+                continue
+            meta = known.get(view_id) or {}
+            rows.append({
+                "id": view_id,
+                "name": str(view.get("Name") or meta.get("name") or ""),
+                "collection_type": str(meta.get("collection_type")
+                                       or view.get("CollectionType") or ""),
+                "path": str(meta.get("path") or ""),
+                "locations": list(meta.get("locations") or []),
+            })
+        return rows
+
     def items_in_folder(self, folder_id: str, limit: Optional[int] = None) -> list[dict]:
         """Every Movie + Series inside ONE server library folder.
 
@@ -236,7 +296,7 @@ class JellyfinLibraryProvider(LibraryProvider):
         if not user_id:
             return []
         url = (f"{self.config.JELLYFIN_URL}/Users/{user_id}/Items"
-               f"?api_key={self.config.JELLYFIN_API_KEY}"
+               f"?api_key={self._api_token()}"
                f"&ParentId={urllib.parse.quote(str(folder_id))}&Recursive=true"
                f"&IncludeItemTypes=Movie,Series"
                f"&Fields=PrimaryImageAspectRatio,ProductionYear,ProviderIds,UserData,Genres,DateCreated")
@@ -306,7 +366,7 @@ class JellyfinLibraryProvider(LibraryProvider):
         if not uid:
             return None
         url = (f"{self.config.JELLYFIN_URL}/Users/{uid}/Items/Resume"
-               f"?api_key={self.config.JELLYFIN_API_KEY}&Limit=100"
+               f"?api_key={self._api_token()}&Limit=100"
                f"&Fields=PrimaryImageAspectRatio,ProductionYear,ProviderIds,"
                f"UserData,Genres,DateCreated,SeriesId,SeriesName,SeasonId,"
                f"IndexNumber,ParentIndexNumber")
@@ -376,7 +436,7 @@ class JellyfinLibraryProvider(LibraryProvider):
         if not user_id:
             return []
         url = (f"{self.config.JELLYFIN_URL}/Users/{user_id}/Items"
-               f"?api_key={self.config.JELLYFIN_API_KEY}&ParentId={series_id}"
+               f"?api_key={self._api_token()}&ParentId={series_id}"
                f"&IncludeItemTypes=Episode&Recursive=true"
                f"&SortBy=IndexNumber,ParentIndexNumber&Limit={limit}"
                f"&Fields=PrimaryImageAspectRatio,ProductionYear,ProviderIds,UserData,IndexNumber,ParentIndexNumber")
@@ -424,7 +484,7 @@ class JellyfinLibraryProvider(LibraryProvider):
         fields = ("PrimaryImageAspectRatio,ProductionYear,ProviderIds,UserData,Genres,"
                   "DateCreated,SeriesId,SeriesName,IndexNumber,ParentIndexNumber,RunTimeTicks")
         items_url = (f"{self.config.JELLYFIN_URL}/Users/{user_id}/Items"
-                     f"?api_key={self.config.JELLYFIN_API_KEY}&searchTerm={quote(q)}&Recursive=true"
+                     f"?api_key={self._api_token()}&searchTerm={quote(q)}&Recursive=true"
                      f"&IncludeItemTypes=Movie,Series,Episode&Fields={fields}&Limit={limit}")
         items: list[dict] = []
         try:
@@ -436,7 +496,7 @@ class JellyfinLibraryProvider(LibraryProvider):
             logger.warning("Jellyfin search_items(%r) failed: %s", q, e)
 
         hints_url = (f"{self.config.JELLYFIN_URL}/Search/Hints"
-                     f"?api_key={self.config.JELLYFIN_API_KEY}&UserId={user_id}"
+                     f"?api_key={self._api_token()}&UserId={user_id}"
                      f"&searchTerm={quote(q)}&Limit={limit}")
         people: list[dict] = []
         genres: list[dict] = []
@@ -469,7 +529,7 @@ class JellyfinLibraryProvider(LibraryProvider):
         fields = ("PrimaryImageAspectRatio,ProductionYear,ProviderIds,UserData,Genres,"
                   "DateCreated,SeriesId,SeriesName,IndexNumber,ParentIndexNumber,RunTimeTicks")
         url = (f"{self.config.JELLYFIN_URL}/Users/{user_id}/Items"
-               f"?api_key={self.config.JELLYFIN_API_KEY}&Recursive=true"
+               f"?api_key={self._api_token()}&Recursive=true"
                f"&IncludeItemTypes=Movie,Series&PersonIds={person_id}"
                f"&Fields={fields}&Limit={limit}")
         out: list[dict] = []
@@ -515,11 +575,20 @@ class JellyfinLibraryProvider(LibraryProvider):
         """Trigger a full Jellyfin library scan (picks up newly-added media).
 
         Returns True when Jellyfin accepted the refresh (204). ``POST`` with an
-        empty body via the server-side api key.
+        empty body, server-side.
+
+        **Phase C: deliberately the ADMINISTRATOR's credential, not the profile's.** A library
+        scan is server-wide maintenance, not a media read — it returns no item, no watch state and
+        no library content, so it cannot leak anything between profiles. Jellyfin requires
+        elevation for it (``/Library/Refresh`` answers a profile's token 403 — measured), so
+        sending the profile's token would turn a working feature into a silent failure. No
+        *content* call may follow this pattern: those all go through :meth:`_api_token`.
         """
         if not self._configured():
             return False
-        url = f"{self.config.JELLYFIN_URL}/Library/Refresh?api_key={self.config.JELLYFIN_API_KEY}"
+        from api.session import owner_media_token
+        url = (f"{self.config.JELLYFIN_URL}/Library/Refresh"
+               f"?api_key={owner_media_token(self.config)}")
         try:
             req = urllib.request.Request(url, data=b"", method="POST")
             with urllib.request.urlopen(req, timeout=20) as r:
@@ -637,7 +706,7 @@ class JellyfinLibraryProvider(LibraryProvider):
             return {"played": False, "play_count": 0}
         method = "POST" if watched else "DELETE"
         url = (f"{self.config.JELLYFIN_URL}/Users/{uid}/PlayedItems/{item_id}"
-               f"?api_key={self.config.JELLYFIN_API_KEY}")
+               f"?api_key={self._api_token()}")
         try:
             req = urllib.request.Request(url, method=method, data=b"",
                                          headers={"Content-Type": "application/json"})
@@ -687,7 +756,7 @@ class JellyfinLibraryProvider(LibraryProvider):
             return False
         import json
         url = (f"{self.config.JELLYFIN_URL}/Users/{uid}/Items/{item_id}/UserData"
-               f"?api_key={self.config.JELLYFIN_API_KEY}")
+               f"?api_key={self._api_token()}")
         body = json.dumps({
             "PlaybackPositionTicks": int(position_ticks),
             "LastPlayedDate": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -709,7 +778,7 @@ class JellyfinLibraryProvider(LibraryProvider):
         if not uid:
             return {"played": False, "play_count": 0}
         url = (f"{self.config.JELLYFIN_URL}/Users/{uid}/Items/{item_id}"
-               f"?api_key={self.config.JELLYFIN_API_KEY}&Fields=UserData")
+               f"?api_key={self._api_token()}&Fields=UserData")
         try:
             import json
             with urllib.request.urlopen(url, timeout=10) as r:
@@ -737,7 +806,7 @@ class JellyfinLibraryProvider(LibraryProvider):
         if not self._configured() or not item_id:
             return None
         url = (f"{self.config.JELLYFIN_URL}/Items/{item_id}/Images/{kind}"
-               f"?api_key={self.config.JELLYFIN_API_KEY}&maxWidth={max_width}&quality=90&tag=")
+               f"?api_key={self._api_token()}&maxWidth={max_width}&quality=90&tag=")
         try:
             with urllib.request.urlopen(url, timeout=12) as r:
                 data = r.read()
@@ -776,7 +845,7 @@ class JellyfinLibraryProvider(LibraryProvider):
             return None
         import json
         url = (f"{self.config.JELLYFIN_URL}/Items/{item_id}/PlaybackInfo"
-               f"?api_key={self.config.JELLYFIN_API_KEY}")
+               f"?api_key={self._api_token()}")
         body = json.dumps({
             "UserId": uid, "StartTimeTicks": 0,
             "AutoOpenLiveStream": False, "MediaSourceId": "",
@@ -844,7 +913,7 @@ class JellyfinLibraryProvider(LibraryProvider):
             return None
         import json
         url = (f"{self.config.JELLYFIN_URL}/Users/{uid}/Items/{item_id}"
-               f"?Fields=Path&api_key={self.config.JELLYFIN_API_KEY}")
+               f"?Fields=Path&api_key={self._api_token()}")
         try:
             with urllib.request.urlopen(url, timeout=10) as r:
                 data = json.load(r)
@@ -867,7 +936,7 @@ class JellyfinLibraryProvider(LibraryProvider):
         url = (f"{self.config.JELLYFIN_URL}/Items/{item_id}/Refresh"
                f"?metadataRefreshMode=Default&imageRefreshMode=None"
                f"&replaceAllMetadata=false&replaceAllImages=false"
-               f"&api_key={self.config.JELLYFIN_API_KEY}")
+               f"&api_key={self._api_token()}")
         try:
             req = urllib.request.Request(url, data=b"", method="POST",
                                          headers={"Content-Type": "application/json"})
@@ -907,7 +976,7 @@ class JellyfinLibraryProvider(LibraryProvider):
             "Data": base64.b64encode(content).decode("ascii"),
         }).encode("utf-8")
         url = (f"{self.config.JELLYFIN_URL}/Videos/{item_id}/Subtitles"
-               f"?api_key={self.config.JELLYFIN_API_KEY}")
+               f"?api_key={self._api_token()}")
         try:
             req = urllib.request.Request(url, data=body, method="POST",
                                          headers={"Content-Type": "application/json"})
@@ -935,7 +1004,7 @@ class JellyfinLibraryProvider(LibraryProvider):
         fields = ("ProviderIds,SeriesName,SeriesId,IndexNumber,ParentIndexNumber,"
                   "ProductionYear,Name,Type")
         url = (f"{self.config.JELLYFIN_URL}/Users/{uid}/Items/{item_id}"
-               f"?Fields={fields}&api_key={self.config.JELLYFIN_API_KEY}")
+               f"?Fields={fields}&api_key={self._api_token()}")
         try:
             with urllib.request.urlopen(url, timeout=10) as r:
                 it = json.load(r)
@@ -977,7 +1046,7 @@ class JellyfinLibraryProvider(LibraryProvider):
         if not uid:
             return None
         url = (f"{self.config.JELLYFIN_URL}/Users/{uid}/Items/{item_id}"
-               f"?api_key={self.config.JELLYFIN_API_KEY}"
+               f"?api_key={self._api_token()}"
                f"&Fields={self.DETAIL_FIELDS}")
         try:
             import json
@@ -1007,7 +1076,7 @@ class JellyfinLibraryProvider(LibraryProvider):
             return None
         import json
         url = (f"{self.config.JELLYFIN_URL}/Users/{uid}/Items/{item_id}"
-               f"?api_key={self.config.JELLYFIN_API_KEY}&Fields=ProviderIds")
+               f"?api_key={self._api_token()}&Fields=ProviderIds")
         try:
             with urllib.request.urlopen(url, timeout=12) as r:
                 it = json.load(r)
@@ -1187,13 +1256,25 @@ class JellyfinLibraryProvider(LibraryProvider):
     #   POST   /Users/Password?userId=   {CurrentPw, NewPw, ResetPassword}
     #   DELETE /Users/{id}
     #
-    # ⚠ These go through `_api_token()`, which in Phase 1b is the app's ADMIN credential
-    # because per-request identity (Phase 3) has not landed. That is exactly why the ROUTE
-    # must do the live administrator check itself: Jellyfin's own 403 only becomes the
-    # backstop once every call is made as the signed-in user.
+    # ⚠ These go through `_api_token()` too, so while the administrator browses as THEMSELVES they
+    # run on their own session token. The route's live administrator check is still the gate that
+    # matters (Phase C did not move it): these routes are refused outright whenever somebody
+    # else's profile is selected (`require_admin_session`), so Jellyfin's own 403 is the backstop
+    # for a demoted account, not the first line of defence.
     def _api_token(self) -> str:
-        """The credential these calls are made with (Phase 3: the session's token)."""
-        return str(self.config.JELLYFIN_API_KEY or "")
+        """The credential every Jellyfin call here is made with.
+
+        Phase C (PLEX_PROFILE_AUTH_PLAN §3): the selected PROFILE's token while a session is in
+        effect, else the account that signed in, else — with no request context at all, as in the
+        provisioner, the scheduler's jobs and the unit tests — the app's own key. The rule lives in
+        ``api.session.acting_media_token`` so this and the routes that build raw upstream URLs
+        (stream / subtitle / HLS) can never disagree.
+
+        ⚠ The lookup is a LAZY import on purpose: ``api.session`` imports the library factory at
+        module level, so a top-level import here would be circular.
+        """
+        from api.session import acting_media_token
+        return acting_media_token(self.config)
 
     def _api(self, method: str, path: str, body: Optional[dict] = None) -> tuple[bool, object]:
         """Call Jellyfin and return ``(ok, payload)`` — never raising.
@@ -1339,12 +1420,27 @@ class JellyfinLibraryProvider(LibraryProvider):
         return ok
 
     def _user_id(self) -> str:
+        """The Jellyfin user every media call is scoped to.
+
+        **Phase C:** the selected PROFILE while a session is in effect. The id comes from the SAME
+        session as the token (``api.session.acting_user_id``), which is what keeps the pair
+        consistent — Jellyfin takes the user id in the PATH of the user-scoped endpoints, so naming
+        the administrator while presenting a profile's token is a contradiction it answers with a
+        404 (measured — plan §4d).
+
+        With **no** request context the historical lookup is unchanged (the server's first account,
+        i.e. the administrator): the provisioner, the scheduler's jobs and every tool depend on it.
+        """
+        from api.session import acting_user_id
+        session_user = acting_user_id()
+        if session_user:
+            return session_user
         if self._user_id_value:
             return self._user_id_value
         try:
             import json
             with urllib.request.urlopen(
-                f"{self.config.JELLYFIN_URL}/Users?api_key={self.config.JELLYFIN_API_KEY}",
+                f"{self.config.JELLYFIN_URL}/Users?api_key={self._api_token()}",
                 timeout=8,
             ) as r:
                 users = json.load(r)
@@ -1371,7 +1467,7 @@ class JellyfinLibraryProvider(LibraryProvider):
             return []
 
         url = (f"{self.config.JELLYFIN_URL}/Users/{user_id}/Items"
-               f"?api_key={self.config.JELLYFIN_API_KEY}"
+               f"?api_key={self._api_token()}"
                f"&Recursive=true&IncludeItemTypes={item_type}"
                f"&Fields=PrimaryImageAspectRatio,ProductionYear,ProviderIds,UserData,Genres,DateCreated")
         try:

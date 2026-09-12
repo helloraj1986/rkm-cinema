@@ -36,6 +36,7 @@ import urllib.request
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import Response, StreamingResponse
 
+from api.session import acting_media_token
 from config.settings import get_config
 
 router = APIRouter()
@@ -164,8 +165,10 @@ def jellyfin_hls_master(
     if mode not in _HLS_MODES:
         raise HTTPException(status_code=400, detail=f"Unknown HLS mode: {mode}")
 
+    # Phase C: the selected profile's credential (both HLS routes proxy playback for the person
+    # watching; the token is stripped from every playlist body before it reaches the browser).
     params: dict[str, str] = {
-        "api_key": cfg.JELLYFIN_API_KEY,
+        "api_key": acting_media_token(cfg),
         "MediaSourceId": media_source_id or item_id,
     }
     params.update(_MODE_CODECS[mode])
@@ -223,7 +226,7 @@ def jellyfin_hls_resource(item_id: str, rest: str, request: Request):
 
     # Forward the client query minus any client-supplied api_key; add ours.
     q = {k: v for k, v in request.query_params.items() if k != "api_key"}
-    q["api_key"] = cfg.JELLYFIN_API_KEY
+    q["api_key"] = acting_media_token(cfg)
     qs = urllib.parse.urlencode(q)
     up = f"{cfg.JELLYFIN_URL}/Videos/{item_id}/{rest}?{qs}"
     headers: dict[str, str] = {}

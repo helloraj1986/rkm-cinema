@@ -1,12 +1,20 @@
 """The session seam: cookie → SessionStore → contextvar (AUTH_MULTIUSER_PLAN §3.3).
 
 ONE dependency publishes the signed-in user's Jellyfin identity for the duration of a
-request; :meth:`JellyfinLibraryProvider._token` then prefers it over the admin token
-(Phase 3). That is deliberately a single diff point instead of threading a token
-through the 18 ``build_library_service()`` call sites and the provider's 21
-``api_key=`` URL builds — and it fails SAFE: no request context (the provisioner,
-bootstrap health checks, the PowerShell/Python tooling, unit tests) behaves exactly
-as it does today, with the admin token.
+request; :meth:`JellyfinLibraryProvider._api_token` then prefers it over the admin token.
+That is deliberately a single diff point instead of threading a token through the 18
+``build_library_service()`` call sites and the provider's ``api_key=`` URL builds — and it
+fails SAFE: no request context (the provisioner, bootstrap health checks, the
+PowerShell/Python tooling, unit tests) behaves exactly as it does today, with the admin token.
+
+**ARMED IN PHASE C (2026-09-12).** Before that, ``require_session`` was referenced by no
+route at all, so nothing ever published the contextvar and every media call ran on the
+administrator's credential. It is now a router-level dependency of every app router in
+``api/main.py`` (``/api/health`` and ``/api/auth/*`` excepted — the Docker HEALTHCHECK and
+the sign-in must stay reachable). The four helpers below are the ONE place that decides
+WHICH credential a call uses: :func:`acting_media_token` (media, watch state, progress,
+library content), :func:`owner_media_token` (administrative/library-metadata calls),
+:func:`acting_user_id` and :func:`acting_profile_is_owner`.
 
 Two things are easy to get wrong here, so both are pinned by tests:
 
@@ -148,6 +156,76 @@ def grantable_rows(library) -> list[dict]:
         return []
     rows = folders.get("folders") if isinstance(folders, dict) else folders
     return [f for f in (rows or []) if isinstance(f, dict)]
+
+
+def acting_media_token(cfg=None) -> str:
+    """The Jellyfin credential a MEDIA call must be made with (Phase C's whole diff point).
+
+    PLEX_PROFILE_AUTH_PLAN §3: the session's **acting** token — the selected profile's, else the
+    account that signed in to the server — while a request context exists. Outside a request it is
+    the app's own key, which is what the provisioner, the bootstrap health checks, the scheduler's
+    jobs, the PowerShell/Python tooling and the unit tests all run on: **no request context means
+    today's behaviour, unchanged.**
+
+    ONE rule, two kinds of caller — the provider (``JellyfinLibraryProvider._api_token``) and the
+    routes that build a raw upstream URL (stream / subtitle / HLS) — so a new call site cannot
+    reach for the wrong credential by accident. A missed site would silently show the
+    administrator's library and watch state to a household member, which is the failure this
+    workstream exists to prevent.
+    """
+    context = current_session()
+    if context is not None:
+        token = context.acting_token()
+        if token:
+            return token
+    cfg = cfg if cfg is not None else get_config()
+    return str(getattr(cfg, "JELLYFIN_API_KEY", "") or "")
+
+
+def owner_media_token(cfg=None) -> str:
+    """The credential for a call the ADMINISTRATOR's own identity must make.
+
+    Some calls are not about the person watching: reading the server's library LIST for display
+    metadata (Phase C enriches a profile's ``/UserViews`` rows with it — plan §4d), listing
+    accounts, and managing them. Those run on the account that signed in to the server — the
+    administrator — or, outside a request, on the app's own key.
+
+    ⚠ This is NOT a way around the profile model: it is never used for media, watch state,
+    progress or library CONTENT. A call that reads what somebody may watch must use
+    :func:`acting_media_token`, or the profile model is decorative.
+    """
+    context = current_session()
+    if context is not None and context.token:
+        return context.token
+    cfg = cfg if cfg is not None else get_config()
+    return str(getattr(cfg, "JELLYFIN_API_KEY", "") or "")
+
+
+def acting_user_id() -> str:
+    """The Jellyfin USER id a media call must be scoped to (``""`` = no request context).
+
+    Jellyfin takes the user id in the PATH of the user-scoped endpoints, so the id and the token
+    must travel together: naming the administrator while presenting a profile's token is a
+    contradiction, and Jellyfin answers it 404 (measured — plan §4d). Sourcing the id from the
+    same session as the token is what makes that impossible.
+
+    ``""`` means "no request context", and the provider keeps its own lookup for that case (the
+    provisioner, the scheduler and the tools, which act as the administrator).
+    """
+    context = current_session()
+    return context.profile_id() if context is not None else ""
+
+
+def acting_profile_is_owner() -> bool:
+    """Is this request the account-that-signed-in's own profile (or no session at all)?
+
+    ``True`` for an ordinary un-enforced request and for the administrator browsing as themselves.
+    ``False`` only while somebody ELSE's profile is selected — which is the single condition that
+    changes how the app must behave: the sidebar comes from that profile's own views, and the
+    administrator's library list (metadata only) is the enrichment source (plan §4d).
+    """
+    context = current_session()
+    return context is None or context.on_own_profile()
 
 
 async def require_session(request: Request) -> Optional[SessionContext]:

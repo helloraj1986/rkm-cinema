@@ -20,7 +20,12 @@ from api.models import (
 )
 from config.settings import get_config
 from services.library import build_library_service
-from services.library.media_libraries import match_libraries, server_default_libraries
+from services.library.media_libraries import (
+    match_libraries,
+    server_default_libraries,
+    visible_libraries,
+)
+from api.session import acting_profile_is_owner
 
 
 router = APIRouter()
@@ -60,22 +65,33 @@ def get_library_folders():
     (names shown as-is, never the env keys), otherwise the server's OWN folder
     names (no hardcoded Movies/TV Shows). ``folders`` carries every server
     folder for reference; ``warnings`` surfaces config problems.
+
+    **Phase C (plan §4d):** while somebody ELSE's profile is selected, the provider hands back that
+    profile's own ``/UserViews`` and the list is resolved with :func:`visible_libraries` — the
+    profile's GRANTS, not the administrator's config. An ungranted configured library is omitted
+    (its PATH is not broken; this person simply may not see it) and ``warnings`` is empty for the
+    same reason: the administrator's config problems are not this person's screen.
     """
     cfg = get_config()
     service = build_library_service(cfg)
     provider, server_folders = _provider_folders(service)
 
     configured = list(getattr(cfg, "media_libraries", None) or [])
-    if configured:
+    if not acting_profile_is_owner():
+        resolved = visible_libraries(configured, server_folders)
+        warnings: list[str] = []
+    elif configured:
         resolved = match_libraries(configured, server_folders)
+        warnings = list(getattr(cfg, "media_library_warnings", None) or [])
     else:
         resolved = server_default_libraries(server_folders)
+        warnings = list(getattr(cfg, "media_library_warnings", None) or [])
 
     return LibrariesResponse(
         provider=provider,
         folders=[_to_public_folder(f) for f in server_folders],
         libraries=[ConfiguredLibrary(**r) for r in resolved],
-        warnings=list(getattr(cfg, "media_library_warnings", None) or []),
+        warnings=warnings,
     )
 
 

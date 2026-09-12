@@ -128,6 +128,31 @@ def server_default_libraries(server_folders: List[dict]) -> List[dict]:
     return out
 
 
+def visible_libraries(
+    configured: List[MediaLibrary],
+    server_folders: List[dict],
+) -> List[dict]:
+    """Sidebar rows for ONE PROFILE — exactly the libraries that profile may see.
+
+    PLEX_PROFILE_AUTH_PLAN §4d: ``server_folders`` here is the profile's own ``/UserViews`` list,
+    i.e. the media server's GRANT list, and a grant is a server fact. Two consequences, and both
+    are the honest answer rather than the config-check one:
+
+    * a configured library the profile was **not** granted is **omitted** — its PATH is not wrong,
+      this person simply may not see it, and a warning saying otherwise would send the
+      administrator hunting a config problem that does not exist;
+    * a library the profile **was** granted but that is not in ``MEDIA_LIBRARY_N_*`` is included
+      under the server's own name, so a grant can never be invisible in the UI.
+
+    Rows have the same shape as :func:`match_libraries` / :func:`server_default_libraries`, so
+    nothing downstream (icons, ``/library/<kind>`` redirects, folder pages) changes.
+    """
+    rows = [r for r in match_libraries(configured, server_folders) if r.get("ok")]
+    matched = {str(r.get("folder_id") or "") for r in rows}
+    extra = [f for f in (server_folders or []) if str(f.get("id") or "") not in matched]
+    return rows + server_default_libraries(extra)
+
+
 def find_folder_name(folders: List[dict], folder_id: Optional[str]) -> str:
     """Display name for a folder id (used by the folder view heading)."""
     if not folder_id:

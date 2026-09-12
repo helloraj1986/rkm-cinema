@@ -383,7 +383,7 @@ class SessionStore:
         ]
 
     def set_profile(self, session_id: str, *, user_id: str, user_name: str,
-                    token: str) -> Optional[dict]:
+                    token: str, owns_session: bool = False) -> Optional[dict]:
         """Point this session at a PROFILE — the Jellyfin identity it now acts as.
 
         The OWNER fields stay untouched: the server login that authorised this session remains
@@ -391,7 +391,14 @@ class SessionStore:
         back to the administrator is password-checked at the route) and a shared device cannot
         lose track of whose session it is holding.
 
-        Returns the updated record, or ``None`` when the session no longer exists.
+        ⚠ **``owns_session`` — the ONE case where the owner's token IS replaced.** Set it when this
+        switch authenticated as the account that signed in (the administrator selecting their own
+        profile). Jellyfin invalidates the previous token for a given **device + user** on every
+        login, and the app logs in on ONE device id, so that switch-back silently kills the token
+        the session has been holding since sign-in: every later administrator-level call (the
+        library metadata a profile's views are enriched with, account management) then answers
+        **401** and the sidebar comes back empty. Measured live 2026-09-12 by
+        ``tools/prove_profile_isolation.py`` — the token must be REPLACED, not kept.
         """
         key = hash_session_id(session_id or "")
         if not session_id:
@@ -405,6 +412,12 @@ class SessionStore:
             row["profile_user_id"] = str(user_id or "")
             row["profile_user_name"] = str(user_name or "")
             row["profile_token"] = str(token or "")
+            if owns_session and token and str(user_id or "") == str(row.get("user_id") or ""):
+                # The administrator re-authenticated on this session's device: the old owner token
+                # is dead from this moment (see the docstring). The id check is a rail, not a
+                # formality — a caller whose flag and id disagree must NOT be able to overwrite the
+                # administrator's credential with a member's.
+                row["jellyfin_token"] = str(token)
             sessions[key] = row
             return row
 

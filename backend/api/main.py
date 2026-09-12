@@ -1,5 +1,5 @@
 """FastAPI application factory."""
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from config.settings import get_config
@@ -20,6 +20,24 @@ from api.routes import media as media_routes
 from api.routes import watchlist as watchlist_routes
 from api.routes import reconcile as reconcile_routes
 from api.routes import jobs as jobs_routes
+from api.session import require_session
+
+
+#: Phase C: ONE dependency, applied per ROUTER, publishes the signed-in identity for every app
+#: route (``api/session.py`` explains the seam). Before this existed Phase C could not have worked
+#: at all — ``require_session`` was referenced by no route, so no media call ever saw a profile and
+#: every one of them ran on the administrator's credential.
+#:
+#: ONE line per router, not a ``Depends`` on ~40 endpoints: a site that forgot it would silently
+#: keep serving the administrator's library and watch state to a household member, which is the
+#: exact failure this workstream exists to prevent.
+#:
+#: Deliberately NOT applied to ``/api/health`` (the Dockerfile HEALTHCHECK calls it — a 401 there
+#: marks the api unhealthy and cascades) or ``/api/auth/*`` (sign-in must be reachable signed out;
+#: those routes read the session directly and a session-less call is not an error for them).
+#: With ``RKM_AUTH_REQUIRED=false`` this changes NOTHING observable — it only publishes the
+#: identity, and a missing session stays a valid anonymous request.
+SESSION_SCOPED = [Depends(require_session)]
 
 
 def create_app() -> FastAPI:
@@ -52,26 +70,28 @@ def create_app() -> FastAPI:
     # Household accounts (AUTH_MULTIUSER_PLAN Phase 1b): admin-only, session-STRICT even
     # while the rest of the app is unenforced — these routes create and delete accounts.
     app.include_router(admin_users_routes.router, prefix="/api")
-    app.include_router(config.router, prefix="/api")
-    app.include_router(status.router, prefix="/api")
-    app.include_router(download.router, prefix="/api")
-    app.include_router(search.router, prefix="/api")
-    app.include_router(search_global_routes.router, prefix="/api")
-    app.include_router(library.router, prefix="/api")
-    app.include_router(quality.router, prefix="/api")
-    app.include_router(jellyfin_poster_routes.router, prefix="/api")
-    app.include_router(jellyfin_stream_routes.router, prefix="/api")
-    app.include_router(jellyfin_hls_routes.router, prefix="/api")
-    app.include_router(jellyfin_tracks_routes.router, prefix="/api")
-    app.include_router(jellyfin_subtitles_routes.router, prefix="/api")
-    app.include_router(jellyfin_detail_routes.router, prefix="/api")
-    app.include_router(jellyfin_similar_routes.router, prefix="/api")
-    app.include_router(suggest.router, prefix="/api")
+    # Phase C: every APP route below is session-scoped, so a media call is made as the selected
+    # profile rather than as the administrator. See SESSION_SCOPED above.
+    app.include_router(config.router, prefix="/api", dependencies=SESSION_SCOPED)
+    app.include_router(status.router, prefix="/api", dependencies=SESSION_SCOPED)
+    app.include_router(download.router, prefix="/api", dependencies=SESSION_SCOPED)
+    app.include_router(search.router, prefix="/api", dependencies=SESSION_SCOPED)
+    app.include_router(search_global_routes.router, prefix="/api", dependencies=SESSION_SCOPED)
+    app.include_router(library.router, prefix="/api", dependencies=SESSION_SCOPED)
+    app.include_router(quality.router, prefix="/api", dependencies=SESSION_SCOPED)
+    app.include_router(jellyfin_poster_routes.router, prefix="/api", dependencies=SESSION_SCOPED)
+    app.include_router(jellyfin_stream_routes.router, prefix="/api", dependencies=SESSION_SCOPED)
+    app.include_router(jellyfin_hls_routes.router, prefix="/api", dependencies=SESSION_SCOPED)
+    app.include_router(jellyfin_tracks_routes.router, prefix="/api", dependencies=SESSION_SCOPED)
+    app.include_router(jellyfin_subtitles_routes.router, prefix="/api", dependencies=SESSION_SCOPED)
+    app.include_router(jellyfin_detail_routes.router, prefix="/api", dependencies=SESSION_SCOPED)
+    app.include_router(jellyfin_similar_routes.router, prefix="/api", dependencies=SESSION_SCOPED)
+    app.include_router(suggest.router, prefix="/api", dependencies=SESSION_SCOPED)
     # Phase 10 — resource API (spec §17).
-    app.include_router(media_routes.router, prefix="/api")
-    app.include_router(watchlist_routes.router, prefix="/api")
-    app.include_router(reconcile_routes.router, prefix="/api")
-    app.include_router(jobs_routes.router, prefix="/api")
+    app.include_router(media_routes.router, prefix="/api", dependencies=SESSION_SCOPED)
+    app.include_router(watchlist_routes.router, prefix="/api", dependencies=SESSION_SCOPED)
+    app.include_router(reconcile_routes.router, prefix="/api", dependencies=SESSION_SCOPED)
+    app.include_router(jobs_routes.router, prefix="/api", dependencies=SESSION_SCOPED)
 
     @app.on_event("startup")
     async def startup():

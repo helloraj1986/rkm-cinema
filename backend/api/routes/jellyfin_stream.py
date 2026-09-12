@@ -24,6 +24,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from api.models import JellyfinProgressRequest
+from api.session import acting_media_token
 from config.settings import get_config
 from services.library import build_library_service
 
@@ -105,7 +106,10 @@ def jellyfin_stream(
     if mode not in _VALID_MODES:
         raise HTTPException(status_code=400, detail=f"Unknown mode: {mode}")
 
-    up = f"{cfg.JELLYFIN_URL}/Videos/{item_id}/stream?api_key={cfg.JELLYFIN_API_KEY}"
+    # Phase C: the profile's credential while one is selected — the proxy is the ONLY place the
+    # browser's playback reaches Jellyfin, so this is where a member's stream is authorised.
+    up = (f"{cfg.JELLYFIN_URL}/Videos/{item_id}/stream"
+          f"?api_key={acting_media_token(cfg)}")
     if mode == "direct":
         # Static=true: Jellyfin serves the file untouched. Track/bitrate params
         # are no-ops here (verified live) — deliberately not forwarded.

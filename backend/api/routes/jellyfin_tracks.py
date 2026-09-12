@@ -18,6 +18,7 @@ import urllib.request
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import JSONResponse, StreamingResponse
 
+from api.session import acting_media_token
 from config.settings import get_config
 from services.library.factory import build_library_service
 
@@ -80,8 +81,10 @@ def jellyfin_subtitle(
     # /Videos/{id}/{src}/Subtitles/{index}/0/Stream.vtt (extra `/0/` path
     # segment + the format as a FILE EXTENSION). The
     # `/Subtitles/{index}/Stream?format=vtt` form 404s — do not use it.
+    # Phase C: as the selected profile, so a subtitle stream from a library this person may not
+    # watch is refused by Jellyfin too (the proxy would otherwise hand over the text).
     up = (f"{cfg.JELLYFIN_URL}/Videos/{id}/{source}/Subtitles/{index}/0/Stream.vtt"
-          f"?api_key={cfg.JELLYFIN_API_KEY}")
+          f"?api_key={acting_media_token(cfg)}")
     try:
         # Generous timeout: Jellyfin converts the embedded subtitle track to
         # VTT on first request and can take >12 s cold (then caches ~0.05 s).

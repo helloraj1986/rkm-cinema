@@ -209,7 +209,12 @@ def select_profile(payload: SelectProfileRequest, request: Request):
 
     record = default_session_store(cfg).set_profile(
         context.session_id, user_id=identity.user_id, user_name=identity.user_name,
-        token=identity.token)
+        token=identity.token,
+        # ⚠ The administrator selecting their OWN profile re-authenticates on THIS session's device,
+        # and Jellyfin invalidates the previous token for that device+user on every login. Without
+        # this flag the session keeps a dead owner token and every administrator-level call 401s
+        # (measured 2026-09-12: the sidebar came back empty after switching back).
+        owns_session=(identity.user_id == context.user_id))
     if record is None:
         # The row vanished between resolving the cookie and writing (expired/revoked).
         raise HTTPException(status_code=401, detail="That session has ended — sign in again")

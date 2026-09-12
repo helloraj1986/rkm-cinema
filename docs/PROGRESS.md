@@ -1,43 +1,51 @@
-## ▶ LATEST SESSION (2026-09-12) — PLANNED: per-user identity via Jellyfin + app sessions 📋 **NEXT QUEUED ITEM** (plan `AUTH_MULTIUSER_PLAN.md` on branch `feat/auth-multiuser`; SCOPED, NOT STARTED — nothing shipped, nothing changed in the running stack)
+## ▶ NEXT SESSION — START HERE: multi-user auth (per-user identity via Jellyfin). Plan `docs/AUTH_MULTIUSER_PLAN.md` on branch `feat/auth-multiuser` (`d62ce52`) — **SCOPED IN DETAIL, NOT STARTED.** Nothing about auth is live; the running stack is unchanged.
 
-**User decision (2026-09-12):** after the subtitles work, the next feature is **multi-user auth**, with
-**real per-user state for the household and identity DELEGATED to Jellyfin** — not a shared password, not
-app-owned accounts. (Native Jellyfin collections — app-authored, visible in Jellyfin's own apps — is the
-item queued behind it.) The plan is a measurement, not a wish; every number in it came from a command run
-against the live stack this session:
+**The task:** execute `AUTH_MULTIUSER_PLAN.md` phase by phase — ONE commit per phase, gates green after
+every one, `docs(status)` record at the end. User decisions already made (2026-09-12): multi-user auth with
+**real per-user state for the household, identity DELEGATED to Jellyfin**; native Jellyfin collections
+(app-authored, visible in Jellyfin's own apps) is queued BEHIND it.
 
-- **No auth exists anywhere today.** No security dependency or session code in `backend/api/**` (only CORS);
-  no `auth_basic`/`auth_request` in `nginx/default.conf`; CORS is `allow_origins=["*"]`. Reachability is the
-  only protection (`TAILSCALE_HOSTING.md`: tailscale serve, tailnet-only). The **api is not published on the
-  host at all** — compose maps `web:8124` and jellyfin only.
-- **Jellyfin has exactly ONE user** (`admin`, administrator). `/Users/{uid}/Views` returns
-  `['Movies', 'Movies Kids', 'TV Shows']` — per-user library visibility already exists server-side.
-- **The api does everything as that one admin**: the provider builds URLs with a single token at **21
-  `api_key=` sites**, and `build_library_service()` is called **18 times**, always per request — which is
-  what makes per-request identity feasible without a rewrite.
-- Contract: **41 paths / 20 routers**. Frontend: **no 401 handling, no login route, no session concept**.
-  The PS tooling touches the app on just two paths (`/api/health`, `/api/library/folders`).
-- `backend/Dockerfile`'s HEALTHCHECK literally calls `/api/health` → that route must stay public.
-- The app's stores are single-user by construction (`watchlist.json` has no user key; subtitle prefs are per
-  ITEM — the subtitle plan says so).
+**Phase order (deliberate — read §5 before deviating):** 0 store + `/api/auth/*` endpoints (additive, nothing
+enforced) → 1 frontend login view + guard + sign out (**still nothing enforced**) → 2 enforcement + machine
+token + the 401 sweep test → 3 per-request Jellyfin identity + per-user `Views` → 4 per-user subtitle prefs
+(usage counts stay shared) → 5 docs + **ADR-0006** + record.
 
-**The design** (detail + rationale in the plan): server-side sessions (opaque cookie id, `sha256` stored,
-Jellyfin token never in the browser, store at `/data/rkm/sessions.json` so a rebuild doesn't log everyone
-out); a `require_session` dependency publishing the session into a **contextvar** that
-`JellyfinLibraryProvider._token()` prefers, **falling back to the admin token** so the provisioner, bootstrap
-and every tool keep working; `RKM_API_TOKEN` (rendered like the admin password) for the repo's own tooling;
-`/api/auth/login|logout|me` (contract 41 → 44, a BREAKING change ⇒ **ADR-0006**); per-user subtitle prefs
-(additive, with a fallback to the flat key) while subtitle USAGE counts and the watchlist stay
-**household-shared** on purpose (the watchlist is the acquisition queue; the usage counts rank one shared
-download quota).
+⚠ **THE LOCKOUT RULE (the reason for that order):** the login UI ships BEFORE anything is enforced, and
+`RKM_AUTH_REQUIRED` (default `false`) is the escape hatch — if the user ever cannot get in, set it `false` and
+`docker compose -p rkm-bundled up -d --build api`. Do NOT enforce in the same phase that introduces the UI.
 
-**Deliberate calls recorded in §4 of the plan** (per-user vs shared) and **five open decisions in §10 with
-recommendations applied**: 30-day sliding sessions; sidebar filtered to the user's own `Views`; shared
-watchlist; an optional admin "add Jellyfin user" flow as a stretch; and the note that **Phase 2's live proof
-needs a SECOND Jellyfin user to exist** (creating one is a user decision — it changes his server).
+**Two things to check with the user before starting / before Phase 3:**
+1. The **subtitle eyeball** (`main` @ `c0ae65e`) is still outstanding — confirm it passed; it does not block
+   this branch (no subtitle code touched until Phase 4).
+2. **Phase 3's live proof needs a SECOND Jellyfin user** — the server has exactly ONE (`admin`, verified). The
+   user decides who/when; the dashboard is a 2-minute job, the in-app "add user" flow is the optional Phase 5
+   nicety. Ask, don't assume.
 
-⚠ Still outstanding from the previous session: the user's **rebuild + eyeball of the subtitle work**
-(`main` @ `c0ae65e`) — that comes first; this plan touches nothing until Phase 0 starts.
+**Measured facts the plan rests on** (all re-verifiable, listed in §2): no auth anywhere today (no security
+deps in `backend/api/**`, no nginx auth, CORS `"*"`); the api is NOT published on the host (only `web:8124` +
+jellyfin); one admin token at **21 `api_key=` sites**; `build_library_service()` called **18 times, always
+per request** (that is what makes this feasible); 41 contract paths / 20 routers; frontend has no 401 handling;
+`Dockerfile`'s HEALTHCHECK calls `/api/health`, so that route MUST stay public; the PS tooling touches the app
+only on `/api/health` and `/api/library/folders`.
+
+**Design in one breath:** server-side sessions (opaque cookie id, `sha256` at rest, Jellyfin token NEVER in
+the browser, store `/data/rkm/sessions.json` so a rebuild doesn't log everyone out); `require_session`
+dependency publishing the session into a contextvar that `JellyfinLibraryProvider._token()` prefers, **falling
+back to the admin token** so the provisioner/bootstrap/tools keep working; `RKM_API_TOKEN` for the repo's own
+tooling; `/api/auth/login|logout|me` (41 → 44 paths **breaking** ⇒ ADR-0006 required by ADR-0001).
+
+**Per-user vs shared is decided (§4) — do not "fix" it:** watch state, resume, watched flags and library
+visibility per user (free from Jellyfin); subtitle PREFERENCES per user; subtitle USAGE counts and the
+watchlist stay **household-shared** (the counts rank one shared download quota; the watchlist is the
+acquisition queue).
+
+**Gates every phase:** `cd backend && python -m pytest -q && python -m ruff check .`; plus, because the typed
+client is regenerated whenever the contract changes, `cd frontend && npx tsc --noEmit && npx vitest run &&
+npm run build`. Contract check: `python -c "import json;d=json.load(open('docs/api/openapi.v1.json'));print(len(d['paths']),'paths')"` → 44 after Phase 0.
+
+**Also still queued after this:** native Jellyfin collections (user's choice: app-authored, visible in
+Jellyfin's own apps); the subtitle plan's own leftovers are DONE — subtitles, all 6 phases, are merged to
+`main` @ `c0ae65e` (ADR-0005).
 ## ▶ LATEST SESSION (2026-09-12) — SUBTITLES PHASE 5: HARDENING + DOCS + ADR-0005 ✅ **PLAN COMPLETE (all 6 phases)** (branch `feat/subtitles-hardening`; the four earlier commits are on `main` at `710f678`)
 
 **Hardening — the plan's criterion 10 as TESTS, not as hope.** Seven new API tests + three client tests pin the failure paths end to end: a dead network, a vendor payload nobody expected, blank credentials, quota exhausted, and a rate limit. What they enforce: the search listing **degrades to the item's own tracks on a 200** (never a 500, never an empty panel), select answers **503** not configured / **502** credentials & transport / **429** quota & rate limit, nothing is attached or remembered when the download failed, and "off" still works with the vendor dead. `tools/check_subtitle_panel.py --fail-search` proves the same thing in the BROWSER: with the online search returning 502, the item's own subtitles are still listed and still appliable, the Off row survives, and the notice says why.

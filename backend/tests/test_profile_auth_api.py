@@ -438,9 +438,14 @@ class TestChangeMyOwnPassword:
         provider = service.providers[0]
         seen: list[dict] = []
 
-        def fake_api(method, path, body=None):
+        def fake_api(method, path, body=None, **kw):
             seen.append({"method": method, "path": path, "body": body,
-                         "credential": provider._api_token()})
+                         "credential": provider._api_token(),
+                         # The self-change MUST opt into the acting identity (plan §6f): on the
+                         # app's own credential the server stops checking the old password, so
+                         # this would be an administrator's reset — and anyone holding the device
+                         # could set any profile's password.
+                         "asked_as": kw.get("credential", "owner")})
             return True, {}
 
         monkeypatch.setattr(provider, "_api", fake_api)
@@ -455,6 +460,9 @@ class TestChangeMyOwnPassword:
             "it must target the PROFILE's id, not whatever account happens to be first on the server")
         assert posts[-1]["credential"] == "token-uid-kid", (
             "and it must act with the PROFILE's own credential, not the app's API key")
+        assert posts[-1]["asked_as"] == "acting", (
+            "the call must ask for the ACTING identity explicitly: the default is the "
+            "administrator's own, which would stop the old password being checked at all")
 
     def test_a_session_with_no_profile_choice_cannot_change_a_password(self, api):
         """Without this rail a half-signed-in session would change the ADMINISTRATOR's password.
@@ -585,7 +593,7 @@ class TestTheProvidersOwnPasswordCall:
             JELLYFIN_BROWSER_URL=""))
         calls = []
 
-        def fake_api(method, path, body=None):
+        def fake_api(method, path, body=None, **kw):
             calls.append((method, path, body))
             return answers.pop(0)
 

@@ -25,6 +25,24 @@ logger = logging.getLogger("rkm.library")
 LIBRARY_CONFIRMATION_TTL = 24 * 60 * 60  # 24 hours in seconds
 
 
+def _rethrow_identity_rail(exc: Exception) -> None:
+    """Let an IDENTITY-RAIL failure out of a broad handler (`api/session.py`, plan §6f).
+
+    Every handler in this file exists to CONTAIN a provider failure — a dead server, a refused
+    call — and to turn it into an honest "nothing happened". That is exactly the wrong treatment
+    for the rail: it means a ROUTE reached the provider as nobody, and reporting it as a
+    media-server failure blames the server for a bug in our own wiring. Measured in this
+    workstream: the first version of the rail fired correctly and the facade then answered the
+    screen "the media server refused the password change" — a false statement about the cause.
+
+    Used where a call is made AS a person (``change_own_password``). The administrative methods
+    cannot raise it at all, because they run on the owner's credential.
+    """
+    from api.session import UnpublishedIdentityError   # lazy: api.session imports this module
+    if isinstance(exc, UnpublishedIdentityError):
+        raise exc
+
+
 @dataclass
 class LibraryMatch:
     """A concrete item found inside one library provider.
@@ -685,11 +703,16 @@ class LibraryService:
         ⚠ The facade needs its own delegation, like every other capability: a provider-only method
         raises ``AttributeError`` on every route call and the admin gate reports that as "you are
         not an administrator" — a live wrong answer this workstream has already paid for.
+
+        ⚠ And it must not CONTAIN the identity rail (§6f): this is the one call made AS a person,
+        so "the media server refused the change" would blame the server for a route that forgot to
+        publish the identity. The rail's error travels straight out.
         """
         for p in self._providers:
             try:
                 reason = p.change_own_password(current_password, new_password)
             except Exception as e:
+                _rethrow_identity_rail(e)
                 logger.warning("change_own_password failed for %s: %s", p.name, e)
                 continue
             if reason is None:

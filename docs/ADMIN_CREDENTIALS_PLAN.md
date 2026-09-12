@@ -112,6 +112,83 @@ Renaming the account breaks anything that assumes the name:
 | **4** | **Recovery, documented and tested**: `rkm-cinema.ps1 reset-admin-password` → reads the API key from the volume (never from `.env`), prompts for a new password, calls `POST /Users/Password?userId=…&ResetPassword=true`, then VERIFIES by signing in; `OPERATIONS.md` gains the runbook and the "forgot everything" ladder | the tool's own verification output; pytest for its pure parts |
 | **5** | ADR (the credential model), docs truth pass (`ARCHITECTURE`, `OPERATIONS`, `README`), PROGRESS record | full suite + docs links |
 
+### 6f. ⚠ THE RAIL: a request that arrived as SOMEBODY can no longer act as a stranger
+
+Built 2026-09-13 — the first item of §6e's hand-off queue. §6e fixed the ONE route; this fixes the
+CLASS. The bug was never "the password route is wrong": it was that **a route could resolve a
+session and then reach the provider as nobody**, and the provider's two fallbacks (the app's
+elevated API key, and `_user_id()`'s "first account in `/Users` order") turned that into a silent
+write on a different person's account, reported as success.
+
+**The rail** (`backend/api/session.py`). `session_context_from_request` — the ONE place a cookie
+becomes a session — now also RECORDS the session it resolved, with the route it happened on. The
+identity helpers `acting_media_token()`, `acting_user_id()` and `acting_profile_is_owner()` then
+REFUSE to fall back in that state:
+
+| the request | who the call acts as |
+|---|---|
+| **no request context at all** — the provisioner, the scheduler's jobs, every tool, unit tests | the app's own key. **Unchanged, and load-bearing** |
+| **arrived as NOBODY** — no cookie, or a stale one; a normal request while `RKM_AUTH_REQUIRED=false` | the app's own key. Unchanged |
+| **arrived as SOMEBODY, and nothing published it** | **`UnpublishedIdentityError`**, raised before any URL is built |
+
+The last state is never legitimate: it means a route resolved the session and then called the
+provider without publishing it. The error message names the route and the account, and is logged at
+ERROR — the log line is the whole diagnosis.
+
+`owner_media_token()` is the ONE deliberate exception: its fallback IS the administrator's own
+credential, every call it serves is server administration, and refusing there would break the
+household routes on a routine request.
+
+**The credential split that makes it possible** (`jellyfin.py::_api`). Account administration —
+`/Users`, `/Users/New`, `/Users/{id}/Policy`, `/Users/Password`, `/Users?userId=`, `/Users/{id}` —
+now runs on the OWNER's credential **by default**. It used to take whatever identity was in effect,
+which only ever worked because the profiles in effect happened to be the administrator's; with a
+MEMBER selected the same call runs on the member's token and Jellyfin answers 403, so the picker
+would be told *"there are no profiles on this server"*. `credential="acting"` survives for exactly
+ONE caller, `change_own_password`, where being the acting identity IS the feature — on the owner
+credential the `CurrentPw` would stop being checked at all, which is an escalation. Pinned
+structurally by `test_no_other_provider_call_reaches_for_the_acting_credential` (AST).
+
+**The façade may not contain it** (`services/library/service.py`). Its `except Exception` handlers
+exist to turn a provider failure into an honest "nothing happened", and the first version of the
+rail was swallowed there: the screen was told *"the media server refused the password change"* —
+blaming the server for a bug in our own wiring. `_rethrow_identity_rail` lets it out.
+
+**Falsified, not asserted.** With the guard removed (`_published_identity` behaving as before),
+`tests/test_identity_rail.py::…::test_forgetting_to_publish_fires_the_rail_instead_of_writing` fails
+with the 2026-09-12 report **verbatim**:
+
+```
+the rail did NOT fire, so the write went through:
+  /Users/Password on 'app-key-ADMIN' targeting ['uid-first'] — the session had uid-kid selected
+```
+
+i.e. the write reaches the server on the app's elevated key, aimed at whichever account the server
+lists first. Restoring the guard turns it green (22/22).
+
+**⚠ Found while adding the per-route test: the structural guard was VACUOUS.** FastAPI 0.141 keeps
+each `include_router` as an `_IncludedRouter` on `app.routes` whose sub-routes carry paths WITHOUT
+the prefix — so `test_every_api_route_publishes_a_identity`, the test whose entire job is to stop a
+new router shipping without `SESSION_SCOPED`, was inspecting **zero** routes and passing. It now
+enumerates through `include_context` (prefix + include-level dependencies) and `original_router`,
+ASSERTS it found ≥ 40 routes before anyone trusts it, and was falsified by removing
+`dependencies=SESSION_SCOPED` from the config router — it names `/api/config`. **Generalise: any
+test that enumerates framework objects must assert it found something.**
+
+**Evidence.** 958 backend pytest (+23: 22 in `tests/test_identity_rail.py`, 1 auth-route inventory) ·
+ruff clean · openapi still **53 paths** · docs links resolve · **no frontend change**, so this is an
+api-only deploy.
+
+**His runbook** (nothing here needs the web container):
+
+```powershell
+cd D:\hermes_agent\hermes-workspace\projects\rkm-cinema
+docker compose -p rkm-bundled up -d --build api
+```
+
+Then the two-minute sanity pass: sign in → pick a profile → **My password** → change it → sign out →
+pick that profile → the new password is asked for; and Household → every row still lists.
+
 ### 6e. ⚠ THE ROOT CAUSE of "it says changed but nothing changes": the route was not session-scoped
 
 Found 2026-09-12 after a long chase, by reproducing his exact symptom **through the app's own HTTP API**

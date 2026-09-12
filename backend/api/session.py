@@ -27,6 +27,24 @@ Two things are easy to get wrong here, so both are pinned by tests:
 * Enforcement is a FLAG, not a code path: ``RKM_AUTH_REQUIRED`` (default false in
   Phase 0, flipped in Phase 2) decides whether a missing session is a 401 or an
   anonymous request, so the documented lockout recovery is one value in `.env`.
+
+**THE RAIL (2026-09-13, plan `ADMIN_CREDENTIALS_PLAN.md` §6f).** A silent fallback that
+substitutes a DIFFERENT identity is worse than an error: on 2026-09-12 one mis-wired auth
+route ended up writing a password to whichever account happened to be first on the server,
+reported success, and looked intermittent. So :func:`session_context_from_request` — the ONE
+place a cookie becomes a session — also RECORDS that this request arrived as somebody, and the
+identity helpers below refuse to fall back when it did. Three states, three answers:
+
+* **no request at all** (the provisioner, the scheduler's jobs, every tool, unit tests) ⇒
+  today's behaviour, the app's own credential. Unchanged, and load-bearing.
+* **a request that arrived as nobody** (no cookie, or a stale one) ⇒ the app's own credential
+  too. With ``RKM_AUTH_REQUIRED=false`` this is a normal anonymous request.
+* **a request that arrived as SOMEBODY, with nothing published** ⇒ :class:`UnpublishedIdentityError`.
+  That is never legitimate: it means a route resolved the session and then called the provider
+  without publishing it, which is exactly the bug above. It fails loudly instead of acting as a
+  stranger.
+
+The one deliberate exception is :func:`owner_media_token` — see its docstring.
 """
 from __future__ import annotations
 
@@ -114,11 +132,90 @@ def session_store(config=None) -> SessionStore:
     return default_session_store(config)
 
 
+#: **The rail's evidence** (module docstring): the session this REQUEST resolved, whether or not
+#: anything went on to publish it, plus the route it happened on. Set by
+#: :func:`session_context_from_request` and by nothing else — so it cannot disagree with the
+#: cookie that produced it. Default ``None`` means "this request arrived as nobody", which is a
+#: normal state (``RKM_AUTH_REQUIRED=false``) and NOT the same answer as "somebody never
+#: published it".
+_resolved_session: ContextVar[Optional[SessionContext]] = ContextVar(
+    "rkm_resolved_session", default=None)
+_resolved_route: ContextVar[str] = ContextVar("rkm_resolved_route", default="")
+
+
+class UnpublishedIdentityError(RuntimeError):
+    """A request arrived as somebody, and the code about to act as them never published it.
+
+    Deliberately an ERROR and not a fallback (module docstring, plan §6f). Raised from the
+    identity helpers when ``acting_*`` is asked who to be, the request resolved a session, and
+    nothing called :func:`set_current_session`. The write never reaches the media server.
+    """
+
+
+def resolved_session_from_request() -> Optional[SessionContext]:
+    """The session this request resolved, published or not — ``None`` for a request as nobody."""
+    return _resolved_session.get()
+
+
+def resolved_route() -> str:
+    """``"<METHOD> <path>"`` of the request whose session was resolved (diagnostics only)."""
+    return _resolved_route.get()
+
+
+def set_resolved_session(context: Optional[SessionContext], route: str = "") -> Token:
+    """Record what this request resolved (returns the reset token).
+
+    Only :func:`session_context_from_request` has any business calling this; tests use it to put
+    a request in the one state the rail exists for.
+    """
+    _resolved_route.set(route)
+    return _resolved_session.set(context)
+
+
+def reset_resolved_session(token: Token) -> None:
+    """Undo :func:`set_resolved_session` (used by tests)."""
+    _resolved_session.reset(token)
+
+
+def _refuse_to_act_as_a_stranger(what: str) -> None:
+    """Raise :class:`UnpublishedIdentityError` — but ONLY for a request that arrived as somebody."""
+    context = _resolved_session.get()
+    if context is None:
+        return
+    where = _resolved_route.get() or "an unknown route"
+    logger.error(
+        "identity rail: %s (%s) resolved a session for profile id=%s name=%r but nothing published "
+        "it, so this call would have acted as a DIFFERENT account (or as the app's own key). "
+        "Refusing. Fix the route: set_current_session(context) around the provider call, as "
+        "api/routes/auth.py::change_own_password does.",
+        where, what, context.profile_id(), context.profile_name())
+    raise UnpublishedIdentityError(
+        f"{where} resolved a session for profile {context.profile_id()!r} and then asked for "
+        f"{what} without publishing it — refusing to act as a different account")
+
+
+def _published_identity(what: str) -> Optional[SessionContext]:
+    """The published session, or ``None`` — and NEVER a silent substitution.
+
+    ``None`` means one of exactly two things now (module docstring): no request context at all, or
+    a request that arrived as nobody. A request that arrived as somebody must have published it.
+    """
+    context = current_session()
+    if context is not None:
+        return context
+    _refuse_to_act_as_a_stranger(what)
+    return None
+
+
 def session_context_from_request(request: Request, *, config=None) -> Optional[SessionContext]:
     """Resolve a request's cookie to a session, or ``None``. Never raises.
 
     A stale/unknown/expired cookie is simply "not signed in" — the store has already
     dropped the row — so no error is reported back to a stranger probing the app.
+
+    ⚠ This is also where the request's identity is RECORDED for the rail (module docstring). A
+    route that calls this and then reaches the provider without publishing the result now fails
+    loudly instead of silently acting as another account.
     """
     session_id = str((request.cookies or {}).get(SESSION_COOKIE) or "")
     if not session_id:
@@ -127,7 +224,7 @@ def session_context_from_request(request: Request, *, config=None) -> Optional[S
     record = session_store(cfg).lookup(session_id)
     if not record:
         return None
-    return SessionContext(
+    context = SessionContext(
         session_id=session_id,
         user_id=str(record.get("user_id") or ""),
         user_name=str(record.get("user_name") or ""),
@@ -137,6 +234,12 @@ def session_context_from_request(request: Request, *, config=None) -> Optional[S
         profile_user_name=str(record.get("profile_user_name") or ""),
         profile_token=str(record.get("profile_token") or ""),
     )
+    try:
+        set_resolved_session(context, f"{request.method} {request.url.path}")
+    except Exception:  # a request object we cannot read must not break sign-in
+        logger.debug("could not record the resolved session's route", exc_info=True)
+        set_resolved_session(context)
+    return context
 
 
 def grantable_rows(library) -> list[dict]:
@@ -172,8 +275,12 @@ def acting_media_token(cfg=None) -> str:
     reach for the wrong credential by accident. A missed site would silently show the
     administrator's library and watch state to a household member, which is the failure this
     workstream exists to prevent.
+
+    ⚠ **GUARDED** (module docstring, plan §6f): a request that RESOLVED a session and published
+    nothing gets :class:`UnpublishedIdentityError`, never the app's key. That is the 2026-09-12
+    bug — an elevated credential made the wrong write SUCCEED.
     """
-    context = current_session()
+    context = _published_identity("the media credential")
     if context is not None:
         token = context.acting_token()
         if token:
@@ -187,12 +294,21 @@ def owner_media_token(cfg=None) -> str:
 
     Some calls are not about the person watching: reading the server's library LIST for display
     metadata (Phase C enriches a profile's ``/UserViews`` rows with it — plan §4d), listing
-    accounts, and managing them. Those run on the account that signed in to the server — the
-    administrator — or, outside a request, on the app's own key.
+    accounts, and managing them — ``JellyfinLibraryProvider._api`` defaults to this one for
+    exactly that reason. Those run on the account that signed in to the server — the
+    administrator (``/api/auth/login`` refuses anybody else) — or, outside a request, on the
+    app's own key.
 
     ⚠ This is NOT a way around the profile model: it is never used for media, watch state,
     progress or library CONTENT. A call that reads what somebody may watch must use
     :func:`acting_media_token`, or the profile model is decorative.
+
+    ⚠ **Deliberately NOT guarded** (plan §6f), and it is the ONE exception to the rail: its
+    fallback is the app's own key, which IS the administrator's credential — the identity these
+    calls are made as by definition. So it cannot act as a stranger, and refusing here would
+    break the household routes on a routine request. ``/api/auth/profiles`` reaches the provider
+    through this path on purpose: it resolves a session (to answer 401 honestly) and then LISTS
+    accounts, which no member's token may do.
     """
     context = current_session()
     if context is not None and context.token:
@@ -211,8 +327,13 @@ def acting_user_id() -> str:
 
     ``""`` means "no request context", and the provider keeps its own lookup for that case (the
     provisioner, the scheduler and the tools, which act as the administrator).
+
+    ⚠ **GUARDED, and this is the one that caused the bug** (plan §6f): with a session resolved and
+    nothing published, ``""`` used to send the provider to its "first account in ``/Users`` order"
+    fallback, which is a DIFFERENT PERSON — measured 2026-09-12, his password change landed on
+    ``meenu``. That state now raises :class:`UnpublishedIdentityError` instead.
     """
-    context = current_session()
+    context = _published_identity("the user id this call is scoped to")
     return context.profile_id() if context is not None else ""
 
 
@@ -223,8 +344,12 @@ def acting_profile_is_owner() -> bool:
     ``False`` only while somebody ELSE's profile is selected — which is the single condition that
     changes how the app must behave: the sidebar comes from that profile's own views, and the
     administrator's library list (metadata only) is the enrichment source (plan §4d).
+
+    GUARDED like its siblings (plan §6f): a request that arrived as somebody and published nothing
+    is a wiring bug, and answering "yes, the owner" would let the route show the administrator's
+    view to whoever that somebody was.
     """
-    context = current_session()
+    context = _published_identity("which identity is in effect")
     return context is None or context.on_own_profile()
 
 

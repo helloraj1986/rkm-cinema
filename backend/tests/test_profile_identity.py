@@ -52,11 +52,31 @@ PROFILE_TOKEN = "profile-token-KID"
 OWNER_ID = "uid-admin"
 PROFILE_ID = "uid-kid"
 
-#: The two Jellyfin calls that are deliberately the ADMINISTRATOR's, and why: reading the server's
-#: library LIST (display metadata for a profile's own views — never its content) and triggering a
-#: library-wide SCAN (server-wide maintenance, requires elevation). Both return no item and no
-#: watch state, so neither can leak one profile's data into another.
-ADMIN_BY_DESIGN = ("/Library/VirtualFolders", "/Library/Refresh")
+def _administrator_only(url: str) -> bool:
+    """Is this URL one of the calls that are deliberately the ADMINISTRATOR's, and why?
+
+    * reading the server's library LIST (display metadata for a profile's own views — never its
+      content) and triggering a library-wide SCAN (server-wide maintenance, requires elevation);
+    * ACCOUNT ADMINISTRATION — ``/Users``, ``/Users/New``, ``/Users/Password?userId=``,
+      ``/Users/{id}`` — which Jellyfin answers only to an administrator, and the account that
+      signed in always is one (``/api/auth/login`` refuses anybody else). Running it on a member's
+      token earns a 403, so the picker would be told "there are no profiles on this server"
+      (plan §6f).
+
+    None of them returns an item or watch state, so none can leak one profile's data into another.
+    ⚠ NOT a substring test on ``/Users``: ``/Users/{id}/Items`` IS the profile's own media call and
+    must be made as the profile — a naive ``"/Users" in url`` marked every media call an
+    administrator call (measured: it failed 15 media methods the moment it was added).
+    """
+    path = urllib.parse.urlsplit(url).path.rstrip("/")
+    if path in ("/Library/VirtualFolders", "/Library/Refresh"):
+        return True
+    if not path.startswith("/Users"):
+        return False
+    rest = path[len("/Users"):].strip("/")
+    if rest in ("", "New", "Password"):
+        return True
+    return "/" not in rest          # /Users/{id} — the household routes' read of one account
 
 
 def _context(*, profile: bool) -> SessionContext:
@@ -83,6 +103,60 @@ def as_profile():
     token = set_current_session(_context(profile=True))
     yield
     session_mod.reset_current_session(token)
+
+
+def _dependency_names(deps) -> set:
+    """The names of the callables in a ``dependencies=[…]`` list (or a Dependant's children)."""
+    names = set()
+    for dep in deps or []:
+        func = getattr(dep, "call", None) or getattr(dep, "dependency", None)
+        names.add(getattr(func, "__name__", "") or repr(func))
+    return names
+
+
+def _api_route_inventory() -> list[tuple[set, str, set]]:
+    """Every ``/api`` route the app actually serves: ``(verbs, path, dependency names)``.
+
+    ⚠ **This enumeration has already gone silently vacuous once.** Under FastAPI 0.141 each
+    ``include_router`` call stays an ``_IncludedRouter`` on ``app.routes`` whose sub-routes carry
+    paths WITHOUT the prefix (the prefix and the router-level ``SESSION_SCOPED`` dependency live on
+    its ``include_context``); the older shape flattened everything onto ``app.routes`` with a
+    ``.path``. The first version of this helper read ``.path`` only, found NOTHING, and the test
+    that "a new router cannot ship unprotected" passed for months by inspecting zero routes. So the
+    inventory ASSERTS it found a plausible number before anybody trusts it.
+    """
+    import fastapi
+
+    from api.main import app
+
+    rows: list[tuple[set, str, set]] = []
+    for route in app.routes:
+        included = getattr(route, "original_router", None)
+        context = getattr(route, "include_context", None)
+        if included is not None and context is not None:
+            prefix = str(getattr(context, "prefix", "") or "")
+            include_deps = _dependency_names(getattr(context, "dependencies", None))
+            include_deps |= _dependency_names(getattr(included, "dependencies", None))
+            for sub in getattr(included, "routes", []) or []:
+                path = prefix + str(getattr(sub, "path", "") or "")
+                if not path.startswith("/api"):
+                    continue
+                deps = include_deps | _dependency_names(
+                    getattr(getattr(sub, "dependant", None), "dependencies", None))
+                rows.append((set(getattr(sub, "methods", None) or ()), path, deps))
+            continue
+        path = str(getattr(route, "path", "") or "")          # the older, flattened shape
+        if not path.startswith("/api"):
+            continue
+        rows.append((set(getattr(route, "methods", None) or ()), path,
+                     _dependency_names(getattr(getattr(route, "dependant", None),
+                                               "dependencies", None))))
+
+    assert len(rows) >= 40, (
+        f"the route inventory found only {len(rows)} /api routes under FastAPI {fastapi.__version__} "
+        "— the shape of `app.routes` changed again, so every assertion built on this would pass "
+        "vacuously. Fix the enumeration before trusting these tests (it happened once already).")
+    return rows
 
 
 def _config(**over):
@@ -212,7 +286,7 @@ class TestNoMediaCallUsesTheAdministratorsCredential:
 
         assert recorder.urls, f"{name} made no request at all — the test proves nothing"
         for url in recorder.urls:
-            if any(path in url for path in ADMIN_BY_DESIGN):
+            if _administrator_only(url):
                 assert (f"api_key={OWNER_TOKEN}" in url or f"api_key={APP_KEY}" in url), (
                     f"{name}: {url} — an administrator-only call must use the administrator's own "
                     "credential (an empty or profile credential is refused by Jellyfin)")
@@ -552,35 +626,45 @@ class TestEveryAppRouterPublishesTheIdentity:
     #: Gated by ``require_admin_session``, which publishes the context itself and is STRICTER.
     ADMIN = ("/api/admin/",)
 
-    def _dependency_names(self, route) -> set:
-        names, stack = set(), [route.dependant]
-        while stack:
-            dep = stack.pop()
-            for child in getattr(dep, "dependencies", []) or []:
-                if child.call is not None:
-                    names.add(getattr(child.call, "__name__", ""))
-                stack.append(child)
-        return names
-
     def test_every_api_route_publishes_a_identity(self):
-        from api.main import app
         missing = []
-        for route in app.routes:
-            path = getattr(route, "path", "")
-            if not path.startswith("/api"):
-                continue
+        for _verbs, path, deps in _api_route_inventory():
             if path.startswith(self.PUBLIC):
                 continue
-            names = self._dependency_names(route)
             if path.startswith(self.ADMIN):
-                if "require_admin_session" not in names:
+                if "require_admin_session" not in deps:
                     missing.append(path)
                 continue
-            if "require_session" not in names:
+            if "require_session" not in deps:
                 missing.append(path)
         assert not missing, (
             "these routes do not publish the session identity, so every media call they make runs "
             "on the ADMINISTRATOR's credential: " + ", ".join(sorted(set(missing))))
+
+    #: ⚠ `/api/auth/*` is the ONE router with NO `require_session` (sign-in must be reachable signed
+    #: out), and that is exactly where the 2026-09-12 bug lived — so its routes cannot be left to
+    #: the loop above. Each is listed here WITH the identity it acts as, and a new one fails this
+    #: test until somebody decides that on purpose. The behaviour behind each row is pinned from the
+    #: other side by `tests/test_identity_rail.py` (drive every auth route with a live cookie; no
+    #: call may act on a Jellyfin user id the session did not choose).
+    AUTH_ROUTES = {
+        ("POST", "/api/auth/login"): "the APP's own credential — nobody is signed in yet",
+        ("GET", "/api/auth/profiles"): "the OWNER's (administrator): listing accounts needs one",
+        ("POST", "/api/auth/profile"): "the OWNER's to list; the chosen profile's after switching",
+        ("POST", "/api/auth/profile/password"): "the PROFILE's own — the route publishes it itself",
+        ("POST", "/api/auth/logout"): "nobody — revokes the session, no provider call",
+        ("GET", "/api/auth/me"): "nobody — reads its own session, no provider call",
+    }
+
+    def test_every_auth_route_is_listed_with_the_identity_it_acts_as(self):
+        found = {(verb, path) for verbs, path, _deps in _api_route_inventory()
+                 for verb in verbs if path.startswith("/api/auth/")}
+        assert found == set(self.AUTH_ROUTES), (
+            "the auth router changed. A route there has NO session dependency, so it either "
+            "publishes the session itself before calling a provider (see "
+            "api/routes/auth.py::change_own_password) or it acts only as the app/administrator. "
+            f"New: {sorted(found - set(self.AUTH_ROUTES))} · "
+            f"Gone: {sorted(set(self.AUTH_ROUTES) - found)}")
 
     def test_health_and_sign_in_stay_reachable_even_when_enforcement_is_armed(self, http,
                                                                              monkeypatch):

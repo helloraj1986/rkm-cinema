@@ -1276,14 +1276,38 @@ class JellyfinLibraryProvider(LibraryProvider):
         from api.session import acting_media_token
         return acting_media_token(self.config)
 
-    def _api(self, method: str, path: str, body: Optional[dict] = None) -> tuple[bool, object]:
+    def _api(self, method: str, path: str, body: Optional[dict] = None, *,
+             credential: str = "owner") -> tuple[bool, object]:
         """Call Jellyfin and return ``(ok, payload)`` — never raising.
 
         A dead or refusing server must surface as an honest failure in the route rather
         than as a 500 (the lesson the subtitle client paid for).
+
+        ``credential`` chooses WHICH identity this call is made as, and the default is the
+        ADMINISTRATOR's own (``owner_media_token``): every path this helper is used for is
+        server ADMINISTRATION — ``/Users``, ``/Users/New``, ``/Users/{id}/Policy``,
+        ``/Users/Password``, ``/Users?userId=``, ``/Users/{id}`` — which Jellyfin answers only to
+        an administrator (``/api/auth/login`` refuses anybody else, so the account that signed in
+        is always one). It used to take whatever identity was in effect, which only worked while
+        the profiles in effect happened to BE the administrator; with a MEMBER's profile selected
+        the same call runs on the member's token and the server refuses it (403), i.e. the picker
+        would be told "there are no profiles on this server".
+
+        ``credential="acting"`` is the one deliberate exception and exists for ONE caller:
+        ``change_own_password``, where being the acting identity is the entire point (the media
+        server decides a self-change by the token that asks and the ``CurrentPw`` it carries — on
+        the app's key the old password would stop being checked at all, which is an escalation).
+        Pinned by ``test_only_the_self_change_acts_as_the_profile``.
         """
+        if credential == "acting":
+            token = self._api_token()
+        elif credential == "owner":
+            from api.session import owner_media_token
+            token = owner_media_token(self.config)
+        else:
+            raise ValueError(f"unknown credential {credential!r}")
         sep = "&" if "?" in path else "?"
-        url = f"{self.config.JELLYFIN_URL}{path}{sep}api_key={self._api_token()}"
+        url = f"{self.config.JELLYFIN_URL}{path}{sep}api_key={token}"
         data = json.dumps(body).encode("utf-8") if body is not None else None
         headers = {"Content-Type": "application/json"} if data else {}
         try:
@@ -1444,6 +1468,13 @@ class JellyfinLibraryProvider(LibraryProvider):
         changes the MEMBER's password. It can never touch the owner's, which is the whole point of
         a self-service screen.
 
+        ⚠ ``credential="acting"`` — the ONE call in this file that must NOT use the app's own
+        credential (see ``_api``). The server decides a self-change by the token that asks, so on
+        the owner credential this would be an ADMINISTRATOR's reset: it would stop checking
+        ``CurrentPw`` and stop answering 403 for a wrong one, i.e. anyone holding the device could
+        set any profile's password. ``_api_token()`` is the GUARDED seam (api/session.py, plan §6f),
+        so a route that forgot to publish the session raises instead of changing somebody else's.
+
         ``ResetPassword: false`` on purpose: the reset flag is the ADMINISTRATOR's path (it needs
         no old password), and it has no business here. Sending the old password is what makes this
         a genuine self-change instead of an escalation.
@@ -1464,7 +1495,8 @@ class JellyfinLibraryProvider(LibraryProvider):
         ok, _ = self._api(
             "POST", f"/Users/Password?userId={urllib.parse.quote(str(uid))}",
             {"CurrentPw": str(current_password or ""), "NewPw": str(new_password),
-             "ResetPassword": False})
+             "ResetPassword": False},
+            credential="acting")
         if ok:
             return None
         error = self._last_api_error or {}
@@ -1524,6 +1556,11 @@ class JellyfinLibraryProvider(LibraryProvider):
 
         With **no** request context the historical lookup is unchanged (the server's first account,
         i.e. the administrator): the provisioner, the scheduler's jobs and every tool depend on it.
+
+        ⚠ **The lookup no longer runs for a request that resolved a session.** ``acting_user_id()``
+        raises ``UnpublishedIdentityError`` when a session arrived and nothing published it
+        (api/session.py, plan §6f), so this method can never quietly substitute a DIFFERENT account
+        for the person asking — the failure that put a password on the wrong profile on 2026-09-12.
         """
         from api.session import acting_user_id
         session_user = acting_user_id()

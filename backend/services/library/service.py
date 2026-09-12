@@ -707,7 +707,15 @@ class LibraryService:
         ⚠ And it must not CONTAIN the identity rail (§6f): this is the one call made AS a person,
         so "the media server refused the change" would blame the server for a route that forgot to
         publish the identity. The rail's error travels straight out.
+
+        ⚠⚠ And it must not CONTAIN THE PROVIDER'S ANSWER either (found 2026-09-13). The loop used to
+        keep only ``None``/``unreachable``, so with the REAL provider a wrong current password was
+        reported to the screen as *"the media server refused the password change"* — the server
+        blamed for the user's typo, and the 401 sentence the screen has for it never reachable.
+        Every unit test passed because the fake library returned the reason itself. The first
+        non-``None`` reason wins: a definite answer about the credential beats "could not ask".
         """
+        answer: Optional[str] = None
         for p in self._providers:
             try:
                 reason = p.change_own_password(current_password, new_password)
@@ -717,7 +725,9 @@ class LibraryService:
                 continue
             if reason is None:
                 return None
-        return "unreachable"
+            if answer is None:
+                answer = reason
+        return answer or "unreachable"
 
     def rename_user(self, user_id: str, name: str) -> Optional[dict]:
         """Rename an account (``None`` means the server refused).

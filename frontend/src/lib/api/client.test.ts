@@ -114,4 +114,32 @@ describe("session plumbing", () => {
     await expect(api.getConfig()).rejects.toThrow(ApiError);
     expect(handler).not.toHaveBeenCalled();
   });
+
+  it("does NOT sign the app out when MY PASSWORD answers 401", async () => {
+    // ⚠ Both 401s this route can return are about the PASSWORD FORM, not the browser's session:
+    //   * 403 from the media server        -> the current password is wrong (a typo, retry);
+    //   * 401 from the media server        -> that PROFILE's token has gone stale (switch profile).
+    // The browser's session cookie is alive in both cases. Letting the global rule fire signed the
+    // user OUT of the whole app and cleared the query cache — measured 2026-09-13, and it made the
+    // stale-token fix (which answers 401 honestly instead of 502) actively worse until this line
+    // existed. An app call still signs out (the test above).
+    const handler = vi.fn();
+    setUnauthorizedHandler(handler);
+    stubFetch(401, { detail: "That current password is not correct" });
+    await expect(api.changeMyPassword("new-pw", "typo")).rejects.toThrow(ApiError);
+    expect(handler).not.toHaveBeenCalled();
+
+    stubFetch(401, { detail: "This profile is no longer signed in to the media server" });
+    await expect(api.changeMyPassword("new-pw", "right-pw")).rejects.toThrow(ApiError);
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it("keeps the server's own words on the password form's failure", async () => {
+    // The screen shows `detail` verbatim when the server sent one — that is how the stale-session
+    // sentence reaches the person instead of the client's `METHOD path -> status` fallback.
+    stubFetch(401, { detail: "This profile is no longer signed in to the media server — use Switch profile" });
+    await expect(api.changeMyPassword("new-pw", "right-pw")).rejects.toMatchObject({
+      detail: "This profile is no longer signed in to the media server — use Switch profile",
+    });
+  });
 });

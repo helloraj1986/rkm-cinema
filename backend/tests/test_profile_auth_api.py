@@ -442,6 +442,28 @@ class TestChangeMyOwnPassword:
         assert r.status_code == 502
         assert "refused" in r.json()["detail"].lower()
 
+    def test_a_stale_session_says_switch_profile_not_wrong_password(self, api):
+        """⏭ Queue #2's first half: a dead token is NOT a typo, and the remedy is different.
+
+        Jellyfin answers 401 for a token it no longer accepts and 403 for a wrong `CurrentPw`
+        (measured, plan §6c). Both used to reach the screen as *"that current password is not
+        correct"*, which accused the user of a typo they did not make and sent them round the same
+        loop — the documented open item this test closes.
+        """
+        _sign_in(api)
+        _select(api, "uid-kid")
+        api.seen["password_reason"] = "stale-session"
+        r = api.client.post("/api/auth/profile/password",
+                            json={"current_password": "right", "new_password": "new-pw"})
+        assert r.status_code == 401
+        detail = r.json()["detail"].lower()
+        assert "switch profile" in detail, (
+            f"the only remedy for a stale token is switching profile again, got {r.json()['detail']!r}")
+        assert "current password" not in detail, (
+            "never blame the password for a token the server refused — that is a false accusation "
+            "and a dead end")
+        assert "right" not in detail and "new-pw" not in detail
+
     def test_a_successful_change_says_nothing_but_ok(self, api):
         _sign_in(api)
         _select(api, "uid-kid")
@@ -618,6 +640,40 @@ class TestChangeMyOwnPassword:
         assert "auth.password accepted" in text
 
 
+class TestTheFacadeKeepsTheProvidersAnswer:
+    """⚠ The facade DROPPED the reason, so the honest messages never happened in production.
+
+    `change_own_password` returned the provider's reason only when the library was a fake. With the
+    REAL one the facade loop kept only ``None``/``unreachable``, so a genuinely wrong current
+    password came back as *"the media server refused the password change"* (502) — blaming the
+    server for the user's typo, and never the 401 the screen has a sentence for. Found 2026-09-13
+    while planning the stale-token work.
+    """
+
+    def _service(self, reason):
+        from services.library.service import LibraryService
+
+        class Provider:
+            name = "jellyfin"
+
+            def change_own_password(self, current_password, new_password):
+                return reason
+
+        return LibraryService(providers=[Provider()])
+
+    def test_a_wrong_password_stays_a_wrong_password(self):
+        assert self._service("wrong-password").change_own_password("typo", "new") == "wrong-password"
+
+    def test_a_stale_session_stays_a_stale_session(self):
+        assert self._service("stale-session").change_own_password("right", "new") == "stale-session"
+
+    def test_success_is_still_success(self):
+        assert self._service(None).change_own_password("right", "new") is None
+
+    def test_a_provider_that_says_nothing_is_unreachable(self):
+        assert self._service("unreachable").change_own_password("right", "new") == "unreachable"
+
+
 class TestTheProvidersOwnPasswordCall:
     """The payload and the failure taxonomy, at the provider — where they are easy to get wrong."""
 
@@ -648,11 +704,23 @@ class TestTheProvidersOwnPasswordCall:
             "the target is the ACTING identity, as a query parameter")
         assert body == {"CurrentPw": "old-pw", "NewPw": "new-pw", "ResetPassword": False}
 
-    def test_a_401_or_403_is_the_current_password_being_wrong(self, monkeypatch):
-        for status in (401, 403):
-            provider, _ = self._provider(monkeypatch, answers=[(False, {"status": status})])
-            provider._last_api_error = {"status": status}
-            assert provider.change_own_password("typo", "new-pw") == "wrong-password"
+    def test_a_403_is_the_current_password_being_wrong(self, monkeypatch):
+        """Measured (plan §6c): the member's OWN token + a wrong ``CurrentPw`` → **403**."""
+        provider, _ = self._provider(monkeypatch, answers=[(False, {"status": 403})])
+        provider._last_api_error = {"status": 403}
+        assert provider.change_own_password("typo", "new-pw") == "wrong-password"
+
+    def test_a_401_is_the_session_gone_stale_never_a_wrong_password(self, monkeypatch):
+        """⚠ 401 and 403 are NOT the same answer, and telling them apart is the whole point.
+
+        A 401 is the media server refusing the TOKEN ("Invalid token" in its own log — the burst
+        measured 2026-09-12), which happens when the profile's sign-in has gone stale. Reporting that
+        as *"that current password is not correct"* accuses the user of a typo they did not make AND
+        sends them round the same loop: the remedy is to switch profile again, not to retype.
+        """
+        provider, _ = self._provider(monkeypatch, answers=[(False, {"status": 401})])
+        provider._last_api_error = {"status": 401}
+        assert provider.change_own_password("right-pw", "new-pw") == "stale-session"
 
     def test_anything_else_is_an_honest_unreachable(self, monkeypatch):
         for status in (500, 502, None):

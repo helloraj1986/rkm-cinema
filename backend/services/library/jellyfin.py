@@ -1479,13 +1479,15 @@ class JellyfinLibraryProvider(LibraryProvider):
         no old password), and it has no business here. Sending the old password is what makes this
         a genuine self-change instead of an escalation.
 
-        ⚠ 401/403 is mapped to ``"wrong-password"``, matching the app's own login taxonomy
-        (`authenticate_jellyfin`). If Jellyfin instead refuses a self-change for a *permission*
-        reason, a correct password would be reported as a wrong one — which is why the live
-        verification with a deliberately wrong old password, then the right one, is part of this
-        phase's acceptance (plan §6b). Do NOT try to disambiguate by logging in again as the
-        profile: that rotates the app device's token for that user and would break the very session
-        making the request.
+        ⚠ 401 and 403 are DIFFERENT ANSWERS, and both used to be reported as a wrong password:
+
+            member's own token + a wrong `CurrentPw`      -> 403  = the password really is wrong
+            a token the server no longer accepts          -> 401  = the profile's sign-in is stale
+
+        (Measured 2026-09-12, plan §6c; the 401 is the "Invalid token" burst in Jellyfin's own log.)
+        Reporting a 401 as a wrong password accuses the person of a typo they did not make AND is a
+        dead end — retyping cannot fix a dead token. The honest answer is `"stale-session"`, whose
+        remedy is to switch profile again.
         """
         if not self._configured() or not str(new_password or ""):
             return "unreachable"
@@ -1500,8 +1502,11 @@ class JellyfinLibraryProvider(LibraryProvider):
         if ok:
             return None
         error = self._last_api_error or {}
-        if error.get("status") in (401, 403):
+        status = error.get("status")
+        if status == 403:
             return "wrong-password"
+        if status == 401:
+            return "stale-session"
         return "unreachable"
 
     def rename_user(self, user_id: str, name: str) -> Optional[dict]:

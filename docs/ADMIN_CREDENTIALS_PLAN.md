@@ -112,6 +112,51 @@ Renaming the account breaks anything that assumes the name:
 | **4** | **Recovery, documented and tested**: `rkm-cinema.ps1 reset-admin-password` → reads the API key from the volume (never from `.env`), prompts for a new password, calls `POST /Users/Password?userId=…&ResetPassword=true`, then VERIFIES by signing in; `OPERATIONS.md` gains the runbook and the "forgot everything" ladder | the tool's own verification output; pytest for its pure parts |
 | **5** | ADR (the credential model), docs truth pass (`ARCHITECTURE`, `OPERATIONS`, `README`), PROGRESS record | full suite + docs links |
 
+### 6h. ✅ A STALE TOKEN IS NOT A WRONG PASSWORD — and the message never reached the screen anyway
+
+Queue item #2's first half, built 2026-09-13. Three separate faults, all of the same family: **the
+app was naming the wrong culprit.**
+
+**1. `401` and `403` are different answers** (`jellyfin.py::change_own_password`). Measured on the
+live server (§6c): the profile's own token + a wrong `CurrentPw` → **403**; a token Jellyfin no
+longer accepts → **401** ("Invalid token" — the burst measured 2026-09-12). Both were mapped to
+`"wrong-password"`, so a stale sign-in was reported to the person as *"that current password is not
+correct"* — a false accusation AND a dead end, because retyping cannot revive a token. The remedy is
+**switching profile again** (the only thing that re-authenticates a profile; Jellyfin has no
+impersonation). The provider now returns `"stale-session"` for a 401 and the route answers
+401 *"This profile is no longer signed in to the media server — use Switch profile in the account
+menu, then retry."* — naming the exact control.
+
+**⚠ 2. The message could never have appeared live: the Façade DROPPED the provider's reason.**
+`LibraryService.change_own_password`'s loop kept only `None`/`"unreachable"`, so with the REAL
+provider a wrong current password was reported as *"the media server refused the password change"*
+(502) — the server blamed for the user's typo. **Every unit test passed** because the fake library in
+`test_profile_auth_api.py` returned the reason itself; only reading the façade did. Fixed: the first
+non-`None` reason wins (a definite answer about the credential beats "could not ask"), pinned by
+`TestTheFacadeKeepsTheProvidersAnswer`.
+
+**⚠ 3. Answering 401 honestly would have made things WORSE, because the client signs you out on any
+401.** `api.changeMyPassword` was the one auth-route call WITHOUT `skipAuthRedirect`, so a 401 from
+it fired the global *"the session is dead"* rule: **the person was signed out of the whole app and the
+query cache cleared** — for typing their password wrong, and (after this change) for a stale token.
+Measured: the new vitest case failed against the old client. Fixed with `{ skipAuthRedirect: true }`
+— both 401s belong to the form, exactly like `login` and `profiles`.
+
+**Evidence.** 966 backend pytest (+6: the façade pass-through ×4, the 401/403 split, the route's
+stale-session message) · ruff clean · **282 vitest** (+2: the sign-out rule, and the server's words
+reaching the form) · tsc clean · build · **5 browser checks** · openapi 53 paths · docs links.
+Falsified both ways: reverting the three backend files fails the 4 new backend tests; the vitest case
+fails without `skipAuthRedirect`.
+
+**⏭ STILL OPEN — deferred to Phase E deliberately (this is the "long" half).** On a **media** call a
+stale profile token is still indistinguishable from a dead session, so the client signs the browser
+out and the app cannot say *"switch profile again"* there. Fixing it properly means the API
+distinguishing **session-401** (the cookie is gone) from **profile-token-401** (the cookie is fine,
+the profile's credential is stale) across the media routes, and/or **per-session device ids** so the
+app stops rotating its own tokens away (`_client_header()` uses ONE device id, `rkm-cinema-web`, for
+every session — two browsers signed in as the same account kill each other's tokens). Both belong in
+**Phase E's 401/403 sweep**, where the whole taxonomy is settled once instead of twice.
+
 ### 6g. ⚠ "You removed the household from rkm as well" — the nav gate read a field the server never sent
 
 **His report (2026-09-13), verbatim:** *"you have removed the household from rkm(admin) as well, now i

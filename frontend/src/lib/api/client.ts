@@ -909,14 +909,24 @@ export const api = {
    *
    * `currentPassword` is required whenever the account has one; the SERVER decides whether it has
    * to match, so this never invents that rule.
+   *
+   * ⚠ `skipAuthRedirect` — measured 2026-09-13: WITHOUT it, either 401 this route can return fired
+   * the global "the session is dead" rule, which signed the person out of the whole app and cleared
+   * the query cache. Both 401s belong to the FORM:
+   *   * the media server refused the current password (a typo — retry), or
+   *   * that PROFILE's token has gone stale (switch profile again);
+   * and the browser's session cookie is perfectly alive in both. Same rule as `login` and
+   * `profiles`: the auth routes' own refusals are the form's business.
    */
   changeMyPassword: (newPassword: string, currentPassword = "") =>
     postJson<{ ok: boolean; confirmation?: PasswordConfirmation; name?: string }>(
       "/auth/profile/password",
       {
-      current_password: currentPassword,
-      new_password: newPassword,
-    }),
+        current_password: currentPassword,
+        new_password: newPassword,
+      },
+      { skipAuthRedirect: true },
+    ),
   /** Set or reset a member's password — sent once, never returned, never stored here. */
   setHouseholdPassword: (userId: string, newPassword: string) =>
     postJson<{ ok: boolean }>(`/admin/users/${encodeURIComponent(userId)}/password`, {

@@ -308,6 +308,18 @@ def change_own_password(payload: ChangePasswordRequest, request: Request):
         # password must not be distinguishable, and the new value is never mentioned.
         logger.info("auth.password rejected for profile id=%s", context.profile_id())
         raise HTTPException(status_code=401, detail="That current password is not correct")
+    if reason == "stale-session":
+        # ⚠ A token the media server no longer accepts is NOT a typo, and it is not the server
+        # "refusing the change" either: Jellyfin answers 401 for a stale token and 403 for a wrong
+        # `CurrentPw` (measured, plan §6c). Retyping cannot fix it — switching profile again
+        # re-authenticates the profile, which is the ONE remedy — so say that, and never blame the
+        # password. The raw status is in the log if the token died for another reason.
+        logger.info("auth.password: the media server refused this profile's token (401) "
+                    "for profile id=%s", context.profile_id())
+        raise HTTPException(
+            status_code=401,
+            detail=("This profile is no longer signed in to the media server — use Switch profile in "
+                    "the account menu, then retry."))
     if reason is not None:
         logger.warning("auth.password failed for profile id=%s (%s)",
                        context.profile_id(), reason)

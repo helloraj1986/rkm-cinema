@@ -1,4 +1,63 @@
-## ▶ ✅ MERGED TO `main` (2026-09-13) — the auth workstream is on `main` after 57 commits · THIS SCOPE IS DONE except what is listed below
+## ▶ SAME SESSION (2026-09-13) — PHASE E IS PARKED (his decision) · everything it needs to start is below
+
+**His decision, verbatim:** *"park it for next session...update progress.md"* — asked as a choice of
+*start now / the enforcement split only / park it*.
+
+**Where the repo is at this point:** `main` = `feat/auth-multiuser` = `experiment/bundled-docker-stack`
+= **`7074abb`** (all three level, verified at the remote). The auth workstream is merged. Working tree
+on `main`, clean. **No deploy needed** — the tree is what he has already been running.
+
+### The measurement Phase E starts from (committed, not remembered)
+
+`tools/route_protection_report.py` — read-only, one row per route with the dependency that decides
+access. Measured on this tree: **54 routes**
+
+| Level | Count | Today |
+|---|---|---|
+| `PUBLIC` | 1 | `/api/health` — the Docker HEALTHCHECK |
+| `auth-route` | 6 | login/logout/me/profiles/select/password — reachable signed out ON PURPOSE |
+| `ADMIN` | 7 | all of `/api/admin/*` — strict, a member gets 403 |
+| `session` | 40 | *a* session required — **not an administrator** |
+
+⚠ **`RKM_AUTH_REQUIRED=False`** — a caller with NO session at all is served as the stack's own
+credential, so anyone who can reach the app (LAN or tailnet) can browse, play and change watch state
+without signing in. This is deliberate (login shipped before enforcement, so a bad deploy could not
+lock him out) and the switch is HIS opt-in.
+
+### Six routes are administrative IN EFFECT but only session-gated — his call, first task next time
+
+| Route | What it does | Recommendation |
+|---|---|---|
+| `POST /api/jobs/{name}/run` | triggers a library scan / job | administrators only |
+| `GET /api/library/scan` | scan status / refresh | administrators only |
+| `POST /api/reconcile` | library reconciliation | administrators only |
+| `POST /api/download` | *arr download action | administrators only |
+| `POST /api/media/{id}/request` | request media from Radarr/Sonarr | **his call** — a member requesting a title is arguably the point |
+| `POST /api/suggest/add` | adds to the household suggestion list | keep as session (member-facing feature) |
+
+### When it is picked up, in order
+
+1. His intent on the table above — a product decision, which is why it was not guessed.
+2. **Enforce per route + tests**: a member gets 403 on an admin-gated route, and the route-inventory
+   test fails when a NEW route ships without a gate (the enumeration that once passed vacuously is
+   already fixed — assert it found ≥40 routes before trusting it).
+3. **Arm `RKM_AUTH_REQUIRED` and re-run everything.** ⚠ The concrete breakage to check first:
+   anything hitting the api over HTTP **without a session** starts getting 401 — including his own
+   probes (`tools/probe_stack.py` and friends), which must sign in first or be exempted. Safe by
+   design and pinned by tests: `/api/health` and all six `/api/auth/*` routes stay reachable while
+   armed; the provisioner and scheduler never use HTTP sessions.
+4. **ADR-0006** (the profile/session credential model) + the **docs truth pass**: `ARCHITECTURE.md`,
+   `OPERATIONS.md` and `README.md` still describe the pre-auth app.
+5. Phase 5's PROGRESS record.
+
+Arming it is safer than it was this morning: the break-glass (`reset-admin-password`, §6i) covers
+"nobody knows the administrator's password", which was the reason to hesitate.
+
+**Also parked, at his request:** Phase 1's fresh-install test on a throwaway stack (§7) — the one path
+never executed end to end, and only he can run it (no Docker in the sandbox).
+
+
+## ▶ ✅ MERGED TO `main` (2026-09-13) — the auth workstream is on `main` after 57 commits · THIS SCOPE IS DONE except what is listed below  → ✅ **MERGED to `main` 2026-09-13** (`7074abb`); Phase E parked the same session — see the block above.
 
 **His instruction, verbatim:** *"park the fresh install for later, whats left for this scope..i want to
 merge to main branch..this branch is too huge now"*.
@@ -3161,4 +3220,5 @@ Endpoint shapes NOT yet live-verified from the sandbox (oEmbed blocked; use `scr
   - **Structured logging** - JSON logs enable log aggregation and debugging
   - **Pydantic models for API** - Type safety, auto-documentation, validation
   - **Tests first** - Writing tests for plex ownership, radarr/sonarr routing, duplicates, trailers, status, e2e, errors caught design issues early
+
 

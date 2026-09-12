@@ -95,6 +95,128 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Users
+         * @description Every household account: who they are, whether they are an admin, what they can see.
+         */
+        get: operations["list_users_api_admin_users_get"];
+        put?: never;
+        /**
+         * Create User
+         * @description Create an account and grant it libraries.
+         *
+         *     A blank password is DELIBERATE and supported: that member signs in with just their
+         *     username. The account is never created as an administrator — there is no way to ask for
+         *     one here on purpose, since a password-less administrator would hand account management
+         *     to anyone who can reach the app.
+         */
+        post: operations["create_user_api_admin_users_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/libraries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Grantable Libraries
+         * @description The libraries a member can be granted — the tick-box list, with the ids a grant holds.
+         */
+        get: operations["list_grantable_libraries_api_admin_libraries_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/users/{user_id}/policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Update User Policy
+         * @description Change a member's library access and/or enable-disable them.
+         *
+         *     Both fields are optional and independent: omitting one leaves it exactly as it is
+         *     (the policy is read-modify-written, so nothing else on the policy is touched either).
+         */
+        post: operations["update_user_policy_api_admin_users__user_id__policy_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/users/{user_id}/password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set User Password
+         * @description Set or reset a member's password.
+         *
+         *     The value is passed straight to Jellyfin and deliberately appears in NO response and NO
+         *     log line. There is no endpoint that can read a password back — not even for an admin.
+         */
+        post: operations["set_user_password_api_admin_users__user_id__password_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/users/{user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete User
+         * @description Delete an account — irreversible, so the rails come first.
+         *
+         *     Refused: the account you are signed in as, and the LAST administrator. Note the ordering
+         *     honestly: because the gate already guarantees the caller is an ENABLED administrator, the
+         *     last-administrator check cannot fire from a normal request (any non-self admin target has
+         *     the caller for company) — the self rail is what actually protects the final admin. The
+         *     check stays as a backstop for the window where the caller's own rights change mid-request,
+         *     and for any future caller that is not itself an administrator.
+         */
+        delete: operations["delete_user_api_admin_users__user_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/config": {
         parameters: {
             query?: never;
@@ -1014,6 +1136,64 @@ export interface components {
             provider?: string | null;
             /** Status */
             status?: string | null;
+        };
+        /**
+         * AdminCreateUserRequest
+         * @description Create a household account (AUTH_MULTIUSER_PLAN Phase 1b).
+         *
+         *     ``password`` is OPTIONAL and often empty on purpose: the user decided (2026-09-12)
+         *     that a household member is created WITHOUT one, signing in with just their username.
+         *     ``library_ids`` is the folder selection: ``None`` means every library (the creating
+         *     administrator's own access), an empty list means none.
+         */
+        AdminCreateUserRequest: {
+            /**
+             * Name
+             * @default
+             */
+            name: string;
+            /**
+             * Password
+             * @default
+             */
+            password: string;
+            /** Library Ids */
+            library_ids?: string[] | null;
+        };
+        /**
+         * AdminDeleteUserRequest
+         * @description Deleting is irreversible, so it needs the account's NAME typed out.
+         */
+        AdminDeleteUserRequest: {
+            /**
+             * Confirm Name
+             * @default
+             */
+            confirm_name: string;
+        };
+        /**
+         * AdminSetPasswordRequest
+         * @description Set or reset another account's password. Never echoed anywhere.
+         */
+        AdminSetPasswordRequest: {
+            /**
+             * New Password
+             * @default
+             */
+            new_password: string;
+        };
+        /**
+         * AdminUserPolicyRequest
+         * @description Change what an account may see, and/or whether it is enabled.
+         *
+         *     ``None`` on either field means "leave it alone" — the policy is read-modify-written,
+         *     never replaced wholesale from a partial body.
+         */
+        AdminUserPolicyRequest: {
+            /** Library Ids */
+            library_ids?: string[] | null;
+            /** Disabled */
+            disabled?: boolean | null;
         };
         /**
          * CapabilitiesModel
@@ -2121,6 +2301,184 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MeResponse"];
+                };
+            };
+        };
+    };
+    list_users_api_admin_users_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    create_user_api_admin_users_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminCreateUserRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_grantable_libraries_api_admin_libraries_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    update_user_policy_api_admin_users__user_id__policy_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminUserPolicyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_user_password_api_admin_users__user_id__password_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminSetPasswordRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_user_api_admin_users__user_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminDeleteUserRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

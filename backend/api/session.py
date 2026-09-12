@@ -31,6 +31,7 @@ from fastapi import HTTPException, Request
 
 from config.settings import get_config
 from services.auth import SESSION_COOKIE, SessionStore, default_session_store
+from services.library.factory import build_library_service
 
 logger = logging.getLogger("rkm.api.session")
 
@@ -113,4 +114,52 @@ async def require_session(request: Request) -> Optional[SessionContext]:
     set_current_session(context)
     if context is None and cfg.auth_required():
         raise HTTPException(status_code=401, detail="Sign in to use this app")
+    return context
+
+
+def is_administrator(cfg, user_id: str) -> bool:
+    """Is this account an ENABLED Jellyfin administrator — asked of the SERVER every time?
+
+    Deliberately NOT a cached or stored flag: a stale `is_admin` is an authorisation bug
+    (a demoted account would keep its powers, or a promoted one would not get them), and
+    this app's rule is that the media server's own state is authoritative.
+
+    A DISABLED administrator is refused too: the account cannot use the server at all, so it
+    must not be able to manage it either (the same reason `IsDisabled` is part of the check
+    rather than a separate one).
+
+    In Phase 1b the provider answers this with the app's admin credential, which is why the
+    check must live HERE rather than being left to Jellyfin's own 403: that backstop only
+    exists once every call is made as the signed-in user (Phase 3).
+    """
+    if not user_id:
+        return False
+    try:
+        policy = build_library_service(cfg).get_user_policy(user_id)
+    except Exception:  # a provider that cannot answer must not grant access
+        logger.warning("administrator check failed for %s", user_id, exc_info=True)
+        return False
+    if not policy:
+        return False
+    return bool(policy.get("IsAdministrator")) and not bool(policy.get("IsDisabled"))
+
+
+async def require_admin_session(request: Request) -> SessionContext:
+    """A session AND a Jellyfin administrator. NEVER lenient.
+
+    These routes can create, alter and delete accounts, so unlike the rest of the app
+    they enforce a session even while ``RKM_AUTH_REQUIRED`` is false: an anonymous caller
+    must not reach them in any world. 401 when nobody is signed in, 403 when the signed-in
+    person is not an administrator.
+    """
+    cfg = get_config()
+    context = session_context_from_request(request, config=cfg)
+    if context is None:
+        raise HTTPException(status_code=401, detail="Sign in to manage household accounts")
+    set_current_session(context)  # before the check: Phase 3 reads this to act AS them
+    if not is_administrator(cfg, context.user_id):
+        logger.info("household route refused for non-admin user=%s", context.user_id)
+        raise HTTPException(
+            status_code=403,
+            detail="Only a Jellyfin administrator can manage household accounts")
     return context

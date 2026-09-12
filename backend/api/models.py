@@ -89,6 +89,43 @@ class MeResponse(BaseModel):
     expires: str = ""
 
 
+class AdminCreateUserRequest(BaseModel):
+    """Create a household account (AUTH_MULTIUSER_PLAN Phase 1b).
+
+    ``password`` is OPTIONAL and often empty on purpose: the user decided (2026-09-12)
+    that a household member is created WITHOUT one, signing in with just their username.
+    ``library_ids`` is the folder selection: ``None`` means every library (the creating
+    administrator's own access), an empty list means none.
+    """
+
+    name: str = ""
+    password: str = ""
+    library_ids: Optional[List[str]] = None
+
+
+class AdminUserPolicyRequest(BaseModel):
+    """Change what an account may see, and/or whether it is enabled.
+
+    ``None`` on either field means "leave it alone" — the policy is read-modify-written,
+    never replaced wholesale from a partial body.
+    """
+
+    library_ids: Optional[List[str]] = None
+    disabled: Optional[bool] = None
+
+
+class AdminSetPasswordRequest(BaseModel):
+    """Set or reset another account's password. Never echoed anywhere."""
+
+    new_password: str = ""
+
+
+class AdminDeleteUserRequest(BaseModel):
+    """Deleting is irreversible, so it needs the account's NAME typed out."""
+
+    confirm_name: str = ""
+
+
 class JellyfinProgressRequest(BaseModel):
     """Playback progress reported by the in-app player (Jellyfin Sessions API).
 

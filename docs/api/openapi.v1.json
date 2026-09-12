@@ -100,6 +100,219 @@
         }
       }
     },
+    "/api/admin/users": {
+      "get": {
+        "summary": "List Users",
+        "description": "Every household account: who they are, whether they are an admin, what they can see.",
+        "operationId": "list_users_api_admin_users_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create User",
+        "description": "Create an account and grant it libraries.\n\nA blank password is DELIBERATE and supported: that member signs in with just their\nusername. The account is never created as an administrator \u2014 there is no way to ask for\none here on purpose, since a password-less administrator would hand account management\nto anyone who can reach the app.",
+        "operationId": "create_user_api_admin_users_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminCreateUserRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/libraries": {
+      "get": {
+        "summary": "List Grantable Libraries",
+        "description": "The libraries a member can be granted \u2014 the tick-box list, with the ids a grant holds.",
+        "operationId": "list_grantable_libraries_api_admin_libraries_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/users/{user_id}/policy": {
+      "post": {
+        "summary": "Update User Policy",
+        "description": "Change a member's library access and/or enable-disable them.\n\nBoth fields are optional and independent: omitting one leaves it exactly as it is\n(the policy is read-modify-written, so nothing else on the policy is touched either).",
+        "operationId": "update_user_policy_api_admin_users__user_id__policy_post",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "User Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminUserPolicyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/users/{user_id}/password": {
+      "post": {
+        "summary": "Set User Password",
+        "description": "Set or reset a member's password.\n\nThe value is passed straight to Jellyfin and deliberately appears in NO response and NO\nlog line. There is no endpoint that can read a password back \u2014 not even for an admin.",
+        "operationId": "set_user_password_api_admin_users__user_id__password_post",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "User Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminSetPasswordRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/users/{user_id}": {
+      "delete": {
+        "summary": "Delete User",
+        "description": "Delete an account \u2014 irreversible, so the rails come first.\n\nRefused: the account you are signed in as, and the LAST administrator. Note the ordering\nhonestly: because the gate already guarantees the caller is an ENABLED administrator, the\nlast-administrator check cannot fire from a normal request (any non-self admin target has\nthe caller for company) \u2014 the self rail is what actually protects the final admin. The\ncheck stays as a backstop for the window where the caller's own rights change mid-request,\nand for any future caller that is not itself an administrator.",
+        "operationId": "delete_user_api_admin_users__user_id__delete",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "User Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminDeleteUserRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/config": {
       "get": {
         "summary": "Get Config Endpoint",
@@ -1712,6 +1925,93 @@
         "type": "object",
         "title": "AcquisitionModel",
         "description": "Acquisition backend facts for one item (spec \u00a718 ``acquisition``)."
+      },
+      "AdminCreateUserRequest": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "default": ""
+          },
+          "password": {
+            "type": "string",
+            "title": "Password",
+            "default": ""
+          },
+          "library_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Library Ids"
+          }
+        },
+        "type": "object",
+        "title": "AdminCreateUserRequest",
+        "description": "Create a household account (AUTH_MULTIUSER_PLAN Phase 1b).\n\n``password`` is OPTIONAL and often empty on purpose: the user decided (2026-09-12)\nthat a household member is created WITHOUT one, signing in with just their username.\n``library_ids`` is the folder selection: ``None`` means every library (the creating\nadministrator's own access), an empty list means none."
+      },
+      "AdminDeleteUserRequest": {
+        "properties": {
+          "confirm_name": {
+            "type": "string",
+            "title": "Confirm Name",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "AdminDeleteUserRequest",
+        "description": "Deleting is irreversible, so it needs the account's NAME typed out."
+      },
+      "AdminSetPasswordRequest": {
+        "properties": {
+          "new_password": {
+            "type": "string",
+            "title": "New Password",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "AdminSetPasswordRequest",
+        "description": "Set or reset another account's password. Never echoed anywhere."
+      },
+      "AdminUserPolicyRequest": {
+        "properties": {
+          "library_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Library Ids"
+          },
+          "disabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disabled"
+          }
+        },
+        "type": "object",
+        "title": "AdminUserPolicyRequest",
+        "description": "Change what an account may see, and/or whether it is enabled.\n\n``None`` on either field means \"leave it alone\" \u2014 the policy is read-modify-written,\nnever replaced wholesale from a partial body."
       },
       "CapabilitiesModel": {
         "properties": {

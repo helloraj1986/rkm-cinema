@@ -14,7 +14,9 @@ the movie/series in the library at all".
 """
 from __future__ import annotations
 
+import json
 import logging
+import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
@@ -82,6 +84,8 @@ class JellyfinLibraryProvider(LibraryProvider):
         self._folders_expiry: float = 0              # epoch
         self._server_id_value: str = ""
         self._user_id_value: str = ""
+        #: Why the most recent account-management call failed (see last_api_error).
+        self._last_api_error: Optional[dict] = None
 
     #: Fields the single-item detail fetch requests (Plex-style preplay data).
     #: Verified live on Jellyfin 10.11.11 — the single-item endpoint embeds
@@ -1170,6 +1174,169 @@ class JellyfinLibraryProvider(LibraryProvider):
             return self.config.JELLYFIN_URL.rstrip("/") + "/web/index.html"
         # Default: bundled Jellyfin on the dashboard host (or plain localhost).
         return f"{self.config.JELLYFIN_URL.rstrip('/')}/web/index.html"
+
+    # ------------------------------------------------------- household accounts
+    # AUTH_MULTIUSER_PLAN Phase 1b. The ONLY calls in the app that manage other
+    # people's accounts. Every shape below was measured on the RUNNING server
+    # (`tools/probe_jellyfin_users.py`) — do not re-derive them:
+    #   GET    /Users                    -> [UserDto] (Policy embedded; admin only)
+    #   POST   /Users/New   {Name, Password}
+    #   GET    /Users/{id}               -> UserDto (Policy embedded)
+    #   POST   /Users/{id}/Policy         UserPolicy — the WHOLE object, so every write
+    #                                     here is read-modify-write
+    #   POST   /Users/Password?userId=   {CurrentPw, NewPw, ResetPassword}
+    #   DELETE /Users/{id}
+    #
+    # ⚠ These go through `_api_token()`, which in Phase 1b is the app's ADMIN credential
+    # because per-request identity (Phase 3) has not landed. That is exactly why the ROUTE
+    # must do the live administrator check itself: Jellyfin's own 403 only becomes the
+    # backstop once every call is made as the signed-in user.
+    def _api_token(self) -> str:
+        """The credential these calls are made with (Phase 3: the session's token)."""
+        return str(self.config.JELLYFIN_API_KEY or "")
+
+    def _api(self, method: str, path: str, body: Optional[dict] = None) -> tuple[bool, object]:
+        """Call Jellyfin and return ``(ok, payload)`` — never raising.
+
+        A dead or refusing server must surface as an honest failure in the route rather
+        than as a 500 (the lesson the subtitle client paid for).
+        """
+        sep = "&" if "?" in path else "?"
+        url = f"{self.config.JELLYFIN_URL}{path}{sep}api_key={self._api_token()}"
+        data = json.dumps(body).encode("utf-8") if body is not None else None
+        headers = {"Content-Type": "application/json"} if data else {}
+        try:
+            req = urllib.request.Request(url, data=data, method=method.upper(),
+                                         headers=headers)
+            with urllib.request.urlopen(req, timeout=15) as r:
+                raw = r.read().decode("utf-8", "replace")
+            self._last_api_error = None
+            return True, (json.loads(raw) if raw.strip() else {})
+        except urllib.error.HTTPError as e:
+            # The STATUS only: an error body can name the account, and a body echoing a
+            # requested password would be worse. Neither is logged nor returned.
+            logger.warning("Jellyfin %s %s -> HTTP %s", method, path, e.code)
+            self._last_api_error = {"method": method.upper(), "path": path, "status": e.code}
+            return False, {"status": e.code}
+        except Exception as e:
+            logger.warning("Jellyfin %s %s failed: %s", method, path, type(e).__name__)
+            self._last_api_error = {"method": method.upper(), "path": path,
+                                    "error": type(e).__name__}
+            return False, {"error": type(e).__name__}
+
+    def last_api_error(self) -> Optional[dict]:
+        """Why the most recent ``_api`` call failed, or ``None``.
+
+        Exists so a LISTING can say "the server refused us" instead of showing an empty
+        household, which would read as "there are no accounts".
+        """
+        return self._last_api_error
+
+    @staticmethod
+    def _user_row(user: dict) -> dict:
+        """One account, normalised for the app. Never carries a password."""
+        policy = user.get("Policy") or {}
+        return {
+            "id": str(user.get("Id") or ""),
+            "name": str(user.get("Name") or ""),
+            "is_admin": bool(policy.get("IsAdministrator")),
+            "disabled": bool(policy.get("IsDisabled")),
+            "has_password": bool(user.get("HasPassword")),
+            "enable_all_folders": bool(policy.get("EnableAllFolders")),
+            "enabled_folders": [str(f) for f in (policy.get("EnabledFolders") or [])],
+            "last_login": str(user.get("LastLoginDate") or ""),
+        }
+
+    def list_users(self) -> list[dict]:
+        """Every account on the server (Jellyfin requires an admin credential)."""
+        if not self._configured():
+            return []
+        ok, payload = self._api("GET", "/Users")
+        if not ok or not isinstance(payload, list):
+            return []
+        return [self._user_row(u) for u in payload if isinstance(u, dict)]
+
+    def get_user_policy(self, user_id: str) -> Optional[dict]:
+        """The FULL policy for one account — where a read-modify-write must start."""
+        if not self._configured() or not user_id:
+            return None
+        ok, payload = self._api("GET", f"/Users/{urllib.parse.quote(str(user_id))}")
+        if not ok or not isinstance(payload, dict):
+            return None
+        return dict(payload.get("Policy") or {})
+
+    def create_user(self, name: str, password: str = "") -> Optional[dict]:
+        """Create an account. The password is OPTIONAL — a member may have none."""
+        if not self._configured() or not str(name or "").strip():
+            return None
+        body: dict = {"Name": str(name).strip()}
+        # Only send a password when there IS one: an empty `Password` is not the same
+        # request as omitting it, and "this member has no password" is the point.
+        if password:
+            body["Password"] = str(password)
+        ok, payload = self._api("POST", "/Users/New", body)
+        if not ok or not isinstance(payload, dict):
+            return None
+        return self._user_row(payload)
+
+    def mutate_user_policy(self, user_id: str, mutate) -> Optional[dict]:
+        """Read-modify-write one account's policy — the ONLY safe way to change it.
+
+        ``POST /Users/{id}/Policy`` REPLACES the whole 47-field object, so a partial body
+        silently resets everything it omits (measured on the live server 2026-09-12). This
+        fetches the current policy, lets ``mutate`` change just its own keys, and posts the
+        WHOLE thing back.
+        """
+        current = self.get_user_policy(user_id)
+        if current is None:
+            return None
+        updated = dict(current)
+        mutate(updated)
+        ok, _ = self._api("POST", f"/Users/{urllib.parse.quote(str(user_id))}/Policy", updated)
+        return updated if ok else None
+
+    def set_folder_access(self, user_id: str, library_ids: Optional[list] = None,
+                          *, enable_all: bool = False) -> Optional[dict]:
+        """Grant EXACTLY these libraries (with ``EnableAllFolders=false``).
+
+        A grant is a library **ItemId** in ``Policy.EnabledFolders`` (the value
+        ``/Library/VirtualFolders`` reports); a wrong id grants nothing and reads like
+        "the app hid my library".
+        """
+        ids = [str(i) for i in (library_ids or []) if str(i or "").strip()]
+
+        def mutate(policy: dict) -> None:
+            policy["EnableAllFolders"] = bool(enable_all)
+            policy["EnabledFolders"] = [] if enable_all else ids
+
+        return self.mutate_user_policy(user_id, mutate)
+
+    def set_user_disabled(self, user_id: str, disabled: bool) -> Optional[dict]:
+        """Enable/disable an account; its watch state is untouched either way."""
+        return self.mutate_user_policy(
+            user_id, lambda policy: policy.update({"IsDisabled": bool(disabled)}))
+
+    def set_user_password(self, user_id: str, new_password: str, *,
+                          reset: bool = True) -> bool:
+        """Set or RESET another account's password.
+
+        ⚠ The target is a QUERY parameter (``/Users/Password?userId=``), NOT a path
+        segment — the path form 404s (measured live). ``ResetPassword: true`` is what lets
+        an administrator change somebody else's password without knowing the old one.
+        """
+        if not self._configured() or not user_id:
+            return False
+        ok, _ = self._api(
+            "POST", f"/Users/Password?userId={urllib.parse.quote(str(user_id))}",
+            {"CurrentPw": "", "NewPw": str(new_password), "ResetPassword": bool(reset)})
+        return ok
+
+    def delete_user(self, user_id: str) -> bool:
+        """Delete an account. IRRREVERSIBLE — the route owns the rails around this."""
+        if not self._configured() or not user_id:
+            return False
+        ok, _ = self._api("DELETE", f"/Users/{urllib.parse.quote(str(user_id))}")
+        return ok
 
     def _user_id(self) -> str:
         if self._user_id_value:

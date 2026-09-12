@@ -113,6 +113,44 @@ class LibraryProvider(ABC):
         """Rich single-item metadata for a preplay/detail view. Default ``None``."""
         return None
 
+    # ------------------------------------- household accounts (AUTH_MULTIUSER_PLAN 1b)
+    # An optional capability: only a server that OWNS accounts can manage them. Every
+    # default is the safe one (nothing listed, nothing changed), so a provider without
+    # this support degrades the household screen rather than breaking it.
+    def list_users(self) -> list[dict]:
+        """Every account on the server. Default ``[]`` (not supported)."""
+        return []
+
+    def get_user_policy(self, user_id: str) -> Optional[dict]:
+        """One account's FULL policy. Default ``None`` (not supported)."""
+        return None
+
+    def create_user(self, name: str, password: str = "") -> Optional[dict]:
+        """Create an account; the password is optional. Default ``None`` (not supported)."""
+        return None
+
+    def mutate_user_policy(self, user_id: str, mutate) -> Optional[dict]:
+        """Read-modify-write one account's policy. Default ``None`` (not supported)."""
+        return None
+
+    def set_folder_access(self, user_id: str, library_ids: Optional[list] = None,
+                          *, enable_all: bool = False) -> Optional[dict]:
+        """Grant exactly these libraries to an account. Default ``None`` (not supported)."""
+        return None
+
+    def set_user_disabled(self, user_id: str, disabled: bool) -> Optional[dict]:
+        """Enable/disable an account. Default ``None`` (not supported)."""
+        return None
+
+    def set_user_password(self, user_id: str, new_password: str, *,
+                          reset: bool = True) -> bool:
+        """Set or reset another account's password. Default ``False`` (not supported)."""
+        return False
+
+    def delete_user(self, user_id: str) -> bool:
+        """Delete an account. Default ``False`` (not supported)."""
+        return False
+
     def item_similar(self, item_id: str, limit: int = 10) -> Optional[list[dict]]:
         """\"Because you watched\" rows for one item (TMDB similarity graph).
 

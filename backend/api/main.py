@@ -7,6 +7,7 @@ from core.logging import setup_logging
 
 from api.routes import health, config, status, download, search, library, quality, suggest
 from api.routes import auth as auth_routes
+from api.routes import admin_users as admin_users_routes
 from api.routes import search_global as search_global_routes
 from api.routes import jellyfin_poster as jellyfin_poster_routes
 from api.routes import jellyfin_stream as jellyfin_stream_routes
@@ -48,6 +49,9 @@ def create_app() -> FastAPI:
     # enforced yet — RKM_AUTH_REQUIRED is false until Phase 2 arms it (the login UI
     # ships first, so an enforcement deploy can never lock the user out).
     app.include_router(auth_routes.router, prefix="/api")
+    # Household accounts (AUTH_MULTIUSER_PLAN Phase 1b): admin-only, session-STRICT even
+    # while the rest of the app is unenforced — these routes create and delete accounts.
+    app.include_router(admin_users_routes.router, prefix="/api")
     app.include_router(config.router, prefix="/api")
     app.include_router(status.router, prefix="/api")
     app.include_router(download.router, prefix="/api")

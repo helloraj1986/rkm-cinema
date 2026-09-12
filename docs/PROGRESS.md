@@ -4,8 +4,11 @@
 *start now / the enforcement split only / park it*.
 
 **Where the repo is at this point:** `main` = `feat/auth-multiuser` = `experiment/bundled-docker-stack`
-= **`7074abb`** (all three level, verified at the remote). The auth workstream is merged. Working tree
-on `main`, clean. **No deploy needed** — the tree is what he has already been running.
+— all three level and verified at the remote. (The merge itself fast-forwarded them to `7074abb`;
+this block and the audit commit are the docs/tool records that followed it. Read `git rev-parse main`
+for the tip rather than trusting a sha written inside the document you are reading.) The auth
+workstream is merged. Working tree on `main`, clean. **No deploy needed** — the tree is what he has
+already been running.
 
 ### The measurement Phase E starts from (committed, not remembered)
 

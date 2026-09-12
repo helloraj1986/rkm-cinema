@@ -297,9 +297,13 @@ def change_own_password(payload: ChangePasswordRequest, request: Request):
     # either confirm or deny a change that happened somewhere else).
     target_id = context.profile_id()
     session_name = context.profile_name()
+    # ⚠ The name to sign in with comes from the SERVER, looked up by ID, and NOTHING ELSE. The
+    # session's remembered name falls back to the OWNER, so using it when the lookup fails can sign
+    # in as a completely different account — and a refusal there is reported to the user as "your
+    # change did not take", which is a false accusation. When the account cannot be named, we do not
+    # guess: we simply could not check.
     server_name = next((str(row.get("name") or "") for row in (library.list_users() or [])
                         if str(row.get("id") or "") == str(target_id)), "")
-    verify_name = server_name or session_name
     if server_name and session_name and server_name != session_name:
         logger.info("auth.password: session called profile id=%s %r, the server calls it %r",
                     target_id, session_name, server_name)
@@ -309,10 +313,16 @@ def change_own_password(payload: ChangePasswordRequest, request: Request):
     # basis tells a person their password was not changed when it may well have been.
     #   verified    -> we signed in with the new password
     #   refused     -> the server would not let us: the change did NOT take
-    #   unavailable -> we could not ask (network/config); unknown either way
-    confirmation = password_change_took_effect(verify_name, payload.new_password, config=cfg)
+    #   unavailable -> we could not ask (network/config/unknown account); unknown either way
+    if server_name:
+        confirmation = password_change_took_effect(server_name, payload.new_password, config=cfg)
+    else:
+        logger.info("auth.password: no server name for profile id=%s (session calls it %r) — "
+                    "skipping the sign-in check rather than checking the wrong account",
+                    target_id, session_name)
+        confirmation = "unavailable"
     logger.info("auth.password accepted: target id=%s name=%r confirmation=%s",
-                target_id, verify_name, confirmation)
+                target_id, server_name, confirmation)
     return JSONResponse({"ok": True, "confirmation": confirmation})
 
 

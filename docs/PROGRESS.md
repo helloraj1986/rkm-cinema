@@ -22,6 +22,39 @@ this session is too long · record ur findings and issues in progress.md to take
      REFUSED the new password (the change really did not take) · `AuthUnavailableError` = we could not
      ask, i.e. a false alarm.
 
+### 🔬 LATE FINDINGS (2026-09-12, after his "intermittent" report) — one real hole, one real clue
+
+His report: *"its like a intermittent behavious sometime it chnages sometimes not... for profile meenu
+i could change the password but now i cant change the password for raj"*, with the payload
+`{current_password: "RAJ1234", new_password: "raj1234"}` and the response
+`{ok: true, confirmation: "refused"}`.
+
+**Measured: a case-only change is NOT the problem.** Driven against the live server through the app's
+own code path: `RAJ1234 -> raj1234` → POST 204 → the OLD password stops working and the NEW one logs
+in. Jellyfin's passwords are case-sensitive and it applies the change.
+
+**Ruled out too:** session limits and remote access — `MaxActiveSessions=0`, `EnableRemoteAccess=true`
+on `meenu`, `raj` and `rkm`.
+
+**Hole found in our OWN verification (fixed):** the name used to sign in came from the SERVER when the
+lookup worked, but fell back to the session's remembered name when it did not — and that falls back to
+the **OWNER**. So a failed lookup could sign in as a DIFFERENT account, be refused, and report
+*"refused"* about a change that had landed. Intermittent by construction. Now: **no server-resolved
+name means no check at all** (`confirmation: "unavailable"`), never a guess.
+
+**Real clue in Jellyfin's log** (same window): a burst of ~20
+`CustomAuthentication was not authenticated. Failure message: "Invalid token."` lines within one
+second — the app hammering Jellyfin with a **stale session token**. That is the known per-device token
+rotation (`docs/PLEX_PROFILE_AUTH_PLAN.md` §4e): every login of a device+user invalidates that pair's
+previous token, and the app signs in on ONE device id for everyone. Separate from the password work and
+worth its own pass: when Jellyfin answers 401, the app should degrade honestly ("switch profile again")
+rather than looking broken.
+
+**What settles the remaining question:** the api log line now names the account it checked —
+`auth.password accepted: target id=<id> name=<name> confirmation=<state>`. For a failing attempt:
+`name='raj'` + `refused` = the sign-in genuinely failed for that account (a real problem to chase);
+`name=''` + `unavailable` = we could not name it and deliberately did not check.
+
 ### ✅ CONFIRMED BY HIM (end of session, 2026-09-12): the password flows work end to end
 
 His words: *"i removed the old profile and tried with creating new profiles and it seems to work, i can

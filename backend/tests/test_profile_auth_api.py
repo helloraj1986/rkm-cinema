@@ -474,6 +474,24 @@ class TestChangeMyOwnPassword:
                         json={"current_password": "", "new_password": "new-pw"})
         assert seen_args == [("Kid", "new-pw")]
 
+    def test_it_never_checks_a_name_it_could_not_confirm(self, api, monkeypatch):
+        """The session's remembered name falls back to the OWNER, so a failed lookup must NOT be
+        used to sign in: that would check a different account and then blame the user's password for
+        the refusal. Not being able to name the account means we could not check — nothing more.
+        """
+        _sign_in(api)
+        _select(api, "uid-kid")
+        called: list[tuple[str, str]] = []
+        monkeypatch.setattr(api.library, "list_users", lambda: [])
+        monkeypatch.setattr(auth_route, "password_change_took_effect",
+                            lambda name, pw, **kw: called.append((name, pw)) or "refused")
+        r = api.client.post("/api/auth/profile/password",
+                            json={"current_password": "", "new_password": "new-pw"})
+        assert r.status_code == 200
+        assert r.json()["confirmation"] == "unavailable", "unknown account => unverified, not refused"
+        assert called == [], "it must not sign in under a name it could not confirm"
+        assert api.library.password_changes == [("", "new-pw")], "the change itself still went"
+
     def test_an_unbuildable_provider_is_a_503_not_a_refusal(self, api, monkeypatch):
         _sign_in(api)
         _select(api, "uid-kid")

@@ -22,7 +22,7 @@
 export type AuthStatus = "loading" | "signedIn" | "signedOut";
 
 /** What the route guard should render for the current state. */
-export type GuardDecision = "skeleton" | "app" | "login";
+export type GuardDecision = "skeleton" | "app" | "login" | "picker";
 
 export interface AuthUser {
   id: string;
@@ -33,6 +33,13 @@ export interface GuardInput {
   status: AuthStatus;
   /** True once an app route has answered 401 (i.e. the server enforces sessions). */
   enforcementSeen: boolean;
+  /**
+   * Has the SERVER said a profile has been chosen on this session (`me().profile_selected`)?
+   *
+   * Required, not optional, on purpose: this fact decides whether the app is taken away, so every
+   * caller has to supply it rather than inherit a default that silently means "admin".
+   */
+  profileSelected: boolean;
 }
 
 /**
@@ -42,13 +49,21 @@ export interface GuardInput {
  *   form) and never show a login form to someone who is already signed in.
  * - signed out AND the server has refused an app call ⇒ LOGIN. That refusal is the only
  *   evidence enforcement exists.
+ * - signed in but NO PROFILE CHOSEN ⇒ PICKER ("Who's watching?") — Phase B. The fact comes from
+ *   the server, not from a click remembered in this browser: the session lives for 30 days and is
+ *   the same one every device sees, so a locally-remembered answer would disagree with it after a
+ *   reload, a second tab, or on the phone.
  * - anything else ⇒ APP. Phase 1's unenforced world, where a signed-out visitor is
  *   still a legitimate user of the app exactly as it was before auth existed.
  */
-export function guardDecision({ status, enforcementSeen }: GuardInput): GuardDecision {
+export function guardDecision({
+  status,
+  enforcementSeen,
+  profileSelected,
+}: GuardInput): GuardDecision {
   if (status === "loading") return "skeleton";
-  if (status === "signedOut" && enforcementSeen) return "login";
-  return "app";
+  if (status === "signedOut") return enforcementSeen ? "login" : "app";
+  return profileSelected ? "app" : "picker";
 }
 
 /** The name to show for a session, falling back to the id, then to a generic label. */
@@ -57,6 +72,16 @@ export function displayName(user: AuthUser | null | undefined): string {
   const name = (user.name || "").trim();
   if (name) return name;
   return (user.id || "").trim() || "Signed in";
+}
+
+/**
+ * The name to show as "who is watching" — the PROFILE, falling back to the session's owner.
+ *
+ * The profile is the identity media runs as, so it is the honest answer for a chip or a sidebar
+ * card. The owner is only a fallback for the moment before the picker has been used.
+ */
+export function watchingName(profile: AuthUser | null, user: AuthUser | null): string {
+  return displayName(profile) || displayName(user);
 }
 
 /** Up to two initials for the header chip ("Rajeev Kumar" -> "RK"). */

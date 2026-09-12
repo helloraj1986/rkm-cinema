@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Sign-in flow DOM check (AUTH_MULTIUSER_PLAN Phase 1).
+"""Sign-in flow DOM check (AUTH_MULTIUSER_PLAN Phase 1; PLEX_PROFILE_AUTH_PLAN Phase B).
 
 `tools/measure_player_layout.py` proves geometry and `tools/check_subtitle_panel.py` proves
 the subtitle picker by content; this proves the SESSION flow, in a real browser, against the
@@ -7,16 +7,20 @@ real components (`AuthProvider`, `RequireSession`, `LoginView`, `Header`) over a
 
   A. `?enforce=0` — Phase 1's world: the app renders SIGNED OUT (nothing is enforced), the
      bar offers Sign in, a WRONG password shows the generic error and does NOT sign the app
-     out, a correct one lands signed in with the user's name in the chip, and Sign out flips
-     it back — the app staying usable, because nothing is enforced.
+     out, a correct one lands SIGNED IN — and (Phase B) on "Who's watching?" rather than in the
+     app, so the picker is answered before anything can be watched. Sign out flips it back,
+     the app staying usable, because nothing is enforced.
   B. `?enforce=1` — the server refuses app calls: the LOGIN view is shown and app content
      NEVER appears (not even for an instant), so enabling enforcement cannot flash the shell
      before bouncing you out.
-  C. `?enforce=1&signedIn=1` — a valid session is left alone by the guard.
+  C. `?enforce=1&signedIn=1` — a valid session that has chosen a profile is left alone.
+  D. a BLANK password — a Jellyfin account with no password must be able to sign in (the form
+     must not block the empty submit), and it then picks its profile like anybody else.
 
-What this does NOT prove: how the real app's pages render (unchanged by Phase 1, and the
-harness stands in a fake Home), or anything about the real api — that is the user's deploy
-and eyeball (see PROGRESS for the runbook).
+What this does NOT prove: the picker's own rules (a lock badge, a password-less member, a
+disabled profile, what each refusal says, where a selection lands) — those are
+`tools/check_profile_picker.py`'s job, over the same real `ProfilesView`. Nor anything about the
+real api: that is the user's deploy and eyeball (see PROGRESS for the runbook).
 
 Run (sandbox):
     cd frontend && npx vite --port 5199 --strictPort &
@@ -54,6 +58,28 @@ def probe(page) -> dict:
 
 def auth_calls(state: dict, url: str) -> list[dict]:
     return [c for c in state["calls"] if c["url"] == url]
+
+
+def pick_profile(page, *, password: str) -> dict:
+    """Answer "Who's watching?" — click the row, then the password the picker asks for.
+
+    The prompt is NOT optional here: the only profile this stub offers is the account that just
+    signed in, and an administrator's profile always asks (a blank attempt never lands on it).
+    Clicking twice (once for the row, once to submit) is the point — a picker that posted
+    straight away would be refused by the server and look broken.
+    """
+    # `[data-profile-name]` picks a ROW: the container's own `profile-picker` testid also starts
+    # with "profile-", and clicking that would prove nothing at all.
+    row = page.query_selector('[data-testid^="profile-"][data-profile-name]')
+    if row is None:
+        problem("the picker offered no profile rows at all")
+        return probe(page)
+    row.click()
+    page.wait_for_selector('[data-testid="profile-password-form"]', timeout=5_000)
+    page.fill("#rkm-profile-password", password)
+    page.click('[data-testid="profile-password-form"] button[type=submit]')
+    page.wait_for_timeout(800)
+    return probe(page)
 
 
 def scenario_a(page, base: str, shots: str) -> None:
@@ -97,23 +123,42 @@ def scenario_a(page, base: str, shots: str) -> None:
     if not any(c["status"] == 401 for c in auth_calls(state, "/api/auth/login")):
         problem("A: the stub never rejected the wrong password — the check proved nothing")
 
-    # --- a correct password
+    # --- a correct password: signed in, and asked WHO IS WATCHING (Phase B)
     page.fill("#rkm-password", GOOD_PASSWORD)
     page.click("button[type=submit]")
     page.wait_for_timeout(800)
     state = probe(page)
     print("\n  --- correct password ---")
     print(f"  login form gone      : {not state['hasLoginForm']} (want True)")
-    print(f"  chip                 : {state['chipLabel']!r} (want the signed-in name)")
-    print(f"  Sign out offered     : {state['signOutButton']} (want True)")
+    print(f"  picker shown         : {state['hasPicker']} (want True - nobody has been chosen)")
+    print(f"  app content shown    : {state['hasAppContent']} (want False)")
     if state["hasLoginForm"]:
         problem("A: still on the login form after the CORRECT password")
+    if not state["hasPicker"]:
+        problem("A: a successful sign-in did not ask who is watching")
+    if state["hasAppContent"]:
+        problem("A: the app rendered before a profile was chosen")
+
+    # …then answer it, and land in the app as that profile.
+    state = pick_profile(page, password=GOOD_PASSWORD)
+    print("\n  --- after choosing the profile ---")
+    print(f"  picker gone          : {not state['hasPicker']} (want True)")
+    print(f"  app content rendered : {state['hasAppContent']} (want True)")
+    print(f"  chip                 : {state['chipLabel']!r} (want the profile name)")
+    print(f"  Sign out offered     : {state['signOutButton']} (want True)")
+    if state["hasPicker"]:
+        problem("A: still on the picker after choosing a profile")
+    if not state["hasAppContent"]:
+        problem("A: choosing a profile did not land on the app")
     if "Harness User" not in state["chipLabel"]:
-        problem(f"A: the header chip does not name the signed-in user: {state['chipLabel']!r}")
+        problem(f"A: the header chip does not name the profile: {state['chipLabel']!r}")
     if not state["signOutButton"]:
         problem("A: no Sign out control beside the chip")
-    if not state["hasAppContent"]:
-        problem("A: a successful sign-in did not land on the app")
+    sent = auth_calls(state, "/api/auth/profile")
+    if not sent:
+        problem("A: choosing a profile never reached the API")
+    elif '"user_id":"harness-uid"' not in sent[-1]["body"].replace(" ", ""):
+        problem(f"A: the selection did not carry the profile id: {sent[-1]['body']!r}")
 
     # --- sign out
     page.click("button:has-text('Sign out')")
@@ -157,18 +202,21 @@ def scenario_b(page, base: str, shots: str) -> None:
 
 
 def scenario_c(page, base: str) -> None:
-    """Enforced, but this browser HAS a session: leave it alone."""
+    """Enforced, but this browser HAS a session that has chosen a profile: leave it alone."""
     state = load(page, base, "enforce=1&signedIn=1")
     print("\n=== C. enforced with a valid session (?enforce=1&signedIn=1) ===")
     print(f"  app content rendered : {state['hasAppContent']} (want True)")
     print(f"  login form shown     : {state['hasLoginForm']} (want False)")
+    print(f"  picker shown         : {state['hasPicker']} (want False - a profile is chosen)")
     print(f"  chip                 : {state['chipLabel']!r}")
     if not state["hasAppContent"]:
         problem("C: a valid session was sent to the login view")
     if state["hasLoginForm"]:
         problem("C: a valid session was shown the login form")
+    if state["hasPicker"]:
+        problem("C: a session that already chose a profile was sent back to the picker")
     if "Harness User" not in state["chipLabel"]:
-        problem(f"C: the chip does not name the session user: {state['chipLabel']!r}")
+        problem(f"C: the chip does not name the session's profile: {state['chipLabel']!r}")
 
 
 def scenario_d(page, base: str) -> None:
@@ -189,7 +237,7 @@ def scenario_d(page, base: str) -> None:
     sent = [c for c in state["calls"] if c["url"] == "/api/auth/login"]
     print("\n=== D. a Jellyfin account with NO password ===")
     print(f"  form still shown     : {state['hasLoginForm']} (want False)")
-    print(f"  chip                 : {state['chipLabel']!r} (want the password-less user)")
+    print(f"  picker shown         : {state['hasPicker']} (want True)")
     print(f"  posted body          : {sent[-1]['body'] if sent else '(no login call!)'}")
 
     if not sent:
@@ -198,8 +246,17 @@ def scenario_d(page, base: str) -> None:
         problem(f"D: the request did not carry an empty password: {sent[-1]['body']!r}")
     if state["hasLoginForm"]:
         problem("D: a blank password was rejected by the form instead of the API")
+    if not state["hasPicker"]:
+        problem("D: a blank-password sign-in did not reach the picker")
+
+    # The profile that signed in has no password of its own, so any value the picker asks for is
+    # accepted — Jellyfin has nothing to compare against (measured 2026-09-12).
+    state = pick_profile(page, password="anything-at-all")
+    print(f"  chip after choosing  : {state['chipLabel']!r} (want the password-less user)")
+    if not state["hasAppContent"]:
+        problem("D: choosing a profile did not land on the app")
     if "No-Password User" not in state["chipLabel"]:
-        problem(f"D: signing in with a blank password did not establish that session: {state['chipLabel']!r}")
+        problem(f"D: the chip does not name the password-less profile: {state['chipLabel']!r}")
 
 
 def main() -> int:
@@ -233,9 +290,9 @@ def main() -> int:
         for line in PROBLEMS:
             print(f"  - {line}")
         return 1
-    print("\nOK: signed-out stays usable, sign-in is optional and honest, a password-LESS "
-          "account can sign in, the enforced world goes straight to the login view, and a "
-          "valid session is left alone.")
+    print("\nOK: signed-out stays usable, sign-in is optional and honest and now asks WHO IS "
+          "WATCHING, a password-LESS account can sign in and pick its profile, the enforced world "
+          "goes straight to the login view, and a valid session with a profile is left alone.")
     return 0
 
 

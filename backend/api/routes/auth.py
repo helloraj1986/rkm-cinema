@@ -146,6 +146,9 @@ def profiles(request: Request):
     return ProfilesResponse(
         profiles=[_profile(row) for row in rows],
         current=ProfileUser(id=context.profile_id(), name=context.profile_name()),
+        # `profile_id()` falls back to the owner, so the raw record is the only honest source for
+        # "has anybody actually been chosen yet" (Phase B's picker marks the current row with it).
+        profile_selected=bool(context.profile_user_id),
         warning="" if rows else _why_empty_profiles(library),
     )
 
@@ -255,4 +258,8 @@ def me(request: Request):
     return MeResponse(user=_user(context.user_id, context.user_name),
                       profile=_user(context.profile_id(), context.profile_name()),
                       on_own_profile=context.on_own_profile(),
+                      # The picker's ONE server-side trigger (Phase B): a fresh sign-in has no
+                      # profile yet, and `profile_id()`'s fallback to the owner would otherwise make
+                      # that indistinguishable from "the administrator chose themselves".
+                      profile_selected=bool(context.profile_user_id),
                       expires=context.expires)

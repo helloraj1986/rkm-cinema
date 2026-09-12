@@ -3,7 +3,7 @@ import { Icon, type IconName } from "../../components/ui/Icon";
 import { useLibraryFolders } from "../../features/library/api";
 import { libraryIconFor } from "../../features/library/lib";
 import { useAuth } from "../../features/auth/AuthProvider";
-import { displayName, initials } from "../../features/auth/lib";
+import { initials, watchingName } from "../../features/auth/lib";
 
 /**
  * Premium sidebar (design spec §5–6): brand lockup, grouped navigation,
@@ -104,8 +104,10 @@ function GroupNav({ title, items }: { title: string; items: NavItem[] }) {
 export function Sidebar() {
   const { data } = useLibraryFolders();
   const libraries = data?.libraries ?? [];
-  const { status, user } = useAuth();
-  const name = displayName(user);
+  const { status, user, profile } = useAuth();
+  // The PROFILE is who media runs as — the honest name for this card once a shared device can
+  // hold one person's sign-in and somebody else's profile (Phase B).
+  const name = watchingName(profile, user);
   const signedIn = status === "signedIn" && !!user;
 
   return (

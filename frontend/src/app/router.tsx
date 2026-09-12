@@ -2,6 +2,7 @@ import { createBrowserRouter, Navigate } from "react-router-dom";
 import { AppShell } from "./layout/AppShell";
 import { LoginView } from "../features/auth/LoginView";
 import { RequireSession } from "../features/auth/RequireSession";
+import { ProfilesView } from "../features/profiles/ProfilesView";
 import { ConfigHealthView } from "../features/settings/ConfigHealthView";
 import { HouseholdView } from "../features/admin/HouseholdView";
 import { LibraryLayout } from "../features/library/LibraryLayout";
@@ -31,6 +32,9 @@ export const router = createBrowserRouter([
   // Sign-in lives OUTSIDE the shell: it must render when nothing else can, including on
   // the day enforcement is switched on and every other route is refusing.
   { path: "/login", element: <LoginView /> },
+  // "Who's watching?" (PLEX_PROFILE_AUTH_PLAN Phase B) — also outside the shell, for the same
+  // reason: it renders while a session exists but the app itself must not.
+  { path: "/profiles", element: <ProfilesView /> },
   {
     path: "/",
     element: (

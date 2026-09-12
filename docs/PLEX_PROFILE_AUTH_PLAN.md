@@ -62,6 +62,43 @@ authenticated:
 Everything from `HOUSEHOLD_USERS_PLAN.md` stays as-is: create, folder grant, enable/disable, set &
 reset password, delete, typed-name confirmation, last-admin rail.
 
+### 4a. As built (amended 2026-09-12, measured)
+
+Phase A shipped the FIRST TWO routes above and nothing more: `GET /api/auth/profiles` and
+`POST /api/auth/profile` (contract **49 → 51**, purely additive). Rows in the table above that do
+**not** exist yet, so the next session does not go looking for them:
+
+* **`DELETE /api/auth/profile`** — not built, and not needed: "switch back to the administrator" is
+  `POST /api/auth/profile` with the administrator's profile id and their password, which §4.3
+  requires anyway. A second verb would carry the same check and earn nothing.
+* **`POST /api/auth/profile/password`** — not built; the profile changing its OWN password is
+  Phase D's screen (§7), which is the phase that owns password UX.
+* **`POST /api/admin/users/{id}/rename`** — not built; also Phase D (`POST /Users?userId=`).
+
+### 4b. Why Phase B needed a backend field after all (this plan said it would not)
+
+The §7 table called Phase B "frontend:". **That was wrong**, and here is the measurement that shows
+it: `SessionContext.profile_id()` deliberately falls back to the OWNER, so a fresh sign-in (nobody
+chosen yet) and "the administrator chose themselves" produce an **identical** `me()` payload —
+`profile` is the administrator either way, and `on_own_profile` is `true` in both. The picker's
+trigger therefore cannot be derived from anything the api was already sending.
+
+`me()` and `/api/auth/profiles` now report **`profile_selected`** (additive: +10/−0, still 51 paths),
+read straight off the session record. **Rejected alternative:** remember the click in the browser
+(sessionStorage). The session lasts 30 days, is shared by every tab and every device, and §6
+decision 4 says the choice must survive a restart — a locally-remembered answer would disagree with
+the server after a reload or on the phone. A UI-only rule deciding who has access to the app is the
+one thing this workstream exists to avoid.
+
+### 4c. What the picker costs the administrator (honest — and it IS decision 3)
+
+Because a blank attempt on the administrator's profile is always refused, the administrator types
+their password **twice** on a fresh sign-in: once to open the server, then again to select their own
+profile. That was left exactly as decided. Allowing a blank attempt while no profile is chosen would
+hand that profile to anyone who walks up to a device where the administrator has just signed in —
+the precise hole §4.3 exists to close. If the double prompt ever becomes unwanted, the change belongs
+in the RULE as a new user decision, **never** in the UI.
+
 ### 4.3 The shared-device rule (recommended, decision 3)
 The device holds the administrator's session, so "anyone can walk up and administer" is the real risk
 of this model — Plex's answer is a PIN on the Home admin, and the backend equivalent is: **admin
@@ -104,7 +141,7 @@ non-administrator profile is selected.** Enforced in `require_admin_session`, no
 | Phase | Content | Gate |
 |---|---|---|
 | **A** | backend: admin-only login, profile list/select/clear, profile self-password, session record grows `owner`/`profile`, rename, `me` gains `profile`; tests for every refusal (non-admin login, wrong/blank profile password, disabled profile, admin route with a non-admin profile selected, switch-back requires the password) | pytest, ruff, contract snapshot + typed client |
-| **B** | frontend: "Who's watching?" picker (lock badge, disabled greyed, password prompt), header profile switcher, guard sends a server session with no profile to the picker; browser check `tools/check_profile_picker.py` | tsc, vitest, build, DOM check |
+| **B** | frontend: "Who's watching?" picker (lock badge, disabled greyed, password prompt), header profile switcher, guard sends a server session with no profile to the picker; browser check `tools/check_profile_picker.py` — **plus ONE additive backend field** (`profile_selected` on `me()`/`profiles()`, see §4b: this row used to claim B was frontend-only, and that was wrong) | tsc, vitest, build, DOM check |
 | **C** | **identity threading — the enforcement:** provider `_token()` prefers `profile_token`; every media/progress/resume/watched/subtitle/stream call goes out as the profile; sidebar libraries come from that profile's `/UserViews`; **live proof with two real profiles that their state and libraries do not leak into each other** | pytest (+ a test per route family), frontend, live two-profile proof |
 | **D** | admin extras in `Settings → Household`: rename, "has password" state, and the profile's own "change my password" screen | gates + DOM check |
 | **E** | enforcement sweep (401/403 for every router; a profile cannot reach admin routes), ADR-0006, docs (`ARCHITECTURE`, `OPERATIONS`, `README`), PROGRESS record | full suite + docs links |
@@ -136,4 +173,12 @@ python3 tools/diag_household_gate.py          # the admin path, one command
 cd backend && python -m pytest -q && python -m ruff check .
 cd frontend && npx tsc --noEmit && npx vitest run && npm run build
 python3 backend/scripts/snapshot_openapi.py   # 49 -> ~54 paths as phases land
+
+# The picker itself (Phase B) — six scenarios over the REAL ProfilesView, no api needed:
+cd frontend && npx vite --port 5199 --strictPort &
+python3 tools/check_profile_picker.py
+python3 tools/check_login_flow.py             # sign-in -> picker -> app, and the enforced world
 ```
+⚠ Restart that vite after ANY source edit and confirm the SERVED module is the edited one
+(`curl -s localhost:5199/src/features/profiles/ProfilesView.tsx | grep -c profile-picker`) — a
+stale module on this mount has produced both false FAILs and false PASSes in this repo's history.

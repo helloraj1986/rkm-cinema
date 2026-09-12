@@ -63,7 +63,7 @@ pages are not involved — a fake Home stands in, because Phase 1 changes none o
 
 | Scenario | What it proves |
 |---|---|
-| `?enforce=0&signedIn=0` | Phase 1's world: the app renders SIGNED OUT, the bar offers Sign in, a wrong password shows the generic error **without** signing the app out, a correct one lands signed in with the name in the chip, and Sign out flips back — the app still usable |
+| `?enforce=0&signedIn=0` | Phase 1's world: the app renders SIGNED OUT, the bar offers Sign in, a wrong password shows the generic error **without** signing the app out, a correct one lands signed in — and (Phase B) on **"Who's watching?"**, which must then be answered before the app appears |
 | `?enforce=1&signedIn=0` | the server refuses app calls ⇒ the login view, and app content **never appears** (asserted with a MutationObserver, so enabling enforcement cannot flash the shell before bouncing you out) |
 | `?enforce=1&signedIn=1` | a valid session is left alone by the guard |
 | blank password (scenario D) | a Jellyfin account with **no password** can sign in — the form must not block an empty submit (a `required` field silently made such accounts unusable) |
@@ -88,7 +88,28 @@ and auth provider) over a stubbed api and drives it in a browser:
 | `?admin=0` | a non-administrator session sees the requirement stated plainly — no accounts, no add form, and **no write is attempted** |
 | `?admin=1` + add | adding a member posts the name, a **blank password**, and **only the ticked libraries** — the default is everything, and unticking one sticks |
 
-The stub is deliberately generous but honest: it echoes the created member back the way the API
-does, so a refresh is visible. `window.__calls` records every request (url, method, body) and
+The stub is deliberately generous but honest: it echoes the created member back the way the API does,
+so a refresh is visible. `window.__calls` records every request (url, method, body) and
 `window.__probe()` reports the rendered rows, whether the add form is open, whether the confirm
 button is armed, and any `role="alert"` text.
+
+## `profile-frame.html` — "Who's watching?" (Phase B)
+
+`python3 tools/check_profile_picker.py` mounts the REAL `ProfilesView` (plus the real `AuthProvider`,
+`RequireSession` and `Header`) over a stubbed api and drives six scenarios:
+
+| Query | What it asserts |
+|---|---|
+| `?signedIn=1&profileSelected=0` | the picker IS shown and **app content never appears** (MutationObserver); a lock only where the server needs one — including an administrator with NO password of its own; the disabled row is inert (even to a programmatic click) and says why; no row claims "Watching now"; **zero `/api/admin/*` calls** |
+| …then pick `uid-guest` | a password-LESS profile posts `{"user_id":"uid-guest","password":""}` and lands as `Watching as Guest` |
+| …then pick `uid-locked` | the prompt appears with **0 requests sent**, a blank attempt and a wrong one both answer the generic message, the right one lands |
+| …then pick `uid-owner-nopw` | the administrator's profile asks even with no password set (the server refuses a blank attempt on it) |
+| `?signedIn=1&profileSelected=1` | straight into the app, picker NOT shown; the header's **Switch profile** (`/profiles?switch=1`) brings it back with the current profile marked |
+| `uid-off` | a disabled profile is not selectable and clicking it makes no call |
+
+⚠ The stub must mirror the SERVER's refusals: a blank attempt on the administrator's profile is
+401, a disabled profile is 403, and a password-less profile accepts an empty one. A kinder stub makes
+a correct picker look broken.
+
+The stub's own `me()` must keep reporting `profile_selected` honestly — that flag IS the picker's
+trigger, so a stub that always said `true` would prove nothing about this screen.

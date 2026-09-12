@@ -381,7 +381,46 @@ export interface LoginResult {
 /** GET /api/auth/me — 401 while signed out, which is a normal state, not an error. */
 export interface MeResult {
   user: AuthUser;
+  /** The profile in effect. Falls back to `user` when nothing has been chosen. */
+  profile: AuthUser;
+  /** False while somebody else's profile is selected (administrative screens are refused then). */
+  on_own_profile: boolean;
+  /**
+   * TRUE only once a profile has actually been chosen on this session.
+   *
+   * The picker's trigger, and it has to come from the server: `profile` falls back to the owner, so
+   * "nobody has picked yet" and "the administrator picked themselves" arrive as the same payload.
+   */
+  profile_selected: boolean;
   expires: string;
+}
+
+// ------------------------------------------------------- profiles (Phase B, "Who's watching?")
+/** One selectable profile. Never carries a credential — only whether one is NEEDED. */
+export interface ProfileUserShape {
+  id: string;
+  name: string;
+  is_admin: boolean;
+  has_password: boolean;
+  disabled: boolean;
+  last_login: string;
+}
+
+/** GET /api/auth/profiles — the picker's list (session-required; 401 when signed out). */
+export interface ProfilesShape {
+  profiles: ProfileUserShape[];
+  current: ProfileUserShape;
+  /** See `MeResult.profile_selected` — only then may a row be marked "watching now". */
+  profile_selected: boolean;
+  /** Explains an EMPTY list (refused/unreachable), so it never reads as "there are no profiles". */
+  warning: string;
+}
+
+/** POST /api/auth/profile — the profile now in effect, and the libraries it may see. */
+export interface SelectProfileResult {
+  ok: boolean;
+  profile: ProfileUserShape;
+  libraries: { id: string; name: string }[];
 }
 
 // ------------------------------------------------- household accounts (Phase 1b)
@@ -798,6 +837,26 @@ export const api = {
     postJson<{ ok: boolean; revoked: boolean }>("/auth/logout", {}, { skipAuthRedirect: true }),
   /** Who this browser is signed in as. 401 while signed out — a normal state. */
   me: () => getJson<MeResult>("/auth/me", { skipAuthRedirect: true }),
+  /**
+   * The profiles on this server, for "Who's watching?".
+   *
+   * Session-required (401 signed out) and it must NOT cost a sign-out: being on the picker is a
+   * normal state, so a 401 here is the app's problem to state, not a reason to bounce the browser.
+   */
+  profiles: () => getJson<ProfilesShape>("/auth/profiles", { skipAuthRedirect: true }),
+  /**
+   * Switch this session to a profile — the whole of "who is watching".
+   *
+   * `skipAuthRedirect` for the same reason as `login`: a wrong profile password (401) and a
+   * disabled profile (403) are the PICKER's business to explain, not a session failure. A blank
+   * password is a real case (a password-less household profile), so it is sent as-is.
+   */
+  selectProfile: (userId: string, password: string) =>
+    postJson<SelectProfileResult>(
+      "/auth/profile",
+      { user_id: userId, password },
+      { skipAuthRedirect: true },
+    ),
 
   // ------------------------------------------------- household accounts (1b, admin-only)
   /** The household as the SERVER reports it — 403 for anyone who is not an administrator. */

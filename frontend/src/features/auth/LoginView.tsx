@@ -21,7 +21,7 @@ interface LocationState {
 }
 
 export function LoginView() {
-  const { status, user, enforcementSeen, signIn } = useAuth();
+  const { status, user, enforcementSeen, profileSelected, signIn } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [username, setUsername] = useState("");
@@ -30,8 +30,10 @@ export function LoginView() {
   const [busy, setBusy] = useState(false);
 
   // Already signed in (or a back-navigation) — do not show a form that would replace a
-  // working session.
-  if (status === "signedIn" && user) return <Navigate to="/library/home" replace />;
+  // working session. A session with no profile still has the picker to answer (Phase B).
+  if (status === "signedIn" && user) {
+    return <Navigate to={profileSelected ? "/library/home" : "/profiles"} replace />;
+  }
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
@@ -40,8 +42,11 @@ export function LoginView() {
     setError("");
     try {
       await signIn(username.trim(), password);
+      // ONE credential opens the server; WHO IS WATCHING is the next question, so a successful
+      // sign-in always lands on the picker — carrying the page that was asked for, if any.
       const from = (location.state as LocationState | null)?.from;
-      navigate(from && from !== "/login" ? from : "/library/home", { replace: true });
+      const next = from && from !== "/login" && from !== "/profiles" ? from : "/library/home";
+      navigate(`/profiles?next=${encodeURIComponent(next)}`, { replace: true });
     } catch (err) {
       setError(loginErrorMessage(err));
     } finally {
@@ -61,7 +66,7 @@ export function LoginView() {
           </span>
           <div>
             <h1 className="text-lg font-semibold">RKM Cinema</h1>
-            <p className="text-xs text-zinc-400">Sign in with your Jellyfin account</p>
+            <p className="text-xs text-zinc-400">Sign in with the Jellyfin administrator account</p>
           </div>
         </div>
 
@@ -124,7 +129,7 @@ export function LoginView() {
 
           <p className="text-xs leading-relaxed text-zinc-500">
             {enforcementSeen
-              ? "This app needs a signed-in session. Use your Jellyfin account — the same one your other devices use."
+              ? "This app needs a signed-in session. Only the administrator signs in here — everyone else picks their profile next."
               : "Signing in gives THIS browser its own Continue Watching, resume points and libraries. Nothing is enforced yet: the app stays usable signed out."}
           </p>
         </form>

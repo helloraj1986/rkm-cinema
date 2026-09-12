@@ -2917,6 +2917,11 @@
             "title": "On Own Profile",
             "default": true
           },
+          "profile_selected": {
+            "type": "boolean",
+            "title": "Profile Selected",
+            "default": false
+          },
           "expires": {
             "type": "string",
             "title": "Expires",
@@ -3101,6 +3106,11 @@
           },
           "current": {
             "$ref": "#/components/schemas/ProfileUser"
+          },
+          "profile_selected": {
+            "type": "boolean",
+            "title": "Profile Selected",
+            "default": false
           },
           "warning": {
             "type": "string",

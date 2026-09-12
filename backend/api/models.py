@@ -90,6 +90,13 @@ class MeResponse(BaseModel):
     profile: SessionUser = Field(default_factory=SessionUser)
     #: False while somebody else's profile is selected: administrative screens are refused then.
     on_own_profile: bool = True
+    #: True only once a profile has ACTUALLY been chosen on this session (Phase B).
+    #:
+    #: `profile` deliberately falls back to the owner, so without this flag "nobody has picked
+    #: yet" and "the administrator chose themselves" are the same payload — and the picker's
+    #: trigger would then be a frontend guess rather than a server fact. The picker is shown for
+    #: exactly this flag, never for a locally-remembered click.
+    profile_selected: bool = False
     expires: str = ""
 
 
@@ -114,6 +121,9 @@ class ProfilesResponse(BaseModel):
     profiles: List[ProfileUser] = Field(default_factory=list)
     #: Which profile is in effect right now.
     current: ProfileUser = Field(default_factory=ProfileUser)
+    #: True only once one has actually been chosen — so the picker can mark "watching now" honestly
+    #: instead of labelling the owner's FALLBACK profile as if somebody had picked it.
+    profile_selected: bool = False
     warning: str = ""
 
 

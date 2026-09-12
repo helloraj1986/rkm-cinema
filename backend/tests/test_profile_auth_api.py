@@ -183,6 +183,38 @@ class TestProfiles:
         assert "403" in body["warning"]
 
 
+class TestThePickerCanTellNothingHasBeenChosenYet:
+    """Phase B's ONE server-side trigger (added while building the picker).
+
+    `profile_id()` falls back to the OWNER, so a fresh sign-in and "the administrator picked
+    themselves" send an identical `profile` payload. Without this flag the picker could only guess
+    from a locally-remembered click — and a reload, or the user's other device, would be the guess.
+    """
+
+    def test_a_fresh_sign_in_has_no_profile_chosen(self, api):
+        _sign_in(api)
+        me = api.client.get("/api/auth/me").json()
+        assert me["profile_selected"] is False
+        # The OWNER still fills `profile` in — which is exactly why the flag has to exist.
+        assert me["profile"]["id"] == "uid-admin"
+
+    def test_choosing_a_profile_sets_it(self, api):
+        _sign_in(api)
+        _select(api, "uid-kid")
+        me = api.client.get("/api/auth/me").json()
+        assert me["profile_selected"] is True
+        assert me["profile"]["id"] == "uid-kid"
+
+    def test_the_profile_list_says_whether_one_was_chosen(self, api):
+        """The picker must not label the owner's FALLBACK profile as the current choice."""
+        _sign_in(api)
+        assert api.client.get("/api/auth/profiles").json()["profile_selected"] is False
+        _select(api, "uid-kid")
+        body = api.client.get("/api/auth/profiles").json()
+        assert body["profile_selected"] is True
+        assert body["current"]["id"] == "uid-kid"
+
+
 class TestProfileSelection:
     def test_a_passwordless_profile_opens_with_nothing_typed(self, api):
         _sign_in(api)

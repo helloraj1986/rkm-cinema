@@ -3,6 +3,8 @@ import { NavLink, useLocation } from "react-router-dom";
 import { Icon, type IconName } from "../../components/ui/Icon";
 import { useLibraryFolders } from "../../features/library/api";
 import { libraryIconFor } from "../../features/library/lib";
+import { mayManageHousehold } from "../../features/auth/lib";
+import { useCurrentProfile } from "../../features/auth/useCurrentProfile";
 
 /**
  * Mobile navigation (design spec §38/§59): the sidebar disappears below md and
@@ -13,11 +15,19 @@ import { libraryIconFor } from "../../features/library/lib";
  */
 type Tab = { to: string; label: string; icon: IconName; end?: boolean };
 
-const MORE: { to: string; label: string; icon: IconName }[] = [
+/**
+ * The sheet's destinations. `adminOnly` items are filtered out unless the profile in effect is an
+ * administrator — the mobile bar had NO route to Household or My password at all (his report,
+ * 2026-09-12: "it should be available on ui"), and the desktop sidebar's Household entry is now
+ * administrators-only, so the two surfaces agree.
+ */
+const MORE: { to: string; label: string; icon: IconName; adminOnly?: boolean }[] = [
   { to: "/watchlist", label: "Watchlist", icon: "heart" },
   { to: "/discover", label: "Discover", icon: "compass" },
   { to: "/suggest", label: "Suggest", icon: "sparkles" },
+  { to: "/settings/password", label: "My password", icon: "lock" },
   { to: "/settings", label: "Settings", icon: "settings" },
+  { to: "/settings/household", label: "Household", icon: "users", adminOnly: true },
 ];
 
 function tabCls(active: boolean) {
@@ -38,6 +48,11 @@ export function MobileNav() {
   const [moreOpen, setMoreOpen] = useState(false);
   const sheetRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
+  // The server's own answer about the profile in effect — the Household entry depends on it.
+  const currentProfile = useCurrentProfile();
+  const destinations = MORE.filter(
+    (m) => !m.adminOnly || mayManageHousehold(currentProfile?.is_admin),
+  );
 
   // Close the More sheet on navigation.
   useEffect(() => {
@@ -103,7 +118,7 @@ export function MobileNav() {
               {m.label}
             </NavLink>
           ))}
-          {MORE.map((m) => (
+          {destinations.map((m) => (
             <NavLink
               key={m.to}
               to={m.to}

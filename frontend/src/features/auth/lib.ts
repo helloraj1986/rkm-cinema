@@ -80,6 +80,18 @@ export function displayName(user: AuthUser | null | undefined): string {
  * The profile is the identity media runs as, so it is the honest answer for a chip or a sidebar
  * card. The owner is only a fallback for the moment before the picker has been used.
  */
+/**
+ * May this profile see the Household (account-management) UI?
+ *
+ * TRUE only when the server says the profile in effect **is** an administrator. While the answer is
+ * unknown the admin UI stays hidden — failing closed, because a briefly-visible admin link is worse
+ * than a briefly-missing one. The server refuses those routes regardless; this only decides what the
+ * app offers, so a member is never invited to a screen that will refuse them.
+ */
+export function mayManageHousehold(isAdmin: boolean | undefined): boolean {
+  return isAdmin === true;
+}
+
 export function watchingName(profile: AuthUser | null, user: AuthUser | null): string {
   return displayName(profile) || displayName(user);
 }

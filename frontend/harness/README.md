@@ -93,6 +93,20 @@ so a refresh is visible. `window.__calls` records every request (url, method, bo
 `window.__probe()` reports the rendered rows, whether the add form is open, whether the confirm
 button is armed, and any `role="alert"` text.
 
+## `nav-frame.html` — navigation access (his request, 2026-09-12)
+
+`python3 tools/check_nav_access.py` mounts the REAL `Sidebar` and `MobileNav` over a stubbed api and
+proves the account-management entry is offered to **administrators only**, on **both** surfaces:
+
+| Query | What it proves |
+|---|---|
+| `?admin=1` | Household appears in the sidebar AND in the mobile sheet (the sheet had no route to Household or My password at all — that was the "it should be available on ui" half) |
+| `?admin=0` | Household appears in neither, while My password stays (every profile's own screen) |
+| `?admin=0` | the navigation fires **zero** `/api/admin/*` calls |
+
+Two mounts, not one, because the desktop sidebar and the mobile sheet are separate code paths — and
+the probe reads the whole `<aside>`, since the settings links render *after* the `<nav>` element.
+
 ## `password-frame.html` — Settings → My password (Phase 3)
 
 `python3 tools/check_password_change.py` mounts the REAL `PasswordView` (inside the real

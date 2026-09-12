@@ -7,7 +7,14 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { displayName, guardDecision, initials, loginErrorMessage, watchingName } from "./lib";
+import {
+  displayName,
+  guardDecision,
+  initials,
+  loginErrorMessage,
+  mayManageHousehold,
+  watchingName,
+} from "./lib";
 
 describe("guardDecision", () => {
   it("shows a skeleton until the session check answers", () => {
@@ -63,6 +70,21 @@ describe("guardDecision", () => {
     expect(
       guardDecision({ status: "signedIn", enforcementSeen: false, profileSelected: false }),
     ).not.toBe("login");
+  });
+});
+
+describe("mayManageHousehold", () => {
+  it("is true only for an administrator profile", () => {
+    expect(mayManageHousehold(true)).toBe(true);
+  });
+
+  it("is false for a member profile", () => {
+    expect(mayManageHousehold(false)).toBe(false);
+  });
+
+  it("fails CLOSED while the server has not answered", () => {
+    // A briefly-visible admin link is worse than a briefly-missing one.
+    expect(mayManageHousehold(undefined)).toBe(false);
   });
 });
 

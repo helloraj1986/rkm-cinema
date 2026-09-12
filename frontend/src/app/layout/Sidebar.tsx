@@ -3,6 +3,8 @@ import { Icon, type IconName } from "../../components/ui/Icon";
 import { useLibraryFolders } from "../../features/library/api";
 import { libraryIconFor } from "../../features/library/lib";
 import { useAuth } from "../../features/auth/AuthProvider";
+import { mayManageHousehold } from "../../features/auth/lib";
+import { useCurrentProfile } from "../../features/auth/useCurrentProfile";
 import { initials, watchingName } from "../../features/auth/lib";
 
 /**
@@ -105,6 +107,9 @@ export function Sidebar() {
   const { data } = useLibraryFolders();
   const libraries = data?.libraries ?? [];
   const { status, user, profile } = useAuth();
+  // Whether the profile in effect is an administrator — the server's answer, from the payload the
+  // picker already reads. It decides whether the Household link is offered at all.
+  const currentProfile = useCurrentProfile();
   // The PROFILE is who media runs as — the honest name for this card once a shared device can
   // hold one person's sign-in and somebody else's profile (Phase B).
   const name = watchingName(profile, user);
@@ -172,11 +177,14 @@ export function Sidebar() {
             </>
           )}
         </NavLink>
-        {/* Household accounts (AUTH_MULTIUSER_PLAN Phase 1b). Shown to everyone on purpose:
-            the API refuses a non-administrator with a plain 403 and the screen says so, so
-            hiding the link would only make the refusal look like a broken app. */}
-        <NavLink
-          to="/settings/household"
+        {/* Household accounts (AUTH_MULTIUSER_PLAN Phase 1b) — administrators only
+            (his request, 2026-09-12: "household path should not be available to non admin users").
+            Earlier this link was shown to everyone so that the server's 403 explained itself; he
+            preferred not to offer it at all. The SERVER still refuses the routes (defence in
+            depth), and `mayManageHousehold` fails closed while the answer is unknown. */}
+        {mayManageHousehold(currentProfile?.is_admin) ? (
+          <NavLink
+            to="/settings/household"
           title="Household"
           className={({ isActive }) => linkCls(isActive)}
         >
@@ -187,7 +195,8 @@ export function Sidebar() {
               <span className="hidden truncate xl:inline">Household</span>
             </>
           )}
-        </NavLink>
+          </NavLink>
+        ) : null}
         {/* My password (ADMIN_CREDENTIALS_PLAN.md Phase 3). Shown to EVERY profile on purpose:
             a member's password is the lock on their profile, and until now only an administrator
             could change it — from Household, for somebody else. */}

@@ -78,7 +78,11 @@ export function PasswordView() {
         <p className="mt-1 text-sm text-zinc-400">
           This changes the password for{" "}
           <span data-testid="password-target" className="font-medium text-zinc-200">
-            {profile?.name || "the profile in effect"}
+            {/* The SERVER's name for this account (from the profile list), not the session's
+                remembered copy: a session keeps the name it was handed at profile-selection time,
+                so a rename made elsewhere leaves it stale — and that stale name is also what the
+                api verifies against, which is why it now resolves it server-side too. */}
+            {mine?.name || profile?.name || "the profile in effect"}
           </span>
           {" "}— the profile the app is playing as, which is the account every request is made for.
           It is your media server credential too, so it also works in Jellyfin&apos;s own apps.

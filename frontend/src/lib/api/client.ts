@@ -358,6 +358,15 @@ export class ApiError extends Error {
   constructor(
     public status: number,
     message: string,
+    /**
+     * The server's OWN `detail`, when it sent one — `null` when `message` is only this client's
+     * `METHOD path -> status` fallback.
+     *
+     * Screens need to tell those apart. Showing the server's words is honest; showing a person
+     * `POST /api/auth/profile/password -> 502` is not a sentence. (Phase 3's password screen was
+     * the first to need this: a 502 with no body rendered as an HTTP trace.)
+     */
+    public detail: string | null = null,
   ) {
     super(message);
     this.name = "ApiError";
@@ -760,7 +769,8 @@ async function request<T>(path: string, init: RequestInit, options: RequestOptio
   });
   if (!res.ok) {
     if (!options.skipAuthRedirect) noteUnauthorized(res.status);
-    throw new ApiError(res.status, await errorDetail(res, `${init.method || "GET"} ${path}`));
+    const failure = await errorDetail(res, `${init.method || "GET"} ${path}`);
+    throw new ApiError(res.status, failure.message, failure.detail);
   }
   return (await res.json()) as T;
 }
@@ -801,17 +811,25 @@ async function deleteJson<T>(path: string, body: unknown, options: RequestOption
 }
 
 /** Best human message from a failed API response: FastAPI's `detail` (string
- *  or {message}) or `message`, else a `METHOD path -> status` fallback. */
-async function errorDetail(res: Response, fallback: string): Promise<string> {
+ *  or {message}) or `message`, else a `METHOD path -> status` fallback.
+ *
+ *  `detail` is non-null ONLY when the server itself said something, so a caller can choose
+ *  between the server's words and its own wording instead of string-matching the fallback. */
+async function errorDetail(
+  res: Response,
+  fallback: string,
+): Promise<{ message: string; detail: string | null }> {
   try {
     const d = await res.json();
-    if (d && typeof d.detail === "string" && d.detail) return d.detail;
-    if (d && typeof d.detail?.message === "string" && d.detail.message) return d.detail.message;
-    if (d && typeof d.message === "string" && d.message) return d.message;
+    if (d && typeof d.detail === "string" && d.detail) return { message: d.detail, detail: d.detail };
+    if (d && typeof d.detail?.message === "string" && d.detail.message) {
+      return { message: d.detail.message, detail: d.detail.message };
+    }
+    if (d && typeof d.message === "string" && d.message) return { message: d.message, detail: d.message };
   } catch {
     /* body not JSON — use the fallback */
   }
-  return `${fallback} -> ${res.status}`;
+  return { message: `${fallback} -> ${res.status}`, detail: null };
 }
 
 /** Playback-progress payload for /api/jellyfin/progress (mirrors legacy reportProgress). */
@@ -878,6 +896,17 @@ export const api = {
       `/admin/users/${encodeURIComponent(userId)}/policy`,
       payload,
     ),
+  /**
+   * Change MY OWN password (the profile in effect) — sent once, never returned, never stored.
+   *
+   * `currentPassword` is required whenever the account has one; the SERVER decides whether it has
+   * to match, so this never invents that rule.
+   */
+  changeMyPassword: (newPassword: string, currentPassword = "") =>
+    postJson<{ ok: boolean }>("/auth/profile/password", {
+      current_password: currentPassword,
+      new_password: newPassword,
+    }),
   /** Set or reset a member's password — sent once, never returned, never stored here. */
   setHouseholdPassword: (userId: string, newPassword: string) =>
     postJson<{ ok: boolean }>(`/admin/users/${encodeURIComponent(userId)}/password`, {

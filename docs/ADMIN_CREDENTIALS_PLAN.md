@@ -112,6 +112,57 @@ Renaming the account breaks anything that assumes the name:
 | **4** | **Recovery, documented and tested**: `rkm-cinema.ps1 reset-admin-password` → reads the API key from the volume (never from `.env`), prompts for a new password, calls `POST /Users/Password?userId=…&ResetPassword=true`, then VERIFIES by signing in; `OPERATIONS.md` gains the runbook and the "forgot everything" ladder | the tool's own verification output; pytest for its pure parts |
 | **5** | ADR (the credential model), docs truth pass (`ARCHITECTURE`, `OPERATIONS`, `README`), PROGRESS record | full suite + docs links |
 
+### 6b. Phase 3 as built — "Settings → My password"
+
+**Shipped 2026-09-12.** Contract **52 → 53 paths** (one additive route). `POST /api/auth/profile/password`,
+and the sidebar entry **My password** — the one screen every profile has, and the gap it closes: until
+now a password could only be changed by an ADMINISTRATOR (Household → Reset password), for somebody
+else. A member's password is their Jellyfin credential and the lock on their profile; they had no
+way to change it themselves.
+
+**One credential rule.** The target is the PROFILE in effect (`context.profile_id()`), and the
+provider's call takes **no user id at all** — there is no parameter a caller could fill in with
+somebody else's account, so "change my own" cannot become "change theirs". `ResetPassword: false`
+always: the reset flag is the administrator's path (it needs no old password) and would be an
+escalation here. Sending the OLD password is what makes this a genuine self-change.
+
+**Rails** (server-side, mirrored by the screen so the button is honest before it is pressed):
+session required · the new password must be non-empty · the OLD one is required whenever the account
+has one, and **Jellyfin is the judge** of that · neither value is logged, echoed, or returned.
+
+**Two deliberate non-rules**, both from the repo's own history: a **whitespace-only** password is
+ALLOWED (Jellyfin accepts it; refusing it here would be a second implementation of the server's
+contract — the trap that once made password-less accounts unable to sign in), and there is **no
+length rule**. Only a truly empty value is refused, because the app's model is that an account is
+*created* without a password, not emptied afterwards.
+
+**⚠ The one thing still UNPROVEN (needs two minutes at his keyboard):** the failure mapping. This
+build reads a Jellyfin **401/403** as "that current password is not correct" (matching
+`authenticate_jellyfin`'s own taxonomy). If Jellyfin instead refuses a *self*-change for a permission
+reason, a correct password would be reported as a wrong one. Prove it by changing a member's password
+with a deliberately WRONG current password (expect: "that current password is not correct"), then
+with the right one (expect: it changes). Do NOT disambiguate by logging in again as the profile —
+that rotates the app device's token for that user and would break the very session asking.
+
+**A real bug the browser check found** (not a theorised one): with a 502 and no response body, the
+screen showed `POST /auth/profile/password -> 502` — the HTTP client's own fallback string, put in
+front of a person. The cause was structural: `ApiError` carried no way to tell the server's `detail`
+from that fallback, so a screen could only string-match. Fixed at the source — `ApiError` now carries
+`detail: string | null` (the server's own words, or null) — and the screen shows the server's words
+when it has them, its own when it does not ("…your old password still works", so a refusal never
+reads as a lockout).
+
+**Evidence.** **927 backend pytest (+14)**, all 14 verified to FAIL against the pre-change source ·
+**266 vitest (+17)** · ruff, tsc, build clean · openapi **53 paths**, additive · docs links resolve ·
+`tools/check_password_change.py` **4/4** (A: required while the account has one, refused before any
+request, one clean post carrying exactly the two fields · B: a password-LESS account can set one and
+is never blocked · C: a 401 is reported as the current password being wrong and echoes neither value ·
+D: a refusal that is not a typo is not blamed on the user — including when the server says nothing) ·
+`check_household_ui.py` 4/4, `check_profile_picker.py`, `check_login_flow.py` unchanged.
+
+**Deploy:** api AND web — `docker compose -p rkm-bundled up -d --build api web` (a new route *and* a
+new screen). The provisioner is not involved; no library scan is at risk.
+
 ### 6a. Phase 2 as built (2026-09-12) — two traps it had to measure
 
 **`POST /api/admin/users/{id}/rename`** (contract **51 → 52**, purely additive) → the provider's

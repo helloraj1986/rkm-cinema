@@ -93,6 +93,21 @@ so a refresh is visible. `window.__calls` records every request (url, method, bo
 `window.__probe()` reports the rendered rows, whether the add form is open, whether the confirm
 button is armed, and any `role="alert"` text.
 
+## `password-frame.html` — Settings → My password (Phase 3)
+
+`python3 tools/check_password_change.py` mounts the REAL `PasswordView` (inside the real
+`AuthProvider` and query client) against a stubbed api which — like `household-frame` — is
+faithful about the one thing that would make a correct screen look broken: a Jellyfin account with
+**no** password accepts anything, and a 401 is about the CURRENT password only.
+
+| Query | What it proves |
+|---|---|
+| *(default: `has_password=1`)* | the current password is required; a blank one or a mismatch is refused **before any request**; the good case sends exactly `{current_password, new_password}` and says it changed |
+| `?has_password=0` | a password-less account can set one with the field blank — the case that must never be blocked |
+| `?refuse=wrong` | a 401 reads as "that current password is not correct", and echoes neither value |
+| `?refuse=server` | a 502 is NOT reported as a wrong password — the server's own words are shown |
+| `?refuse=silent` | a 502 with **no body** still gets our own wording ("your old password still works"), never `POST /… -> 502` — the bug this frame caught |
+
 ## `profile-frame.html` — "Who's watching?" (Phase B)
 
 `python3 tools/check_profile_picker.py` mounts the REAL `ProfilesView` (plus the real `AuthProvider`,

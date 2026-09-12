@@ -20,7 +20,8 @@ import logging
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 
-from api.models import (LoginRequest, LoginResponse, MeResponse, ProfileUser,
+from api.models import (
+    ChangePasswordRequest,LoginRequest, LoginResponse, MeResponse, ProfileUser,
                         ProfilesResponse, SelectProfileRequest, SelectProfileResponse,
                         SessionUser)
 from api.session import admin_status, grantable_rows, session_context_from_request
@@ -231,6 +232,57 @@ def select_profile(payload: SelectProfileRequest, request: Request):
 
     logger.info("auth.profile switched to user=%s (admin=%s)", identity.user_id, wants_admin)
     return SelectProfileResponse(ok=True, profile=_profile(target), libraries=libraries)
+
+
+@router.post("/auth/profile/password")
+def change_own_password(payload: ChangePasswordRequest, request: Request):
+    """Change the password of **the profile in effect** — the person's own (plan §6, Phase 3).
+
+    Why this is a different route from ``POST /api/admin/users/{id}/password`` rather than a flag on
+    it: that one is the ADMINISTRATOR resetting somebody else (no old password needed, hence its
+    own permission gate), while this one is a person changing their own and therefore PROVES they
+    know the current one. Conflating them is how a self-service screen quietly becomes an escalation
+    path; keeping them apart means the credential that authorises each is obvious at the call site.
+
+    Rails:
+
+    * a session is required, and the target is the PROFILE's identity — ``context.profile_id()`` —
+      never a client-supplied id;
+    * the new password must be NON-EMPTY: an account is created without a password, not emptied
+      afterwards (the same rule the household route states) — otherwise anyone reaching a shared
+      device could remove the protection from a profile;
+    * the OLD password is required whenever the account has one, and **the media server is the
+      judge** of that — this route never decides it (a password-less account legitimately accepts
+      anything, including nothing);
+    * neither value is logged, echoed, or written anywhere in the app.
+    """
+    context = session_context_from_request(request)
+    if context is None:
+        raise HTTPException(status_code=401, detail="Sign in to change your password")
+    if not (payload.new_password or ""):
+        raise HTTPException(
+            status_code=400,
+            detail="A new password is required — an account is created without one, "
+                   "not emptied afterwards")
+    cfg = get_config()
+    library = build_library_service(cfg)
+    if library is None:
+        raise HTTPException(status_code=503,
+                            detail="Could not reach the media server to change the password.")
+
+    reason = library.change_own_password(payload.current_password or "", payload.new_password)
+    if reason == "wrong-password":
+        # Deliberately generic and about the CURRENT password only: an unknown account and a wrong
+        # password must not be distinguishable, and the new value is never mentioned.
+        logger.info("auth.password rejected for profile id=%s", context.profile_id())
+        raise HTTPException(status_code=401, detail="That current password is not correct")
+    if reason is not None:
+        logger.warning("auth.password failed for profile id=%s (%s)",
+                       context.profile_id(), reason)
+        raise HTTPException(status_code=502,
+                            detail="The media server refused the password change")
+    logger.info("auth.password changed for profile id=%s", context.profile_id())
+    return JSONResponse({"ok": True})
 
 
 @router.post("/auth/logout")

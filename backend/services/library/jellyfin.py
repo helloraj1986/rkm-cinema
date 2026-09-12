@@ -1412,6 +1412,45 @@ class JellyfinLibraryProvider(LibraryProvider):
             {"CurrentPw": "", "NewPw": str(new_password), "ResetPassword": bool(reset)})
         return ok
 
+    def change_own_password(self, current_password: str, new_password: str) -> Optional[str]:
+        """Change the password OF THE IDENTITY THIS CALL IS MADE AS. ``None`` means it worked.
+
+        A reason KEY comes back otherwise — ``"wrong-password"`` or ``"unreachable"`` — because a
+        self-service screen must distinguish "you typed the old one wrong" from "the media server
+        refused, or could not be reached", and only one of those is the user's to fix.
+
+        ⚠ The identity is ``_user_id()`` — the ACTING profile — so on a member's profile this
+        changes the MEMBER's password. It can never touch the owner's, which is the whole point of
+        a self-service screen.
+
+        ``ResetPassword: false`` on purpose: the reset flag is the ADMINISTRATOR's path (it needs
+        no old password), and it has no business here. Sending the old password is what makes this
+        a genuine self-change instead of an escalation.
+
+        ⚠ 401/403 is mapped to ``"wrong-password"``, matching the app's own login taxonomy
+        (`authenticate_jellyfin`). If Jellyfin instead refuses a self-change for a *permission*
+        reason, a correct password would be reported as a wrong one — which is why the live
+        verification with a deliberately wrong old password, then the right one, is part of this
+        phase's acceptance (plan §6b). Do NOT try to disambiguate by logging in again as the
+        profile: that rotates the app device's token for that user and would break the very session
+        making the request.
+        """
+        if not self._configured() or not str(new_password or ""):
+            return "unreachable"
+        uid = self._user_id()
+        if not uid:
+            return "unreachable"
+        ok, _ = self._api(
+            "POST", f"/Users/Password?userId={urllib.parse.quote(str(uid))}",
+            {"CurrentPw": str(current_password or ""), "NewPw": str(new_password),
+             "ResetPassword": False})
+        if ok:
+            return None
+        error = self._last_api_error or {}
+        if error.get("status") in (401, 403):
+            return "wrong-password"
+        return "unreachable"
+
     def rename_user(self, user_id: str, name: str) -> Optional[dict]:
         """Rename an account — a read-modify-write of the account, never a partial body.
 

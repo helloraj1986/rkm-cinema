@@ -147,6 +147,10 @@ class LibraryProvider(ABC):
         """Set or reset another account's password. Default ``False`` (not supported)."""
         return False
 
+    def change_own_password(self, current_password: str, new_password: str) -> Optional[str]:
+        """Change the acting identity's own password. Default: "unreachable" (not supported)."""
+        return "unreachable"
+
     def rename_user(self, user_id: str, name: str) -> Optional[dict]:
         """Rename an account. Default ``None`` (not supported)."""
         return None
@@ -667,6 +671,23 @@ class LibraryService:
                 logger.warning("set_user_password failed for %s: %s", p.name, e)
                 continue
         return False
+
+    def change_own_password(self, current_password: str, new_password: str) -> Optional[str]:
+        """The acting identity changes its OWN password. ``None`` = it worked.
+
+        ⚠ The facade needs its own delegation, like every other capability: a provider-only method
+        raises ``AttributeError`` on every route call and the admin gate reports that as "you are
+        not an administrator" — a live wrong answer this workstream has already paid for.
+        """
+        for p in self._providers:
+            try:
+                reason = p.change_own_password(current_password, new_password)
+            except Exception as e:
+                logger.warning("change_own_password failed for %s: %s", p.name, e)
+                continue
+            if reason is None:
+                return None
+        return "unreachable"
 
     def rename_user(self, user_id: str, name: str) -> Optional[dict]:
         """Rename an account (``None`` means the server refused).

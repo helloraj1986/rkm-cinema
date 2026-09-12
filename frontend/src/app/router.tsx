@@ -4,6 +4,7 @@ import { LoginView } from "../features/auth/LoginView";
 import { RequireSession } from "../features/auth/RequireSession";
 import { ProfilesView } from "../features/profiles/ProfilesView";
 import { ConfigHealthView } from "../features/settings/ConfigHealthView";
+import { PasswordView } from "../features/settings/PasswordView";
 import { HouseholdView } from "../features/admin/HouseholdView";
 import { LibraryLayout } from "../features/library/LibraryLayout";
 import { LibraryHomeView } from "../features/library/LibraryHomeView";
@@ -49,6 +50,7 @@ export const router = createBrowserRouter([
       // gate of its own: the API answers 401/403 and the screen says so plainly — a hidden
       // link is not security, and this way nothing pretends a refusal is a broken page.
       { path: "settings/household", element: <HouseholdView /> },
+      { path: "settings/password", element: <PasswordView /> },
       {
         path: "library",
         element: <LibraryLayout />,

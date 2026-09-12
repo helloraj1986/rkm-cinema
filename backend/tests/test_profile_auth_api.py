@@ -78,6 +78,10 @@ def api(tmp_path, monkeypatch):
     class FakeLibrary:
         """What the routes really get: the FACADE's shapes."""
 
+        def __init__(self):
+            #: Every (current, new) pair the route handed the provider, in order.
+            self.password_changes: list[tuple[str, str]] = []
+
         def list_users(self):
             return [dict(u) for u in users]
 
@@ -91,6 +95,10 @@ def api(tmp_path, monkeypatch):
                     return {"IsAdministrator": bool(user["is_admin"]),
                             "IsDisabled": bool(user["disabled"])}
             return None
+
+        def change_own_password(self, current_password, new_password):
+            self.password_changes.append((current_password, new_password))
+            return seen.pop("password_reason", None)
 
         def last_api_error(self):
             return None
@@ -315,3 +323,169 @@ class TestTheSharedDeviceRule:
         _sign_in(api)
         assert _select(api, "uid-admin").status_code == 401
         assert _select(api, "uid-admin", "anything-at-all").status_code == 200
+
+
+class TestChangeMyOwnPassword:
+    """Phase 3 (ADMIN_CREDENTIALS_PLAN.md §6): a person changes their OWN password.
+
+    The rails exist because this screen sits in every profile's sidebar: it must be impossible for
+    it to become an escalation path (changing somebody ELSE's password) or a way to REMOVE a
+    profile's protection on a shared device.
+    """
+
+    def test_it_needs_a_session(self, api):
+        r = api.client.post("/api/auth/profile/password",
+                            json={"current_password": "old", "new_password": "new"})
+        assert r.status_code == 401
+        assert api.library.password_changes == [], "nothing may be attempted unsigned"
+
+    def test_the_target_is_the_profile_never_a_client_supplied_id(self, api):
+        """The provider method takes NO user id at all — the acting identity IS the target.
+
+        That is a structural rail: there is no parameter a caller could fill in with somebody
+        else's account, so "change my own" cannot be turned into "change theirs".
+        """
+        _sign_in(api)
+        _select(api, "uid-kid")
+        r = api.client.post("/api/auth/profile/password",
+                            json={"current_password": "", "new_password": "kid-new-pw",
+                                  "user_id": "uid-admin"})
+        assert r.status_code == 200, r.text          # an extra field is ignored, not obeyed
+        assert api.library.password_changes == [("", "kid-new-pw")]
+
+    def test_an_empty_new_password_is_refused(self, api):
+        """An account is CREATED without a password, not emptied afterwards — the same rule the
+        household reset route states. Otherwise anyone at a shared device could strip the lock off
+        the profile they are sitting on.
+
+        ⚠ Only a TRULY empty value is refused. A whitespace-only password is a footgun, but the
+        media server accepts it, and forbidding it here would be a second implementation of the
+        server's contract — the trap that once made a password-LESS account unusable. The next test
+        pins that distinction so a future "tidy-up" cannot quietly add the rule.
+        """
+        _sign_in(api)
+        _select(api, "uid-kid")
+        r = api.client.post("/api/auth/profile/password",
+                            json={"current_password": "whatever", "new_password": ""})
+        assert r.status_code == 400
+        assert "not emptied" in r.json()["detail"]
+        assert api.library.password_changes == []
+
+    def test_a_whitespace_only_password_is_allowed_because_the_server_allows_it(self, api):
+        _sign_in(api)
+        _select(api, "uid-kid")
+        r = api.client.post("/api/auth/profile/password",
+                            json={"current_password": "", "new_password": "   "})
+        assert r.status_code == 200, r.text
+        assert api.library.password_changes == [("", "   ")]
+
+    def test_a_wrong_current_password_is_a_generic_401(self, api):
+        _sign_in(api)
+        _select(api, "uid-kid")
+        api.seen["password_reason"] = "wrong-password"
+        r = api.client.post("/api/auth/profile/password",
+                            json={"current_password": "typo", "new_password": "new-pw"})
+        assert r.status_code == 401
+        detail = r.json()["detail"]
+        assert "current password" in detail.lower()
+        assert "typo" not in detail and "new-pw" not in detail, (
+            "the message must never echo either password")
+
+    def test_a_server_refusal_that_is_not_a_typo_is_a_502(self, api):
+        """`unreachable` covers "could not ask" and "refused for another reason" — neither is the
+        user's typo, and saying so would send them hunting a password that was correct."""
+        _sign_in(api)
+        _select(api, "uid-kid")
+        api.seen["password_reason"] = "unreachable"
+        r = api.client.post("/api/auth/profile/password",
+                            json={"current_password": "right", "new_password": "new-pw"})
+        assert r.status_code == 502
+        assert "refused" in r.json()["detail"].lower()
+
+    def test_a_successful_change_says_nothing_but_ok(self, api):
+        _sign_in(api)
+        _select(api, "uid-kid")
+        r = api.client.post("/api/auth/profile/password",
+                            json={"current_password": "old-pw", "new_password": "new-pw"})
+        assert r.status_code == 200
+        assert r.json() == {"ok": True}
+        assert "new-pw" not in r.text and "old-pw" not in r.text
+
+    def test_an_unbuildable_provider_is_a_503_not_a_refusal(self, api, monkeypatch):
+        _sign_in(api)
+        _select(api, "uid-kid")
+        monkeypatch.setattr(auth_route, "build_library_service", lambda *a, **k: None)
+        r = api.client.post("/api/auth/profile/password",
+                            json={"current_password": "old", "new_password": "new"})
+        assert r.status_code == 503
+        assert "media server" in r.json()["detail"]
+
+    def test_the_administrator_changes_their_own_password_too(self, api):
+        """On the administrator's own profile the same route changes THEIR password — no separate
+        admin path is needed, and no old password is bypassed either."""
+        _sign_in(api)
+        r = api.client.post("/api/auth/profile/password",
+                            json={"current_password": ADMIN_PW, "new_password": "fresh"})
+        assert r.status_code == 200, r.text
+        assert api.library.password_changes == [(ADMIN_PW, "fresh")]
+
+    def test_nothing_secret_reaches_the_logs(self, api, caplog):
+        """The route logs the OUTCOME and the profile id — never a value."""
+        import logging
+
+        _sign_in(api)
+        _select(api, "uid-kid")
+        with caplog.at_level(logging.INFO):
+            api.client.post("/api/auth/profile/password",
+                            json={"current_password": "old-secret", "new_password": "new-secret"})
+        text = caplog.text
+        assert "old-secret" not in text and "new-secret" not in text
+        assert "auth.password changed" in text
+
+
+class TestTheProvidersOwnPasswordCall:
+    """The payload and the failure taxonomy, at the provider — where they are easy to get wrong."""
+
+    def _provider(self, monkeypatch, *, answers):
+        from services.library.jellyfin import JellyfinLibraryProvider
+
+        provider = JellyfinLibraryProvider(config=SimpleNamespace(
+            JELLYFIN_URL="http://jellyfin.test", JELLYFIN_API_KEY="app-key",
+            JELLYFIN_BROWSER_URL=""))
+        calls = []
+
+        def fake_api(method, path, body=None):
+            calls.append((method, path, body))
+            return answers.pop(0)
+
+        monkeypatch.setattr(provider, "_api", fake_api)
+        monkeypatch.setattr(provider, "_user_id", lambda: "uid-kid")
+        return provider, calls
+
+    def test_the_self_change_never_uses_the_admin_reset_flag(self, monkeypatch):
+        """`ResetPassword: true` is the administrator's path (no old password needed). On a
+        self-service screen it would be an escalation — so it must be False, always."""
+        provider, calls = self._provider(monkeypatch, answers=[(True, {})])
+        assert provider.change_own_password("old-pw", "new-pw") is None
+        method, path, body = calls[0]
+        assert method == "POST"
+        assert path == "/Users/Password?userId=uid-kid", (
+            "the target is the ACTING identity, as a query parameter")
+        assert body == {"CurrentPw": "old-pw", "NewPw": "new-pw", "ResetPassword": False}
+
+    def test_a_401_or_403_is_the_current_password_being_wrong(self, monkeypatch):
+        for status in (401, 403):
+            provider, _ = self._provider(monkeypatch, answers=[(False, {"status": status})])
+            provider._last_api_error = {"status": status}
+            assert provider.change_own_password("typo", "new-pw") == "wrong-password"
+
+    def test_anything_else_is_an_honest_unreachable(self, monkeypatch):
+        for status in (500, 502, None):
+            provider, _ = self._provider(monkeypatch, answers=[(False, {"error": "boom"})])
+            provider._last_api_error = {"status": status} if status else {"error": "OSError"}
+            assert provider.change_own_password("old", "new") == "unreachable"
+
+    def test_a_blank_new_password_never_reaches_the_server(self, monkeypatch):
+        provider, calls = self._provider(monkeypatch, answers=[])
+        assert provider.change_own_password("old", "  ".strip()) == "unreachable"
+        assert calls == []

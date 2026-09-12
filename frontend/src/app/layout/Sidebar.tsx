@@ -188,6 +188,22 @@ export function Sidebar() {
             </>
           )}
         </NavLink>
+        {/* My password (ADMIN_CREDENTIALS_PLAN.md Phase 3). Shown to EVERY profile on purpose:
+            a member's password is the lock on their profile, and until now only an administrator
+            could change it — from Household, for somebody else. */}
+        <NavLink
+          to="/settings/password"
+          title="My password"
+          className={({ isActive }) => linkCls(isActive)}
+        >
+          {({ isActive }) => (
+            <>
+              <NavIndicator active={isActive} />
+              <Icon name="lock" size={19} className="shrink-0" />
+              <span className="hidden truncate xl:inline">My password</span>
+            </>
+          )}
+        </NavLink>
       </div>
 
       <div className="mt-3 hidden items-center gap-2.5 border-t border-white/[.06] px-3 pt-4 xl:flex">

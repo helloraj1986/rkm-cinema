@@ -122,6 +122,43 @@
         }
       }
     },
+    "/api/auth/profile/password": {
+      "post": {
+        "summary": "Change Own Password",
+        "description": "Change the password of **the profile in effect** \u2014 the person's own (plan \u00a76, Phase 3).\n\nWhy this is a different route from ``POST /api/admin/users/{id}/password`` rather than a flag on\nit: that one is the ADMINISTRATOR resetting somebody else (no old password needed, hence its\nown permission gate), while this one is a person changing their own and therefore PROVES they\nknow the current one. Conflating them is how a self-service screen quietly becomes an escalation\npath; keeping them apart means the credential that authorises each is obvious at the call site.\n\nRails:\n\n* a session is required, and the target is the PROFILE's identity \u2014 ``context.profile_id()`` \u2014\n  never a client-supplied id;\n* the new password must be NON-EMPTY: an account is created without a password, not emptied\n  afterwards (the same rule the household route states) \u2014 otherwise anyone reaching a shared\n  device could remove the protection from a profile;\n* the OLD password is required whenever the account has one, and **the media server is the\n  judge** of that \u2014 this route never decides it (a password-less account legitimately accepts\n  anything, including nothing);\n* neither value is logged, echoed, or written anywhere in the app.",
+        "operationId": "change_own_password_api_auth_profile_password_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangePasswordRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/auth/logout": {
       "post": {
         "summary": "Logout",
@@ -2147,6 +2184,23 @@
         "type": "object",
         "title": "CapabilitiesModel",
         "description": "Which user actions are available (spec \u00a718 ``capabilities``)."
+      },
+      "ChangePasswordRequest": {
+        "properties": {
+          "current_password": {
+            "type": "string",
+            "title": "Current Password",
+            "default": ""
+          },
+          "new_password": {
+            "type": "string",
+            "title": "New Password",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "ChangePasswordRequest",
+        "description": "Change MY OWN password (plan \u00a76, Phase 3).\n\n``current_password`` is the account's existing one \u2014 required by the media server whenever the\naccount HAS one, and accepted as anything (or blank) when it has none. The server is the judge;\nthis app never decides that for itself."
       },
       "ConfigResponse": {
         "properties": {

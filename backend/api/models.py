@@ -178,6 +178,18 @@ class AdminSetPasswordRequest(BaseModel):
     new_password: str = ""
 
 
+class ChangePasswordRequest(BaseModel):
+    """Change MY OWN password (plan §6, Phase 3).
+
+    ``current_password`` is the account's existing one — required by the media server whenever the
+    account HAS one, and accepted as anything (or blank) when it has none. The server is the judge;
+    this app never decides that for itself.
+    """
+
+    current_password: str = ""
+    new_password: str = ""
+
+
 class AdminRenameUserRequest(BaseModel):
     """Rename an account. The ROLE is not the name (plan §6, Phase 2).
 

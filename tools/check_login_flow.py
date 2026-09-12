@@ -56,6 +56,19 @@ def probe(page) -> dict:
     return page.evaluate("() => window.__probe()")
 
 
+def open_account_menu(page) -> dict:
+    """Open the account menu from the header avatar and return the probe.
+
+    Since 2026-09-13 the header is a single control (the avatar) and every account destination —
+    including Sign out — is an item in this menu. A check that looked for a standalone button finds
+    nothing, which is why this helper exists rather than a bare click.
+    """
+    page.click('[data-testid="account-menu-trigger"]')
+    page.wait_for_selector('[role="menu"]', timeout=5000)
+    page.wait_for_timeout(150)
+    return probe(page)
+
+
 def auth_calls(state: dict, url: str) -> list[dict]:
     return [c for c in state["calls"] if c["url"] == url]
 
@@ -144,16 +157,19 @@ def scenario_a(page, base: str, shots: str) -> None:
     print("\n  --- after choosing the profile ---")
     print(f"  picker gone          : {not state['hasPicker']} (want True)")
     print(f"  app content rendered : {state['hasAppContent']} (want True)")
-    print(f"  chip                 : {state['chipLabel']!r} (want the profile name)")
+    print(f"  avatar               : {state['chipLabel']!r} (want the profile name)")
     print(f"  Sign out offered     : {state['signOutButton']} (want True)")
     if state["hasPicker"]:
         problem("A: still on the picker after choosing a profile")
     if not state["hasAppContent"]:
         problem("A: choosing a profile did not land on the app")
     if "Harness User" not in state["chipLabel"]:
-        problem(f"A: the header chip does not name the profile: {state['chipLabel']!r}")
-    if not state["signOutButton"]:
-        problem("A: no Sign out control beside the chip")
+        problem(f"A: the account menu does not name the profile: {state['chipLabel']!r}")
+    # ⚠ Since 2026-09-13 the header is ONE control: Sign out lives inside the account menu, so the
+    # check opens it. `signOutButton` alone would read False even though it is offered.
+    state = open_account_menu(page)
+    if "Sign out" not in state["accountMenuItems"]:
+        problem(f"A: no Sign out in the account menu: {state['accountMenuItems']}")
     sent = auth_calls(state, "/api/auth/profile")
     if not sent:
         problem("A: choosing a profile never reached the API")
@@ -161,11 +177,11 @@ def scenario_a(page, base: str, shots: str) -> None:
         problem(f"A: the selection did not carry the profile id: {sent[-1]['body']!r}")
 
     # --- sign out
-    page.click("button:has-text('Sign out')")
+    page.click("[role=\"menuitem\"]:has-text('Sign out')")
     page.wait_for_timeout(700)
     state = probe(page)
     print("\n  --- sign out ---")
-    print(f"  signed-in controls   : {state['signOutButton'] or bool(state['chipLabel'])} (want False)")
+    print(f"  signed-in controls   : {bool(state['chipLabel'])} (want False)")
     print(f"  bar offers Sign in   : {state['signInLink']} (want True)")
     print(f"  app still usable     : {state['hasAppContent']} (want True - nothing enforces)")
     if state["signOutButton"] or state["chipLabel"]:

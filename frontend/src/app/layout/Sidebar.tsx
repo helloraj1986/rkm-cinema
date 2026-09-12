@@ -3,9 +3,7 @@ import { Icon, type IconName } from "../../components/ui/Icon";
 import { useLibraryFolders } from "../../features/library/api";
 import { libraryIconFor } from "../../features/library/lib";
 import { useAuth } from "../../features/auth/AuthProvider";
-import { mayManageHousehold } from "../../features/auth/lib";
-import { useCurrentProfile } from "../../features/auth/useCurrentProfile";
-import { initials, watchingName } from "../../features/auth/lib";
+import { AccountMenu } from "../../features/auth/AccountMenu";
 
 /**
  * Premium sidebar (design spec §5–6): brand lockup, grouped navigation,
@@ -106,13 +104,7 @@ function GroupNav({ title, items }: { title: string; items: NavItem[] }) {
 export function Sidebar() {
   const { data } = useLibraryFolders();
   const libraries = data?.libraries ?? [];
-  const { status, user, profile } = useAuth();
-  // Whether the profile in effect is an administrator — the server's answer, from the payload the
-  // picker already reads. It decides whether the Household link is offered at all.
-  const currentProfile = useCurrentProfile();
-  // The PROFILE is who media runs as — the honest name for this card once a shared device can
-  // hold one person's sign-in and somebody else's profile (Phase B).
-  const name = watchingName(profile, user);
+  const { status, user } = useAuth();
   const signedIn = status === "signedIn" && !!user;
 
   return (
@@ -177,59 +169,33 @@ export function Sidebar() {
             </>
           )}
         </NavLink>
-        {/* Household accounts (AUTH_MULTIUSER_PLAN Phase 1b) — administrators only
-            (his request, 2026-09-12: "household path should not be available to non admin users").
-            Earlier this link was shown to everyone so that the server's 403 explained itself; he
-            preferred not to offer it at all. The SERVER still refuses the routes (defence in
-            depth), and `mayManageHousehold` fails closed while the answer is unknown. */}
-        {mayManageHousehold(currentProfile?.is_admin) ? (
-          <NavLink
-            to="/settings/household"
-          title="Household"
-          className={({ isActive }) => linkCls(isActive)}
-        >
-          {({ isActive }) => (
-            <>
-              <NavIndicator active={isActive} />
-              <Icon name="users" size={19} className="shrink-0" />
-              <span className="hidden truncate xl:inline">Household</span>
-            </>
-          )}
-          </NavLink>
-        ) : null}
-        {/* My password (ADMIN_CREDENTIALS_PLAN.md Phase 3). Shown to EVERY profile on purpose:
-            a member's password is the lock on their profile, and until now only an administrator
-            could change it — from Household, for somebody else. */}
-        <NavLink
-          to="/settings/password"
-          title="My password"
-          className={({ isActive }) => linkCls(isActive)}
-        >
-          {({ isActive }) => (
-            <>
-              <NavIndicator active={isActive} />
-              <Icon name="lock" size={19} className="shrink-0" />
-              <span className="hidden truncate xl:inline">My password</span>
-            </>
-          )}
-        </NavLink>
+        {/* Household (administrators only) and My password used to sit HERE. They are account
+            destinations, not navigation, so they now live in the account menu behind the avatar —
+            one place, both surfaces, one gate (his request, 2026-09-13: "consolidate the ui
+            elements"). The server still refuses those routes; `mayManageHousehold` decides only
+            what the app OFFERS. */}
       </div>
 
-      <div className="mt-3 hidden items-center gap-2.5 border-t border-white/[.06] px-3 pt-4 xl:flex">
-        <div className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-surface-3 text-[11px] font-bold text-accent ring-1 ring-white/10">
-          {signedIn ? initials(name) : "R"}
-        </div>
-        <div className="min-w-0 text-xs">
-          {/* AUTH_MULTIUSER_PLAN Phase 1: this card used to be a hardcoded name. With real
-              sessions that would be a lie the moment somebody else signs in — so it shows
-              the SESSION's user, and says plainly when there is none. */}
-          <div className="truncate font-semibold text-zinc-200">
-            {signedIn ? name : "RKM Cinema"}
+      <div className="mt-3 border-t border-white/[.06] px-2.5 pt-3">
+        {signedIn ? (
+          // The account conventionally lives at the bottom of the sidebar on desktop. This card
+          // used to be decorative — it named you and offered nothing; now it IS the account menu
+          // trigger (`AccountMenu variant="wide"`), sharing every rule with the header avatar.
+          <AccountMenu variant="wide" />
+        ) : (
+          <div className="hidden items-center gap-2.5 px-3 py-2 xl:flex">
+            <div className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-surface-3 text-[11px] font-bold text-accent ring-1 ring-white/10">
+              R
+            </div>
+            <div className="min-w-0 text-xs">
+              {/* AUTH_MULTIUSER_PLAN Phase 1: this card used to be a hardcoded name. With real
+                  sessions that would be a lie the moment somebody else signs in — so it says
+                  plainly when there is no session. */}
+              <div className="truncate font-semibold text-zinc-200">RKM Cinema</div>
+              <div className="truncate text-[10.5px] text-zinc-500">Not signed in</div>
+            </div>
           </div>
-          <div className="truncate text-[10.5px] text-zinc-500">
-            {signedIn ? "Personal library" : "Not signed in"}
-          </div>
-        </div>
+        )}
       </div>
     </aside>
   );

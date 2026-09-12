@@ -92,6 +92,75 @@ export function mayManageHousehold(isAdmin: boolean | undefined): boolean {
   return isAdmin === true;
 }
 
+/**
+ * What the ACCOUNT MENU offers, in order (2026-09-13, his request: *"consolidate the ui elements to
+ * make it premium"*).
+ *
+ * Everything that belongs to *the person signed in* lives here — not scattered across the sidebar.
+ * The rules, all pure so they are testable without a browser:
+ *
+ * * **My password** — EVERY profile, because a member's password is the lock on their profile and
+ *   until Phase 3 only an administrator could change it (from Household, for somebody else).
+ * * **Household** — administrators only, through the SAME `mayManageHousehold` the nav used, so the
+ *   gate cannot drift between two surfaces. The server refuses the routes regardless.
+ * * **Switch profile** — the only way back to "Who's watching?" without signing out.
+ *
+ * `key` is stable so the UI (and the browser checks) can address an entry; `adminOnly` documents
+ * which entries the gate filtered out, so a test can assert on the RULE rather than on the DOM.
+ */
+export interface AccountDestination {
+  key: "switch" | "password" | "household";
+  label: string;
+  to: string;
+  icon: "switch" | "lock" | "users";
+  adminOnly?: boolean;
+}
+
+export function accountDestinations(
+  isAdmin: boolean | undefined,
+  profileSelected: boolean,
+): AccountDestination[] {
+  const switchEntry = {
+    key: "switch" as const,
+    label: profileSelected ? "Switch profile" : "Choose profile",
+    to: "/profiles?switch=1",
+    icon: "switch" as const,
+  };
+  const password: AccountDestination = {
+    key: "password",
+    label: "My password",
+    to: "/settings/password",
+    icon: "lock",
+  };
+  const household: AccountDestination = {
+    key: "household",
+    label: "Household",
+    to: "/settings/household",
+    icon: "users",
+    adminOnly: true,
+  };
+  return mayManageHousehold(isAdmin)
+    ? [switchEntry, password, household]
+    : [switchEntry, password];
+}
+
+/**
+ * The one-line description of who this session IS (the menu's own header).
+ *
+ * Both facts matter on a shared device: the PROFILE is who media runs as, the signed-in account is
+ * who holds the session — and they differ exactly when somebody else's profile is selected, which
+ * is the situation a guest must not be able to mistake.
+ */
+export function accountSubtitle(
+  profileName: string,
+  ownerName: string,
+  isAdmin: boolean | undefined,
+): string {
+  const role = mayManageHousehold(isAdmin) ? "Administrator" : "Profile";
+  if (!ownerName || ownerName === profileName) return role;
+  return `${role} · signed in as ${ownerName}`;
+}
+
 export function watchingName(profile: AuthUser | null, user: AuthUser | null): string {
   return displayName(profile) || displayName(user);
 }

@@ -93,19 +93,34 @@ so a refresh is visible. `window.__calls` records every request (url, method, bo
 `window.__probe()` reports the rendered rows, whether the add form is open, whether the confirm
 button is armed, and any `role="alert"` text.
 
-## `nav-frame.html` — navigation access (his request, 2026-09-12)
+## `nav-frame.html` — navigation access + the account menu (2026-09-12, reworked 2026-09-13)
 
-`python3 tools/check_nav_access.py` mounts the REAL `Sidebar` and `MobileNav` over a stubbed api and
-proves the account-management entry is offered to **administrators only**, on **both** surfaces:
+`python3 tools/check_nav_access.py` mounts the REAL `Header`, `Sidebar` and `MobileNav` over a
+stubbed api and proves the account destinations are offered to **administrators only**, from **every
+trigger**, while the nav carries no duplicates:
 
 | Query | What it proves |
 |---|---|
-| `?admin=1` | Household appears in the sidebar AND in the mobile sheet (the sheet had no route to Household or My password at all — that was the "it should be available on ui" half) |
-| `?admin=0` | Household appears in neither, while My password stays (every profile's own screen) |
+| `?admin=1` | the account menu — opened from the header avatar AND from the sidebar footer — offers **My password** and **Household**, and the sidebar NAV no longer lists either |
+| `?admin=0` | both triggers still offer My password, and **neither** offers Household |
 | `?admin=0` | the navigation fires **zero** `/api/admin/*` calls |
+| `?admin=1` | the mobile sheet is **navigation only** (both account screens moved into the menu) |
+| `?admin=1` | the phone reaches both screens from the header avatar, and the menu fits the viewport |
 
-Two mounts, not one, because the desktop sidebar and the mobile sheet are separate code paths — and
-the probe reads the whole `<aside>`, since the settings links render *after* the `<nav>` element.
+Three things this frame learned the hard way:
+
+* **It never loaded the app's stylesheet** (2026-09-13). Everything above passed anyway — visibility
+  is asserted by TEXT — but every screenshot and any geometry measurement of this frame was
+  *unstyled*: the account menu measured full-width, and the mobile "More" button was clickable at
+  1280px where CSS hides it. It now imports `../src/styles/index.css` like the other frames, and the
+  check uses a **phone viewport** for the mobile surfaces.
+* **The stub must send what the server really sends.** While `current` was a name-only row
+  (`is_admin` always false), the gate hid Household from the ADMINISTRATOR too, and this frame
+  reported green because it invented an `is_admin` the server could not produce. `current` here IS
+  the profile's row now, mirroring `/api/auth/profiles` (pinned by
+  `TestProfiles::test_the_current_profile_carries_the_SERVERS_own_answer`).
+* The account menu is **portalled to `<body>`**, so `window.__probe()` picks it out by excluding the
+  mobile sheet's `role="menu"`.
 
 ## `password-frame.html` — Settings → My password (Phase 3)
 

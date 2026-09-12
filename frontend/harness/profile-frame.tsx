@@ -220,8 +220,16 @@ function FakeHome() {
     appValue: text('[data-testid="app-value"]'),
     passwordForm: !!document.querySelector('[data-testid="profile-password-form"]'),
     prompt: text('[data-testid="profile-password-form"]'),
-    chipLabel: document.querySelector('[data-testid="profile-chip"]')?.getAttribute("aria-label") ?? "",
+    chipLabel:
+      document
+        .querySelector('[data-testid="account-menu-trigger"]')
+        ?.getAttribute("aria-label") ?? "",
+    // Since 2026-09-13 "Switch profile" is an ITEM in the account menu, not a link in the header —
+    // `switchLink` below is the menu's own text, so a check opens the menu first.
     switchLink: document.querySelector('a[href="/profiles?switch=1"]')?.textContent?.trim() ?? "",
+    accountMenuItems: [
+      ...(document.querySelector('[role="menu"]')?.querySelectorAll('[role="menuitem"]') ?? []),
+    ].map((b) => b.textContent?.trim() ?? ""),
     signOutButton: [...document.querySelectorAll("button")].some(
       (b) => b.textContent?.trim() === "Sign out",
     ),

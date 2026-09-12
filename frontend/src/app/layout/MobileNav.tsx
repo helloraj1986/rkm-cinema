@@ -3,8 +3,6 @@ import { NavLink, useLocation } from "react-router-dom";
 import { Icon, type IconName } from "../../components/ui/Icon";
 import { useLibraryFolders } from "../../features/library/api";
 import { libraryIconFor } from "../../features/library/lib";
-import { mayManageHousehold } from "../../features/auth/lib";
-import { useCurrentProfile } from "../../features/auth/useCurrentProfile";
 
 /**
  * Mobile navigation (design spec §38/§59): the sidebar disappears below md and
@@ -16,18 +14,19 @@ import { useCurrentProfile } from "../../features/auth/useCurrentProfile";
 type Tab = { to: string; label: string; icon: IconName; end?: boolean };
 
 /**
- * The sheet's destinations. `adminOnly` items are filtered out unless the profile in effect is an
- * administrator — the mobile bar had NO route to Household or My password at all (his report,
- * 2026-09-12: "it should be available on ui"), and the desktop sidebar's Household entry is now
- * administrators-only, so the two surfaces agree.
+ * The sheet's destinations — NAVIGATION only.
+ *
+ * ⚠ Household and My password were listed here (2026-09-12, "it should be available on ui"). They
+ * are ACCOUNT destinations, not places to browse, so they moved into the account menu behind the
+ * header avatar — which is on screen at every breakpoint, so the phone reaches them too, with the
+ * administrator gate applied in ONE place instead of two (his request, 2026-09-13: "consolidate the
+ * ui elements"). A member's navigation therefore fires no `/api/admin/*` call at all.
  */
-const MORE: { to: string; label: string; icon: IconName; adminOnly?: boolean }[] = [
+const MORE: { to: string; label: string; icon: IconName }[] = [
   { to: "/watchlist", label: "Watchlist", icon: "heart" },
   { to: "/discover", label: "Discover", icon: "compass" },
   { to: "/suggest", label: "Suggest", icon: "sparkles" },
-  { to: "/settings/password", label: "My password", icon: "lock" },
   { to: "/settings", label: "Settings", icon: "settings" },
-  { to: "/settings/household", label: "Household", icon: "users", adminOnly: true },
 ];
 
 function tabCls(active: boolean) {
@@ -48,11 +47,7 @@ export function MobileNav() {
   const [moreOpen, setMoreOpen] = useState(false);
   const sheetRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
-  // The server's own answer about the profile in effect — the Household entry depends on it.
-  const currentProfile = useCurrentProfile();
-  const destinations = MORE.filter(
-    (m) => !m.adminOnly || mayManageHousehold(currentProfile?.is_admin),
-  );
+  const destinations = MORE;
 
   // Close the More sheet on navigation.
   useEffect(() => {

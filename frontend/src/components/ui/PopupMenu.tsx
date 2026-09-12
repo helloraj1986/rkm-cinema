@@ -28,6 +28,9 @@ export function PopupMenu({
   align = "right",
   triggerClassName = "",
   triggerIcon = "more",
+  header,
+  triggerTestId,
+  triggerLabel,
   children,
 }: {
   /** aria-label for the trigger + the menu. */
@@ -36,6 +39,24 @@ export function PopupMenu({
   align?: "left" | "right";
   triggerClassName?: string;
   triggerIcon?: IconName;
+  /**
+   * Non-interactive content above the items — the account menu's "who is this" block. Kept out of
+   * `items` on purpose: it is a description, not an action, so it must not be focusable or
+   * selectable, and it must not look like something that navigates (2026-09-13).
+   */
+  header?: React.ReactNode;
+  /**
+   * Static test id for the trigger button (2026-09-13). The header's account affordance is a MENU
+   * now, not a chip plus two buttons, so a probe needs a stable handle on it to open the menu.
+   */
+  triggerTestId?: string;
+  /**
+   * Accessible name for the TRIGGER, when it should differ from the menu's. The account menu needs
+   * both: the trigger says WHO is watching ("Watching as Guest", the same wording the header chip
+   * used, so a screen reader hears the identity first and `aria-haspopup` supplies the rest), while
+   * the menu itself is named for what it is ("Account menu for Guest").
+   */
+  triggerLabel?: string;
   /** Custom trigger content; default is the ⋯ icon button. */
   children?: React.ReactNode;
 }) {
@@ -98,9 +119,10 @@ export function PopupMenu({
       <button
         ref={btnRef}
         type="button"
-        aria-label={label}
+        aria-label={triggerLabel ?? label}
         aria-haspopup="menu"
         aria-expanded={open}
+        data-testid={triggerTestId}
         onClick={(e) => {
           e.stopPropagation();
           setOpen((o) => !o);
@@ -118,6 +140,12 @@ export function PopupMenu({
               className="fixed z-[var(--z-popover)] w-56 overflow-hidden rounded-xl border border-white/10 bg-surface-3 p-1.5 shadow-modal"
               style={{ top: pos.top, left: pos.left }}
             >
+              {header ? (
+                <>
+                  <div className="px-1 pb-1 pt-1.5">{header}</div>
+                  <div className="mx-1 mb-1 h-px bg-white/[.07]" />
+                </>
+              ) : null}
               {items.map((item) => (
                 <button
                   key={item.key}

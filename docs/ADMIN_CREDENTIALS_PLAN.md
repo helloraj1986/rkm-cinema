@@ -112,6 +112,83 @@ Renaming the account breaks anything that assumes the name:
 | **4** | **Recovery, documented and tested**: `rkm-cinema.ps1 reset-admin-password` → reads the API key from the volume (never from `.env`), prompts for a new password, calls `POST /Users/Password?userId=…&ResetPassword=true`, then VERIFIES by signing in; `OPERATIONS.md` gains the runbook and the "forgot everything" ladder | the tool's own verification output; pytest for its pure parts |
 | **5** | ADR (the credential model), docs truth pass (`ARCHITECTURE`, `OPERATIONS`, `README`), PROGRESS record | full suite + docs links |
 
+### 6g. ⚠ "You removed the household from rkm as well" — the nav gate read a field the server never sent
+
+**His report (2026-09-13), verbatim:** *"you have removed the household from rkm(admin) as well, now i
+can change profile passwords and access for other users...it was supposed to be aviable only to admin
+user and removed from non admin users...also we need tweaks in ui, for example 'my password' option
+doesn't need to be sitting on the left side bar it can simply reside when user click its avatar so
+consolidate the ui elements to make it premium user experience just like any other world class app"*
+
+#### The bug, exactly
+
+`GET /api/auth/profiles` built its `current` row as **`ProfileUser(id=context.profile_id(),
+name=context.profile_name())`** — a name-only stub. `ProfileUser.is_admin` defaults to **False**, so
+`current.is_admin` was **false for every profile in effect, including the administrator's**. The nav
+gates Household on `mayManageHousehold(current.is_admin)`, which **fails closed by design**, so
+Household disappeared for everybody: a gate that was built to protect members hid the screen from the
+one person entitled to it.
+
+**Why no check caught it.** `tools/check_nav_access.py` and every harness stub in
+`frontend/harness/` supplied `current: {... is_admin: true}` — a payload the server was incapable of
+producing. The stub was kinder than reality and the check was green for the whole life of the feature.
+(Same family as §6e: the fake cannot reveal a fallback the real code has.)
+
+**Fixed** in `api/routes/auth.py`: `current` is now the SERVER's own row for the profile in effect,
+through the same `_profile(row)` converter the list uses. When the account is not in the list — the
+server could not be asked, or it was removed — `current` keeps the id and name we know and the flags
+stay **False**: an unknown answer must not OFFER an administrator's screen. Pinned by
+`TestProfiles::test_the_current_profile_carries_the_SERVERS_own_answer` (fails against the old code)
+and `test_an_unknown_current_profile_fails_closed`.
+
+#### The consolidation (his second request, same message)
+
+The same three destinations were offered in **three different places, differently**: the header had
+four separate controls (name, a non-clickable avatar, a "Switch profile" link, a "Sign out" button),
+the sidebar nav had My password (for everyone) and Household (administrators), and the mobile sheet
+had its own copies. Now there is ONE account menu:
+
+* `frontend/src/features/auth/AccountMenu.tsx` — the avatar IS the trigger, with an identity block
+  (monogram, name, role, and *"signed in as …"* only when the profile differs from the account).
+* Items come from the pure rule `accountDestinations(isAdmin, profileSelected)` in `features/auth/lib.ts`:
+  **Switch profile · My password (every profile) · Household (administrators only) · Sign out**.
+  One gate, `mayManageHousehold`, so the two surfaces cannot drift.
+* Mounted twice from the same component: the header avatar (every breakpoint, so the phone gets it)
+  and the sidebar footer, which used to be a decorative identity card that named you and offered
+  nothing (`variant="wide"`; the name/role/chevron show only at `xl`, where the sidebar is 240px).
+* The sidebar nav and the mobile "More" sheet now carry **navigation only** — a member's navigation
+  fires no `/api/admin/*` call at all, and there is no duplicated Household/My password anywhere.
+
+`PopupMenu` gained `header` (a non-interactive block above the items), `triggerTestId` and
+`triggerLabel` (the trigger says *"Watching as Guest"* while the menu is named *"Account menu for
+Guest"*). `tools/check_nav_access.py` now proves the menu from **every** trigger, on a **phone
+viewport** as well — 5 scenarios, falsified by opening the gate (`mayManageHousehold` returning true
+for a member), which fails both member surfaces.
+
+#### ⚠ And the harness that could not see any of it
+
+`frontend/harness/nav-frame.tsx` **never loaded the app's stylesheet** (the other four frames do).
+Text-based assertions passed anyway, so nobody noticed — but every screenshot and geometry
+measurement of that frame was *unstyled*: the account menu measured 1424px wide, and the mobile
+"More" button was clickable at a desktop width where CSS hides it. It imports `../src/styles/index.css`
+now, and the check uses a desktop viewport for the desktop surfaces and a phone one for the mobile
+bar. `check_profile_picker.py` and `check_login_flow.py` were updated to open the menu (they looked
+for a standalone "Switch profile" link and "Sign out" button).
+
+#### Evidence
+
+**960 backend pytest** (+2) · ruff clean · **tsc** clean · **280 vitest** (+6) · `npm run build` ·
+**5 browser checks** green (`check_nav_access` 5 scenarios, falsified; `check_profile_picker`,
+`check_login_flow`, `check_password_change`, `check_household_ui`) · openapi **53 paths** ·
+docs links resolve. Screenshots for his eyeball: `/workspace/rkm-ux-shots/account-menu-*.png`.
+
+**His deploy** — BOTH containers this time (api for `current`, web for the UI):
+
+```powershell
+cd D:\hermes_agent\hermes-workspace\projects\rkm-cinema
+docker compose -p rkm-bundled up -d --build api web
+```
+
 ### 6f. ⚠ THE RAIL: a request that arrived as SOMEBODY can no longer act as a stranger
 
 Built 2026-09-13 — the first item of §6e's hand-off queue. §6e fixed the ONE route; this fixes the

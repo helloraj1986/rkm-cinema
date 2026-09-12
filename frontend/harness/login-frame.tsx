@@ -183,7 +183,14 @@ function FakeHome() {
     sawAppContent: (window as unknown as { __sawAppContent: boolean }).__sawAppContent,
     appValue: text('[data-testid="app-value"]'),
     chipLabel:
-      document.querySelector('[data-testid="profile-chip"]')?.getAttribute("aria-label") ?? "",
+      document
+        .querySelector('[data-testid="account-menu-trigger"]')
+        ?.getAttribute("aria-label") ?? "",
+    // The account affordance is a MENU since 2026-09-13: Sign out (and everything else about the
+    // signed-in person) lives inside it, so a check reads the items rather than a bare button.
+    accountMenuItems: [
+      ...(document.querySelector('[role="menu"]')?.querySelectorAll('[role="menuitem"]') ?? []),
+    ].map((b) => b.textContent?.trim() ?? ""),
     signInLink: !!document.querySelector('a[href="/login"]'),
     signOutButton: [...document.querySelectorAll("button")].some(
       (b) => b.textContent?.trim() === "Sign out",

@@ -40,7 +40,10 @@ export type IconName =
   | "back"
   | "folder"
   | "users"
-  | "lock";
+  | "lock"
+  | "chevron-down"
+  | "switch"
+  | "logout";
 
 const OUTLINE: Record<string, string> = {
   home: '<path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>',
@@ -90,6 +93,11 @@ const OUTLINE: Record<string, string> = {
   back: '<path d="M19 12H5"/><path d="m12 19-7-7 7-7"/>',
   folder:
     '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/>',
+  // The account menu (2026-09-13): the chevron that says "this opens", a profile-swap glyph and a
+  // sign-out glyph, so My password / Household / Switch profile / Sign out live in ONE place.
+  "chevron-down": '<path d="m6 9 6 6 6-6"/>',
+  switch: '<path d="M4 8h13l-3.5-3.5M20 16H7l3.5 3.5"/>',
+  logout: '<path d="M15 3h3a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-3"/><path d="M10 17l-5-5 5-5"/><path d="M5 12h12"/>',
 };
 
 const FILLED: Record<string, string> = {

@@ -56,6 +56,18 @@ def probe(page) -> dict:
     return page.evaluate("() => window.__probe()")
 
 
+def open_account_menu(page) -> dict:
+    """Open the account menu from the header avatar and return the probe.
+
+    Since 2026-09-13 the header is a single control (the avatar): "Switch profile" is an item inside
+    this menu, not a link beside a chip.
+    """
+    page.click('[data-testid="account-menu-trigger"]')
+    page.wait_for_selector('[role="menu"]', timeout=5000)
+    page.wait_for_timeout(150)
+    return probe(page)
+
+
 def rows_by_name(state: dict) -> dict[str, dict]:
     return {row["name"]: row for row in state["rows"]}
 
@@ -231,16 +243,19 @@ def scenario_e(page, base: str) -> None:
     print("\n=== E. a profile is already chosen ===")
     print(f"  app content rendered : {state['hasAppContent']} (want True)")
     print(f"  picker shown         : {state['hasPicker']} (want False)")
-    print(f"  chip                 : {state['chipLabel']!r}")
-    print(f"  switcher offered     : {state['switchLink']!r}")
+    print(f"  avatar               : {state['chipLabel']!r}")
     if not state["hasAppContent"]:
         problem("E: a session with a chosen profile was sent to the picker")
     if state["hasPicker"]:
         problem("E: the picker was shown although somebody is already watching")
-    if state["switchLink"] != "Switch profile":
-        problem(f"E: the header offers no way to switch profile: {state['switchLink']!r}")
+    # ⚠ Since 2026-09-13 "Switch profile" is an ITEM in the account menu (the header is one control),
+    # so the check opens the menu and reads the items.
+    state = open_account_menu(page)
+    print(f"  switcher offered     : {state['accountMenuItems']}")
+    if "Switch profile" not in state["accountMenuItems"]:
+        problem(f"E: the account menu offers no way to switch profile: {state['accountMenuItems']}")
 
-    page.click('a[href="/profiles?switch=1"]')
+    page.click("[role=\"menuitem\"]:has-text('Switch profile')")
     page.wait_for_timeout(700)
     state = probe(page)
     rows = {r["name"]: r for r in state["rows"]}

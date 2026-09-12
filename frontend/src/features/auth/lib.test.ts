@@ -13,6 +13,8 @@ import {
   initials,
   loginErrorMessage,
   mayManageHousehold,
+  accountDestinations,
+  accountSubtitle,
   watchingName,
 } from "./lib";
 
@@ -85,6 +87,52 @@ describe("mayManageHousehold", () => {
   it("fails CLOSED while the server has not answered", () => {
     // A briefly-visible admin link is worse than a briefly-missing one.
     expect(mayManageHousehold(undefined)).toBe(false);
+  });
+});
+
+describe("accountDestinations", () => {
+  const keys = (isAdmin: boolean | undefined) =>
+    accountDestinations(isAdmin, true).map((d) => d.key);
+
+  it("offers My password to EVERY profile — it is the lock on your own profile", () => {
+    expect(keys(true)).toContain("password");
+    expect(keys(false)).toContain("password");
+    expect(keys(undefined)).toContain("password");
+  });
+
+  it("offers Household to administrators ONLY — his report, 2026-09-13", () => {
+    expect(keys(true)).toContain("household");
+    expect(keys(false)).not.toContain("household");
+    // ⚠ While the server has not answered, the administrator does NOT get it either — the same
+    // fail-closed rule the nav used. The bug he hit was the opposite: `is_admin` never arrived at
+    // all, so Household vanished for EVERYONE including him.
+    expect(keys(undefined)).not.toContain("household");
+  });
+
+  it("says Choose profile until one has been picked, then Switch profile", () => {
+    const label = (selected: boolean) =>
+      accountDestinations(true, selected).find((d) => d.key === "switch")?.label;
+    expect(label(false)).toBe("Choose profile");
+    expect(label(true)).toBe("Switch profile");
+  });
+
+  it("never offers an administrator destination to a member", () => {
+    for (const isAdmin of [false, undefined]) {
+      expect(accountDestinations(isAdmin, true).some((d) => d.adminOnly)).toBe(false);
+    }
+  });
+});
+
+describe("accountSubtitle", () => {
+  it("names the role, and only names the account when it differs from the profile", () => {
+    expect(accountSubtitle("rkm", "rkm", true)).toBe("Administrator");
+    expect(accountSubtitle("Kid", "rkm", false)).toBe("Profile · signed in as rkm");
+    expect(accountSubtitle("Kid", "", false)).toBe("Profile");
+  });
+
+  it("never calls a member an administrator", () => {
+    expect(accountSubtitle("Kid", "rkm", false)).not.toContain("Administrator");
+    expect(accountSubtitle("Kid", "rkm", undefined)).not.toContain("Administrator");
   });
 });
 

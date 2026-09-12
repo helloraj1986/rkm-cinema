@@ -144,9 +144,21 @@ def profiles(request: Request):
         raise HTTPException(status_code=503,
                             detail="Could not reach the media server to list profiles.")
     rows = library.list_users()
+    # ⚠ `current` is the SERVER's own row for the profile in effect, through the same converter the
+    # list uses — NOT `ProfileUser(id=…, name=…)`, which left `is_admin` / `has_password` /
+    # `disabled` at their False defaults for EVERY profile. The nav gates Household on
+    # `mayManageHousehold(current.is_admin)`, which fails closed by design, so a name-only `current`
+    # hid Household from the ADMINISTRATOR too (his report, 2026-09-13 — and no browser check could
+    # see it, because every harness stub supplied an `is_admin` the server was incapable of sending).
+    # When the account is not in the list — the server could not be asked, or it was removed —
+    # `current` carries the id and name we know and stays **False**: an unknown answer must not
+    # OFFER an administrator's screen.
+    current_row = next((row for row in rows
+                        if str(row.get("id") or "") == str(context.profile_id())), None)
     return ProfilesResponse(
         profiles=[_profile(row) for row in rows],
-        current=ProfileUser(id=context.profile_id(), name=context.profile_name()),
+        current=(_profile(current_row) if current_row is not None
+                 else ProfileUser(id=context.profile_id(), name=context.profile_name())),
         # `profile_id()` falls back to the owner, so the raw record is the only honest source for
         # "has anybody actually been chosen yet" (Phase B's picker marks the current row with it).
         profile_selected=bool(context.profile_user_id),

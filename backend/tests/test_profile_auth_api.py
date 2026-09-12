@@ -194,6 +194,42 @@ class TestProfiles:
         assert body["profiles"] == []
         assert "403" in body["warning"]
 
+    def test_the_current_profile_carries_the_SERVERS_own_answer(self, api):
+        """`current` must be the server's own row, never a name-only stub. His report, 2026-09-13.
+
+        It was built as ``ProfileUser(id=…, name=…)``, so `is_admin` / `has_password` / `disabled`
+        stayed at their **False** defaults for EVERY profile in effect. The nav gates Household on
+        `current.is_admin` and **fails closed**, so it disappeared for the ADMINISTRATOR as well
+        ("you have removed the household from rkm as well"). No browser check could catch it: every
+        harness stub handed the UI an `is_admin` the server was incapable of sending.
+        """
+        _sign_in(api)
+        body = api.client.get("/api/auth/profiles").json()
+        assert body["current"]["id"] == "uid-admin"
+        assert body["current"]["is_admin"] is True, (
+            "the administrator is signed in with no profile chosen — the nav reads this field to "
+            "decide whether Household is offered, and `False` here hides it from them too")
+        assert body["current"]["has_password"] is True, "the same row the list carries"
+
+        _select(api, "uid-kid")
+        body = api.client.get("/api/auth/profiles").json()
+        assert body["current"]["id"] == "uid-kid"
+        assert body["current"]["is_admin"] is False, "a member's profile is not an administrator"
+        assert body["current"]["has_password"] is False
+        assert body["current"]["name"] == "Kid", "the server's name for it, not the session's memory"
+
+    def test_an_unknown_current_profile_fails_closed(self, api, monkeypatch):
+        """When the server cannot be asked, `current` keeps the flags it can HONESTLY answer.
+
+        That is the documented fail-closed choice: an unknown answer must not OFFER an
+        administrator's screen. (The harness lesson above was the opposite mistake — a stub that
+        invented the answer.)"""
+        _sign_in(api)
+        monkeypatch.setattr(api.library, "list_users", lambda: [])
+        body = api.client.get("/api/auth/profiles").json()
+        assert body["current"]["id"] == "uid-admin", "the id we know is still named"
+        assert body["current"]["is_admin"] is False
+
 
 class TestThePickerCanTellNothingHasBeenChosenYet:
     """Phase B's ONE server-side trigger (added while building the picker).

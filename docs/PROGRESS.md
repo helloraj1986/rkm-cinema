@@ -1,4 +1,66 @@
-## ▶ NEXT SESSION — START HERE: admin credentials — Phase 3 ✅ BUILT (`57dd122`, "My password") · next Phase 4 (reset-admin-password CLI)
+## ▶ NEXT SESSION — START HERE: the password bug is FIXED (`6e34438`) — his live "set a password" never worked · next: deploy api+web, then Phase 4
+
+**His report (verbatim):** *"password for user profile rajeev didn't work...when i set a new passord..it
+says password changed but when i switch profile it doesnt have the lock icon and i can login just by
+clicking on the rajeev profile"* and *"i have logged in as admin(rkm) -> clicked the side bar ->
+household-> set a password in rajeev -> it still says no password"*
+
+### The root cause, MEASURED on Jellyfin 10.11.11 (never guessed)
+
+```
+ResetPassword: true   -> HTTP 204, sets NOTHING, and CLEARS a password that existed   ← what we sent
+ResetPassword: false  -> HTTP 204, the password is really set                          ← works, always
+```
+
+Proof method: every combination driven against a real account, each verified by **logging in with the
+intended value** — never by the status code. An administrator resetting a password it does NOT know
+works with `false`; a member's own change works with `false` (403 when their current password is
+wrong). **The administrator's privilege authorises the reset, not the flag.**
+
+The codebase believed the opposite, and that belief is written into `set_user_password`'s docstring
+today minus the fix. That single wrong flag is the whole bug, and it was making "Set a password" wipe
+passwords set elsewhere — so the same account could be "set" repeatedly and still have none.
+
+**Changed** (`backend/services/library/{jellyfin,service}.py` + tests): `ResetPassword: false` always,
+the `reset` parameter **deleted** through provider/ABC/facade (a flag that must never be true should
+not be passable), and the write now **proves itself** — after the 2xx the provider re-reads the
+account and reports success only when a password is really there. `tools/probe_password_write.py` is
+the repeatable verifier: read-only by default, `--target X --password Y` drives the app's OWN code and
+confirms by logging in.
+
+**Verified live:** the app's own `set_user_password()` set a member's password, `has_password` flipped
+true, and a real login with the new value succeeded.
+
+⚠ **Every unit test passed while this feature did nothing on a real server** (929 of them). Only a
+live round-trip per combination showed it — the same lesson as `/Sessions/Playing*` (204, stores
+nothing). When an endpoint's 2xx is in doubt, RE-READ the state it claims to have changed.
+
+### ⚠ Two things he must know
+
+1. **`rajeev` currently has the password `Temp-Change-Me-123`** — set by this session's diagnosis, not
+   by him. He should change it in the app (My password) once he has deployed, or it can be cleared.
+2. A rename/password change in the UI leaves `.env` stale: he renamed the admin `admin` → **`rkm`** and
+   updated `RKM_JELLYFIN_ADMIN_USER` accordingly ✔ (which is what let this session measure anything).
+
+### Waiting on HIM
+
+1. **Deploy**: `docker compose -p rkm-bundled up -d --build api web` (this fix is api; the picker's
+   lock-cache fix `09d466a` is web).
+2. Then: Household → `rajeev` → Set a password → the row should say **Reset password** afterwards
+   (the label follows `has_password`), and the picker should show a **lock** on that profile; picking
+   it should then ask for the password.
+3. Still outstanding: **Phase 1's fresh-install test on a throwaway stack** (never run) and **Phase 4**
+   (`rkm-cinema.ps1 reset-admin-password` from the volume key + OPERATIONS runbook) — Phase 4 matters
+   more now: it is the break-glass when nobody knows the administrator password.
+
+### Commits on `feat/auth-multiuser` (pushed; `main` still `c0ae65e`)
+
+`09d466a` picker lock-cache fix · `6e34438` the password-flag fix · `57dd122`+`0b8ee20` Phase 3
+(My password) · `8233012`+`3c3207f` Phase 2 (rename) · `bc018e1`+`ba301a2` Phase 1 (no password in
+`.env`) · `5e303e0`+`f5574de` Phase C (identity threaded) · 4 accounts on the server: `rkm` (admin),
+`Geetanjali`, `rajeev`, `sharanya`.
+
+## ▶ NEXT SESSION — START HERE: admin credentials — Phase 3 ✅ BUILT (`57dd122`, "My password") · next Phase 4 (reset-admin-password CLI)  → ✅ **SUPERSEDED 2026-09-12: the password bug it describes is FIXED (`6e34438`)**; kept for the Phase 3 detail it carries
 
 **His instruction:** *"go phase 3"* — Phase 3 of `docs/ADMIN_CREDENTIALS_PLAN.md` §6 (self-service
 password). Committed `57dd122`, pushed on `feat/auth-multiuser`; `main` still untouched at `c0ae65e`.

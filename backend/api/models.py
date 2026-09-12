@@ -178,6 +178,17 @@ class AdminSetPasswordRequest(BaseModel):
     new_password: str = ""
 
 
+class AdminRenameUserRequest(BaseModel):
+    """Rename an account. The ROLE is not the name (plan §6, Phase 2).
+
+    A person is identified by their id everywhere — the session, `_user_id()`, the picker — so a
+    rename changes how they are DISPLAYED and nothing else. ``name`` is trimmed and must be
+    non-empty; the route refuses a duplicate.
+    """
+
+    name: str = ""
+
+
 class AdminDeleteUserRequest(BaseModel):
     """Deleting is irreversible, so it needs the account's NAME typed out."""
 

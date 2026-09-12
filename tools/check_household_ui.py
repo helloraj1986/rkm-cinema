@@ -143,6 +143,86 @@ def scenario_c_add_member(page: Page, base: str, shots: str) -> None:
         print("  OK: a blank password and only the ticked folders reached the API")
 
 
+def scenario_d_rename(page: Page, base: str, shots: str) -> None:
+    """D — renaming: the LABEL changes, the ROLE does not.
+
+    Phase 2 (ADMIN_CREDENTIALS_PLAN.md §6), and the user's own words: *"the role should only be
+    admin rather than the actual name saying admin"*. So the rename must be refused where the
+    server would refuse it (BEFORE a request is sent), and the Administrator tag must ride the
+    ACCOUNT rather than the name.
+    """
+    print("D — renaming: the label changes, the role does not")
+    open_frame(page, base, "admin=1", shots, "household-rename")
+
+    # --- the rails, which must hold before any request goes out
+    page.click('[data-testid="member-Guest"] button:has-text("Rename")')
+    page.wait_for_selector('[data-testid="rename-panel"]', timeout=5000)
+    check(page.input_value("#rename-member-name") == "Guest",
+          "D: the panel should open prefilled with the account's current name")
+
+    page.fill("#rename-member-name", "Guest")
+    check(page.is_disabled('[data-testid="rename-panel"] button:has-text("Save name")'),
+          "D: saving the unchanged name must be disabled")
+    check("already this account" in page.inner_text('[data-testid="rename-panel"]'),
+          "D: and the panel should say why")
+
+    page.fill("#rename-member-name", "admin")
+    check(page.is_disabled('[data-testid="rename-panel"] button:has-text("Save name")'),
+          "D: a name another account already has must be disabled")
+    check("another account" in page.inner_text('[data-testid="rename-panel"]').lower(),
+          "D: and the panel should say why")
+
+    state = page.evaluate("window.__probe()")
+    check(not [c for c in state["calls"] if str(c["url"]).endswith("/rename")],
+          "D: a refused rename must send NO request at all")
+
+    # --- the happy path
+    page.fill("#rename-member-name", "Geetanjali")
+    page.click('[data-testid="rename-panel"] button:has-text("Save name")')
+    page.wait_for_timeout(700)
+
+    state = page.evaluate("window.__probe()")
+    renames = [c for c in state["calls"]
+               if c["method"] == "POST" and str(c["url"]).endswith("/rename")]
+    check(len(renames) == 1, f"D: exactly one rename request expected, got {len(renames)}")
+    if renames:
+        import json
+
+        body = json.loads(renames[0]["body"] or "{}")
+        check(body.get("name") == "Geetanjali",
+              f"D: the new name should be sent, got {body.get('name')!r}")
+        check(sorted(body.keys()) == ["name"],
+              f"D: the request carries ONLY the name, got {sorted(body.keys())}")
+    names = [row["name"] for row in state["rows"]]
+    check("Geetanjali" in names, f"D: the list should show the new name, got {names}")
+
+    # --- the point of the phase: the ROLE follows the account, not the name
+    page.click('[data-testid="member-admin"] button:has-text("Rename")')
+    page.wait_for_selector('[data-testid="rename-panel"]', timeout=5000)
+    page.fill("#rename-member-name", "Rajeev")
+    page.click('[data-testid="rename-panel"] button:has-text("Save name")')
+    page.wait_for_timeout(700)
+
+    # Asserted from the PROBE's row text — the same DOM source as every other tag assertion in
+    # this file (Playwright's inner_text uses a different text mode and read a narrower string).
+    state = page.evaluate("window.__probe()")
+    renamed_admin = next((r for r in state["rows"] if r["name"] == "Rajeev"), None)
+    check(renamed_admin is not None,
+          f"D: the renamed administrator should be listed under the new name, got "
+          f"{[r['name'] for r in state['rows']]}")
+    check(renamed_admin is not None and "Administrator" in renamed_admin["text"],
+          "D: the role must survive the rename — it rides the ACCOUNT, not the name. "
+          f"Row was: {(renamed_admin or {}).get('text', '')[:140]!r}")
+    check(renamed_admin is not None and "You" in renamed_admin["text"],
+          "D: and it is still the account you are signed in as")
+    if shots:
+        page.screenshot(path=f"{shots}/household-renamed.png", full_page=True)
+
+    if not PROBLEMS:
+        print("  OK: a rename is refused before the server is asked, sends only the name, and "
+              "leaves the role alone")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--base", default="http://localhost:5199")
@@ -160,6 +240,8 @@ def main() -> int:
         scenario_b_non_admin(page, args.base, args.shots)
         page.goto("about:blank")
         scenario_c_add_member(page, args.base, args.shots)
+        page.goto("about:blank")
+        scenario_d_rename(page, args.base, args.shots)
 
         if errors:
             problem(f"page errors: {errors}")
@@ -168,7 +250,7 @@ def main() -> int:
     if PROBLEMS:
         print(f"\n{len(PROBLEMS)} problem(s)")
         return 1
-    print("\nOK: household screen behaves (admin, non-admin, add member)")
+    print("\nOK: household screen behaves (admin, non-admin, add member, rename)")
     return 0
 
 

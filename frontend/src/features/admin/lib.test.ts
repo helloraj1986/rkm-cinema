@@ -14,6 +14,7 @@ import {
   deleteDecision,
   householdErrorMessage,
   lastLoginLabel,
+  renameIssue,
   type GrantableLibrary,
   type HouseholdUser,
 } from "./lib";
@@ -152,5 +153,48 @@ describe("lastLoginLabel", () => {
 
   it("formats a real timestamp", () => {
     expect(lastLoginLabel("2026-09-12T07:25:10.2169045Z")).toContain("Last seen");
+  });
+});
+
+
+describe("renameIssue", () => {
+  // Phase 2 (ADMIN_CREDENTIALS_PLAN.md §6): the ROLE is not the NAME. The UI mirrors only the
+  // rules the server actually enforces — a made-up length or character rule here would be a second
+  // implementation of the server's contract, and could forbid a name Jellyfin accepts.
+  const household = [
+    { id: "u1", name: "Rajeev" },
+    { id: "u2", name: "Geetanjali" },
+  ];
+
+  it("allows a genuinely new name", () => {
+    expect(renameIssue("Raj", "Geetanjali", household)).toEqual({ allowed: true, reason: "" });
+  });
+
+  it("refuses a blank name", () => {
+    const d = renameIssue("   ", "Geetanjali", household);
+    expect(d.allowed).toBe(false);
+    expect(d.reason).toMatch(/required/i);
+  });
+
+  it("refuses the account's own current name — and says it is unchanged, not taken", () => {
+    const d = renameIssue("Geetanjali", "Geetanjali", household);
+    expect(d.allowed).toBe(false);
+    expect(d.reason).toMatch(/already this account/i);
+  });
+
+  it("refuses a name another account has, whatever the casing or spacing", () => {
+    expect(renameIssue("geetanjali", "Raj", household).allowed).toBe(false);
+    expect(renameIssue("  GEETANJALI  ", "Raj", household).allowed).toBe(false);
+    expect(renameIssue("Geetanjali", "Raj", household).reason).toMatch(/another account/i);
+  });
+
+  it("does NOT invent a length rule the server does not have", () => {
+    // A 60-character name is the server's business. If it refuses, the screen says so (502) —
+    // that is honest; silently blocking it here would be a second contract.
+    expect(renameIssue("X".repeat(60), "Raj", household).allowed).toBe(true);
+  });
+
+  it("trims before comparing, so trailing spaces are not a 'new' name", () => {
+    expect(renameIssue("Rajeev ", "Rajeev", household).allowed).toBe(false);
   });
 });

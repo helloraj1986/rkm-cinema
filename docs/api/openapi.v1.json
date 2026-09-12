@@ -323,6 +323,54 @@
         }
       }
     },
+    "/api/admin/users/{user_id}/rename": {
+      "post": {
+        "summary": "Rename User",
+        "description": "Rename an account \u2014 **the role is not the name** (plan \u00a76, Phase 2).\n\nWhy this is safe to expose, stated plainly: a person is identified by their **id** everywhere\nthat matters \u2014 the session record, the provider's ``_user_id()``, the picker, every media\ncall \u2014 so a rename is a display change. It cannot grant or remove access (the account's policy\nis carried through untouched, see ``rename_user`` in the provider), it cannot touch a password,\nand it cannot move anybody's watch state.\n\nIt is still admin-only, because it is how somebody ELSE's account appears to everyone: a\nmember must not be able to rename the administrator.\n\n\u26a0 One honest consequence, not a bug: ``RKM_JELLYFIN_ADMIN_USER`` in ``.env`` keeps whatever it\nsays (it is a FIRST-RUN HINT for the wizard, never a lookup key \u2014 Phase 1). Renaming changes\nnothing unless the stack is re-provisioned from an empty volume, at which point the wizard uses\nthe hint again and you would end up with a second, differently-named administrator.",
+        "operationId": "rename_user_api_admin_users__user_id__rename_post",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "User Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminRenameUserRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/admin/users/{user_id}": {
       "delete": {
         "summary": "Delete User",
@@ -2026,6 +2074,18 @@
         "type": "object",
         "title": "AdminDeleteUserRequest",
         "description": "Deleting is irreversible, so it needs the account's NAME typed out."
+      },
+      "AdminRenameUserRequest": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "AdminRenameUserRequest",
+        "description": "Rename an account. The ROLE is not the name (plan \u00a76, Phase 2).\n\nA person is identified by their id everywhere \u2014 the session, `_user_id()`, the picker \u2014 so a\nrename changes how they are DISPLAYED and nothing else. ``name`` is trimmed and must be\nnon-empty; the route refuses a duplicate."
       },
       "AdminSetPasswordRequest": {
         "properties": {

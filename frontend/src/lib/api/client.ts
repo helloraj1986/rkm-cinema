@@ -883,6 +883,12 @@ export const api = {
     postJson<{ ok: boolean }>(`/admin/users/${encodeURIComponent(userId)}/password`, {
       new_password: newPassword,
     }),
+  /** Rename an account. The ROLE is not the name: this changes the label and nothing else. */
+  renameHouseholdUser: (userId: string, name: string) =>
+    postJson<{ ok: boolean; user: HouseholdUserShape; was: string; warning: string }>(
+      `/admin/users/${encodeURIComponent(userId)}/rename`,
+      { name },
+    ),
   /** Remove a member — the name must be typed out (the server checks it too). */
   deleteHouseholdUser: (userId: string, confirmName: string) =>
     deleteJson<{ ok: boolean; name: string }>(`/admin/users/${encodeURIComponent(userId)}`, {

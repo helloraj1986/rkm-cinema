@@ -36,6 +36,11 @@ export function useHouseholdMutations() {
       }),
     onSuccess: refresh,
   });
+  const rename = useMutation({
+    mutationFn: (vars: { userId: string; name: string }) =>
+      api.renameHouseholdUser(vars.userId, vars.name),
+    onSuccess: refresh,
+  });
   const setPassword = useMutation({
     mutationFn: (vars: { userId: string; newPassword: string }) =>
       api.setHouseholdPassword(vars.userId, vars.newPassword),
@@ -46,5 +51,5 @@ export function useHouseholdMutations() {
     onSuccess: refresh,
   });
 
-  return { create, policy, setPassword, remove };
+  return { create, policy, rename, setPassword, remove };
 }

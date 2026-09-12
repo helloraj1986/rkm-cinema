@@ -107,10 +107,47 @@ Renaming the account breaks anything that assumes the name:
 |---|---|---|
 | **0** | This plan + the throwaway-stack recipe (§7); amend `PLEX_PROFILE_AUTH_PLAN.md` §7 rows D/E to point here | docs links |
 | **1** ✅ | **No password needed after the first run, and the first-run one is PRINTED, never stored.** The generation MOVES from `render_config` (which runs on every bootstrap and cannot tell a fresh install from a re-run) to `provision.py::run_startup()` (which knows it is creating the admin because that is what it is doing): generate `token_urlsafe(18)`, set it on the account, and print it in a boxed, unmissable notice **only when the wizard step actually succeeded** (`200/204`), never on a re-run. `ensure_admin()` tries the STORED credential first (`JELLYFIN_API_KEY` / `runtime.json`) and resolves the admin by id; compose `:?` → `:-`; `render_config` stops generating or writing the key; `.env.example` documents it as OPTIONAL (tooling) with the reason. If it IS set in `.env`, it is used and nothing is printed — the manual override survives | pytest (provisioner: fresh install prints + sets; re-run prints nothing and needs no password; a rename does not break it), ruff, docs links |
-| **2** | **Household: role vs name.** An **Administrator** badge and the account's real name; rename (`POST /Users?userId=`) with the rails; the picker/header/sidebar never label a person by their role | tsc, vitest, `check_household_ui.py` + `check_profile_picker.py` (new scenarios), build |
+| **2** ✅ | **Household: role vs name.** An **Administrator** badge and the account's real name; rename (`POST /Users?userId=`) with the rails; the picker/header/sidebar never label a person by their role — **BUILT 2026-09-12**; see §6a | tsc, vitest, `check_household_ui.py` + `check_profile_picker.py` (new scenarios), build |
 | **3** | **Self-service password screen** for every profile (Phase D's other half): change my own password with `CurrentPw` + `NewPw`; honest messaging for a password-less member | gates + DOM check |
 | **4** | **Recovery, documented and tested**: `rkm-cinema.ps1 reset-admin-password` → reads the API key from the volume (never from `.env`), prompts for a new password, calls `POST /Users/Password?userId=…&ResetPassword=true`, then VERIFIES by signing in; `OPERATIONS.md` gains the runbook and the "forgot everything" ladder | the tool's own verification output; pytest for its pure parts |
 | **5** | ADR (the credential model), docs truth pass (`ARCHITECTURE`, `OPERATIONS`, `README`), PROGRESS record | full suite + docs links |
+
+### 6a. Phase 2 as built (2026-09-12) — two traps it had to measure
+
+**`POST /api/admin/users/{id}/rename`** (contract **51 → 52**, purely additive) → the provider's
+`rename_user()` → Jellyfin's **`POST /Users?userId=<id>`**, whose shape came from the server's OWN
+contract (315 paths, read live) rather than from the plan's table:
+
+| Measured | Consequence |
+|---|---|
+| the target is a **QUERY** parameter (`?userId=`), *not* a path segment | the path form 404s — the same query-vs-path trap the password route already paid for |
+| the body is a `UserDto`, which carries **`Policy`** among its 14 properties | ⚠ `/Users/{id}/Policy` is known to REPLACE all 47 policy fields. **If `POST /Users` shares those semantics, a `{"Name": …}` body would wipe `IsAdministrator` — a LOCKOUT.** So the payload carries the id, the name **and the policy the server just reported**, which is correct under EITHER semantics; `HasPassword` is deliberately never sent, so a rename has no way to touch a password. A test asserts the policy travels back |
+
+**The session-name trap.** A session stores the **name it was handed** at sign-in / profile
+selection, and nothing re-reads Jellyfin per request — so after a rename the header chip would keep
+naming the account the OLD way (a silent wrong answer about who is watching, which is exactly what
+this workstream exists to stop). The route now calls `SessionStore.rename_identity()` for the
+session making the request. **Another device corrects itself on its next profile selection** — a
+name is display, so that is tolerable; unlike a token, which must never be stale.
+
+**Rails** (each has a test): 401 anonymous · 403 a non-administrator (the shared gate, which also
+refuses while somebody else's profile is selected) · 404 an unknown id · 400 a blank name · 409 a
+name another account already has · 502 when the server refuses — never a false success · a rename to
+the SAME name is an idempotent no-op that reaches no server · and the rename never touches a
+password. **No client-side length or character rule**: that would be a second implementation of the
+server's contract and could forbid a name Jellyfin accepts (the trap that once made a
+password-LESS account unusable).
+
+**Evidence:** 913 backend pytest (+14, of which the rename set was verified to FAIL against the
+pre-change source) · 249 vitest (+6) · ruff, tsc, build clean · `check_household_ui.py` **4/4**
+(its new scenario D proves a refused rename sends NO request, a good one sends only the name, and
+the **Administrator badge survives** a rename) · `check_profile_picker.py` and
+`check_login_flow.py` unchanged and green · docs links resolve. **Deploy = api AND web.**
+
+⚠ **Not verified here: the live payload semantics.** The read-modify-write is safe by construction
+under both readings, but which one Jellyfin actually implements is unproven — a no-op rename on a
+live account (rename it to the name it already has, then compare its policy before/after) would
+settle it, and needs the owner's consent because it WRITES to his server.
 
 ⚠ **There is no forced-set-password phase any more** — that row existed only to rescue §4's rejected
 design. Do not add it back "for symmetry".

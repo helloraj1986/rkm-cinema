@@ -24,6 +24,7 @@ import {
   confirmsName,
   defaultLibrarySelection,
   deleteDecision,
+  renameIssue,
   householdErrorMessage,
   lastLoginLabel,
   type GrantableLibrary,
@@ -42,7 +43,7 @@ export function HouseholdView() {
   const { user: sessionUser } = useAuth();
   const household = useHousehold();
   const libraries = useGrantableLibraries();
-  const { create, policy, setPassword, remove } = useHouseholdMutations();
+  const { create, policy, rename, setPassword, remove } = useHouseholdMutations();
 
   const [showAdd, setShowAdd] = useState(false);
 
@@ -108,6 +109,7 @@ export function HouseholdView() {
             onToggleDisabled={(disabled) =>
               policy.mutateAsync({ userId: member.id, disabled })
             }
+            onRename={(name) => rename.mutateAsync({ userId: member.id, name })}
             onSetPassword={(newPassword) =>
               setPassword.mutateAsync({ userId: member.id, newPassword })
             }
@@ -243,6 +245,7 @@ function MemberRow({
   busy,
   onSaveFolders,
   onToggleDisabled,
+  onRename,
   onSetPassword,
   onDelete,
 }: {
@@ -253,10 +256,11 @@ function MemberRow({
   busy: boolean;
   onSaveFolders: (ids: string[]) => Promise<unknown>;
   onToggleDisabled: (disabled: boolean) => Promise<unknown>;
+  onRename: (name: string) => Promise<unknown>;
   onSetPassword: (newPassword: string) => Promise<unknown>;
   onDelete: (confirmName: string) => Promise<unknown>;
 }) {
-  const [open, setOpen] = useState<"folders" | "password" | "remove" | null>(null);
+  const [open, setOpen] = useState<"folders" | "rename" | "password" | "remove" | null>(null);
   const [error, setError] = useState("");
   const access = accessSummary(member, libraries);
   const decision = deleteDecision(member, { signedInAs, household });
@@ -296,6 +300,13 @@ function MemberRow({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            className={BUTTON}
+            onClick={() => setOpen(open === "rename" ? null : "rename")}
+          >
+            Rename
+          </button>
           <button
             type="button"
             className={BUTTON}
@@ -342,6 +353,15 @@ function MemberRow({
           member={member}
           onCancel={() => setOpen(null)}
           onSave={(ids) => void run(() => onSaveFolders(ids))}
+        />
+      ) : null}
+
+      {open === "rename" ? (
+        <InlineRename
+          member={member}
+          household={household}
+          onCancel={() => setOpen(null)}
+          onSave={(name) => void run(() => onRename(name))}
         />
       ) : null}
 
@@ -465,6 +485,57 @@ function InlinePassword({
           onClick={() => onSave(value)}
         >
           Save password
+        </button>
+        <button type="button" className={BUTTON} onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function InlineRename({
+  member,
+  household,
+  onSave,
+  onCancel,
+}: {
+  member: HouseholdUser;
+  household: HouseholdUser[];
+  onSave: (name: string) => void;
+  onCancel: () => void;
+}) {
+  const [value, setValue] = useState(member.name);
+  const decision = renameIssue(value, member.name, household);
+
+  return (
+    <div className="mt-3 border-t border-white/[.06] pt-3" data-testid="rename-panel">
+      <label htmlFor="rename-member-name" className="block text-xs font-medium text-zinc-300">
+        Name
+      </label>
+      <input
+        id="rename-member-name"
+        className={`${INPUT} mt-1.5 max-w-sm`}
+        value={value}
+        autoComplete="off"
+        onChange={(e) => setValue(e.target.value)}
+      />
+      <p className="mt-1 text-[11px] text-zinc-500">
+        How this person is shown everywhere — the picker, the top bar, this list. It changes nothing
+        else: not their libraries, not their password, not their watch state.{" "}
+        {member.is_admin ? "The Administrator tag rides with the account, not the name." : ""}
+      </p>
+      {!decision.allowed ? (
+        <p className="mt-1 text-[11px] text-zinc-500">{decision.reason}</p>
+      ) : null}
+      <div className="mt-3 flex gap-2">
+        <button
+          type="button"
+          className={PRIMARY}
+          disabled={!decision.allowed}
+          onClick={() => onSave(value)}
+        >
+          Save name
         </button>
         <button type="button" className={BUTTON} onClick={onCancel}>
           Cancel

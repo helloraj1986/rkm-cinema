@@ -29,9 +29,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 
 from api.models import (AdminCreateUserRequest, AdminDeleteUserRequest,
-                        AdminSetPasswordRequest, AdminUserPolicyRequest)
+                        AdminRenameUserRequest, AdminSetPasswordRequest,
+                        AdminUserPolicyRequest)
 from api.session import SessionContext, grantable_rows, require_admin_session
 from config.settings import get_config
+from services.auth import default_session_store
 from services.library.factory import build_library_service
 
 router = APIRouter()
@@ -204,6 +206,52 @@ def set_user_password(user_id: str, payload: AdminSetPasswordRequest,
         raise HTTPException(status_code=502, detail="The media server refused the password change")
     logger.info("household password set id=%s", user_id)
     return JSONResponse({"ok": True})
+
+
+@router.post("/admin/users/{user_id}/rename")
+def rename_user(user_id: str, payload: AdminRenameUserRequest,
+                session: SessionContext = Depends(require_admin_session)):
+    """Rename an account — **the role is not the name** (plan §6, Phase 2).
+
+    Why this is safe to expose, stated plainly: a person is identified by their **id** everywhere
+    that matters — the session record, the provider's ``_user_id()``, the picker, every media
+    call — so a rename is a display change. It cannot grant or remove access (the account's policy
+    is carried through untouched, see ``rename_user`` in the provider), it cannot touch a password,
+    and it cannot move anybody's watch state.
+
+    It is still admin-only, because it is how somebody ELSE's account appears to everyone: a
+    member must not be able to rename the administrator.
+
+    ⚠ One honest consequence, not a bug: ``RKM_JELLYFIN_ADMIN_USER`` in ``.env`` keeps whatever it
+    says (it is a FIRST-RUN HINT for the wizard, never a lookup key — Phase 1). Renaming changes
+    nothing unless the stack is re-provisioned from an empty volume, at which point the wizard uses
+    the hint again and you would end up with a second, differently-named administrator.
+    """
+    cfg = get_config()
+    new_name = (payload.name or "").strip()
+    if not new_name:
+        raise HTTPException(status_code=400, detail="A name is required")
+    library = _library(cfg)
+    target = _find(library, user_id)          # 404 rather than a silent no-op on a wrong id
+    was = str(target.get("name") or "")
+    if new_name == was:
+        # Idempotent: a double click must not be an error, and must not be a second write.
+        return JSONResponse({"ok": True, "user": target, "was": was, "warning": ""})
+    if any(str(u.get("name", "")).lower() == new_name.lower()
+           and str(u.get("id")) != str(user_id) for u in _live_users(library)):
+        raise HTTPException(status_code=409,
+                            detail=f"There is already an account called {new_name}")
+
+    updated = library.rename_user(user_id, new_name)
+    if not updated:
+        raise HTTPException(status_code=502,
+                            detail="The media server refused to rename the account")
+
+    # The session holds the NAME it was handed, so whoever made this request needs telling —
+    # otherwise this device keeps showing the old name until a profile is re-selected.
+    default_session_store(cfg).rename_identity(session.session_id, user_id=user_id, name=new_name)
+    logger.info("household account renamed id=%s", user_id)
+    return JSONResponse({"ok": True, "user": updated, "was": was, "warning": ""})
 
 
 @router.delete("/admin/users/{user_id}")

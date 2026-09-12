@@ -147,6 +147,10 @@ class LibraryProvider(ABC):
         """Set or reset another account's password. Default ``False`` (not supported)."""
         return False
 
+    def rename_user(self, user_id: str, name: str) -> Optional[dict]:
+        """Rename an account. Default ``None`` (not supported)."""
+        return None
+
     def delete_user(self, user_id: str) -> bool:
         """Delete an account. Default ``False`` (not supported)."""
         return False
@@ -663,6 +667,24 @@ class LibraryService:
                 logger.warning("set_user_password failed for %s: %s", p.name, e)
                 continue
         return False
+
+    def rename_user(self, user_id: str, name: str) -> Optional[dict]:
+        """Rename an account (``None`` means the server refused).
+
+        ⚠ The FACADE needs its own delegation, not just the provider: adding a capability to
+        ``LibraryProvider`` alone raises ``AttributeError`` on every route call, and the admin gate
+        swallows that and reports it as "you are not an administrator" — a live wrong answer this
+        workstream has already paid for once.
+        """
+        for p in self._providers:
+            try:
+                updated = p.rename_user(user_id, name)
+            except Exception as e:
+                logger.warning("rename_user failed for %s: %s", p.name, e)
+                continue
+            if updated is not None:
+                return updated
+        return None
 
     def delete_user(self, user_id: str) -> bool:
         """Delete an account. ``True`` means the server confirmed it."""

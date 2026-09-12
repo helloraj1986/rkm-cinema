@@ -107,6 +107,19 @@ window.fetch = (async (input: RequestInfo | URL, init: RequestInit = {}) => {
     };
     return send(200, { ok: true, user: householdBody.users.at(-1), granted: [], warning: "" });
   }
+  if (path.includes("/rename")) {
+    // Phase 2: echo the renamed row back the way the API does, so the list refreshes visibly.
+    const id = decodeURIComponent(path.split("/").slice(-2, -1)[0] ?? "");
+    const parsed = JSON.parse(body || "{}") as { name?: string };
+    householdBody = {
+      ...householdBody,
+      users: householdBody.users.map((u) =>
+        u.id === id ? { ...u, name: String(parsed.name ?? u.name) } : u,
+      ),
+    };
+    const updated = householdBody.users.find((u) => u.id === id) ?? householdBody.users[0];
+    return send(200, { ok: true, user: updated, was: "Guest", warning: "" });
+  }
   if (path.includes("/policy")) return send(200, { ok: true, user: householdBody.users[1], was: "Guest" });
   if (path.includes("/password")) return send(200, { ok: true });
   if (method === "DELETE") {

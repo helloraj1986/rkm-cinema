@@ -46,6 +46,7 @@ class FakeLibrary:
         self.folder_access = []
         self.disabled = []
         self.passwords = []
+        self.renames = []
         self.deleted = []
         self.error = None
         #: Set by a test to make the policy read FAIL (the server could not be asked).
@@ -119,6 +120,15 @@ class FakeLibrary:
         self.passwords.append({"user_id": user_id, "new_password": new_password})
         return True
 
+    def rename_user(self, user_id, name):
+        """Mirror what the route RECEIVES (the facade's row shape), not the provider's."""
+        self.renames.append((user_id, name))
+        for user in self.users:
+            if user["id"] == user_id:
+                user["name"] = name
+                return dict(user)
+        return None
+
     def delete_user(self, user_id):
         self.deleted.append(user_id)
         self.users = [u for u in self.users if u["id"] != user_id]
@@ -150,6 +160,10 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setattr(admin_route, "build_library_service", lambda cfg: library)
     monkeypatch.setattr(session_mod, "build_library_service", lambda cfg: library)
     monkeypatch.setattr(session_mod, "session_store", lambda config=None: store)
+    # The rename route writes the new name into the SESSION it is answering (otherwise the chip
+    # keeps showing the old one). That writer must be the isolated store too, or the test would
+    # reach into the real one.
+    monkeypatch.setattr(admin_route, "default_session_store", lambda config=None: store)
     monkeypatch.setattr(session_mod.get_config(), "RKM_AUTH_REQUIRED", "false")
     return SimpleNamespace(client=TestClient(app), library=library, store=store)
 
@@ -230,11 +244,61 @@ class TestFactoryWiring:
         service, _ = self._service(monkeypatch)
         for name in ("list_users", "get_user_policy", "create_user", "mutate_user_policy",
                      "set_folder_access", "set_user_disabled", "set_user_password",
-                     "delete_user", "last_api_error"):
+                     "rename_user", "delete_user", "last_api_error"):
             assert callable(getattr(service, name, None)), (
                 f"LibraryService (the object the routes actually receive) is missing {name}(): "
                 f"the route would raise AttributeError, the admin gate would swallow it, and the "
                 f"user would be told they are not an administrator")
+
+    def test_a_rename_sends_the_whole_account_not_just_a_name(self, monkeypatch):
+        """The Policy trap — the reason a rename is not `{"Name": …}`.
+
+        ``/Users/{id}/Policy`` REPLACES all 47 policy fields (already paid for once), and the
+        server's own ``UserDto`` carries a ``Policy``. If ``POST /Users`` shares those semantics, a
+        name-only body would wipe ``IsAdministrator`` — a LOCKOUT, the exact thing the user warned
+        about. So the body carries the id, the name and the policy the server just reported, which
+        is correct under EITHER semantics.
+        """
+        policy = {"IsAdministrator": True, "IsDisabled": False, "EnableAllFolders": False,
+                  "EnabledFolders": ["f1"]}
+        service, _ = self._service(monkeypatch, policy=policy)
+        calls = []
+
+        def fake_api(method, path, body=None):
+            calls.append((method, path, body))
+            if method == "GET":
+                return True, {"Id": "u1", "Name": "admin", "Policy": policy}
+            return True, {"Id": "u1", "Name": "Rajeev", "Policy": policy}
+
+        monkeypatch.setattr(service.providers[0], "_api", fake_api)
+        row = service.rename_user("u1", "Rajeev")
+        assert row["name"] == "Rajeev", "the row comes from the server's answer"
+
+        method, path, body = calls[-1]
+        assert method == "POST"
+        assert path == "/Users?userId=u1", (
+            "the target is a QUERY parameter — measured from the server's own contract; the path "
+            "form 404s")
+        assert body["Name"] == "Rajeev"
+        assert body["Policy"] == policy, (
+            "the policy must travel back: under replace-wholesale semantics a name-only body would "
+            "strip IsAdministrator")
+        assert body["Id"] == "u1"
+        assert "HasPassword" not in body, "a rename must have no way to touch a password"
+
+    def test_a_rename_the_server_refuses_is_None_never_a_success(self, monkeypatch):
+        service, _ = self._service(monkeypatch)
+        monkeypatch.setattr(service.providers[0], "_api",
+                            lambda *a, **k: (False, {"status": 403}))
+        assert service.rename_user("u1", "Rajeev") is None
+
+    def test_a_blank_name_never_reaches_the_server(self, monkeypatch):
+        service, _ = self._service(monkeypatch)
+        calls = []
+        monkeypatch.setattr(service.providers[0], "_api",
+                            lambda *a, **k: (calls.append(a), (True, {}))[1])
+        assert service.rename_user("u1", "   ") is None
+        assert calls == []
 
     def test_the_household_calls_work_through_the_facade(self, monkeypatch):
         """`list_users` and the policy read the gate depends on, end to end."""
@@ -581,3 +645,94 @@ class TestContract:
                 for status, response in (operation.get("responses") or {}).items():
                     body = _json.dumps(response.get("content") or {})
                     assert "password" not in body.lower(), (path, method, status)
+
+
+class TestRename:
+    """Phase 2 (ADMIN_CREDENTIALS_PLAN.md §6): the ROLE is not the NAME.
+
+    A person is identified by their id everywhere that matters, so a rename must change the LABEL
+    and nothing else — not access, not a password, not anybody's watch state. These tests hold that
+    line, and hold the two things a rename can silently get wrong: renaming to a name somebody else
+    already has, and leaving the CURRENT session showing the old name.
+    """
+
+    def test_a_blank_name_is_refused_before_the_server_is_touched(self, env):
+        sign_in(env)
+        r = env.client.post(f"/api/admin/users/{MEMBER_ID}/rename", json={"name": "   "})
+        assert r.status_code == 400
+        assert env.library.renames == []
+
+    def test_a_name_another_account_already_has_is_refused(self, env):
+        """Jellyfin would allow it; the household would then have two 'admin' rows."""
+        sign_in(env)
+        r = env.client.post(f"/api/admin/users/{MEMBER_ID}/rename", json={"name": "aDmIn"})
+        assert r.status_code == 409
+        assert "already" in r.json()["detail"].lower()
+        assert env.library.renames == []
+
+    def test_a_rename_answers_with_what_the_server_now_holds(self, env):
+        sign_in(env)
+        r = env.client.post(f"/api/admin/users/{MEMBER_ID}/rename", json={"name": "Geetanjali"})
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["user"]["name"] == "Geetanjali"
+        assert body["was"] == "Guest"
+        assert env.library.renames == [(MEMBER_ID, "Geetanjali")]
+
+    def test_the_name_is_trimmed(self, env):
+        sign_in(env)
+        env.client.post(f"/api/admin/users/{MEMBER_ID}/rename", json={"name": "  Geetanjali  "})
+        assert env.library.renames == [(MEMBER_ID, "Geetanjali")]
+
+    def test_renaming_to_the_same_name_is_an_idempotent_no_op(self, env):
+        """A double click must be neither an error nor a second write."""
+        sign_in(env)
+        r = env.client.post(f"/api/admin/users/{MEMBER_ID}/rename", json={"name": "Guest"})
+        assert r.status_code == 200 and r.json()["user"]["name"] == "Guest"
+        assert env.library.renames == [], "an identical name must not reach the server"
+
+    def test_an_unknown_id_is_a_404(self, env):
+        sign_in(env)
+        r = env.client.post("/api/admin/users/nope/rename", json={"name": "X"})
+        assert r.status_code == 404
+        assert env.library.renames == []
+
+    def test_a_refused_rename_is_a_502_and_never_a_false_success(self, env, monkeypatch):
+        sign_in(env)
+        monkeypatch.setattr(env.library, "rename_user", lambda user_id, name: None)
+        r = env.client.post(f"/api/admin/users/{MEMBER_ID}/rename", json={"name": "Geetanjali"})
+        assert r.status_code == 502
+        assert "refused" in r.json()["detail"].lower()
+
+    def test_the_current_session_follows_the_rename(self, env):
+        """The chip reads the SESSION's stored name — the rename must update it, or the header
+        keeps naming the account the old way until a profile is re-selected."""
+        session_id = sign_in(env)
+        env.store.set_profile(session_id, user_id=ADMIN_ID, user_name="admin", token="t")
+        r = env.client.post(f"/api/admin/users/{ADMIN_ID}/rename", json={"name": "Rajeev"})
+        assert r.status_code == 200, r.text
+        row = env.store.lookup(session_id)
+        assert row["user_name"] == "Rajeev", "the owner name is stale"
+        assert row["profile_user_name"] == "Rajeev", "the profile name is stale"
+
+    def test_renaming_an_OTHER_account_leaves_this_session_alone(self, env):
+        session_id = sign_in(env)
+        env.client.post(f"/api/admin/users/{MEMBER_ID}/rename", json={"name": "Geetanjali"})
+        row = env.store.lookup(session_id)
+        assert row["user_name"] == ADMIN_ID
+        assert row.get("profile_user_name", "") == ""
+
+    def test_it_needs_an_administrator(self, env):
+        """The gate is shared with every other household route — 401 anonymous, 403 a member."""
+        assert env.client.post(f"/api/admin/users/{MEMBER_ID}/rename",
+                               json={"name": "X"}).status_code == 401
+        sign_in(env, user_id=MEMBER_ID)
+        assert env.client.post(f"/api/admin/users/{ADMIN_ID}/rename",
+                               json={"name": "X"}).status_code == 403
+        assert env.library.renames == []
+
+    def test_a_rename_never_touches_a_password(self, env):
+        """It cannot be a back door to credentials — asserted, not assumed."""
+        sign_in(env)
+        env.client.post(f"/api/admin/users/{MEMBER_ID}/rename", json={"name": "Geetanjali"})
+        assert env.library.passwords == []

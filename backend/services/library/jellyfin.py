@@ -1412,6 +1412,40 @@ class JellyfinLibraryProvider(LibraryProvider):
             {"CurrentPw": "", "NewPw": str(new_password), "ResetPassword": bool(reset)})
         return ok
 
+    def rename_user(self, user_id: str, name: str) -> Optional[dict]:
+        """Rename an account — a read-modify-write of the account, never a partial body.
+
+        ⚠ Measured from the server's OWN contract (2026-09-12): the target is a **QUERY**
+        parameter (``POST /Users?userId=``), not a path segment, and the body is a ``UserDto``
+        (14 properties, ``Name`` nullable, **and a ``Policy``**).
+
+        That ``Policy`` field is why this does not simply send ``{"Name": …}``. The sibling trap on
+        ``/Users/{id}/Policy`` was already paid for once — a partial body there replaced all 47
+        fields — and if ``POST /Users`` shares those semantics, a name-only body would wipe the
+        account's permissions (an administrator losing ``IsAdministrator`` is a LOCKOUT).
+
+        So the body carries the id, the name and the policy **as the server just reported them**.
+        That is correct under EITHER semantics: a merge sees only the renamed field change, and a
+        wholesale replace receives the identical policy back. ``HasPassword`` is deliberately NOT
+        sent — whether a client could clear a password through it is not something this route needs
+        to find out the hard way.
+        """
+        if not self._configured() or not user_id or not str(name or "").strip():
+            return None
+        quoted = urllib.parse.quote(str(user_id))
+        ok, current = self._api("GET", f"/Users/{quoted}")
+        if not ok or not isinstance(current, dict):
+            return None
+        body = {
+            "Id": str(current.get("Id") or user_id),
+            "Name": str(name).strip(),
+            "Policy": current.get("Policy"),
+        }
+        ok, updated = self._api("POST", f"/Users?userId={quoted}", body)
+        if not ok or not isinstance(updated, dict):
+            return None
+        return self._user_row(updated)
+
     def delete_user(self, user_id: str) -> bool:
         """Delete an account. IRRREVERSIBLE — the route owns the rails around this."""
         if not self._configured() or not user_id:

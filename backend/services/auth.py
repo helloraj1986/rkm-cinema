@@ -424,6 +424,40 @@ class SessionStore:
         result = self._mutate(mutate)
         return dict(result) if isinstance(result, dict) else None
 
+    def rename_identity(self, session_id: str, *, user_id: str, name: str) -> Optional[dict]:
+        """Follow a RENAME: update the names THIS session is holding for that account.
+
+        The session stores the name it was handed at sign-in / profile selection, and nothing
+        re-reads Jellyfin per request — so without this the header chip keeps showing the OLD name
+        after a rename until the profile is chosen again. That is a silent wrong answer about who
+        is watching, which is exactly what this workstream exists to stop.
+
+        Only THIS session can be corrected here (it is the one making the request). Another device
+        fixes itself on its next profile selection; a name is display, so that is tolerable —
+        unlike a token, which must never be stale.
+
+        The owner and the profile are updated independently: they are the same account only on the
+        administrator's own profile.
+        """
+        key = hash_session_id(session_id or "")
+        if not session_id or not user_id or not str(name or "").strip():
+            return None
+
+        def mutate(data):
+            sessions = data.setdefault("sessions", {})
+            row = sessions.get(key)
+            if not isinstance(row, dict):
+                return None
+            if str(row.get("user_id") or "") == str(user_id):
+                row["user_name"] = str(name)
+            if str(row.get("profile_user_id") or "") == str(user_id):
+                row["profile_user_name"] = str(name)
+            sessions[key] = row
+            return row
+
+        result = self._mutate(mutate)
+        return dict(result) if isinstance(result, dict) else None
+
     def count(self) -> int:
         return len(self.load().get("sessions") or {})
 

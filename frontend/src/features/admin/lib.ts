@@ -98,6 +98,37 @@ export function deleteDecision(
   return { allowed: true, reason: "" };
 }
 
+export interface RenameDecision {
+  allowed: boolean;
+  /** Why not — the same wording the server would answer with. */
+  reason: string;
+}
+
+/**
+ * May this rename be submitted, mirroring the server's rails?
+ *
+ * There is deliberately NO length or character rule here: inventing one would be a second
+ * implementation of the server's contract, and it could forbid a name Jellyfin happily accepts
+ * (the same trap that once made a password-LESS account unusable). The server owns what a name
+ * may be; this side only mirrors the rules the server actually enforces.
+ */
+export function renameIssue(
+  typed: string,
+  current: string,
+  household: Pick<HouseholdUser, "id" | "name">[],
+): RenameDecision {
+  const name = (typed || "").trim();
+  if (!name) return { allowed: false, reason: "A name is required." };
+  if (name === (current || "").trim()) {
+    return { allowed: false, reason: "That is already this account's name." };
+  }
+  const taken = household.some(
+    (u) => u.name.trim().toLowerCase() === name.toLowerCase(),
+  );
+  if (taken) return { allowed: false, reason: "Another account already has that name." };
+  return { allowed: true, reason: "" };
+}
+
 /** Does the typed confirmation match the account's name? (case-insensitive, trimmed) */
 export function confirmsName(typed: string, name: string): boolean {
   return (typed || "").trim().toLowerCase() === (name || "").trim().toLowerCase();

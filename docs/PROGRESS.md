@@ -31,6 +31,14 @@ password, and scenario D of `tools/check_login_flow.py` pins that the form allow
 
 ### 2. Then Phase 2 — enforcement (the lockout-risk phase)
 
+> **DECIDED by the user 2026-09-12 — enforcement is an EXPLICIT OPT-IN.** He chose "the default
+> stays `false`, and I add `RKM_AUTH_REQUIRED=true` when I want the lock" over "the release flips
+> the default". So **Phase 2 must NOT flip any default** (compose keeps `:-false`, `settings.py`
+> keeps `or "false"`, `.env.example` documents an active `RKM_AUTH_REQUIRED=false` with the
+> arming command). The deliverable is a lock that **works when armed**, not one that **is**
+> armed: prove both states live. Arming is HIS act (`.env` + `--force-recreate api`) — a future
+> session that flips the default for him is undoing a deliberate decision.
+
 `docs/AUTH_MULTIUSER_PLAN.md` §Phase 2. In order:
 1. `RKM_API_TOKEN` for machine callers (`render_config.py` generates it like the admin password;
    sent as `X-RKM-Token`, compared with `secrets.compare_digest`) — **the PowerShell tooling
@@ -38,8 +46,10 @@ password, and scenario D of `tools/check_login_flow.py` pins that the form allow
    the token.
 2. CORS: `allow_origins=["*"]` + credentials is browser-INVALID → explicit `RKM_CORS_ORIGINS`
    list + `allow_credentials=True`.
-3. Arm the guard on every app path; **`/api/health` stays public** (the api's own HEALTHCHECK
-   calls `http://127.0.0.1:8000/api/health`, and the PS tooling calls it).
+3. Make the guard real on every app path **when armed — without arming it**: the default stays
+   `false` (his opt-in, above), so this phase ships a lock that exists but is off.
+   **`/api/health` stays public** (the api's own HEALTHCHECK calls
+   `http://127.0.0.1:8000/api/health`, and the PS tooling calls it).
 4. The 401 sweep test: every router refuses an unsigned caller, so a future router cannot
    silently ship unprotected.
 5. Live proof: signed out → every app path 401; signed in → 200; `/api/health` 200 with no cookie.

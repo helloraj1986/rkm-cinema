@@ -188,6 +188,24 @@ Contract check every phase: `python -c "import json;d=json.load(open('docs/api/o
 
 ### Phase 2 — enforcement + machine token + the 401 sweep **(the lockout-risk phase)**
 
+> **DECIDED by the user 2026-09-12: enforcement is an EXPLICIT OPT-IN.** He was offered
+> "release flips the default to `true`" versus "the default stays `false` and **he** adds
+> `RKM_AUTH_REQUIRED=true` when he wants the lock", and chose the **opt-in**. Consequences for
+> this phase, and they are not optional:
+> * **No default is flipped.** `docker-compose.yml` keeps `${RKM_AUTH_REQUIRED:-false}`,
+>   `settings.py` keeps `or "false"`, and `.env.example` documents an ACTIVE
+>   `RKM_AUTH_REQUIRED=false` with the arming command. Deploying Phase 2 therefore changes
+>   nothing about who can get in.
+> * The phase's deliverable is that the lock **works when armed**, not that it **is** armed:
+>   the 401 sweep must prove every app path refuses an unsigned caller *when the flag is true*,
+>   and the live proof must show both states.
+> * Report honestly that the app stays open on the tailnet until he arms it — and that while
+>   it is open, a signed-out visitor sees everything as the admin does (per-user libraries and
+>   Continue Watching are real the moment somebody signs in, but they are not enforced).
+> * Arming is his two-step act in the repo `.env` + `docker compose -p rkm-bundled up -d
+>   --force-recreate api`. Nothing in a release may arm it for him — a future session that
+>   "helpfully" flips the default is undoing a decision he made deliberately.
+
 **Commit:** `feat(auth): require a session on every app path (escape hatch: RKM_AUTH_REQUIRED=false)`
 
 | Item | Detail |

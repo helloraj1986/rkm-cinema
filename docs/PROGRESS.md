@@ -1,4 +1,66 @@
-## ▶ SAME SESSION (2026-09-13) — a STALE TOKEN is not a wrong password (queue #2, first half done, `18caa20`) · next = his eyeball of the wording, then queue #3
+## ▶ SAME SESSION (2026-09-13) — THE BREAK-GLASS IS IN (queue #3 / Phase 4 done, `7b56968`) · next = #4 (his throwaway-stack test), then #5 merge
+
+Queue item **#3 (Phase 4 of `ADMIN_CREDENTIALS_PLAN.md`)** is built. Full detail: plan **§6i**.
+
+| | |
+|---|---|
+| Branch | `feat/auth-multiuser`, clean, **55 commits ahead of `main`** (`c0ae65e`) |
+| Commit | `7b56968` (+ this record) |
+| Gates | **1004 backend pytest** (+38) · ruff clean · docs links resolve · **no container changed** |
+| Deploy | **none needed** — the tool runs from the repo (`tools/reset_admin_password.py`) |
+
+### What he can do now that he could not before
+
+```powershell
+cd D:\hermes_agent\hermes-workspace\projects\rkm-cinema
+.\rkm-cinema.ps1 reset-admin-password -DryRun   # read-only: names the account it would reset
+.\rkm-cinema.ps1 reset-admin-password           # then this; type the new password twice
+```
+
+Locked out of the **administrator** account was the one failure with no way out: Household needs an
+administrator, and being one needs the password. The stack's own **API key** lives in the `rkm_shared`
+volume and an administrator's **privilege** authorises a reset, so nothing remembered is required.
+The tool proves the change by **signing in** with the new value and exits non-zero when it cannot
+(`0` verified · `2` no key · `3` key refused · `4` no administrator · `5` server refused the reset ·
+`6` not taken · `7` accepted but unprovable — stated as such).
+
+⚠ **THE PLAN ROW ITSELF WAS WRONG AND IS NOW CORRECTED.** Phase 4's own text said
+`ResetPassword=true` — written *before* §6c measured that `true` answers 204, sets nothing, and
+**CLEARS a password that existed**. The tool sends **false, always**, with a test asserting the flag
+can never be true. A future session reading the old row would have implemented the destructive shape.
+
+Also in: the administrator is found **by policy**, never by the name `admin` (§5 — it was renamed to
+`rkm`, and a member can be called "admin"); the password is **never an argument** (PowerShell history,
+process list) and never printed; a **member cannot be targeted** with `-Name` (it says where that is
+done instead); `-DryRun` is genuinely read-only (proved by the stub test: one GET, zero writes); the
+key is read from the **running api container** first, then from the volume mounted read-only — the
+pattern `backup-rkm-state.ps1` uses, so it works with the stack **stopped**.
+
+**`OPERATIONS.md` gained "Locked out? The ladder"**: administrator (this tool) → a member (Household /
+My password) → no key in the volume (a deploy re-provisions and prints once) → state volume lost
+(restore from backup) → **no backup at all** (explicitly out of scope and destructive: the accounts
+live in Jellyfin's own database; nothing here improvises that).
+
+### ⚠ What is NOT verified (say it plainly)
+
+* The **`.ps1` wrapper** cannot be executed in the sandbox (no PowerShell) — it is deliberately a
+  thin forwarding wrapper, and the runbook's FIRST step is `-DryRun`. The tool's CLI and its
+  no-docker failure path WERE run here (`--help`, `--dry-run` → exit 2 with both attempts named).
+* Nothing here was run against the live server (no Docker/network in the sandbox). What IS proved is
+  the body on the wire, the account choice, the verification and every dead end — against a real
+  local HTTP stub.
+
+### The queue after this
+
+**#4 Phase 1's fresh-install test on a throwaway stack** — still the ONE path never executed, and
+**only he can run it** (own project name, own ports, empty volumes, then `down -v`; the recipe is in
+`ADMIN_CREDENTIALS_PLAN.md` §7 and the block further down). **#5 merge to `main`** (55 commits, when
+he asks). **#6 Phase E + Phase 5** — now carrying this session's two attachments: the media-call
+401 taxonomy (session-dead vs profile-token-stale, §6h) and per-session device ids (§6h), plus
+ADR-0006 and the docs truth pass.
+
+
+## ▶ SAME SESSION (2026-09-13) — a STALE TOKEN is not a wrong password (queue #2, first half done, `18caa20`) · next = his eyeball of the wording, then queue #3  → ✅ **SAME SESSION, HEADLINE 3:** queue #3 / Phase 4 — the break-glass — is in (`7b56968`, plan §6i, no deploy needed); the block above records it.
 
 Took queue **item #2's first half** (the honest 401), and deliberately left the second half
 (per-session device ids) for **Phase E** — see below for why. Full detail: plan

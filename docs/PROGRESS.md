@@ -1,4 +1,68 @@
-## ▶ SAME SESSION (2026-09-13) — THE BREAK-GLASS IS IN (queue #3 / Phase 4 done, `7b56968`) · next = #4 (his throwaway-stack test), then #5 merge
+## ▶ ✅ MERGED TO `main` (2026-09-13) — the auth workstream is on `main` after 57 commits · THIS SCOPE IS DONE except what is listed below
+
+**His instruction, verbatim:** *"park the fresh install for later, whats left for this scope..i want to
+merge to main branch..this branch is too huge now"*.
+
+| | |
+|---|---|
+| `main` | **THIS RECORD** — fast-forwarded from `feat/auth-multiuser` (`665dfd2`, the last code/docs commit). No merge commit: `main` was an ancestor, so the trees are identical and **no re-gate was needed** |
+| `feat/auth-multiuser` | same commit — FF'd to `main` so all three branches are level |
+| `experiment/bundled-docker-stack` | same commit — the deploy branch was 57 commits behind and is now level |
+| Commits merged | **57**, `c0ae65e` (the previous `main`) to `665dfd2`, plus this record |
+| Gates on this tree | 1004 backend pytest · ruff · tsc · 282 vitest · build · 5 browser checks · openapi 53 paths · docs links resolve |
+| Deploy | **none needed** — the tree is byte-identical to the branch he has already deployed |
+
+⚠ **The working tree is left on `main`** (the sandbox and his Windows box are the SAME checkout). All
+three branches point at the same commit, so `main` contains exactly the files he has been running —
+but his next `docker compose -p rkm-bundled up -d --build api web` now builds from `main`.
+
+### What is left in THIS scope (verified, not inherited)
+
+**1. Phase E + Phase 5 — the enforcement sweep and the docs truth pass.** Still the honest gap, and now
+the only substantial engineering left:
+* **Every router's 401/403** — a profile must not reach an administrative route (`require_admin_session`
+  covers `/api/admin/*` and is strict; the sweep is the audit that no OTHER route quietly accepts a
+  member's session for something administrative).
+* **ADR-0006** (the profile/session credential model) has never been written. `docs/adr/` has 0001-0005.
+* **The docs truth pass**: `ARCHITECTURE.md`, `OPERATIONS.md` and `README.md` still describe the
+  pre-auth app (they were last trued up before identity existed). `docs/api/openapi.v1.json` is current
+  (53 paths, gated).
+
+**2. Two hardening items this session attached to Phase E** (both planned in §6h, neither done):
+* On a **media** call, a stale profile token is still indistinguishable from a dead session, so the app
+  signs the browser out instead of saying *"switch profile again"*. Needs the API to separate
+  **session-401** (cookie gone) from **profile-token-401** (cookie fine, credential stale).
+* **Per-session device ids**: `_client_header()` uses ONE device id (`rkm-cinema-web`) for every
+  session, so two browsers signed in as the same account rotate each other's tokens away.
+
+**3. `RKM_AUTH_REQUIRED` is still FALSE** — deliberate and unchanged: the app is open to anyone who can
+reach it. Arming it is HIS explicit opt-in, and Phase 1's docs point at it as the lockout-sensitive
+switch. Not a bug, not a task.
+
+**4. PARKED at his request:** Phase 1's fresh-install test on a throwaway stack (own project name, own
+ports, empty volumes, then `down -v`). It is the ONE path never executed end to end, and **only he can
+run it** — no Docker in the sandbox. Recipe: `ADMIN_CREDENTIALS_PLAN.md` §7.
+
+**5. XS, CORRECTED (was overstated in the previous hand-off):** `.env` carries
+`BROWSER_RADARR_URL=…:7878` / `BROWSER_SONARR_URL=…:8989` while the compose publishes **7879** /
+**8988**. Verified 2026-09-13: `.env` sets no `COMPOSE_PROFILES`, so **radarr/sonarr are not running
+at all** — the links are dead either way, and the port is only one of the two reasons. Worth fixing
+only if he ever arms the `fullstack` profile.
+
+### What merged, in one line each
+
+`5e303e0`-era Phase A/B + Phase C identity threading (per-profile libraries, watch state, progress) ·
+the auth multiuser phases (sessions, login, picker, Household, rename) · **§6c** the destructive
+`ResetPassword: true` vs the working `false` · **§6d** a 2xx is not evidence (proof by sign-in) ·
+**§6e/§6f** the identity rail — a request that arrived as somebody can never act as a stranger ·
+**§6g** Household was hidden from the ADMIN too (the nav read a field the server never sent) + the
+account menu (one control, both surfaces) · **§6h** a stale token is not a wrong password, and the two
+faults it exposed (the façade dropped the provider's reason; the client signed the browser out on that
+route's 401) · **§6i** the break-glass `reset-admin-password` · plus four pre-measurement doc claims
+corrected (`ResetPassword: true` again).
+
+
+## ▶ SAME SESSION (2026-09-13) — THE BREAK-GLASS IS IN (queue #3 / Phase 4 done, `7b56968`) · next = #4 (his throwaway-stack test), then #5 merge  → ✅ **MERGED to `main` 2026-09-13** (57 commits, `665dfd2`; deploy branch levelled too). The workstream this block describes is on `main` now — see the merge record above.
 
 Queue item **#3 (Phase 4 of `ADMIN_CREDENTIALS_PLAN.md`)** is built. Full detail: plan **§6i**.
 
@@ -60,7 +124,7 @@ he asks). **#6 Phase E + Phase 5** — now carrying this session's two attachmen
 ADR-0006 and the docs truth pass.
 
 
-## ▶ SAME SESSION (2026-09-13) — a STALE TOKEN is not a wrong password (queue #2, first half done, `18caa20`) · next = his eyeball of the wording, then queue #3  → ✅ **SAME SESSION, HEADLINE 3:** queue #3 / Phase 4 — the break-glass — is in (`7b56968`, plan §6i, no deploy needed); the block above records it.
+## ▶ SAME SESSION (2026-09-13) — a STALE TOKEN is not a wrong password (queue #2, first half done, `18caa20`) · next = his eyeball of the wording, then queue #3  → ✅ **SAME SESSION, HEADLINE 3:** queue #3 / Phase 4 — the break-glass — is in (`7b56968`, plan §6i, no deploy needed); the block above records it.  → ✅ **MERGED to `main` 2026-09-13** — the whole auth workstream is off the branch.
 
 Took queue **item #2's first half** (the honest 401), and deliberately left the second half
 (per-session device ids) for **Phase E** — see below for why. Full detail: plan
@@ -111,7 +175,7 @@ commits), #6 Phase E (the 401/403 sweep + ADR-0006 + docs truth pass) — and #6
 two items attached to it.
 
 
-## ▶ LATEST SESSION (2026-09-13, later) — HOUSEHOLD WAS HIDDEN FROM THE ADMIN TOO (fixed, ✅ CONFIRMED by him) + the account menu · next = queue item #2  → ✅ **SAME SESSION, HEADLINE 2:** queue #2's first half is in (`18caa20`, plan §6h) — a stale token no longer reads as a wrong password; the block above records it.
+## ▶ LATEST SESSION (2026-09-13, later) — HOUSEHOLD WAS HIDDEN FROM THE ADMIN TOO (fixed, ✅ CONFIRMED by him) + the account menu · next = queue item #2  → ✅ **SAME SESSION, HEADLINE 2:** queue #2's first half is in (`18caa20`, plan §6h) — a stale token no longer reads as a wrong password; the block above records it.  → ✅ **MERGED to `main` 2026-09-13** — the whole auth workstream is off the branch.
 
 **His report, verbatim:** *"you have removed the household from rkm(admin) as well, now i can change
 profile passwords and access for other users...it was supposed to be aviable only to admin user and
@@ -187,7 +251,7 @@ account-menu consolidation reads as designed. The steps below are the record of 
    after that #3 `reset-admin-password`, #4 his throwaway-stack test, #5 merge (51 commits), #6 Phase E.
 
 
-## ▶ LATEST SESSION (2026-09-13) — THE IDENTITY RAIL IS IN (queue item #1) · next = item #2 (stale-token degrade) · everything stays on `feat/auth-multiuser`  → ✅ **SAME SESSION, LATER:** his first live look found Household hidden from the ADMIN too (`064df72`, plan §6g) and asked for the account-menu consolidation — both done; see the block above.
+## ▶ LATEST SESSION (2026-09-13) — THE IDENTITY RAIL IS IN (queue item #1) · next = item #2 (stale-token degrade) · everything stays on `feat/auth-multiuser`  → ✅ **SAME SESSION, LATER:** his first live look found Household hidden from the ADMIN too (`064df72`, plan §6g) and asked for the account-menu consolidation — both done; see the block above.  → ✅ **MERGED to `main` 2026-09-13** — the whole auth workstream is off the branch.
 
 **His instruction, verbatim:** *"continue from progress.md in rkm-cinema app"* — take up the queue at
 the top of this file. Item **#1 (guard the identity fallback)** is now DONE, committed (`b4c5c47`) and
@@ -275,7 +339,7 @@ Phase 5** (the 401/403 sweep, ADR-0006, the docs truth pass) · and the XS one: 
 `BROWSER_SONARR_URL` point at `:7878`/`:8989` while the bundled compose publishes `:7879`/`:8988`.
 
 
-## ▶ NEXT SESSION — START HERE: the auth workstream is COMPLETE and CONFIRMED · next = the identity/token hardening pass (#1) · everything stays on `feat/auth-multiuser`  → ✅ **ITEM #1 DONE 2026-09-13** (the identity rail, `b4c5c47`, plan §6f) — the rest of the queue below stands as written.
+## ▶ NEXT SESSION — START HERE: the auth workstream is COMPLETE and CONFIRMED · next = the identity/token hardening pass (#1) · everything stays on `feat/auth-multiuser`  → ✅ **ITEM #1 DONE 2026-09-13** (the identity rail, `b4c5c47`, plan §6f) — the rest of the queue below stands as written.  → ✅ **MERGED to `main` 2026-09-13** — the whole auth workstream is off the branch.
 
 **His instruction, verbatim:** *"update the progress.md to take it up in the next session...commit and
 merge all the changes to feature branch not the main"* — so: record the queue, commit, push, and
@@ -3097,3 +3161,4 @@ Endpoint shapes NOT yet live-verified from the sandbox (oEmbed blocked; use `scr
   - **Structured logging** - JSON logs enable log aggregation and debugging
   - **Pydantic models for API** - Type safety, auto-documentation, validation
   - **Tests first** - Writing tests for plex ownership, radarr/sonarr routing, duplicates, trailers, status, e2e, errors caught design issues early
+

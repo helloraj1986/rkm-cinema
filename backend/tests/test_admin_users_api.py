@@ -48,6 +48,8 @@ class FakeLibrary:
         self.passwords = []
         self.deleted = []
         self.error = None
+        #: Set by a test to make the policy read FAIL (the server could not be asked).
+        self.fail_policy = False
         self.next_id = "uid-new"
         #: Lets a test make the LISTING empty (or refused) while the signed-in account is
         #: still resolvable — the gate reads one account, the screen lists them all.
@@ -60,6 +62,11 @@ class FakeLibrary:
         return [dict(u) for u in self.users]
 
     def get_user_policy(self, user_id):
+        if self.fail_policy:
+            # The server could not be asked (unreachable / refusing the app's credential).
+            # The fake says so the way the real provider does: None + a last_api_error.
+            self.error = {"method": "GET", "path": f"/Users/{user_id}", "status": 401}
+            return None
         for user in self.users:
             if user["id"] == user_id:
                 # The ADMIN check reads this: the server's own word, per request.
@@ -71,7 +78,10 @@ class FakeLibrary:
         return None
 
     def library_folders(self):
-        return [dict(f) for f in self.folders]
+        # The FACADE's shape, not the provider's: `LibraryService.library_folders()` returns
+        # {"provider": …, "folders": [...]}. The fake must mirror what the routes REALLY receive,
+        # or a route that cannot read it passes every test and 500s in production (it did).
+        return {"provider": "jellyfin", "folders": [dict(f) for f in self.folders]}
 
     def last_api_error(self):
         return self.error
@@ -150,6 +160,101 @@ def sign_in(env, user_id=ADMIN_ID):
     return session_id
 
 
+class TestTheCheckCannotLie:
+    """503 vs 403 — the distinction that cost a live false accusation on 2026-09-12.
+
+    The gate answers three different things: not signed in (401), not an administrator (403),
+    and *could not ask the server* (503). Reporting the third as the second tells a signed-in
+    administrator they lack permission, and sends them to the Jellyfin dashboard to "fix" a
+    permission that was never the problem.
+    """
+
+    def test_an_unconfigured_media_server_is_503_not_403(self, env, monkeypatch):
+        sign_in(env)
+        monkeypatch.setattr(session_mod, "build_library_service", lambda *a, **k: None)
+        r = env.client.get("/api/admin/users")
+        assert r.status_code == 503
+        assert "Could not reach the media server" in r.json()["detail"]
+
+    def test_a_failed_policy_read_is_503_not_403(self, env):
+        sign_in(env)
+        env.library.fail_policy = True
+        r = env.client.get("/api/admin/users")
+        assert r.status_code == 503
+        assert env.library.created == []
+
+    def test_a_genuinely_demoted_admin_is_still_403(self, env):
+        sign_in(env)
+        for user in env.library.users:
+            if user["id"] == ADMIN_ID:
+                user["is_admin"] = False
+        r = env.client.get("/api/admin/users")
+        assert r.status_code == 403
+        assert "administrator" in r.json()["detail"]
+
+
+class TestFactoryWiring:
+    """The seam that would have caught the live 403 — and did not exist.
+
+    The route tests ABOVE replace ``build_library_service`` outright, and the provider tests
+    build ``JellyfinLibraryProvider`` directly. Neither of them can notice that the object the
+    routes actually receive is ``LibraryService``, a FACADE — so when the household methods were
+    added to the provider only, every route call raised ``AttributeError``, the admin gate's
+    try/except swallowed it, and the user was told they were not an administrator. These tests
+    build the REAL thing from config and go through the facade.
+    """
+
+    def _service(self, monkeypatch, *, policy=None, users=None):
+        from config.settings import get_config
+        from services.library.factory import build_library_service
+
+        cfg = get_config()
+        monkeypatch.setattr(cfg, "JELLYFIN_URL", "http://jellyfin.test", raising=False)
+        monkeypatch.setattr(cfg, "JELLYFIN_API_KEY", "test-key-not-a-secret", raising=False)
+        service = build_library_service(cfg)
+        assert service is not None, "the factory must build a service for a configured server"
+        calls: list[tuple] = []
+
+        def fake_api(method, path, body=None):
+            calls.append((method, path, body))
+            if path == "/Users":
+                return True, users
+            if path.startswith("/Users/"):
+                return True, {"Policy": policy}
+            return True, {}
+
+        monkeypatch.setattr(service.providers[0], "_api", fake_api)
+        return service, calls
+
+    def test_the_facade_the_routes_use_exposes_every_household_method(self, monkeypatch):
+        service, _ = self._service(monkeypatch)
+        for name in ("list_users", "get_user_policy", "create_user", "mutate_user_policy",
+                     "set_folder_access", "set_user_disabled", "set_user_password",
+                     "delete_user", "last_api_error"):
+            assert callable(getattr(service, name, None)), (
+                f"LibraryService (the object the routes actually receive) is missing {name}(): "
+                f"the route would raise AttributeError, the admin gate would swallow it, and the "
+                f"user would be told they are not an administrator")
+
+    def test_the_household_calls_work_through_the_facade(self, monkeypatch):
+        """`list_users` and the policy read the gate depends on, end to end."""
+        service, calls = self._service(
+            monkeypatch,
+            policy={"IsAdministrator": True, "IsDisabled": False, "EnableAllFolders": True},
+            users=[{"Id": "u1", "Name": "admin", "Policy": {"IsAdministrator": True}}])
+        rows = service.list_users()
+        assert [r["name"] for r in rows] == ["admin"]
+        assert rows[0]["is_admin"] is True and rows[0]["id"] == "u1"
+        assert service.get_user_policy("u1") == {
+            "IsAdministrator": True, "IsDisabled": False, "EnableAllFolders": True}
+        assert [c[1] for c in calls] == ["/Users", "/Users/u1"]
+
+    def test_a_refused_policy_read_reports_no_error_on_the_facade(self, monkeypatch):
+        """`last_api_error()` must survive the facade too — the route's `warning` reads it."""
+        service, _ = self._service(monkeypatch)
+        assert service.last_api_error() is None
+
+
 class TestAccessControl:
     """These routes are strict in a world where nothing else is."""
 
@@ -199,6 +304,20 @@ class TestListing:
         body = env.client.get("/api/admin/libraries").json()
         assert [lib["name"] for lib in body["libraries"]] == ["Movies", "TV Shows"]
         assert body["libraries"][0]["id"] == "f1"
+
+    def test_a_provider_shaped_list_is_also_accepted(self, env):
+        """`library_folders()` is a dict on the facade and a list on the provider.
+
+        The route must read BOTH: this failed in production on 2026-09-12 with
+        `'str' object has no attribute 'get'` (500) because the facade's dict was iterated as if
+        it were the provider's list. Pinned from both sides so neither shape can be "simplified"
+        away.
+        """
+        sign_in(env)
+        env.library.library_folders = lambda: [dict(f) for f in env.library.folders]
+        r = env.client.get("/api/admin/libraries")
+        assert r.status_code == 200
+        assert [lib["name"] for lib in r.json()["libraries"]] == ["Movies", "TV Shows"]
 
     def test_an_empty_listing_says_why_instead_of_looking_empty(self, env):
         """A refused listing must not read as "there are no accounts"."""

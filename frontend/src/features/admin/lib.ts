@@ -110,6 +110,12 @@ export function householdErrorMessage(error: unknown): string {
   if (status === 401) return "Sign in to manage household accounts.";
   if (status === 403) return "Only a Jellyfin administrator can manage household accounts.";
   if (status === 409) return detail?.trim() || "There is already an account with that name.";
+  if (status === 503) {
+    // The app could not ASK the media server whether this person is an administrator — which is
+    // not a permission decision. Saying so is the difference between a ten-second check and a
+    // hunt through the Jellyfin dashboard for a right that was never wrong.
+    return detail?.trim() || "Could not reach the media server. Nothing was changed.";
+  }
   if (status === 502) {
     return detail?.trim() || "The media server refused the change — nothing was saved.";
   }

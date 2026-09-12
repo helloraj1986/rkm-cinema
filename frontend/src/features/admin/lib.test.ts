@@ -136,6 +136,9 @@ describe("householdErrorMessage", () => {
     expect(householdErrorMessage({ status: 409, message: "There is already an account called X" }))
       .toContain("already");
     expect(householdErrorMessage({ status: 502 })).toContain("refused");
+    // 503 is NOT a refusal about this person: the app could not ask the server at all.
+    expect(householdErrorMessage({ status: 503, message: "" })).toContain("Could not reach");
+    expect(householdErrorMessage({ status: 503 })).not.toContain("administrator");
     expect(householdErrorMessage({ status: 500, message: "" })).toBe("Failed (HTTP 500).");
     expect(householdErrorMessage(undefined)).toContain("Could not reach");
   });

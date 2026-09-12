@@ -84,17 +84,31 @@ def list_users(session: SessionContext = Depends(require_admin_session)):
     })
 
 
+def _library_rows(library) -> list[dict]:
+    """The grantable libraries, from EITHER shape the provider stack can answer.
+
+    The route is handed ``LibraryService`` (the **facade**), whose ``library_folders()`` returns
+    ``{"provider": …, "folders": [...]}``; the provider underneath returns a plain list. Reading
+    only one of the two produced a 500 in production on 2026-09-12 — TWICE (the tick-box list and
+    the create-with-every-library grant), which is why this is a helper rather than two copies of
+    the same ``isinstance`` dance.
+    """
+    folders = library.library_folders()
+    rows = folders.get("folders") if isinstance(folders, dict) else folders
+    return [f for f in (rows or []) if isinstance(f, dict)]
+
+
 @router.get("/admin/libraries")
 def list_grantable_libraries(session: SessionContext = Depends(require_admin_session)):
     """The libraries a member can be granted — the tick-box list, with the ids a grant holds."""
     cfg = get_config()
     library = _library(cfg)
-    folders = library.library_folders()
+    rows = _library_rows(library)
     return JSONResponse({
         "libraries": [{"id": str(f.get("id") or ""), "name": str(f.get("name") or ""),
                        "collection_type": str(f.get("collection_type") or ""),
-                       "path": str(f.get("path") or "")} for f in folders],
-        "warning": "" if folders else _warning(library),
+                       "path": str(f.get("path") or "")} for f in rows],
+        "warning": "" if rows else _warning(library),
     })
 
 
@@ -127,7 +141,7 @@ def create_user(payload: AdminCreateUserRequest,
     granted: list[str] = []
     if payload.library_ids is None:
         policy = library.set_folder_access(created["id"], [], enable_all=True)
-        granted = [str(f.get("id")) for f in (library.library_folders() or [])]
+        granted = [str(f.get("id")) for f in _library_rows(library)]
     else:
         policy = library.set_folder_access(created["id"], payload.library_ids)
         granted = [str(i) for i in payload.library_ids]

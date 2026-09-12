@@ -563,6 +563,118 @@ class LibraryService:
                 return result
         return None
 
+    # ----------------------------------------- household accounts (Phase 1b) — FACADE
+    # The provider interface carries these (``LibraryProvider``), but the ROUTES talk to this
+    # facade, so they MUST be delegated here too. Forgetting that is a silent failure with a
+    # very misleading symptom: the attribute lookup raises inside the admin gate's try/except,
+    # which then answers 403 "only a Jellyfin administrator can manage household accounts" —
+    # telling the user they lack permission when the app simply never called the server. Cost
+    # one live 403 on 2026-09-12; the wiring test at the bottom of
+    # ``tests/test_admin_users_api.py`` exists to make it impossible to repeat.
+    def list_users(self) -> list[dict]:
+        """Every account on the server, from the first provider able to enumerate them."""
+        for p in self._providers:
+            try:
+                rows = p.list_users()
+            except Exception as e:
+                logger.warning("list_users failed for %s: %s", p.name, e)
+                continue
+            if rows:
+                return rows
+        return []
+
+    def get_user_policy(self, user_id: str) -> Optional[dict]:
+        """One account's FULL policy — ``None`` means the server could not be asked."""
+        for p in self._providers:
+            try:
+                policy = p.get_user_policy(user_id)
+            except Exception as e:
+                logger.warning("get_user_policy failed for %s: %s", p.name, e)
+                continue
+            if policy is not None:
+                return policy
+        return None
+
+    def last_api_error(self) -> Optional[dict]:
+        """Why the most recent account call failed, from whichever provider knows."""
+        for p in self._providers:
+            error = getattr(p, "last_api_error", None)
+            error = error() if callable(error) else error
+            if error:
+                return error
+        return None
+
+    def create_user(self, name: str, password: str = "") -> Optional[dict]:
+        """Create an account (password optional). ``None`` means it was not created."""
+        for p in self._providers:
+            try:
+                created = p.create_user(name, password)
+            except Exception as e:
+                logger.warning("create_user failed for %s: %s", p.name, e)
+                continue
+            if created is not None:
+                return created
+        return None
+
+    def mutate_user_policy(self, user_id: str, mutate) -> Optional[dict]:
+        """Read-modify-write one account's policy (``mutate`` receives the FULL policy)."""
+        for p in self._providers:
+            try:
+                updated = p.mutate_user_policy(user_id, mutate)
+            except Exception as e:
+                logger.warning("mutate_user_policy failed for %s: %s", p.name, e)
+                continue
+            if updated is not None:
+                return updated
+        return None
+
+    def set_folder_access(self, user_id: str, library_ids=None, *,
+                          enable_all: bool = False) -> Optional[dict]:
+        """Grant exactly these libraries (``enable_all`` grants everything instead)."""
+        for p in self._providers:
+            try:
+                updated = p.set_folder_access(user_id, library_ids, enable_all=enable_all)
+            except Exception as e:
+                logger.warning("set_folder_access failed for %s: %s", p.name, e)
+                continue
+            if updated is not None:
+                return updated
+        return None
+
+    def set_user_disabled(self, user_id: str, disabled: bool) -> Optional[dict]:
+        """Enable/disable an account (its data is untouched)."""
+        for p in self._providers:
+            try:
+                updated = p.set_user_disabled(user_id, disabled)
+            except Exception as e:
+                logger.warning("set_user_disabled failed for %s: %s", p.name, e)
+                continue
+            if updated is not None:
+                return updated
+        return None
+
+    def set_user_password(self, user_id: str, new_password: str, *, reset: bool = True) -> bool:
+        """Set or RESET another account's password. ``True`` means the server accepted it."""
+        for p in self._providers:
+            try:
+                if p.set_user_password(user_id, new_password, reset=reset):
+                    return True
+            except Exception as e:
+                logger.warning("set_user_password failed for %s: %s", p.name, e)
+                continue
+        return False
+
+    def delete_user(self, user_id: str) -> bool:
+        """Delete an account. ``True`` means the server confirmed it."""
+        for p in self._providers:
+            try:
+                if p.delete_user(user_id):
+                    return True
+            except Exception as e:
+                logger.warning("delete_user failed for %s: %s", p.name, e)
+                continue
+        return False
+
     def item_similar(self, item_id: str, limit: int = 10) -> Optional[list[dict]]:
         """\"Because you watched\" rows from the first provider able to answer.
 

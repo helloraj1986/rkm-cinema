@@ -84,6 +84,7 @@ window.fetch = (async (input: RequestInfo | URL, init: RequestInit = {}) => {
     );
     return button ? (button as HTMLButtonElement).disabled : null;
   })(),
+  target: document.querySelector('[data-testid="password-target"]')?.textContent ?? "",
   notice: document.querySelector('[data-testid="password-notice"]')?.textContent ?? "",
   done: document.querySelector('[data-testid="password-done"]')?.textContent ?? "",
   error: document.querySelector('[data-testid="password-error"]')?.textContent ?? "",

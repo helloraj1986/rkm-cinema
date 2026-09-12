@@ -72,6 +72,19 @@ DEFAULT_TIMEOUT = 15.0
 CLIENT_HEADER = ('MediaBrowser Client="RKM Cinema", Device="RKM Cinema Web", '
                  'DeviceId="rkm-cinema-web", Version="2.0"')
 
+#: The device id used ONLY to prove a password change landed. Deliberately not the app's own:
+#: Jellyfin rotates the token of a (device, user) pair on every login, so verifying on the app's
+#: device would invalidate the very session asking for the change.
+VERIFY_DEVICE_ID = "rkm-password-verify"
+
+
+def _client_header(device_id: str = "") -> str:
+    """The app's own client header, or one for a specific device id."""
+    if not device_id or device_id == "rkm-cinema-web":
+        return CLIENT_HEADER
+    return (f'MediaBrowser Client="RKM Cinema", Device="RKM Cinema Web", '
+            f'DeviceId="{device_id}", Version="2.0"')
+
 
 # ----------------------------------------------------------------------- errors
 class AuthError(RKMError):
@@ -187,8 +200,40 @@ class UrllibTransport:
 
 
 # ------------------------------------------------------------------ jellyfin call
+def password_change_took_effect(username: str, password: str, *,
+                                 config=None, transport=None) -> bool:
+    """Did a password change really land? Ask the SERVER, never the status code.
+
+    Measured 2026-09-12 against Jellyfin 10.11.11: ``POST /Users/Password`` answers **204 while
+    storing nothing** for some shapes (``ResetPassword: true`` even CLEARS a password), so "the api
+    said yes" is not evidence — the live symptom was a screen reporting *"Password changed"* while
+    the old password still worked.
+
+    The only proof is that the NEW password authenticates.
+
+    ⚠ Verifies on :data:`VERIFY_DEVICE_ID`, never the app's own device: Jellyfin rotates a
+    (device, user) token on every login, so checking on the app's device would invalidate the
+    session that is asking. That token is logged out immediately, and nothing here raises — a
+    verification that cannot be attempted is reported as "not proved", which the route turns into
+    an honest failure rather than a claim of success.
+    """
+    try:
+        identity = authenticate_jellyfin(username, password, config=config, transport=transport,
+                                        device_id=VERIFY_DEVICE_ID)
+    except Exception:  # noqa: BLE001 - any failure means "not proved", and must not 500 a route
+        logger.info("password verification could not be completed for %r", username)
+        return False
+    token = str(getattr(identity, "token", "") or "")
+    if token:
+        try:
+            revoke_jellyfin_session(token, config=config, transport=transport)
+        except Exception:  # noqa: BLE001 - a leftover token is not worth failing the request over
+            logger.info("could not log the verification session out; it expires on its own")
+    return True
+
+
 def authenticate_jellyfin(username: str, password: str, *, config=None,
-                          transport=None) -> JellyfinIdentity:
+                          transport=None, device_id: str = "") -> JellyfinIdentity:
     """Exchange a username/password for a Jellyfin identity + access token.
 
     Mirrors the proven call in ``tools/rkm_common.py::Jellyfin._login`` (an
@@ -212,7 +257,7 @@ def authenticate_jellyfin(username: str, password: str, *, config=None,
     try:
         response = transport.request(
             "POST", f"{base}/Users/AuthenticateByName",
-            headers={"X-Emby-Authorization": CLIENT_HEADER},
+            headers={"X-Emby-Authorization": _client_header(device_id)},
             json_body={"Username": str(username or ""), "Pw": str(password or "")},
         )
     except AuthError:

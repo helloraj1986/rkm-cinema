@@ -71,6 +71,10 @@ def scenario_a_current_required(page: Page, base: str, shots: str) -> None:
     state = open_frame(page, base, "has_password=1", shots, "with-password")
     check(state["submitDisabled"] is False or state["submitDisabled"] is not None,
           "A: the submit button should exist")
+    # Which account will be changed must be on screen BEFORE the button is pressed: the app acts as
+    # the profile in effect, so a wrong target has to be visible, not discovered afterwards.
+    check(state["target"] == "Geetanjali",
+          f"A: the screen should name the account it changes, got {state['target']!r}")
 
     # Blank everything: refused, with the reason, and NO request.
     fill(page, "", "new-pw", "new-pw")

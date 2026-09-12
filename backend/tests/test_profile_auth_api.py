@@ -119,6 +119,10 @@ def api(tmp_path, monkeypatch):
     monkeypatch.setattr(auth_route, "admin_status", fake_admin_status)
     monkeypatch.setattr(auth_route, "revoke_jellyfin_session",
                         lambda token, **kw: revoked.append(token) or True)
+    # The route PROVES a password change by signing in with the new value (a 204 is not evidence).
+    # Tests stand in for the media server here; `seen["password_verify"]` decides the answer.
+    monkeypatch.setattr(auth_route, "password_change_took_effect",
+                        lambda name, pw, **kw: seen.get("password_verify", True))
     monkeypatch.setattr(admin_route, "build_library_service", lambda *a, **k: library)
     monkeypatch.setattr(session_mod, "session_store", lambda config=None: store)
     monkeypatch.setattr(session_mod, "build_library_service", lambda *a, **k: library)
@@ -410,6 +414,33 @@ class TestChangeMyOwnPassword:
         assert r.status_code == 200
         assert r.json() == {"ok": True}
         assert "new-pw" not in r.text and "old-pw" not in r.text
+
+    def test_a_change_the_server_did_not_really_apply_is_a_502(self, api):
+        """The live failure, pinned: Jellyfin answered 204 and the old password kept working.
+
+        A status code is not evidence. The route signs in with the new value before claiming
+        anything, and says so honestly when that fails — which is what the screen used to get
+        wrong ("Password changed" while nothing had changed).
+        """
+        _sign_in(api)
+        _select(api, "uid-kid")
+        api.seen["password_verify"] = False
+        r = api.client.post("/api/auth/profile/password",
+                            json={"current_password": "", "new_password": "new-pw"})
+        assert r.status_code == 502
+        assert "not applied" in r.json()["detail"]
+        assert api.library.password_changes == [("", "new-pw")], "it did reach the server"
+
+    def test_the_verification_names_the_profile_and_the_new_password(self, api, monkeypatch):
+        """Verifying the wrong identity would 'confirm' the wrong account."""
+        _sign_in(api)
+        _select(api, "uid-kid")
+        seen_args: list[tuple[str, str]] = []
+        monkeypatch.setattr(auth_route, "password_change_took_effect",
+                            lambda name, pw, **kw: seen_args.append((name, pw)) or True)
+        api.client.post("/api/auth/profile/password",
+                        json={"current_password": "", "new_password": "new-pw"})
+        assert seen_args == [("Kid", "new-pw")]
 
     def test_an_unbuildable_provider_is_a_503_not_a_refusal(self, api, monkeypatch):
         _sign_in(api)

@@ -76,9 +76,12 @@ export function PasswordView() {
       <div>
         <h1 className="text-2xl font-semibold text-zinc-100">My password</h1>
         <p className="mt-1 text-sm text-zinc-400">
-          {profile?.name ? <>Signed in as {profile.name}. </> : null}
-          This changes the password for the profile in effect — the one the app plays as. It is your
-          media server credential too, so it also works in Jellyfin&apos;s own apps.
+          This changes the password for{" "}
+          <span data-testid="password-target" className="font-medium text-zinc-200">
+            {profile?.name || "the profile in effect"}
+          </span>
+          {" "}— the profile the app is playing as, which is the account every request is made for.
+          It is your media server credential too, so it also works in Jellyfin&apos;s own apps.
         </p>
       </div>
 

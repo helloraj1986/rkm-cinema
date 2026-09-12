@@ -112,6 +112,38 @@ Renaming the account breaks anything that assumes the name:
 | **4** | **Recovery, documented and tested**: `rkm-cinema.ps1 reset-admin-password` → reads the API key from the volume (never from `.env`), prompts for a new password, calls `POST /Users/Password?userId=…&ResetPassword=true`, then VERIFIES by signing in; `OPERATIONS.md` gains the runbook and the "forgot everything" ladder | the tool's own verification output; pytest for its pure parts |
 | **5** | ADR (the credential model), docs truth pass (`ARCHITECTURE`, `OPERATIONS`, `README`), PROGRESS record | full suite + docs links |
 
+### 6d. A 2xx is not evidence — a password change is now PROVED before it is claimed
+
+**His second report:** *"password change from the profile itself doesn't work..it just says password
+changed after filling in the old password and new password..but it never lands...when switch profile
+and login back to rajeev it still takes the old password"*.
+
+Measured with the app's own code (session seam set as a real session, then verified by logging in):
+
+| | result |
+|---|---|
+| profile **set** in the session (normal) | `change_own_password()` → landed; new password logs in, old one does not ✔ |
+| profile **NOT set** (partial session) | the app falls back to the **OWNER** and targets the administrator's account |
+
+That second row is the dangerous one, and it is why the screen could report a change that had not
+happened **to the account the person was looking at**. And the shape itself is fine: the raw
+self-change call (`CurrentPw` + `ResetPassword: false`, caller's own token) lands, verified by login —
+so nothing about the request needed changing.
+
+**What changed**: the route no longer believes the status code. After a successful call it signs in
+**with the new password** (`password_change_took_effect`, on its own `rkm-password-verify` device —
+never the app's device, because Jellyfin rotates a `(device, user)` token on every login and that
+would kill the session asking), and only then says "changed". If that fails it answers **502** with
+*"…the new password does not work, so it was not applied"*. The screen also now **names the account it
+will change** (`data-testid="password-target"`), so a wrong target is visible before pressing rather
+than discovered afterwards.
+
+⚠ **Still open** — *which* account his attempt actually hit. The api logs the profile id on every
+change (`logger.info("auth.password …confirmed for profile id=%s")`), so one retry plus
+`docker compose -p rkm-bundled logs api | Select-String "auth.password"` names it. If it names the
+administrator's id rather than the member's, the cause is a stale/partial session (profile not set),
+and the follow-up fix is to refuse to change a password when the session is not on a profile.
+
 ### 6c. ⚠ MEASURED: `ResetPassword: true` is a silent no-op that CLEARS passwords
 
 **Found live 2026-09-12**, from his report: *"i have logged in as admin(rkm) -> household -> set a

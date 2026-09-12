@@ -20,15 +20,14 @@ import logging
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 
-from api.models import (
-    ChangePasswordRequest,LoginRequest, LoginResponse, MeResponse, ProfileUser,
-                        ProfilesResponse, SelectProfileRequest, SelectProfileResponse,
-                        SessionUser)
+from api.models import (ChangePasswordRequest, LoginRequest, LoginResponse, MeResponse,
+                        ProfileUser, ProfilesResponse, SelectProfileRequest,
+                        SelectProfileResponse, SessionUser)
 from api.session import admin_status, grantable_rows, session_context_from_request
 from config.settings import get_config
 from services.auth import (SESSION_COOKIE, AuthUnavailableError, InvalidCredentialsError,
                            authenticate_jellyfin, default_session_store,
-                           revoke_jellyfin_session)
+                           password_change_took_effect, revoke_jellyfin_session)
 from services.library.factory import build_library_service
 
 router = APIRouter()
@@ -281,7 +280,17 @@ def change_own_password(payload: ChangePasswordRequest, request: Request):
                        context.profile_id(), reason)
         raise HTTPException(status_code=502,
                             detail="The media server refused the password change")
-    logger.info("auth.password changed for profile id=%s", context.profile_id())
+    # PROOF, not a status code. `POST /Users/Password` has answered 204 while storing nothing —
+    # and CLEARED passwords — and the live symptom was a screen reporting "Password changed" while
+    # the old password still worked. So the change only counts if the NEW password authenticates.
+    if not password_change_took_effect(context.profile_name(), payload.new_password, config=cfg):
+        logger.warning("auth.password NOT confirmed for profile id=%s", context.profile_id())
+        raise HTTPException(
+            status_code=502,
+            detail="The media server accepted the change but the new password does not work, so "
+                   "it was not applied. Try again — and if it keeps happening, ask the "
+                   "administrator to set one from Household.")
+    logger.info("auth.password changed and confirmed for profile id=%s", context.profile_id())
     return JSONResponse({"ok": True})
 
 

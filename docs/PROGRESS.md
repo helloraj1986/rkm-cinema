@@ -1,51 +1,75 @@
-## ▶ NEXT SESSION — START HERE: multi-user auth (per-user identity via Jellyfin). Plan `docs/AUTH_MULTIUSER_PLAN.md` on branch `feat/auth-multiuser` (`d62ce52`) — **SCOPED IN DETAIL, NOT STARTED.** Nothing about auth is live; the running stack is unchanged.
+## ▶ NEXT SESSION — START HERE: auth Phase 1 (frontend login view + guard — STILL nothing enforced). Branch `feat/auth-multiuser` @ `dd921ed`; plan `docs/AUTH_MULTIUSER_PLAN.md`.
 
-**The task:** execute `AUTH_MULTIUSER_PLAN.md` phase by phase — ONE commit per phase, gates green after
-every one, `docs(status)` record at the end. User decisions already made (2026-09-12): multi-user auth with
-**real per-user state for the household, identity DELEGATED to Jellyfin**; native Jellyfin collections
-(app-authored, visible in Jellyfin's own apps) is queued BEHIND it.
+**Where the plan stands:** **Phase 0 ✅ DONE** (`dd921ed`, pushed 2026-09-12) — server-side
+sessions, `/api/auth/login|logout|me`, the `async def` contextvar seam, `RKM_AUTH_REQUIRED`
+plumbing, and a REAL login proven against the live Jellyfin. Phases 1–5 remain. Nothing is
+enforced yet, so the running stack is unchanged: **the user has nothing to deploy for Phase 0.**
 
-**Phase order (deliberate — read §5 before deviating):** 0 store + `/api/auth/*` endpoints (additive, nothing
-enforced) → 1 frontend login view + guard + sign out (**still nothing enforced**) → 2 enforcement + machine
-token + the 401 sweep test → 3 per-request Jellyfin identity + per-user `Views` → 4 per-user subtitle prefs
-(usage counts stay shared) → 5 docs + **ADR-0006** + record.
+**Next task = PHASE 1** (`AUTH_MULTIUSER_PLAN.md` §6): `frontend/src/features/auth/LoginView.tsx`
++ `AuthProvider.tsx` + `lib.ts`/`lib.test.ts`, the `/login` route **outside** the shell,
+`lib/api/client.ts` `login()/logout()/me()` with `credentials: "same-origin"` and ONE 401
+interceptor (fire once, not per request), a user chip + **Sign out** with `queryClient.clear()`
+on both, a skeleton while `me()` is pending, and the new `tools/check_login_flow.py` DOM check
+(Playwright, mirrors `check_subtitle_panel.py`). **Do NOT flip `RKM_AUTH_REQUIRED` in Phase 1**
+— that is Phase 2, and only after the login screen is on the user's screen (§5, the lockout rule).
 
-⚠ **THE LOCKOUT RULE (the reason for that order):** the login UI ships BEFORE anything is enforced, and
-`RKM_AUTH_REQUIRED` (default `false`) is the escape hatch — if the user ever cannot get in, set it `false` and
-`docker compose -p rkm-bundled up -d --build api`. Do NOT enforce in the same phase that introduces the UI.
+**Two things to settle with the user before Phase 3 — ASK, don't assume:**
+1. The **subtitle eyeball** (`main` @ `c0ae65e`) is STILL outstanding as of 2026-09-12. It does not
+   block this branch (no subtitle code is touched until Phase 4) but it must not be lost.
+2. **Phase 3's live proof needs a SECOND Jellyfin user** — the server has exactly ONE (`admin`;
+   re-confirmed by a real login in Phase 0, user id `1760c9b047d444d39c94a99d082773ed`). Creating
+   another account changes HIS server, so it is his call (Jellyfin dashboard → Users → Add user).
 
-**Two things to check with the user before starting / before Phase 3:**
-1. The **subtitle eyeball** (`main` @ `c0ae65e`) is still outstanding — confirm it passed; it does not block
-   this branch (no subtitle code touched until Phase 4).
-2. **Phase 3's live proof needs a SECOND Jellyfin user** — the server has exactly ONE (`admin`, verified). The
-   user decides who/when; the dashboard is a 2-minute job, the in-app "add user" flow is the optional Phase 5
-   nicety. Ask, don't assume.
+**Lockout recovery — VERIFIED MECHANISM (measured in Phase 0):** the api's config comes from the
+RENDERED `.rkm.env`, so editing `.env` and recreating the api would NOT have picked a new value up.
+`docker-compose.yml` now interpolates `RKM_AUTH_REQUIRED` from the repo `.env`, so
+`docker compose -p rkm-bundled up -d --force-recreate api` really does apply the change — no render,
+no provisioner, so it cannot cancel an in-flight library scan. If he ever cannot get in: set
+`RKM_AUTH_REQUIRED=false` and run that.
 
-**Measured facts the plan rests on** (all re-verifiable, listed in §2): no auth anywhere today (no security
-deps in `backend/api/**`, no nginx auth, CORS `"*"`); the api is NOT published on the host (only `web:8124` +
-jellyfin); one admin token at **21 `api_key=` sites**; `build_library_service()` called **18 times, always
-per request** (that is what makes this feasible); 41 contract paths / 20 routers; frontend has no 401 handling;
-`Dockerfile`'s HEALTHCHECK calls `/api/health`, so that route MUST stay public; the PS tooling touches the app
-only on `/api/health` and `/api/library/folders`.
+**Per-user vs shared is decided (§4) — do not "fix" it:** watch state, resume, watched flags and
+library visibility per user (free from Jellyfin); subtitle PREFERENCES per user; subtitle USAGE
+counts and the watchlist stay **household-shared**.
 
-**Design in one breath:** server-side sessions (opaque cookie id, `sha256` at rest, Jellyfin token NEVER in
-the browser, store `/data/rkm/sessions.json` so a rebuild doesn't log everyone out); `require_session`
-dependency publishing the session into a contextvar that `JellyfinLibraryProvider._token()` prefers, **falling
-back to the admin token** so the provisioner/bootstrap/tools keep working; `RKM_API_TOKEN` for the repo's own
-tooling; `/api/auth/login|logout|me` (41 → 44 paths **breaking** ⇒ ADR-0006 required by ADR-0001).
+**Gates every phase:** `cd backend && python -m pytest -q && python -m ruff check .`; plus
+`cd frontend && npx tsc --noEmit && npx vitest run && npm run build` (the typed client is
+regenerated whenever the contract changes). Contract check:
+`python -c "import json;d=json.load(open('docs/api/openapi.v1.json'));print(len(d['paths']),'paths')"` → 44.
 
-**Per-user vs shared is decided (§4) — do not "fix" it:** watch state, resume, watched flags and library
-visibility per user (free from Jellyfin); subtitle PREFERENCES per user; subtitle USAGE counts and the
-watchlist stay **household-shared** (the counts rank one shared download quota; the watchlist is the
-acquisition queue).
+**Also queued after this:** native Jellyfin collections (app-authored, visible in Jellyfin's own apps).
+## ▶ LATEST SESSION (2026-09-12) — AUTH PHASE 0 OF 6: SERVER-SIDE SESSIONS + `/api/auth/*` ✅ (branch `feat/auth-multiuser`, commit `dd921ed`, pushed; **NOTHING ENFORCED — nothing to deploy**)
 
-**Gates every phase:** `cd backend && python -m pytest -q && python -m ruff check .`; plus, because the typed
-client is regenerated whenever the contract changes, `cd frontend && npx tsc --noEmit && npx vitest run &&
-npm run build`. Contract check: `python -c "import json;d=json.load(open('docs/api/openapi.v1.json'));print(len(d['paths']),'paths')"` → 44 after Phase 0.
+**User instruction:** *"PICKUP THE WORK FROM PROGRESS.MD IN RKM-CINEMA APP"* — execute
+`AUTH_MULTIUSER_PLAN.md` phase by phase: ONE commit per phase, gates green after each.
+This session did **Phase 0 only** (the plan's own order); Phases 1–5 are untouched.
 
-**Also still queued after this:** native Jellyfin collections (user's choice: app-authored, visible in
-Jellyfin's own apps); the subtitle plan's own leftovers are DONE — subtitles, all 6 phases, are merged to
-`main` @ `c0ae65e` (ADR-0005).
+**What landed (additive only — 41 → 44 contract paths, +143/−0; typed client +206/−0):**
+- `backend/services/auth.py` — `SessionStore` (create / lookup / revoke / prune / count / `records()`): atomic tmp+`os.replace`, **mode 0600**, mtime-cached reads, corrupt file ⇒ log + start empty, **sha256 of the id as the stored key**, 30-day **sliding** expiry refreshed on use (rate-limited to one write per 60 s so the hot path stays a read), and a login that prunes expired rows. Plus `authenticate_jellyfin()` with its own typed taxonomy (`InvalidCredentialsError` ⇒ 401, `AuthUnavailableError` ⇒ 503) — credential check delegated to `/Users/AuthenticateByName`, the login attributed to a NEW identity `MediaBrowser Client="RKM Cinema", Device="RKM Cinema Web"` (deliberately not the `rkm-tools` identity: Jellyfin's own log is how a dropped write is traced back to a client).
+- `backend/api/session.py` — `require_session` + `current_session()` on a **contextvar**, and `session_context_from_request()`. Enforcement is the FLAG, not a code path: with `RKM_AUTH_REQUIRED=false` a stranger is not an error (behave exactly as before), with it true a missing session is a 401.
+- `backend/api/routes/auth.py` — `POST /api/auth/login` (`{username,password}` → user + `Set-Cookie`), `POST /api/auth/logout` (revoke + clear), `GET /api/auth/me` (STRICT 401 when signed out, independent of the flag — the frontend guard asks this, and "signed out" ≠ "not enforced yet"). `LoginRequest`/`SessionUser`/`LoginResponse`/`MeResponse` in `api/models.py`.
+- `config/settings.py` `RKM_AUTH_REQUIRED` (annotated ⇒ the real-env passthrough carries it; `auth_required()` reads it PER REQUEST and **fails OPEN** on a typo) + `render_config.py::build_api_vars` carries it into `.rkm.env` (the api container's env is the RENDERED file — a key missing there can never be set by the user).
+
+**Four things this session had to MEASURE or PROVE, each of which would have failed silently:**
+1. ⚠ **`require_session` must be `async def`.** FastAPI runs a *sync* dependency in a worker thread whose context is a **copy**, so a contextvar set there is discarded before the endpoint runs — the Phase 3 provider would then quietly fall back to the ADMIN token and every user would share one identity, with no error anywhere. Proved by test: swapping it to `def` fails `TestSessionSeam` with `context_user=None` (contextvar lost, dependency value fine); restored, all 4 pass.
+2. ⚠ **Set the cookie on the RESPONSE YOU RETURN.** FastAPI does not merge headers set on an injected `Response` into a returned `JSONResponse`, so the obvious `def login(response: Response)` form silently drops the cookie (200, no session). Building the `JSONResponse` first and calling `set_cookie` on it is test-pinned (`HttpOnly; Max-Age=2592000; Path=/; SameSite=lax`, **no `Secure`** — plain-http tailnet).
+3. ⚠ **The plan's lockout command was FALSIFIED and is now fixed in infrastructure, not just in prose.** The api's environment is the rendered `.rkm.env`, so `RKM_AUTH_REQUIRED` set in `.env` + `up -d --build api` (§5's "no render needed: the value is read per request") would NOT have taken effect. `docker-compose.yml` now interpolates `RKM_AUTH_REQUIRED: "${RKM_AUTH_REQUIRED:-false}"` from the repo `.env` — compose reads it for interpolation and recreates on a changed config hash, so the documented recovery works and (unlike a full deploy) cannot cancel an in-flight library scan.
+4. **A raw transport error must be WRAPPED** (`(URLError, timeout, OSError)` ⇒ `AuthUnavailableError`), or it escapes the taxonomy and the route answers a 500 instead of a 503; the message carries the exception CLASS, never its text (a urllib error stringifies its URL).
+
+**Gates:** **746** backend pytest (65 new) · ruff clean · `tsc --noEmit` clean · **185** vitest · vite build green · contract 41 → **44** paths, purely additive · typed client +206/−0 · openapi `added: ['/api/auth/login','/api/auth/logout','/api/auth/me']`, `removed: []`.
+
+**LIVE proof against the real thing** (local uvicorn `:8033`, isolated store in `/tmp`, the real bundled Jellyfin 10.11 at `host.docker.internal:8098`, a genuine `POST /api/auth/login` with the repo's admin credentials — never printed):
+```
+signed out:            GET /api/auth/me -> 401
+nothing enforced yet:  GET /api/library/folders -> 200
+REAL login:            POST /api/auth/login -> 200  {"user":{"id":"1760c9b047d444d39c94a99d082773ed","name":"admin"}}
+  Set-Cookie: rkm_session=<opaque>; HttpOnly; Max-Age=2592000; Path=/; SameSite=lax      (43-char cookie, token NOT in it)
+with the cookie:       GET /api/auth/me -> 200
+logout:                POST /api/auth/logout -> 200  (Max-Age=0)   then /api/auth/me -> 401   (server-side revocation)
+store on disk:         keys are 64-hex sha256, the raw cookie value is absent from the file
+```
+The login created one device entry in HIS Jellyfin; it was purged afterwards (`DELETE /Devices?Id=rkm-cinema-web` → **204**, re-listed and confirmed absent). One earlier purge attempt answered 401 — because Jellyfin ROTATES a device's token on every login, so the row the script picked was already dead, not because of the header style.
+
+**Nothing to deploy.** Phase 0 is additive and unenforced; the running stack is behaviourally identical. Next: Phase 1 (frontend login view, still nothing enforced).
 ## ▶ LATEST SESSION (2026-09-12) — SUBTITLES PHASE 5: HARDENING + DOCS + ADR-0005 ✅ **PLAN COMPLETE (all 6 phases)** (branch `feat/subtitles-hardening`; the four earlier commits are on `main` at `710f678`)
 
 **Hardening — the plan's criterion 10 as TESTS, not as hope.** Seven new API tests + three client tests pin the failure paths end to end: a dead network, a vendor payload nobody expected, blank credentials, quota exhausted, and a rate limit. What they enforce: the search listing **degrades to the item's own tracks on a 200** (never a 500, never an empty panel), select answers **503** not configured / **502** credentials & transport / **429** quota & rate limit, nothing is attached or remembered when the download failed, and "off" still works with the vendor dead. `tools/check_subtitle_panel.py --fail-search` proves the same thing in the BROWSER: with the online search returning 502, the item's own subtitles are still listed and still appliable, the Off row survives, and the notice says why.

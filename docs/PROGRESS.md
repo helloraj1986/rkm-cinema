@@ -26,6 +26,51 @@ Routes Phase B consumes (all live on `78f139e`):
 refused the moment somebody else's profile is selected (decision 3). A profile's libraries come from
 the `POST /api/auth/profile` response, which already resolves them to names.
 
+### Continue here — the map (so nothing has to be re-derived)
+
+* Repo `/workspace/projects/rkm-cinema` (= his `D:\hermes_agent\hermes-workspace\projects\rkm-cinema`),
+  branch **`feat/auth-multiuser`**, tip **`e820e6f`**, working tree clean, all pushed; **`main` is
+  untouched** and nothing merges until he asks.
+* The phase table lives in `docs/PLEX_PROFILE_AUTH_PLAN.md` §7. One line each, so this file is enough
+  to pick up from:
+  * **A ✅ `78f139e`** — administrator-only login, profiles list + select, owner/profile session, `me.profile`.
+  * **B ⏭ NEXT** — the picker UI, header switcher, guard change, `tools/check_profile_picker.py`.
+  * **C** — **identity threading**: `acting_token()` through the provider's `_token()`; a profile's
+    libraries from its own `/UserViews`. **This is the phase that makes folder grants real.**
+  * **D** — Household gains **rename** (`POST /Users?userId=`) and the profile's own
+    "change my password" (`CurrentPw` + `NewPw`).
+  * **E** — the 401/403 sweep, ADR-0006, docs, record.
+* What Phase B touches: `frontend/src/features/auth/*` (provider/guard/login), `frontend/src/app/router.tsx`,
+  `frontend/src/app/layout/Header.tsx` (switcher), a new `frontend/src/features/profiles/*`,
+  `frontend/harness/profile-frame.*`, `tools/check_profile_picker.py`. **The backend needs no changes
+  for B** — every route it uses is live and tested.
+* Gates before every commit in this workstream:
+
+  ```bash
+  cd backend  && python -m pytest -q && python -m ruff check .
+  cd frontend && npx tsc --noEmit && npx vitest run && npm run build
+  python3 backend/scripts/snapshot_openapi.py   # only when routes change (49 → 51 is the current state)
+  python3 tools/check_md_links.py
+  ```
+
+* Five traps this workstream has already paid for — do not repeat them:
+  1. **A new provider capability needs a FACADE delegation** (`services/library/service.py`), or the
+     route raises `AttributeError` and the gate reports it as "not an administrator". That cost a live
+     wrong answer on 2026-09-12.
+  2. **A test fake must mirror what the ROUTE receives** (the facade's shapes — `library_folders()`
+     returns a dict), not what the provider returns, or a whole class of bug passes the suite and fails
+     live.
+  3. `grantable_rows()` (in `api/session.py`) is the ONE shape handler. Use it; do not inline the
+     isinstance dance a third time.
+  4. Vite serves **stale modules** on this mount: kill the PID holding the port before believing any
+     DOM check, or the measurement is of pre-edit code (both false FAILs and false PASSes come from this).
+  5. Never offer an admin route to a non-administrator profile, and never arm `RKM_AUTH_REQUIRED` for him.
+* Phase C's proof — the one that actually matters, and the one to write into the block when it lands:
+  with **two real profiles** holding different watch positions, resume a title as one and show the
+  other does NOT see it; and a profile granted only `Movies` must get an empty/404 for a TV item even
+  when the item URL is typed by hand. Mint any tooling API key on its **own** device id — Jellyfin
+  rotates a device's token on every login, so a key minted on the app's device id dies at the next sign-in.
+
 ### The honest state of the whole feature (say this, do not oversell it)
 
 * Profile selection, the admin-only login and the shared-device rule are **real** and backend-enforced.

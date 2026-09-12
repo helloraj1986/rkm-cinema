@@ -99,6 +99,53 @@ hand that profile to anyone who walks up to a device where the administrator has
 the precise hole §4.3 exists to close. If the double prompt ever becomes unwanted, the change belongs
 in the RULE as a new user decision, **never** in the UI.
 
+### 4d. Phase C — the enforcement, as MEASURED (2026-09-12, live Jellyfin 10.11.11)
+
+Measured against the live server with TWO REAL accounts — `admin` (administrator, all folders) and
+`Geetanjali` (non-administrator, no password, granted **`Movies` only**) — by minting one session
+token per account on its **own** device id (Jellyfin rotates a device's token on every login).
+Every number below is from that run; the tool that proves it is `tools/prove_profile_isolation.py`.
+
+| Call | as the ADMINISTRATOR's own token | as the PROFILE's token |
+|---|---|---|
+| `GET /Library/VirtualFolders` | 3 libraries (`Movies`, `TV Shows`, `Movies Kids`) | **403** (needs elevation) |
+| `GET /UserViews?userId=<id>` | 3 | **1** (`Movies`) |
+| `GET /Users/{uid}/Items?IncludeItemTypes=Series` | 115 | **0** |
+| `GET /Users/{uid}/Items?IncludeItemTypes=Movie` | 853 | 713 |
+| `GET /Users/{uid}/Items/{tvId}` (item_detail / item_path / item_similar / _user_state) | 200 | **404** |
+| `GET /Items/{tvId}/Images/Primary` (poster) | 200 | **404** |
+| `POST /Items/{tvId}/PlaybackInfo` | 200 | **404** |
+| `GET /Items/{tvId}/Ancestors?userId=` | `['TV Shows', 'Media Folders']` | **404** |
+| write a resume position as ONE profile | — | appears in **that** profile's `/Items/Resume` only; the other profile's Resume is unchanged (and a position-0 write removes it again) |
+
+**Four consequences — three of them contradict what this plan assumed.** They are recorded so the
+next session does not "fix" a non-problem or re-open a settled one:
+
+1. **§7's Phase C acceptance claim is CONFIRMED — through the app's OWN URL shapes, and it needs no
+   app-level guard.** ⚠ But the same server DOES answer two OTHER forms **unfiltered**:
+   `/Users/{uid}/Items?Ids=<id>` returned the non-granted TV series (200, `Items[1]`), and
+   `/Items/{id}?userId=<uid>` answered for it too. The app builds **neither** form. So: never
+   "harden" this by adding a membership check (unnecessary), and never switch a provider call to an
+   `Ids=` list query or a bare `/Items/{id}` (that would silently hand a member anything whose id
+   they know — the leak this plan exists to prevent).
+2. **`library_folders()` cannot read `/Library/VirtualFolders` while somebody else's profile is in
+   session — it is 403.** A profile's libraries therefore come from **its own
+   `/UserViews?userId=`**, and the app keeps the administrator's own profile on `VirtualFolders`
+   exactly as today (that call IS elevated for the administrator's session token — measured, see
+   row 1). The owner/profile distinction is the session's own fact (`on_own_profile()`), not a guess.
+3. **`/UserViews` rows carry NO `CollectionType`** (the row's `Type` is `CollectionFolder`, and the
+   only path it reports is Jellyfin-internal, `/config/root/default/Movies`). The profile's views are
+   therefore ENRICHED — id → `collection_type` + `path` — from the administrator's folder list, which
+   is metadata the app already holds (it is what `.env`'s `MEDIA_LIBRARY_N_PATH` is matched against)
+   and which is then **filtered down to the profile's own views** before anything is returned. Without
+   the enrichment the sidebar loses its per-library icon and `/library/<kind>` loses its redirect
+   target, for members only — a silent, cosmetic-only regression.
+4. **The seam had to be ARMED: `require_session` was referenced by no route at all**, so no media
+   route published the session contextvar and the provider could not have seen a profile even with
+   the threading in place. Phase C adds it as a **router-level dependency** on every app router
+   (`/api/health` and `/api/auth/*` excepted — the healthcheck and the sign-in must stay public),
+   which is ONE line per router instead of a `Depends` on ~40 endpoints.
+
 ### 4.3 The shared-device rule (recommended, decision 3)
 The device holds the administrator's session, so "anyone can walk up and administer" is the real risk
 of this model — Plex's answer is a PIN on the Home admin, and the backend equivalent is: **admin

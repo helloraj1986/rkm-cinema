@@ -415,6 +415,47 @@ class TestChangeMyOwnPassword:
         assert r.json() == {"ok": True, "confirmation": "verified", "name": "Kid"}
         assert "new-pw" not in r.text and "old-pw" not in r.text
 
+    def test_the_write_is_made_as_the_profile_itself(self, api, monkeypatch):
+        """The wiring only the REAL provider can show (a fake never falls back).
+
+        `/api/auth/*` is deliberately NOT session-scoped, so if this route does not publish the
+        session before calling the provider, the provider falls back to the APP's API key for the
+        credential — which is elevated, so the write SUCCEEDS — and to `_user_id()`'s "first account
+        on the server" lookup for the target. Measured live 2026-09-12: a change meant for one
+        profile was applied to a different one, and the target moved as profiles were created and
+        removed, which is exactly why it looked intermittent.
+        """
+        from services.library.factory import build_library_service
+
+        _sign_in(api)
+        _select(api, "uid-kid")
+        monkeypatch.setattr(auth_route, "password_change_took_effect",
+                            lambda name, pw, **kw: "verified")
+
+        cfg = SimpleNamespace(JELLYFIN_URL="http://jellyfin.invalid", JELLYFIN_API_KEY="app-key",
+                              JELLYFIN_BROWSER_URL="", JELLYFIN_SCAN_TTL=60)
+        service = build_library_service(cfg)
+        provider = service.providers[0]
+        seen: list[dict] = []
+
+        def fake_api(method, path, body=None):
+            seen.append({"method": method, "path": path, "body": body,
+                         "credential": provider._api_token()})
+            return True, {}
+
+        monkeypatch.setattr(provider, "_api", fake_api)
+        monkeypatch.setattr(auth_route, "build_library_service", lambda *a, **k: service)
+
+        r = api.client.post("/api/auth/profile/password",
+                            json={"current_password": "", "new_password": "new-pw"})
+        assert r.status_code == 200, r.text
+        posts = [c for c in seen if c["method"] == "POST"]
+        assert posts, "the change must reach the provider"
+        assert posts[-1]["path"] == f"/Users/Password?userId=uid-kid", (
+            "it must target the PROFILE's id, not whatever account happens to be first on the server")
+        assert posts[-1]["credential"] == "token-uid-kid", (
+            "and it must act with the PROFILE's own credential, not the app's API key")
+
     def test_a_session_with_no_profile_choice_cannot_change_a_password(self, api):
         """Without this rail a half-signed-in session would change the ADMINISTRATOR's password.
 

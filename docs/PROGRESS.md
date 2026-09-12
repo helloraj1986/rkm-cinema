@@ -66,6 +66,28 @@ the session was on meenu from earlier. The label + the named answer together mak
 `name='raj'` + `refused` = the sign-in genuinely failed for that account (a real problem to chase);
 `name=''` + `unavailable` = we could not name it and deliberately did not check.
 
+### 🎯 ROOT CAUSE FOUND AND FIXED (2026-09-12): the auth route was not session-scoped
+
+`POST /api/auth/profile/password` lives on the auth router, which is deliberately NOT session-scoped
+(sign-in must work signed out), so no dependency published the session contextvar for it. The provider
+therefore fell back to **the app's API key** (elevated ⇒ the write always "succeeded") and to
+`_user_id()`'s **first-account-on-the-server** lookup ⇒ **the change was applied to whichever profile
+was first in `/Users` order** (`meenu`, `raj`, `rkm` → `meenu`). The route's name/verification read the
+session from the REQUEST, so it reported on the right account while the write went elsewhere.
+
+* Proof: `raj + 'raj1234'` refused · **`meenu + 'raj1234'` logged in** · `rkm + 'raj1234'` refused.
+* Why it looked intermittent: the first account changes as profiles are made and removed.
+* Fix: publish the session around the provider call (`set_current_session` … `finally reset`), plus a
+  routing-layer regression test that drives the REAL provider and asserts the target id and the
+  credential — **it fails without the fix**.
+* Proven end-to-end locally against the live server: change → `{"ok": true, "confirmation":
+  "verified", "name": "raj"}`, old password stops working, new one logs in.
+
+⚠ **Follow-up worth doing:** a stale profile token now surfaces as "that current password is not
+correct" (Jellyfin answers 401 for both). The honest degrade is "switch profile again". Also consider a
+guard so the provider can never substitute the first account when a session exists but no identity was
+published — "no context" is right for tools/provisioner and wrong for a write acting as a person.
+
 ### ✅ CONFIRMED BY HIM (end of session, 2026-09-12): the password flows work end to end
 
 His words: *"i removed the old profile and tried with creating new profiles and it seems to work, i can

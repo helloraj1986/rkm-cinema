@@ -112,6 +112,44 @@ Renaming the account breaks anything that assumes the name:
 | **4** | **Recovery, documented and tested**: `rkm-cinema.ps1 reset-admin-password` → reads the API key from the volume (never from `.env`), prompts for a new password, calls `POST /Users/Password?userId=…&ResetPassword=true`, then VERIFIES by signing in; `OPERATIONS.md` gains the runbook and the "forgot everything" ladder | the tool's own verification output; pytest for its pure parts |
 | **5** | ADR (the credential model), docs truth pass (`ARCHITECTURE`, `OPERATIONS`, `README`), PROGRESS record | full suite + docs links |
 
+### 6e. ⚠ THE ROOT CAUSE of "it says changed but nothing changes": the route was not session-scoped
+
+Found 2026-09-12 after a long chase, by reproducing his exact symptom **through the app's own HTTP API**
+(admin login → select the profile → change the password → verify by logging in outside the app). The
+response was `{ok: true, confirmation: "refused", name: "raj"}` and `raj`'s password had not changed.
+
+**Mechanism.** `POST /api/auth/profile/password` lives on the **auth router**, which is deliberately
+**not** session-scoped (sign-in must work signed out — see `api/main.py::SESSION_SCOPED`). So no
+dependency ever publishes the session contextvar for it, and the provider — which reads the identity
+from that contextvar — silently fell back to:
+
+* the **app's API key** for the credential (elevated, so the write ALWAYS succeeded), and
+* `_user_id()`'s historical lookup, which is **the first account on the server**.
+
+So the change was applied to whichever profile happened to be **first in `/Users` order** (measured:
+`meenu`, `raj`, `rkm` → `meenu`), while the route's own name/verification — which reads the session
+from the REQUEST — correctly reported on the profile it was told about. That is why:
+
+* it looked **intermittent**: the "first account" changes as profiles are created and removed;
+* it appeared to work for `meenu` earlier: `meenu` WAS first, so "meenu's" change changed `meenu`;
+* proof positive, measured read-only: `raj + 'raj1234'` refused, **`meenu + 'raj1234'` logged in**,
+  `rkm + 'raj1234'` refused — his "raj" change had landed on `meenu`.
+
+**Fixed** by publishing the session around the provider call (`set_current_session` / `reset_…` in a
+`finally`) in that route. A regression test at the routing layer drives the **REAL** provider through
+the route and asserts the POST targets the profile's id *and* carries the profile's own credential —
+and it **fails without the fix** (a fake library can never reveal this: the fallback only exists in the
+real provider).
+
+**Proven end-to-end** with the fixed code running locally against the live Jellyfin: login → select
+`raj` → change → `{"ok": true, "confirmation": "verified", "name": "raj"}`, and outside the app the old
+password stops working while the new one logs in.
+
+**The lesson, generalised:** a silent fallback that substitutes a *different identity* is worse than an
+error. "No context" is the right default for the provisioner, the scheduler and the tools — and the
+wrong one for any write that must act as the person asking. Any route that writes as "the current
+identity" must publish that identity first, and a test must prove it does.
+
 ### 6d. A 2xx is not evidence — a password change is now PROVED before it is claimed
 
 **His second report:** *"password change from the profile itself doesn't work..it just says password

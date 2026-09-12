@@ -23,7 +23,8 @@ from fastapi.responses import JSONResponse
 from api.models import (ChangePasswordRequest, LoginRequest, LoginResponse, MeResponse,
                         ProfileUser, ProfilesResponse, SelectProfileRequest,
                         SelectProfileResponse, SessionUser)
-from api.session import admin_status, grantable_rows, session_context_from_request
+from api.session import (admin_status, grantable_rows, reset_current_session,
+                        session_context_from_request, set_current_session)
 from config.settings import get_config
 from services.auth import (SESSION_COOKIE, AuthUnavailableError, InvalidCredentialsError,
                            authenticate_jellyfin, default_session_store,
@@ -277,7 +278,19 @@ def change_own_password(payload: ChangePasswordRequest, request: Request):
         raise HTTPException(status_code=503,
                             detail="Could not reach the media server to change the password.")
 
-    reason = library.change_own_password(payload.current_password or "", payload.new_password)
+    # ⚠ PUBLISH THE SESSION BEFORE TOUCHING THE PROVIDER. `/api/auth/*` is deliberately NOT
+    # session-scoped (sign-in has to work signed out), so no dependency publishes the session
+    # contextvar here — and without it the provider falls back to:
+    #   * the APP's API key for the credential (elevated, so the write SUCCEEDS), and
+    #   * `_user_id()`'s historical lookup, which is the FIRST account on the server.
+    # Measured 2026-09-12: a change meant for one profile was applied to a different one, and the
+    # target moved as profiles were created and removed — which is why it looked intermittent.
+    # The route resolved the session from the request all along; the provider never saw it.
+    context_token = set_current_session(context)
+    try:
+        reason = library.change_own_password(payload.current_password or "", payload.new_password)
+    finally:
+        reset_current_session(context_token)
     if reason == "wrong-password":
         # Deliberately generic and about the CURRENT password only: an unknown account and a wrong
         # password must not be distinguishable, and the new value is never mentioned.

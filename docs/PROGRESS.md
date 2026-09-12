@@ -1,3 +1,65 @@
+## ▶ NEXT SESSION — START HERE: admin credentials — Phase 1 ✅ BUILT (`bc018e1`) · next Phase 2 (rename + role) · and Phase C still needs HIS deploy
+
+**His instruction:** *"yes build it now"* → Phase 1 of `docs/ADMIN_CREDENTIALS_PLAN.md`. Earlier in the same
+session he revised the fresh-install decision (*"fresh install will create a admin with password.. which
+bootstrap.ps1 will let the user know so that it can record it and in that way there will be no fear of loosing
+the password"*), which **deleted the plan's riskiest phase** (see the rejected-design note in that plan's §4).
+
+### Waiting on HIM, in this order
+
+1. **Phase C's deploy + eyeball is still outstanding** — api only, and it is already proven live:
+   ```powershell
+   cd D:\hermes_agent\hermes-workspace\projects\rkm-cinema
+   .\rkm-cinema.ps1 status
+   docker compose -p rkm-bundled up -d --build api web
+   ```
+   Expected: sign in → **Who's watching?** → his profile (password again) → switch to **Geetanjali** → sidebar
+   shows only `Movies`, Continue Watching is hers, and a TV title cannot be opened even by URL.
+2. **Phase 1's FRESH-INSTALL half needs HIS throwaway-stack test** — the sandbox has no Docker daemon, so it
+   was not run. Recipe and the 5 things it must prove are in `ADMIN_CREDENTIALS_PLAN.md` §7 (own project name,
+   own ports, own empty volumes, then `down -v`). Nothing he cares about is at risk there.
+3. Then **Phase 2 — say go**: `Settings → Household` gains an **Administrator** badge, the account's real name,
+   and **rename** (`POST /Users?userId=`).
+
+### What landed (Phase 1)
+
+* **Bootstrap no longer needs the admin's password at all.** `ensure_admin()` picks a credential in order:
+  (1) the **stored API key** from `/shared/runtime.json` — what every run after the first one takes, so a
+  password the user later changed cannot break a bootstrap; (2) the **configured password** (the optional
+  `.env` override); (3) the **startup wizard** on a genuinely fresh install, which GENERATES a strong password,
+  sets it, and **prints it ONCE** — after the wizard step AND an authentication with it, so the console can
+  never announce a password that was not actually set, and nothing is written to any file.
+* **The generation moved** out of `render_config` (which runs on every bootstrap and cannot tell a fresh
+  install from a re-run) into `provision.py::run_startup()`, which knows it is creating the account because
+  that is what it is doing. `render_config` no longer generates or writes the key — **that write-back is
+  exactly why deleting the line from `.env` never stuck** — and compose's `:?` gate (which REFUSED to start
+  the provisioner without a value) is now `:-`.
+* **The administrator is resolved BY POLICY** (an enabled `IsAdministrator`), never by the literal name
+  `admin`: `RKM_JELLYFIN_ADMIN_USER` is now a first-run hint. That is what makes the **rename** safe to add in
+  Phase 2.
+* **Docs that would otherwise have started lying**, updated in the same commit: the `bootstrap.ps1`/`.sh`
+  first-run messages (they told the user the password is saved to `.env`), `scripts/restore-rkm-state.ps1`
+  (after a restore the password is the RESTORED account's, not `.env`'s), the expected deploy output in
+  `OPERATIONS.md`, README's two claims, and `.env.example` (documented as optional, with the reason).
+
+### Evidence
+
+* **899 backend pytest (+12)** · ruff clean · docs links resolve (39 files) · compose parses, no `:?` left.
+* **14 of the new tests were verified to FAIL against the pre-change source** — the whole credential ladder,
+  the policy-not-name resolution, and the "never generated or written" `render_config` rule.
+* NOT verified here: the fresh-install path (no Docker daemon) and the compose change's SEMANTICS (no docker
+  CLI) — both are on his box in step 2 above. Say so whenever this phase is described.
+
+### What did NOT change
+
+* `.env` may KEEP its current `RKM_JELLYFIN_ADMIN_PASSWORD` value — harmless, the stored key wins — and it can
+  be deleted at any time; nothing requires it. Setting it still overrides everything (it is also what the
+  local Python tools sign in with).
+* The **api never received** the password and still does not: its credential is `JELLYFIN_API_KEY`.
+* `RKM_AUTH_REQUIRED` untouched; **Phase E** (the 401/403 sweep + ADR-0006) still belongs to
+  `PLEX_PROFILE_AUTH_PLAN.md`, and Phases 3–5 of the credentials plan are the self-service password screen,
+  the `reset-admin-password` recovery command, and the docs/ADR pass.
+
 ## ▶ LATEST SESSION (2026-09-12) — PLEX PROFILE AUTH PHASE C: THE IDENTITY IS THREADED ✅ (branch `feat/auth-multiuser`, commits `3c08e65` + `5e303e0`; **api only — no frontend file changed**; nothing merged)
 
 **His instruction:** *"start phase c from progress.md in rkm-cinema"* — the plan's §7 row C, the phase that

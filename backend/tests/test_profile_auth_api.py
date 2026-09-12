@@ -441,8 +441,25 @@ class TestChangeMyOwnPassword:
         r = api.client.post("/api/auth/profile/password",
                             json={"current_password": "", "new_password": "new-pw"})
         assert r.status_code == 502
-        assert "not applied" in r.json()["detail"]
+        # It says what was MEASURED ("could not be confirmed"), not a conclusion we cannot support.
+        assert "could not be confirmed" in r.json()["detail"]
         assert api.library.password_changes == [("", "new-pw")], "it did reach the server"
+
+    def test_the_verification_uses_the_SERVERS_name_for_the_account(self, api, monkeypatch):
+        """`profile_name()` falls back to the OWNER, so verifying with it could check the wrong
+        account entirely — confirming (or denying) a change that happened somewhere else. The name
+        must come from the server, looked up by the profile's ID."""
+        _sign_in(api)
+        _select(api, "uid-kid")
+        monkeypatch.setattr(api.library, "list_users",
+                            lambda: [{"id": "uid-kid", "name": "RenamedSinceLogin"},
+                                     {"id": "uid-admin", "name": "admin"}])
+        seen_args: list[tuple[str, str]] = []
+        monkeypatch.setattr(auth_route, "password_change_took_effect",
+                            lambda name, pw, **kw: seen_args.append((name, pw)) or True)
+        api.client.post("/api/auth/profile/password",
+                        json={"current_password": "", "new_password": "new-pw"})
+        assert seen_args == [("RenamedSinceLogin", "new-pw")]
 
     def test_the_verification_names_the_profile_and_the_new_password(self, api, monkeypatch):
         """Verifying the wrong identity would 'confirm' the wrong account."""

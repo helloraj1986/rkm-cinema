@@ -291,14 +291,31 @@ def change_own_password(payload: ChangePasswordRequest, request: Request):
     # PROOF, not a status code. `POST /Users/Password` has answered 204 while storing nothing —
     # and CLEARED passwords — and the live symptom was a screen reporting "Password changed" while
     # the old password still worked. So the change only counts if the NEW password authenticates.
-    if not password_change_took_effect(context.profile_name(), payload.new_password, config=cfg):
-        logger.warning("auth.password NOT confirmed for profile id=%s", context.profile_id())
+    #
+    # ⚠ The name to sign in with comes from the SERVER, never from the session: `profile_name()`
+    # falls back to the OWNER, so verifying with it could check the wrong account entirely (and
+    # either confirm or deny a change that happened somewhere else).
+    target_id = context.profile_id()
+    session_name = context.profile_name()
+    server_name = next((str(row.get("name") or "") for row in (library.list_users() or [])
+                        if str(row.get("id") or "") == str(target_id)), "")
+    verify_name = server_name or session_name
+    if server_name and session_name and server_name != session_name:
+        logger.info("auth.password: session called profile id=%s %r, the server calls it %r",
+                    target_id, session_name, server_name)
+
+    if not password_change_took_effect(verify_name, payload.new_password, config=cfg):
+        # Say what was MEASURED, not a conclusion we cannot support: the server accepted the call,
+        # and signing in with the new password did not work. Whether the change was applied is
+        # exactly what we could not confirm.
+        logger.warning("auth.password NOT confirmed: target id=%s name=%r", target_id, verify_name)
         raise HTTPException(
             status_code=502,
-            detail="The media server accepted the change but the new password does not work, so "
-                   "it was not applied. Try again — and if it keeps happening, ask the "
-                   "administrator to set one from Household.")
-    logger.info("auth.password changed and confirmed for profile id=%s", context.profile_id())
+            detail="The media server accepted the change, but signing in with the new password "
+                   "failed, so it could not be confirmed. Try signing in with the new password — "
+                   "if that fails, your old one is unchanged or the administrator can set one from "
+                   "Household.")
+    logger.info("auth.password changed and confirmed: target id=%s name=%r", target_id, verify_name)
     return JSONResponse({"ok": True})
 
 

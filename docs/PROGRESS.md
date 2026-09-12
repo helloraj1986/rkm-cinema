@@ -22,6 +22,27 @@ this session is too long · record ur findings and issues in progress.md to take
      REFUSED the new password (the change really did not take) · `AuthUnavailableError` = we could not
      ask, i.e. a false alarm.
 
+### ✅ CONFIRMED BY HIM (end of session, 2026-09-12): the password flows work end to end
+
+His words: *"i removed the old profile and tried with creating new profiles and it seems to work, i can
+create password for individual profiles after admin creates the profiles...change the password...watch
+progress is recorded correctly"*. That is the whole model working: the administrator creates accounts,
+each profile sets and changes its OWN password, and watch state stays per profile.
+
+**Why fresh accounts behaved and the old ones did not** — accumulated wreckage, not one bug: the old
+accounts were created while the destructive `ResetPassword: true` was live (passwords wiped / set to
+values nobody knew), their sessions held profile names from before a rename, and this session's own
+probes had put probe passwords on `rajeev`/`sharanya`. A new account starts clean.
+
+**Still open (do not close the phase on this alone):** the api container's verification login — the
+advisory `confirmation` now reports it honestly (`unavailable`), and the log names the exception class.
+It no longer blocks anything, so it is a diagnostics item, not a blocker.
+
+**Hostname caveat for testing (recorded 2026-09-12):** `localhost`, a LAN IP and
+`rkm-hp.<tailnet>.ts.net` are three different cookie jars — the session is per-hostname, so he signs in
+once per hostname. Nothing about the fixes depends on which one he uses: the api container is always
+Jellyfin's client, so Jellyfin's local/remote decision is identical either way.
+
 ### 🔴 LATEST FINDING (end of session): the change LANDS — the VERIFICATION was the thing lying
 
 His log proved the targets are **correct** (`rajeev` / `sharanya` ids, not the administrator's),

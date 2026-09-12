@@ -99,18 +99,52 @@ and a DOM check tool `tools/check_household_ui.py` (Playwright, mirrors
 `check_subtitle_panel.py`) proving the list renders, the add form posts the right body, and
 a non-admin never sees the entry.
 
-## 4. Phases
+## 4. Phases — ✅ **ALL THREE DONE 2026-09-12**
 
 | Phase | Content | Gate |
 |---|---|---|
-| **1b.0** | provider methods + routes + strict session/admin gating, tests against a FAKE transport (no real user is created in the suite), contract snapshot + typed client | pytest, ruff, tsc, vitest, build |
-| **1b.1** | the Household UI + pure-helper tests + `tools/check_household_ui.py` | tsc, vitest, build, DOM check |
-| **1b.2** | docs (ARCHITECTURE endpoint row, OPERATIONS symptom rows) + the record | docs links, then the record |
+| **1b.0** ✅ | provider methods + routes + strict session/admin gating, tests against a FAKE transport (no real user is created in the suite), contract snapshot + typed client | pytest, ruff, tsc, vitest, build |
+| **1b.1** ✅ | the Household UI + pure-helper tests + `tools/check_household_ui.py` | tsc, vitest, build, DOM check |
+| **1b.2** ✅ | docs + the record | docs links, then the record |
 
 **Acceptance (his, on RKM-HP):** he signs in as `admin`, adds a household member from the
-app with a chosen password and a chosen set of libraries, that member then signs in, sees
-ONLY those libraries, and creates their own Continue Watching. That member is what Phase 3's
-two-account live proof uses.
+app — **with no password** (his decision, §8.1) — and a chosen set of libraries, that member
+then signs in with just their username, sees ONLY those libraries, and creates their own
+Continue Watching. That member is what Phase 3's two-account live proof uses.
+
+## 4a. As built (2026-09-12) — what the code actually does
+
+Five new additive paths (`/api/admin/users` GET+POST, `/api/admin/libraries`,
+`/api/admin/users/{user_id}/policy`, `/api/admin/users/{user_id}/password`,
+`/api/admin/users/{user_id}` DELETE): **contract 44 → 49 paths, +300/−0**; typed client **+358/−0**.
+
+1. **The gate is `require_admin_session`** (`api/session.py`): a session **plus** a LIVE
+   `IsAdministrator` AND-not-disabled check asked of the server on **every call** — never a cached
+   flag. It is strict even while `RKM_AUTH_REQUIRED=false` (`api/routes/admin_users.py` docstring
+   says why: these routes create and delete accounts).
+   ⚠ **Honest limitation:** in 1b these calls go out on the app's **admin** credential, because
+   per-request identity is Phase 3. So the route's own check is the only gate right now; Jellyfin's
+   own 403 becomes the backstop only once Phase 3 makes the calls as the signed-in user.
+2. **Read-modify-write only.** `mutate_user_policy()` reads, mutates, posts the WHOLE policy —
+   pinned by a test that asserts a field the request never mentioned survives the write.
+3. **A password-less member is a first-class case.** `POST /Users/New` omits `Password` entirely
+   when the admin leaves the field blank (a blank string is a different thing to sending none).
+4. **The DELETE carries its confirmation in the body** (`confirm_name`) — the name must be typed
+   out; the server checks it too.
+5. **The last-administrator rail is a BACKSTOP, not a live path**, and the route says so. Because
+   the gate guarantees the caller is an enabled administrator, any non-self admin target
+   necessarily has the caller for company — the **self rail** is what actually protects the final
+   admin. The last-admin check stays for the window where the caller's rights change mid-request.
+6. **The UI mirrors the rails** (`features/admin/lib.ts`: `deleteDecision`, `confirmsName`) so the
+   Remove button is disabled with the reason on screen rather than offering a 400. The server
+   remains the authority.
+7. **Unknown grants are surfaced, not swallowed.** A grant is a library **ItemId**; a stale id
+   grants nothing and looks like "the app hid my library", so `accessSummary()` reports it.
+8. **The Household nav link is visible to everyone on purpose.** Hiding it is not security; the
+   API answers 403 and the screen states the requirement plainly.
+9. **The Phase 1 login form had to change for §8.1**: it had `required` on the password field, so
+   the BROWSER would have blocked a password-less account's sign-in with no error anywhere.
+   Removed, and pinned by a new scenario in `tools/check_login_flow.py`.
 
 ## 5. Ordering
 

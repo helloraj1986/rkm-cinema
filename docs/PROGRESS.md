@@ -1,4 +1,106 @@
-## ▶ NEXT SESSION — START HERE: auth Phase 1b (household accounts from the app), then Phase 2 (enforcement). Branch `feat/auth-multiuser`; plans `docs/AUTH_MULTIUSER_PLAN.md` + `docs/HOUSEHOLD_USERS_PLAN.md`.
+## ▶ NEXT SESSION — START HERE: auth Phase 1b deploy + eyeball, then Phase 2 (enforcement)
+
+**Phase 1b is BUILT and pushed** — `6b7008c` (backend + contract 44 → 49) and `0ad2b2a` (the
+Household screen + browser check). Phase order was confirmed by the user 2026-09-12:
+**1b (done) → Phase 2 (next) → Phase 3 → 4 → 5.**
+
+### 1. His part first: deploy + eyeball 1b (api AND web changed)
+
+```powershell
+cd D:\hermes_agent\hermes-workspace\projects\rkm-cinema
+.\rkm-cinema.ps1 status
+docker compose -p rkm-bundled up -d --build api web
+```
+
+Then at http://localhost:8124 → **Household** in the sidebar (below Settings):
+
+| Check | Expected |
+|---|---|
+| Sign in as `admin` | the chip and the sidebar card show `admin` |
+| Household | you see `admin` with **Every library**, and the test user if one exists |
+| `+ Add member` | name + **password left BLANK** + tick boxes (all ticked by default) |
+| The real second member | create whoever he wants (no password) with the libraries he wants ticked |
+| That member signs in | just the username, blank password; they see ONLY their ticked libraries |
+| Remove on your own row | disabled, with the reason on screen |
+| A non-admin at /settings/household | a plain "only a Jellyfin administrator" message |
+
+**Nothing is enforced yet** (`RKM_AUTH_REQUIRED=false`), so the app still opens signed out and
+every existing screen behaves exactly as before. If a member created in the app cannot sign in,
+check the password was truly left blank — a password-less Jellyfin account signs in with a blank
+password, and scenario D of `tools/check_login_flow.py` pins that the form allows it.
+
+### 2. Then Phase 2 — enforcement (the lockout-risk phase)
+
+`docs/AUTH_MULTIUSER_PLAN.md` §Phase 2. In order:
+1. `RKM_API_TOKEN` for machine callers (`render_config.py` generates it like the admin password;
+   sent as `X-RKM-Token`, compared with `secrets.compare_digest`) — **the PowerShell tooling
+   touches `/api/health` and `/api/library/folders`**, so health stays public and folders takes
+   the token.
+2. CORS: `allow_origins=["*"]` + credentials is browser-INVALID → explicit `RKM_CORS_ORIGINS`
+   list + `allow_credentials=True`.
+3. Arm the guard on every app path; **`/api/health` stays public** (the api's own HEALTHCHECK
+   calls `http://127.0.0.1:8000/api/health`, and the PS tooling calls it).
+4. The 401 sweep test: every router refuses an unsigned caller, so a future router cannot
+   silently ship unprotected.
+5. Live proof: signed out → every app path 401; signed in → 200; `/api/health` 200 with no cookie.
+6. **Escape hatch, verified:** `RKM_AUTH_REQUIRED=false` in the repo `.env`, then
+   `docker compose -p rkm-bundled up -d --force-recreate api` — the api's env comes from the
+   RENDERED `.rkm.env`, so the value is now interpolated by compose from the repo `.env`; and it
+   never runs the provisioner, so it cannot cancel an in-flight library scan.
+
+⚠ Do NOT arm enforcement until 1b has been eyeballed on RKM-HP: enforcement is the only step in
+this workstream that can lock him out, and the login screen plus the household screen must both
+be known-good first. Phase 2's commit will be on this branch; nothing merges until he asks.
+
+## ▶ LATEST SESSION (2026-09-12) — AUTH PHASE 1b: HOUSEHOLD ACCOUNTS FROM THE APP ✅ BUILT
+
+**What the user asked for, verbatim:** *"i want to create the second user without password"* and
+*"can we make sure the user auth is identical to plex...where one user is the admin who needs to
+authenticate first to get in and then it can create other users which have specifc access to
+folder based on the selection the admin can do"* — **yes, and this is that**: the admin signs in,
+then creates household members from inside the app and ticks which libraries each may see. The
+only Plex difference is deliberate: identity is delegated to Jellyfin, so the same account also
+works in Jellyfin's own phone and TV apps. What Plex has that we do NOT have yet: **sign-in is
+still not REQUIRED** — that is Phase 2, deliberately last-but-one because it is the only step
+that can lock him out.
+
+**Shipped:** `6b7008c` (backend + contract) and `0ad2b2a` (screen + browser check).
+
+* `backend/api/routes/admin_users.py` — five additive paths, **contract 44 → 49 (+300/−0)**,
+  typed client +358/−0: users list, libraries list (the tick-box ItemIds), create, policy
+  (folder access and/or enable-disable), password, delete (typed-name confirmation in the body).
+* `backend/services/library/{service.py,jellyfin.py}` — the provider methods, shapes taken from
+  the live probe rather than the docs; `mutate_user_policy()` is read-modify-write because
+  `POST /Users/{id}/Policy` replaces the whole object.
+* `api/session.py::require_admin_session` — session PLUS a live, per-call `IsAdministrator`
+  and not-disabled check, strict even while the rest of the app is unenforced.
+* `frontend/src/features/admin/*` + a sidebar **Household** entry + `tools/check_household_ui.py`
+  and `frontend/harness/household-frame.*`.
+* `docs/HOUSEHOLD_USERS_PLAN.md` gains §4a "As built" — including one honest limitation: in 1b
+  these calls use the app's admin credential (per-request identity is Phase 3), so the route's
+  own check is the only gate today and Jellyfin's 403 becomes the backstop only in Phase 3.
+
+**Evidence:** 778 backend pytest (+32) · ruff clean · tsc clean · 220 vitest (+16) · vite build ·
+`check_household_ui.py` 3/3 (admin world: names resolve, "No password" shows, Remove disabled on
+your own row WITH the reason, typed name arms the button only on an exact match · non-admin:
+refusal stated and NO write attempted · add member: blank password and only the ticked libraries
+reached the API) · `check_login_flow.py` 4/4 · docs links resolve.
+
+**Two bugs found by writing the tests, not by the user:** the delete-rails test asserted a case
+that cannot happen (the last-admin rail is a *backstop* — the SELF rail is what protects the final
+admin, and the route now says so), and the fake library shallow-copied a module-level list so
+demoting an admin in one test poisoned every later one. Both were test-side; both are now honest.
+
+**Decisions settled this session (user):** the new member is created **with NO password** (1c),
+new members default to the creating admin's library access (2a), v1 = add + grant + disable +
+reset + delete (3a), and the order is **1b → Phase 2** (the open 4th question, now confirmed).
+
+**One consequence worth remembering:** the Phase 1 login form had `required` on its password
+field, so the BROWSER would have blocked a password-less account's sign-in with no error anywhere.
+Fixed in `401a3c7` and pinned by scenario D. A password-less account must **never** be an
+administrator — anyone who can reach the app could otherwise manage accounts.
+
+## ▶ NEXT SESSION — START HERE: auth Phase 1b (household accounts from the app), then Phase 2 (enforcement). Branch `feat/auth-multiuser`; plans `docs/AUTH_MULTIUSER_PLAN.md` + `docs/HOUSEHOLD_USERS_PLAN.md`.  → ✅ **BUILT 2026-09-12** (`6b7008c` + `0ad2b2a`; see the block below)
 
 **Where things stand (2026-09-12):** auth **Phase 0 ✅** (`dd921ed`) · **Phase 1 ✅** (`b360b38`) · **Phase 1b SCOPED, NOT STARTED** (`HOUSEHOLD_USERS_PLAN.md`). **Nothing is enforced**, so the running stack behaves exactly as it did before any of this, and the only deploy outstanding is the user's WEB-ONLY one for Phase 1.
 
@@ -10,7 +112,7 @@ docker compose -p rkm-bundled up -d --build web
 ```
 Eyeball at http://localhost:8124: top bar → **Sign in** → the Jellyfin admin credentials; the sidebar card must show HIS name (it used to be hardcoded "Rajeev"); **Sign out** returns to the signed-out app, which still works — because enforcement is still OFF. Nothing else in the app should look different.
 
-**Decisions already taken for 1b (user, 2026-09-12):** *his first answer was "1a 2a 3a", then he changed the password one* — **the new member gets NO PASSWORD (1c)**; new members default to the creating admin's library access (2a); v1 = add + grant + disable + password reset + delete (3a). A password-less account must **never** be an admin, and the app's login form already accepts a blank password (`b360b38`, scenario D of `tools/check_login_flow.py`). The 4th question (1b before or after Phase 2) was never answered — **this session took the recommendation: 1b BEFORE Phase 2**, so he can create the second account while the app is still permissive. Say so if that is wrong.
+**Decisions already taken for 1b (user, 2026-09-12):** *his first answer was "1a 2a 3a", then he changed the password one* — **the new member gets NO PASSWORD (1c)**; new members default to the creating admin's library access (2a); v1 = add + grant + disable + password reset + delete (3a). A password-less account must **never** be an admin, and the app's login form already accepts a blank password (`b360b38`, scenario D of `tools/check_login_flow.py`). The 4th question (1b before or after Phase 2) was never answered — **this session took the recommendation: 1b BEFORE Phase 2**, so he can create the second account while the app is still permissive. Say so if that is wrong. → **CONFIRMED by the user 2026-09-12** (*"okey lets do it"*, quoting that recommendation): **1b → Phase 2 immediately after**.
 
 **PLEX PARITY (user asked 2026-09-12: "is it what we are doing now?"):** yes — a single admin who signs in, then creates household accounts and ticks which LIBRARIES each one may see. Plex's per-library checkboxes are Jellyfin's `Policy.EnabledFolders` + `EnableAllFolders=false`, and Jellyfin enforces them server-side exactly as Plex does. The one deliberate difference: identity is DELEGATED to Jellyfin rather than an app-owned account store, so the same account also works in Jellyfin's own phone/TV apps. The Plex-like "you must sign in before the app works" step is **Phase 2 (enforcement)** and is NOT built yet — until it lands, the app is open on the tailnet as it is today.
 

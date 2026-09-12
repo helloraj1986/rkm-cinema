@@ -2,6 +2,8 @@ import { NavLink } from "react-router-dom";
 import { Icon, type IconName } from "../../components/ui/Icon";
 import { useLibraryFolders } from "../../features/library/api";
 import { libraryIconFor } from "../../features/library/lib";
+import { useAuth } from "../../features/auth/AuthProvider";
+import { displayName, initials } from "../../features/auth/lib";
 
 /**
  * Premium sidebar (design spec §5–6): brand lockup, grouped navigation,
@@ -102,6 +104,9 @@ function GroupNav({ title, items }: { title: string; items: NavItem[] }) {
 export function Sidebar() {
   const { data } = useLibraryFolders();
   const libraries = data?.libraries ?? [];
+  const { status, user } = useAuth();
+  const name = displayName(user);
+  const signedIn = status === "signedIn" && !!user;
 
   return (
     <aside className="sticky top-0 hidden h-dvh w-[76px] shrink-0 flex-col self-start border-r border-white/[.06] bg-[#0B0C0F] py-5 md:flex xl:w-60">
@@ -169,11 +174,18 @@ export function Sidebar() {
 
       <div className="mt-3 hidden items-center gap-2.5 border-t border-white/[.06] px-3 pt-4 xl:flex">
         <div className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-surface-3 text-[11px] font-bold text-accent ring-1 ring-white/10">
-          R
+          {signedIn ? initials(name) : "R"}
         </div>
         <div className="min-w-0 text-xs">
-          <div className="truncate font-semibold text-zinc-200">Rajeev</div>
-          <div className="truncate text-[10.5px] text-zinc-500">Personal library</div>
+          {/* AUTH_MULTIUSER_PLAN Phase 1: this card used to be a hardcoded name. With real
+              sessions that would be a lie the moment somebody else signs in — so it shows
+              the SESSION's user, and says plainly when there is none. */}
+          <div className="truncate font-semibold text-zinc-200">
+            {signedIn ? name : "RKM Cinema"}
+          </div>
+          <div className="truncate text-[10.5px] text-zinc-500">
+            {signedIn ? "Personal library" : "Not signed in"}
+          </div>
         </div>
       </div>
     </aside>

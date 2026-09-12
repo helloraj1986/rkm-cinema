@@ -364,6 +364,26 @@ export class ApiError extends Error {
   }
 }
 
+// ----------------------------------------------------------------- auth
+/** The signed-in user, as the browser is allowed to see them (AUTH_MULTIUSER_PLAN). */
+export interface AuthUser {
+  id: string;
+  name: string;
+}
+
+/** POST /api/auth/login — the session itself is an HttpOnly cookie, never in this body. */
+export interface LoginResult {
+  ok: boolean;
+  user: AuthUser;
+  expires: string;
+}
+
+/** GET /api/auth/me — 401 while signed out, which is a normal state, not an error. */
+export interface MeResult {
+  user: AuthUser;
+  expires: string;
+}
+
 // ---------------------------------------------------------------- legacy parity
 // Rich watchlist-entry surface used by Discover/Watchlist/Search/Suggest.
 // `GET /api/watchlist/entries` returns these (live; same mapper as the legacy
@@ -621,28 +641,76 @@ export interface AddWatchlistJobResult {
 
 const BASE = "/api";
 
-async function getJson<T>(path: string): Promise<T> {
+// ----------------------------------------------------------------- auth plumbing
+// The CLIENT owns exactly one auth rule: "a 401 on an APP call means the session is
+// gone". One handler, fired ONCE per burst — a page that fires six queries on load must
+// not redirect six times.
+let onUnauthorized: (() => void) | null = null;
+let lastUnauthorizedAt = 0;
+
+/** A burst of 401s (one dead session, several queries) counts as ONE sign-out. */
+const UNAUTHORIZED_COOLDOWN_MS = 1_500;
+
+/** Register the app's sign-out handler (AuthProvider does this; null clears it). */
+export function setUnauthorizedHandler(handler: (() => void) | null): void {
+  onUnauthorized = handler;
+}
+
+/** Test/harness seam: forget the cooldown so a sign-out flow can be replayed. */
+export function resetUnauthorizedCooldown(): void {
+  lastUnauthorizedAt = 0;
+}
+
+function noteUnauthorized(status: number): void {
+  if (status !== 401) return;
+  const now = Date.now();
+  if (now - lastUnauthorizedAt < UNAUTHORIZED_COOLDOWN_MS) return;
+  lastUnauthorizedAt = now;
+  onUnauthorized?.();
+}
+
+/**
+ * Per-call options. `skipAuthRedirect` is for the auth routes THEMSELVES: a wrong
+ * password is the FORM's business, and `me()` answering 401 is the ordinary signed-out
+ * state — neither may trigger the global sign-out.
+ */
+export interface RequestOptions {
+  skipAuthRedirect?: boolean;
+}
+
+async function request<T>(path: string, init: RequestInit, options: RequestOptions): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
-    headers: { Accept: "application/json" },
-    signal: AbortSignal.timeout(20_000),
+    // The session is an HttpOnly cookie, so it must travel with the request. Explicit
+    // rather than implied: the app is served by nginx on ONE origin, never cross-site.
+    credentials: "same-origin",
+    ...init,
   });
   if (!res.ok) {
-    throw new ApiError(res.status, await errorDetail(res, `GET ${path}`));
+    if (!options.skipAuthRedirect) noteUnauthorized(res.status);
+    throw new ApiError(res.status, await errorDetail(res, `${init.method || "GET"} ${path}`));
   }
   return (await res.json()) as T;
 }
 
-async function postJson<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Accept: "application/json" },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(20_000),
-  });
-  if (!res.ok) {
-    throw new ApiError(res.status, await errorDetail(res, `POST ${path}`));
-  }
-  return (await res.json()) as T;
+async function getJson<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  return request<T>(
+    path,
+    { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(20_000) },
+    options,
+  );
+}
+
+async function postJson<T>(path: string, body: unknown, options: RequestOptions = {}): Promise<T> {
+  return request<T>(
+    path,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(20_000),
+    },
+    options,
+  );
 }
 
 /** Best human message from a failed API response: FastAPI's `detail` (string
@@ -673,6 +741,15 @@ export interface ProgressPayload {
 }
 
 export const api = {
+  // ------------------------------------------------------------------ auth
+  /** Sign in as a Jellyfin user; the session is an HttpOnly cookie, never a token here. */
+  login: (username: string, password: string) =>
+    postJson<LoginResult>("/auth/login", { username, password }, { skipAuthRedirect: true }),
+  /** Sign out — the SERVER revokes the session (real revocation, not just a cookie). */
+  logout: () =>
+    postJson<{ ok: boolean; revoked: boolean }>("/auth/logout", {}, { skipAuthRedirect: true }),
+  /** Who this browser is signed in as. 401 while signed out — a normal state. */
+  me: () => getJson<MeResult>("/auth/me", { skipAuthRedirect: true }),
   getConfig: () => getJson<ConfigShape>("/config"),
   getHealth: () => getJson<HealthShape>("/health"),
   getLibraryItems: () => getJson<LibraryItemsShape>("/library/items"),

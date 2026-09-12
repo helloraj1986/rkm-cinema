@@ -54,3 +54,23 @@ the media element somewhere else.
 `window.__probe()` (defined in `player-frame.html`) returns the measurements the tool
 asserts on: shell / video / dock / row rects, `100dvh`, document scroll size, and every
 element that pokes outside the viewport.
+
+## Sign-in flow harness (`login-frame.html`)
+
+`tools/check_login_flow.py` drives the SESSION rules in a real browser, mounting the real
+`AuthProvider`, `RequireSession`, `LoginView` and `Header` over a stubbed api (the app's own
+pages are not involved — a fake Home stands in, because Phase 1 changes none of them):
+
+| Scenario | What it proves |
+|---|---|
+| `?enforce=0&signedIn=0` | Phase 1's world: the app renders SIGNED OUT, the bar offers Sign in, a wrong password shows the generic error **without** signing the app out, a correct one lands signed in with the name in the chip, and Sign out flips back — the app still usable |
+| `?enforce=1&signedIn=0` | the server refuses app calls ⇒ the login view, and app content **never appears** (asserted with a MutationObserver, so enabling enforcement cannot flash the shell before bouncing you out) |
+| `?enforce=1&signedIn=1` | a valid session is left alone by the guard |
+
+The stub is SESSION-AWARE: enforcement refuses only an unsigned caller. A cruder stub that
+refused everything made a correct app look broken during development — if a scenario fails,
+check the stub before the app.
+
+`window.__probe()` and `window.__authCalls` expose what rendered and every stubbed call.
+⚠ **Restart the dev server after editing app source** (the same watcher trap as above): a
+stale module gave a false FAIL here until the vite PID holding :5199 was killed.

@@ -1,5 +1,7 @@
 import { createBrowserRouter, Navigate } from "react-router-dom";
 import { AppShell } from "./layout/AppShell";
+import { LoginView } from "../features/auth/LoginView";
+import { RequireSession } from "../features/auth/RequireSession";
 import { ConfigHealthView } from "../features/settings/ConfigHealthView";
 import { LibraryLayout } from "../features/library/LibraryLayout";
 import { LibraryHomeView } from "../features/library/LibraryHomeView";
@@ -25,9 +27,16 @@ import { SuggestView } from "../features/suggest/SuggestView";
  * library routes (item pages / library layout player), not a top-level route.
  */
 export const router = createBrowserRouter([
+  // Sign-in lives OUTSIDE the shell: it must render when nothing else can, including on
+  // the day enforcement is switched on and every other route is refusing.
+  { path: "/login", element: <LoginView /> },
   {
     path: "/",
-    element: <AppShell />,
+    element: (
+      <RequireSession>
+        <AppShell />
+      </RequireSession>
+    ),
     children: [
       { index: true, element: <Navigate to="/library/home" replace /> },
       { path: "settings", element: <ConfigHealthView /> },

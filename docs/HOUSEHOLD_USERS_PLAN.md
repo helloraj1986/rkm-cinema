@@ -146,6 +146,35 @@ Five new additive paths (`/api/admin/users` GET+POST, `/api/admin/libraries`,
    the BROWSER would have blocked a password-less account's sign-in with no error anywhere.
    Removed, and pinned by a new scenario in `tools/check_login_flow.py`.
 
+10. ⚠ **THE FIRST LIVE RUN TOLD THE ADMINISTRATOR THEY WERE NOT AN ADMINISTRATOR** (`61d6b67`,
+    the day it shipped). The screen said *"Only a Jellyfin administrator can manage household
+    accounts"*. That was false, and TWO defects produced it, both swallowed by the gate's
+    `try/except`:
+    * **the FACADE** — the routes are handed `LibraryService`, a facade over the providers. The
+      household methods had been added to `LibraryProvider` only, so every route call raised
+      `AttributeError`. The facade now delegates all nine.
+    * **the MESSAGE** — `is_administrator()` collapsed "not an administrator" and "could not ask
+      the server" into one `False`. It is now `admin_status()` → `True`/`False`/`None` and the
+      route answers **503** for `None`, logging the provider's `last_api_error`. 401 / 403 / 503
+      are three different truths and must stay three answers.
+11. **`library_folders()` is a DICT on the facade and a LIST on the provider.** `/api/admin/
+    libraries` 500'd (`'str' object has no attribute 'get'`) and the create-with-every-library
+    grant would have too; one `_library_rows()` helper reads either shape. **Any route reading a
+    provider capability must check which shape it is given**, because the route's `library` is
+    always the facade.
+12. **Why the 39 tests missed both, and the fix that closes it:** the route tests replaced
+    `build_library_service` outright, the provider tests built the provider directly — so NOTHING
+    exercised route → facade → provider. There is now `TestFactoryWiring`, which builds the REAL
+    service from config and drives it through the facade, and the fake provider answers
+    `library_folders()` in the FACADE's shape. Changing that fake immediately failed two more
+    tests and exposed defect (11) — **make the fake mirror what the route really receives, not
+    what the provider really returns.**
+13. `tools/diag_household_gate.py` reports what is actually true (config, provider built?, login
+    ok?, what `list_users`/`get_user_policy` answer, which gate answer applies) in one command.
+    **Minting an API key by logging in on the app's own device id does not work**: Jellyfin
+    rotates a device's token on every login, so the app's next login invalidates it (401). Use a
+    distinct `DeviceId` for tooling.
+
 ## 5. Ordering
 
 **Recommended: Phase 1 (login UI) → 1b (this) → Phase 2 (enforcement) → Phase 3 (identity) → 4 → 5.**

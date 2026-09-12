@@ -1,4 +1,97 @@
-## ▶ NEXT SESSION — START HERE: auth Phase 1b deploy + eyeball, then Phase 2 (enforcement)
+## ▶ NEXT SESSION — START HERE: deploy the household fix, create the member, then Phase 2
+
+**The Household screen was BROKEN in the 1b build and is FIXED** — commit `61d6b67` (pushed).
+He signed in as `admin` and the screen said *"Only a Jellyfin administrator can manage household
+accounts"*. That was the app's fault, not his: the household methods existed on the provider but
+not on the **facade** the routes are handed, and the gate reported the resulting `AttributeError`
+as a permission problem. Read `docs/HOUSEHOLD_USERS_PLAN.md` §4a items 10–13 before touching any
+of this — they are the two defects, the shape trap, and why the tests missed all of it.
+
+### 1. He deploys the fix (api AND web)
+
+```powershell
+cd D:\hermes_agent\hermes-workspace\projects\rkm-cinema
+docker compose -p rkm-bundled up -d --build api web
+```
+
+Then **Household** in the sidebar: sign in as `admin` if the chip is not already his name. Expected
+now — an account list with `admin` (Every library), and `+ Add member` offering the real library
+tick-boxes `Movies`, `TV Shows`, `Movies Kids`.
+
+If instead he sees *"Could not reach the media server to check administrator rights"*, that is the
+NEW honest answer (503) and it means the api cannot reach Jellyfin or has no credential — one
+command says which, printing no secret:
+
+```powershell
+docker compose -p rkm-bundled exec api python -c "from config.settings import get_config as g; c=g(); print('url', c.JELLYFIN_URL); print('key', 'set' if c.JELLYFIN_API_KEY else 'EMPTY')"
+```
+and the reason is in the log: `docker compose -p rkm-bundled logs --tail 100 api` — look for
+`administrator check could not ask the server`.
+
+### 2. Then the 1b acceptance (his, unchanged)
+
+`+ Add member` → the name he wants, **password left BLANK**, tick the folders → Create. That member
+signs in with only their username and sees only their ticked libraries. `tools/diag_household_gate.py`
+reproduces the whole admin path against the live server in one command if anything looks wrong.
+
+### 3. Then Phase 2 — enforcement, as an EXPLICIT OPT-IN
+
+Decided 2026-09-12 (see the block below and `.env.example`): **no default is ever flipped.** Phase 2
+ships `RKM_API_TOKEN` for the machine callers (health stays public), fixes CORS for credentialed
+requests, makes the guard real on every app path, and proves BOTH states live. Arming stays his act:
+
+```powershell
+# repo .env: RKM_AUTH_REQUIRED=true
+docker compose -p rkm-bundled up -d --force-recreate api
+```
+
+⚠ Nothing merges to `main` until he asks. Branch `feat/auth-multiuser`, tip `61d6b67`.
+
+## ▶ LATEST SESSION (2026-09-12) — THE HOUSEHOLD SCREEN BLAMED HIM FOR OUR BUG ✅ FIXED
+
+**His report, verbatim:** *"i can login using admin and password but i cant create users it says
+only Only a Jellyfin administrator can manage household accounts."*
+
+He was right and the app was wrong. Two independent defects produced that one false sentence, and
+the gate swallowed both:
+
+1. **The FACADE.** The routes are handed `LibraryService`, a facade over the providers. The nine
+   household methods had been added to `LibraryProvider` only, so EVERY route call raised
+   `AttributeError` — which the admin gate caught and reported as "you are not an administrator".
+   The facade now delegates all nine.
+2. **The MESSAGE.** `is_administrator()` collapsed "not an administrator" and "could not ask the
+   server" into one `False`. Now `admin_status()` → `True`/`False`/`None`, and the route answers
+   **503** for `None` with the provider's `last_api_error` logged — 401 / 403 / 503 are three
+   different truths and stay three answers.
+
+**A third, found while proving it over real HTTP:** `library_folders()` is a **dict** on the facade
+and a **list** on the provider, so `/api/admin/libraries` 500'd (`'str' object has no attribute
+'get'`) and the create-with-every-library grant would have done the same. One `_library_rows()`
+helper now reads either shape.
+
+**Why 39 passing tests missed all of it:** the route tests replaced `build_library_service` outright
+and the provider tests built the provider directly, so NOTHING exercised route → facade → provider.
+Now there is `TestFactoryWiring` (builds the REAL service from config, drives it through the facade)
+and the fake provider answers `library_folders()` in the FACADE's shape — changing that fake
+immediately failed two more tests and exposed the third defect. **Make the fake mirror what the
+route really receives, not what the provider really returns.**
+
+**Proven against the real server** (local uvicorn, Jellyfin 10.11, read-only): `GET /api/admin/users`
+→ 401 with no cookie, **200** with one (1 account, `admin`, no password in the body);
+`GET /api/admin/libraries` → **200** with `Movies f137a2dd…`, `TV Shows 767bffe4…`, `Movies Kids
+7e9b296e…`; and the shape test passes for both the facade dict and a provider list. The proof minted
+its API key on an INDEPENDENT Jellyfin device: minting it by logging in on the app's own device id
+is invalidated by the app's next login, because **Jellyfin rotates a device's token on every login**
+— that trap cost a 401 detour here. Both test devices purged (204 each).
+
+**New tool:** `tools/diag_household_gate.py` — prints what is ACTUALLY true (config, is the provider
+built, does login work, what `list_users`/`get_user_policy` answer, which of the three gate answers
+applies) so this takes one command to diagnose next time instead of reasoning from a message.
+
+**Gates:** 785 backend pytest (+7) · ruff clean · tsc clean · 220 vitest · vite build · commit
+`61d6b67` pushed. **He must redeploy** (`up -d --build api web`) — the fix is not live yet.
+
+## ▶ NEXT SESSION — START HERE: auth Phase 1b deploy + eyeball, then Phase 2 (enforcement)  → ✅ 1b BUILT (`6b7008c` + `0ad2b2a`); its first deploy found the household bug, FIXED in `61d6b67` (see the block below)
 
 **Phase 1b is BUILT and pushed** — `6b7008c` (backend + contract 44 → 49) and `0ad2b2a` (the
 Household screen + browser check). Phase order was confirmed by the user 2026-09-12:

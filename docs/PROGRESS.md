@@ -1,4 +1,92 @@
-## ▶ NEXT SESSION — START HERE: the auth workstream is COMPLETE and CONFIRMED · next = the identity/token hardening pass (#1) · everything stays on `feat/auth-multiuser`
+## ▶ LATEST SESSION (2026-09-13) — THE IDENTITY RAIL IS IN (queue item #1) · next = item #2 (stale-token degrade) · everything stays on `feat/auth-multiuser`
+
+**His instruction, verbatim:** *"continue from progress.md in rkm-cinema app"* — take up the queue at
+the top of this file. Item **#1 (guard the identity fallback)** is now DONE, committed (`b4c5c47`) and
+pushed. `main` is still `c0ae65e`; **nothing is merged** — he asks for merges.
+
+| | |
+|---|---|
+| Branch | `feat/auth-multiuser`, worktree CLEAN, local tip == remote tip (`b4c5c47` + this record) |
+| Ahead of `main` | **49 commits** — `main` is still `c0ae65e`, fully contained here |
+| Gates | **958 backend pytest** (+23) · ruff clean · openapi **53 paths** (unchanged) · docs links resolve · **no frontend change → no web deploy** |
+| His deploy | `docker compose -p rkm-bundled up -d --build api` (api ONLY) |
+
+### What landed — the CLASS, not the route (plan `ADMIN_CREDENTIALS_PLAN.md` §6f)
+
+§6e fixed the ONE route; this makes the failure IMPOSSIBLE rather than merely unwired.
+`api/session.py` now RECORDS the session a request resolved (`session_context_from_request`, the one
+place a cookie becomes a session), and `acting_media_token()` / `acting_user_id()` /
+`acting_profile_is_owner()` raise **`UnpublishedIdentityError`** instead of falling back when a
+request arrived as somebody and nothing published it. Three states, three answers — and the two that
+must NOT change are unchanged: **no request context at all** (the provisioner, the scheduler's jobs,
+every tool, unit tests) and **a request that arrived as NOBODY** (a normal anonymous request while
+`RKM_AUTH_REQUIRED=false`) both still use the app's own key. `owner_media_token()` is the one
+deliberate exception — its fallback IS the administrator's own credential, and every call it serves
+is server administration.
+
+Two supporting changes it required:
+
+* **`jellyfin.py::_api` now defaults to the OWNER's credential**, with `credential="acting"` left for
+  the ONE call that must act as a person — `change_own_password`. Account administration on a
+  member's token earns a 403 from Jellyfin (`/Users` is administrator-only), so the picker would have
+  been told *"there are no profiles on this server"*; and on the OWNER's credential a self-change
+  would stop checking `CurrentPw` at all, i.e. an escalation. Pinned by an AST test: no other method
+  may ask for the acting identity.
+* **The façade may not contain the rail** (`service.py::_rethrow_identity_rail`). Its
+  `except Exception` handlers exist to contain provider failures, and they had turned the rail's
+  refusal into *"the media server refused the password change"* — blaming the server for our own
+  wiring.
+
+### Falsified, not asserted (the house rule)
+
+Guard removed → `test_forgetting_to_publish_fires_the_rail_instead_of_writing` fails with his
+2026-09-12 report **verbatim**: `/Users/Password on 'app-key-ADMIN' targeting ['uid-first'] — the
+session had uid-kid selected`. So the test does not merely describe the rail: without it, the write
+really does reach the media server on the elevated key, aimed at whichever account is listed first.
+Guard restored → 22/22 green.
+
+### ⚠ A GUARD THAT COULD NOT FAIL — found while writing the per-route test
+
+FastAPI **0.141** keeps every `include_router` as an `_IncludedRouter` on `app.routes`, and the
+sub-routes carry paths WITHOUT the prefix. So `test_every_api_route_publishes_a_identity` — whose
+entire job is to stop a NEW router shipping without `SESSION_SCOPED` — was inspecting **ZERO** routes
+and passing (the old code read `route.path` off objects that have no `.path`). It now enumerates
+through `include_context` (prefix + include-level dependencies) and `original_router`, **asserts it
+found ≥ 40 routes**, and was falsified by dropping `SESSION_SCOPED` from the config router (it names
+`/api/config`). **Any future test that enumerates framework objects must assert it found something.**
+
+### New tests worth not re-deriving
+
+* `backend/tests/test_identity_rail.py` (22) — the rail unit by unit, the provider's REAL fallbacks
+  (the substitute identity only exists there: a fake library never falls back), the AST credential
+  pin, and **every `/api/auth/*` route driven over real HTTP with a live cookie**, asserting no call
+  may act on a Jellyfin user id the session did not choose — the general shape of the bug. It stubs
+  the media server at the `urllib` layer so the real routers, session store, contextvars and provider
+  are what is under test.
+* `test_profile_identity.py::_api_route_inventory()` — the route enumerator (see the warning above).
+
+### Waiting on HIM
+
+1. **Deploy the api**: `docker compose -p rkm-bundled up -d --build api`.
+2. **The two-minute pass**: sign in → pick a profile → **My password** → change it → sign out → pick
+   that profile → the new password is asked for. Then Household → every row still lists (that path
+   now runs account administration on the owner's credential).
+3. If anything looks wrong, send the log line: `docker compose -p rkm-bundled logs api |
+   Select-String "identity rail"` — it names the route, the profile and what to fix. Nothing in the
+   shipped code should ever produce it.
+
+### The rest of the queue is untouched
+
+**#2 stale-token degrade** (a Jellyfin 401 surfaces as "that current password is not correct"; the
+honest degrade is "switch profile again", and the ~20 `Invalid token` lines in one second point at
+per-session device ids — `PLEX_PROFILE_AUTH_PLAN.md` §4e) · **#3 Phase 4** `rkm-cinema.ps1
+reset-admin-password` + the OPERATIONS runbook · **#4 Phase 1's fresh-install test on a throwaway
+stack** (only he can run it) · **#5 merge to `main`** (49 commits, when he asks) · **#6 Phase E +
+Phase 5** (the 401/403 sweep, ADR-0006, the docs truth pass) · and the XS one: `BROWSER_RADARR_URL` /
+`BROWSER_SONARR_URL` point at `:7878`/`:8989` while the bundled compose publishes `:7879`/`:8988`.
+
+
+## ▶ NEXT SESSION — START HERE: the auth workstream is COMPLETE and CONFIRMED · next = the identity/token hardening pass (#1) · everything stays on `feat/auth-multiuser`  → ✅ **ITEM #1 DONE 2026-09-13** (the identity rail, `b4c5c47`, plan §6f) — the rest of the queue below stands as written.
 
 **His instruction, verbatim:** *"update the progress.md to take it up in the next session...commit and
 merge all the changes to feature branch not the main"* — so: record the queue, commit, push, and

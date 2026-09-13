@@ -147,13 +147,19 @@ export function MediaCard({
           aria-label={tv ? `Episodes for ${item.title}` : `Play ${item.title}`}
           className="pointer-events-none absolute left-1/2 top-[42%] z-[2] -translate-x-1/2 -translate-y-1/2 opacity-0 transition group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100"
         >
+          {/* ⚠ FLEX ROW, not `grid place-items-center` (his report, 2026-09-13): this pill has TWO
+              children, and grid laid the glyph into row 1 and the label into row 2 — the play
+              triangle floated ABOVE the word inside a correctly-sized box (the pill's height is
+              fixed at h-9, so nothing overflowed to give the mistake away). Flex puts them on one
+              line; `leading-none` stops the label's line box from pushing the glyph off the axis. */}
           <span
-            className={`grid place-items-center rounded-full bg-accent text-black shadow-lg transition hover:scale-105 hover:bg-accent-hover ${
+            data-testid="media-card-cta"
+            className={`flex items-center justify-center rounded-full bg-accent leading-none text-black shadow-lg transition hover:scale-105 hover:bg-accent-hover ${
               tv ? "h-9 min-w-24 gap-1.5 px-3.5 text-xs font-bold" : "h-12 w-12"
             }`}
           >
             <Icon name="play" size={tv ? 13 : 18} filled className="ml-0.5" />
-            {tv ? "Episodes" : null}
+            {tv ? <span data-testid="media-card-cta-label">Episodes</span> : null}
           </span>
         </button>
 

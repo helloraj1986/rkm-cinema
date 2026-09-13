@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import type { GlobalDiscoveryRow, GlobalHint, GlobalOwnedRow, SuggestResult, WatchlistEntry } from "../../lib/api/client";
+import { Button, buttonClass } from "../../components/ui/Button";
 import { Icon } from "../../components/ui/Icon";
 import { useAddToWatchlist } from "../watchlist/api";
 import { useCardActions } from "../watchlist/actions";
@@ -374,21 +375,24 @@ function OwnedRow({
         <div className="truncate text-[13px] font-semibold text-zinc-100">{row.title}</div>
         <div className="truncate text-[11px] text-zinc-500">{metaLine(row)}</div>
       </div>
-      <button
-        type="button"
+      {/* One component, one size token: the pair may differ only in fill and weight (his report,
+          2026-09-13 — these were two hand-rolled strings that had drifted to 32.00px vs 30.50px). */}
+      <Button
+        variant="primary"
+        icon="play"
+        iconFilled
+        data-testid="row-action-primary"
         onClick={(e) => { e.stopPropagation(); onActivate(); }}
-        className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg bg-accent px-3 text-[11px] font-bold text-black transition hover:bg-accent-hover"
       >
-        <Icon name="play" size={11} filled />
         {label}
-      </button>
-      <button
-        type="button"
+      </Button>
+      <Button
+        variant="secondary"
+        data-testid="row-action-secondary"
         onClick={(e) => { e.stopPropagation(); onDetails(); }}
-        className="shrink-0 rounded-lg border border-white/10 bg-white/[.06] px-2.5 py-1.5 text-[11px] font-semibold text-zinc-200 transition hover:bg-white/[.12]"
       >
         Details
-      </button>
+      </Button>
     </div>
   );
 }
@@ -420,7 +424,9 @@ function HintRow({
         <div className="truncate text-[11px] text-zinc-500">{sub}</div>
       </div>
       {onActivate ? (
-        <span className="shrink-0 rounded-lg border border-white/10 bg-white/[.06] px-2.5 py-1.5 text-[11px] font-semibold text-zinc-300">
+        // The decorative chip carries the SAME geometry as the neighbouring rows' "Details" button
+        // (a `.rounded-lg .px-3 .py-1.5`-style string of its own was the third drifting copy).
+        <span data-testid="hint-action" className={buttonClass("secondary")}>
           Browse
         </span>
       ) : null}
@@ -440,8 +446,6 @@ function DiscoveryRow({
   onDownload: () => void;
   onOpen: () => void;
 }) {
-  const ghost =
-    "inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-white/12 bg-white/[.06] px-3 text-[11px] font-bold text-zinc-100 transition hover:bg-white/[.12] disabled:opacity-60";
   return (
     <div
       role="option"
@@ -474,32 +478,34 @@ function DiscoveryRow({
         </div>
       </div>
       {added ? (
-        <button
-          type="button"
+        <Button
+          variant="primary"
+          icon="download"
+          iconSize={12}
+          data-testid="discovery-action"
           onClick={(e) => { e.stopPropagation(); onDownload(); }}
-          className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg bg-accent px-3 text-[11px] font-bold text-black transition hover:bg-accent-hover"
         >
-          <Icon name="download" size={12} />
           Download
-        </button>
+        </Button>
       ) : (
-        <button
-          type="button"
-          onClick={(e) => { e.stopPropagation(); onAdd(); }}
+        <Button
+          variant="primary"
+          icon="plus"
+          iconSize={12}
+          data-testid="discovery-action"
           disabled={busy}
-          className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg bg-accent px-3 text-[11px] font-bold text-black transition hover:bg-accent-hover disabled:opacity-60"
+          onClick={(e) => { e.stopPropagation(); onAdd(); }}
         >
-          <Icon name="plus" size={12} />
           {busy ? "Adding…" : "Add to watchlist"}
-        </button>
+        </Button>
       )}
-      <button
-        type="button"
+      <Button
+        variant="ghost"
+        data-testid="row-action-secondary"
         onClick={(e) => { e.stopPropagation(); onOpen(); }}
-        className={ghost}
       >
         Details
-      </button>
+      </Button>
     </div>
   );
 }

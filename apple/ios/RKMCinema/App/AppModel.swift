@@ -46,7 +46,11 @@ final class AppModel: ObservableObject {
 
     init(store: ServerStore = ServerStore()) {
         self.store = store
-        hudVisible = UserDefaults.standard.bool(forKey: AppLog.hudDefaultsKey)
+        // ⚠ Not the stored value directly: in a Debug build the overlay starts **on** regardless of
+        // what was stored (`AppLog.hudStartsVisible`). A stored `false` from an earlier session is
+        // otherwise indistinguishable from a broken overlay — which is exactly how it read when the
+        // toggle never fired.
+        hudVisible = AppLog.hudStartsVisible
         restoreFromStore()
     }
 

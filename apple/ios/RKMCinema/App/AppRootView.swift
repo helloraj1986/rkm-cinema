@@ -29,10 +29,16 @@ struct AppRootView: View {
             }
         }
         .overlay(alignment: .topLeading) {
-            // Drawn last so it is above the overlay's own corner. When the HUD is visible its ⚙
-            // (top-right of the panel) is clear of this square, and when it is hidden this is the
-            // only way back in.
-            HUDToggleHotspot { app.toggleHUD() }
+            // ⚠ Drawn last so it is above the overlay's own panel (whose ⚙ sits top-right, clear of
+            // this) *and* above the web view.
+            //
+            // ⚠⚠ It is also deliberately **shifted up** out of its laid-out position: the overlay's
+            // top-leading corner is the **safe area's**, ~59pt below the top of the display, so a
+            // tap aimed at the corner of the screen never reached it. That measurement is the whole
+            // bug (see `HUDToggleChip`), and it is why this is not simply `.frame(…)` any more.
+            HUDToggleChip { app.toggleHUD() }
+                .frame(width: HUDToggleChip.size.width, height: HUDToggleChip.size.height)
+                .offset(y: HUDToggleChip.upwardShift)
         }
         .background(ShakeToToggle { app.toggleHUD() })
     }

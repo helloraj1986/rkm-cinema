@@ -149,7 +149,7 @@ struct ServerSetupView: View {
             Toggle(isOn: Binding(get: { app.hudVisible }, set: { app.setHUD($0) })) {
                 Text("Debug overlay").font(.footnote)
             }
-            Text("Screenshots are worth far more with it on: the overlay carries the correlation id that ties a picture to the log file. In the shell, triple-tap the top-left corner to toggle it.")
+            Text("Screenshots are worth far more with it on: the overlay carries the correlation id that ties a picture to the log file. It opens **on** in a Debug build, and the small bug chip in the top-left corner of the screen toggles it — one tap.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

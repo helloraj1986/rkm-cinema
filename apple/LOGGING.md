@@ -75,7 +75,18 @@ playback accessLog:   bitrate 4.2Mbps · segments 118 · dropped 3 · stalls 1 �
 
 ## 4. The HUD (both apps)
 
-Toggleable overlay, off by default, turned on by a build flag / triple-tap (tvOS: play-pause ×3):
+Toggleable overlay. ⚠ **iOS: it opens ON in a Debug build, and the corner chip toggles it — one tap**
+(also press-and-hold; on a simulator, `Device ▸ Shake`, ⌃⌘Z). **tvOS: play-pause ×3.**
+
+⚠⚠ **The 52pt triple-tap square the iOS app used to have was removed on 2026-09-14, having never
+fired once** — and the reason is worth keeping, because it was invisible on screen:
+`.overlay(alignment: .topLeading)` aligns to the **modified view's** bounds, and the root view is
+inset by the safe area, so the square sat **y ≈ 59pt — below the status bar, inside the page's own
+header** — while a thumb aims at the top of the *display*, which is above it. Fixes: the chip's hit
+area is shifted up so it begins at the display's corner whatever the device's inset is; it is
+**drawn**, so its position can be checked by looking; and it logs every touch it receives *before*
+toggling, so "the overlay did not appear" and "the touch never arrived" — opposite problems that look
+identical — are told apart from the file log instead of from another screenshot.
 
 ```
 ── RKMCinema debug ─────────────

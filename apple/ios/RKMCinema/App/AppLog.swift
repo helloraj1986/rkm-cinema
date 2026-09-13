@@ -11,11 +11,43 @@ import RKMServerKit
 /// **whether the ATS declaration actually landed**, and which address is in use.
 enum AppLog {
 
-    /// The debug overlay's remembered state. Off by default (`LOGGING.md` §4); once he turns it
-    /// on it stays on across launches, because hunting for the toggle before every screenshot is
-    /// friction. Also settable from a scheme launch argument — `-RKMDebugHUD YES` — because
-    /// `UserDefaults` reads `-Key Value` arguments automatically.
+    /// The debug overlay's remembered state.
+    ///
+    /// ⚠⚠ **A Debug build opens with the overlay already ON, and that is now the primary route to
+    /// it.** `LOGGING.md` §4 asked for "a build flag / triple-tap"; the triple-tap is gone (see
+    /// `HUDToggleChip` — it sat 59pt below the corner it was supposed to occupy, so it never fired
+    /// once), and the build flag is what replaces it. The reason is the whole point of this
+    /// document: dev happens on Windows, testing happens on the Mac, so **the overlay is the only
+    /// way a screenshot and the file log can be joined** — and a diagnostic that depends on
+    /// remembering a gesture is missing exactly when it is needed most, which is what happened.
+    ///
+    /// ⚠ It is still hideable for the session (the overlay's ⚙, or the corner chip), which is what
+    /// keeps it possible to photograph the UI without it. What a Debug build does *not* do is start
+    /// hidden because of a stale stored value — that stale value is what made "nothing comes up"
+    /// look like a broken app. Release builds read the stored value, which defaults to off.
+    ///
+    /// ⚠ Also settable from a scheme launch argument — `-RKMDebugHUD YES` — because `UserDefaults`
+    /// reads `-Key Value` arguments automatically. In a Release-style build that is the switch that
+    /// needs no code change and no rebuild.
     static let hudDefaultsKey = "RKMDebugHUD"
+
+    static var hudStartsVisible: Bool {
+        #if DEBUG
+        return true
+        #else
+        return UserDefaults.standard.bool(forKey: hudDefaultsKey)
+        #endif
+    }
+
+    /// The same fact as a value, so the launch banner can say *why* it starts visible rather than
+    /// leaving it to be inferred from the build.
+    static var debugBuild: Bool {
+        #if DEBUG
+        return true
+        #else
+        return false
+        #endif
+    }
 
     static func bootstrap() {
         let level = RKMLog.storedLevel(default: .verbose)
@@ -46,6 +78,18 @@ enum AppLog {
             category: .app
         )
         RKMLog.info("log level \(level.name) · subsystem \(RKMLog.subsystem)", category: .app)
+
+        // ⚠ The overlay's route is logged at launch, because on the first real run the only report
+        // available was "nothing comes up" — and that was three different facts at once: where the
+        // toggle is, whether it starts on, and whether the touch ever arrived. Two of the three are
+        // settled by this line and the chip's own log lines; the third by tapping it.
+        RKMLog.info(
+            "debug overlay: starts \(hudStartsVisible ? "VISIBLE" : "hidden")"
+                + " (\(debugBuild ? "Debug build — always visible at launch" : "Release build — stored setting"));"
+                + " stored value \(UserDefaults.standard.bool(forKey: hudDefaultsKey));"
+                + " toggle: the chip in the top-left corner (one tap, or press and hold)",
+            category: .app
+        )
 
         if let url = RKMLog.shared.fileURL {
             RKMLog.info("file log: \(url.path)", category: .app)

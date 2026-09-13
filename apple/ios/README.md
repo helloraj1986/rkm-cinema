@@ -87,6 +87,40 @@ tablet acceptance run.
 - `WKUIDelegate.createWebViewWith` — `target="_blank"` appears in `DiscoverView` and
   `WatchlistDetail`; without this delegate method WKWebView silently does nothing with those links.
 
+## The debug overlay's toggle — measured, because it was wrong once
+
+⚠⚠ **The overlay opens ON in a Debug build** (`AppLog.hudStartsVisible`, and `-RKMDebugHUD YES` works
+in any build via `UserDefaults`'s argument domain). That is the primary route to it: dev happens on
+Windows, testing on the Mac, so an overlay that has to be *found* is missing exactly when it is
+needed. Hiding it is still a session-scoped choice — the overlay's ⚙, or the corner chip.
+
+**To toggle it in the shell: tap the small bug chip in the top-left corner of the screen (one tap, or
+press-and-hold it).** On a simulator, `Device ▸ Shake` (⌃⌘Z) also works.
+
+⚠ **The previous 52pt triple-tap square never fired once, and the cause was geometry, not the
+gesture.** `.overlay(alignment: .topLeading)` aligns to the **modified view's** bounds; the root view
+is inset by the safe area; so on an iPhone the square sat at **y ≈ 59pt — *below* the status bar,
+inside the page's own header** — while every tap aimed at the corner of the *display*, which is above
+it. He reported it as *"nothing comes up"*, which is exactly what a correctly-built control in the
+wrong place looks like. Two independent measurements in his own screenshot agree: the page's title and
+back chevron start at the same height as the overlay's first line, and the strip above both is
+**white** — the window background, not page content, since the cinema UI is dark there.
+
+The chip answers that with four properties: the hit area is **shifted up** so it begins at the display's
+corner regardless of the device's inset; it is **drawn**, so its position is verifiable by looking at
+it; a **single tap** replaces three, which removes the multi-tap timing window; and it is a real
+`UIView` added above the web view, so hit-testing does not depend on how SwiftUI composites drawing
+over a representable. ⚠ It also logs **every touch it receives, before toggling** — which is what makes
+"the overlay did not appear" falsifiable from the log:
+
+```bash
+grep -E "toggle chip|debug overlay" "$LOG"
+```
+
+- `toggle chip: tap` **and** `debug overlay on/off` → the touch arrived and the toggle worked; a
+  missing overlay is then a rendering problem.
+- `toggle chip:` **absent** → the touch never reached the chip, and the target geometry is wrong.
+
 ## What NOT to add here
 
 - **No bundled web assets.** The UI is served by the `web` container; bundling it would create a second,

@@ -1,4 +1,30 @@
-## ▶ ⚠⚠ **APPLE PHASE 0 — THE FIX MOVED THE MARK BUT NOT THE HIT AREA. THE TOGGLE IS NOW A WINDOW GESTURE, WHICH HAS NOTHING LEFT TO GET WRONG** (2026-09-14, latest) · branch **`feat/apple-clients`** · file: **`apple/ios/RKMCinema/Debug/HUDToggle.swift`** (rewritten), `App/AppRootView.swift`, `Server/ServerSetupView.swift` · docs: **`apple/LOGGING.md` §4**, **`apple/ios/README.md`** · ⚠ **Mac-unverified until he builds it**
+## ▶ ✅✅ **APPLE PHASE 0 — THE `LOGGING.md` §9 GATE IS DEMONSTRATED, ON REAL OUTPUT: a HUD id read off a screenshot resolves to the file, and the redaction gate prints nothing** (2026-09-14, latest) · branch **`feat/apple-clients`** · changed: `IPHONEOS_DEPLOYMENT_TARGET` **26.5 → 16.4**, both configs (`apple/ios/RKMCinema.xcodeproj/project.pbxproj`) · docs: **`apple/ios/README.md`** (status table + the raw evidence appended to Acceptance), **`apple/WORKFLOW.md` §4** · ⚠ **the iPad install is still unverified**
+
+**His terminal output, quoted rather than summarised, because this is the evidence:**
+
+```
+=== 1. the join:              (26a253 was read off the HUD in his screenshot)
+[2026-09-14 09:03:47.514] I [26a253] net      GET /api/library/continue-watching -> 200 in 446ms (532 B)
+
+=== 2. redaction (must print NOTHING):     ← printed nothing
+
+=== 3. requests in the file (excerpt)
+[2026-09-14 09:03:47.363] I [a73fa7] net      GET /api/library/items -> 200 in 299ms (60.1 KB)
+[2026-09-14 09:03:47.445] I [5f67ad] net      GET /api/library/recently-watched -> 200 in 380ms (28 B)
+[2026-09-14 09:03:47.461] I [e87827] net      GET /api/jellyfin/detail?id=c2e55d3adc… -> 200 in 395ms (3.2 KB)
+[2026-09-14 09:03:47.489] I [b05ebe] net      GET /api/library -> 200 in 423ms (3.6 KB)
+[2026-09-14 09:03:48.802] I [664704] net      GET /api/jellyfin/similar?id=c2e55d3adc…&limit=10 -> 200 in 1.33s (2.3 KB)
+```
+
+**⚠ WHAT THIS SETTLES — all three items `LOGGING.md` §9 called "demonstrated, not assumed":** (1) an id **visible in a photograph** resolves to the matching line, so a screenshot and a 5000-line log can be joined — the property the entire HUD design exists for; (2) **no credential, token or cookie value reached the file** in a real run, which is the one check whose failure mode is a leaked account and not a lost hour; (3) one file holds every request the page made, with status, duration and size. ⚠ **It also closes the JS-bridge hole for good**: two sessions ago that list was *empty while a film played* (a weak proxy let the bridge deallocate), which is what made items 1 and 2 unprovable — and it was the debug overlay being visibly empty that found it.
+
+**⚠ INCIDENTALLY PROVEN — the two HUD/logging fixes from the previous commit are live.** `V [------] net auth challenge: NSURLAuthenticationMethodServerTrust host=fonts.googleapis.com (first for this host)` — **verbose, once per host** — where the earlier run has an `I`-level challenge for **every** `image.tmdb.org` poster (visible side by side in the same log, from before and after the fix). The noise is gone and the diagnosis is kept.
+
+**⚠ THE DEPLOYMENT TARGET — I changed it, and it is his to veto.** `IPHONEOS_DEPLOYMENT_TARGET` was Xcode's own template value (`26.5`), so the app could not install on any iPad not already on iPadOS 26.5 — and the iPad is the entire point of the shell. **Now `16.4` in both configurations**, which is the floor the code itself argues for (`isInspectable` is `#available(iOS 16.4, *)`-guarded; nothing else in the shell needs above iOS 15). ⚠ This is a **scalar in `project.pbxproj`**, which `apple/WORKFLOW.md` §4 says is his file — reported here, and the rule is now annotated with why this one exception was worth taking (a GUI round trip and a second commit for one number). **The rule's real subject is structure — file membership and groups — which is untouched.**
+
+**⚠ TWO THINGS STILL OPEN, AND ONLY ONE OF THEM NEEDS HIM TO LOOK AT A DEVICE.** (1) The overlay's corner gesture (3 taps / press-and-hold) is **unverified since its third rewrite** — but nothing depends on it, because a Debug build opens with the overlay already on, and `Device ▸ Shake` exists. (2) ⚠ **The iPad install: needs one rebuild, and the answer to a question I have now asked four times — what does his iPad run?** If it is older than 16.4, the floor comes down further (iOS 15.0 is achievable: the shell's only 16.4 API is guarded). A wrong floor costs nothing to fix but a build round, so **16.4 is a deliberate first guess, not a final answer**.
+
+## ▶ ⚠⚠ **APPLE PHASE 0 — THE FIX MOVED THE MARK BUT NOT THE HIT AREA. THE TOGGLE IS NOW A WINDOW GESTURE, WHICH HAS NOTHING LEFT TO GET WRONG** (2026-09-14) · branch **`feat/apple-clients`** · file: **`apple/ios/RKMCinema/Debug/HUDToggle.swift`** (rewritten), `App/AppRootView.swift`, `Server/ServerSetupView.swift` · docs: **`apple/LOGGING.md` §4**, **`apple/ios/README.md`** · ⚠ **Mac-unverified until he builds it**
 
 **His report, verbatim:** *"i cant tap the bug, even if i clik it nothing happens."* And it was a precise report — **he clicked the glyph itself.**
 

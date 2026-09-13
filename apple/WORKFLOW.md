@@ -172,6 +172,11 @@ Then: Xcode for run/install/screenshot, plus `log stream` per `LOGGING.md` §7.
 3. **I fetch before trusting a ref.** A token-URL push does not update local `origin/*`.
 4. **The project file is his, once** (the GUI steps in §2) — then it is nobody's: with synchronized groups it
    never needs editing again. If a project change *does* become routine, that is the signal for §2.1.
+   ⚠ **One exception, exercised 2026-09-14: a single scalar build setting.** `IPHONEOS_DEPLOYMENT_TARGET`
+   was changed in both configurations from Xcode's template value `26.5` to `16.4` (which no iPad but a
+   26.5 one could ever have installed), because the alternative was a GUI round trip and a second commit
+   for one number. It is reported in `docs/PROGRESS.md` and is his to veto. The rule's real subject is
+   **structure** — file membership and groups — and that stays untouched by hand.
 5. **Testing evidence comes back as text I can read**: the build summary, the `log stream` tail, and screenshots
    with the **debug HUD visible** (`LOGGING.md` §3, §8). "It doesn't work" is not actionable; a HUD screenshot
    plus the log tail for that correlation id is.

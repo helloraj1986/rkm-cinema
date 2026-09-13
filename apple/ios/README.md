@@ -56,13 +56,24 @@ shared package (`../Shared/Sources/RKMServerKit/`), because the tvOS app needs t
 
 ## Status — what is verified and what is not
 
-⚠ **The Swift sources here have never been compiled.** There is no Xcode on the Windows side, so this
-half of Phase 0 is **written but unverified** until the Mac builds it (`../WORKFLOW.md` §5). What *was*
-checked in the sandbox is listed in `docs/PROGRESS.md`: the shared package's tests, the Info.plist's
-structure and ATS keys, bracket balance, and that the injected JavaScript is complete and balanced.
+**✅ It builds, it runs, and the diagnostics are earning their keep** (2026-09-14, on the Mac;
+`docs/PROGRESS.md` is the authoritative step-by-step account).
 
-**Not yet done, and not part of Phase 0:** the Xcode project itself (his one-time GUI step), and the
-tablet acceptance run.
+| | |
+|---|---|
+| Compiles and runs on an iPhone 17 Pro simulator (iOS 26.5) | ✅ |
+| Enter the address → **the live React UI loads** in the `WKWebView` | ✅ |
+| Sign in; the session cookie lands and survives (HUD: `cookies 1 cookie (session)`) | ✅ |
+| **The custom transport renders and plays** — `allowsInlineMediaPlayback` doing its job, iOS *not* hijacking the player | ✅ |
+| A wrong address → the unreachable state with **Change server / Forget** | ✅ — the `-1022` round; the full `NSURLErrorDomain` code on screen made it diagnosable from a screenshot alone |
+| **`LOGGING.md` §9 — all three items** | ✅ **demonstrated 2026-09-14** — the exact lines are quoted in the Acceptance section below |
+| **Install on the iPad** | ⏳ the deployment target is now **16.4** (was `26.5`, Xcode's own template value — too high for any iPad not on iPadOS 26.5). Needs one rebuild, and his iPad's version to confirm the floor is low enough |
+| The overlay's corner gesture (3 taps / press-and-hold) | ⏳ unverified since its third rewrite. ⚠ Nothing depends on it: a Debug build opens with the overlay already **on** |
+
+⚠ **What the sandbox can and cannot prove** is in `../WORKFLOW.md` §5 — with one addition earned on
+2026-09-14: a Swift failure that is a *language or overload* question **can** be reproduced here without
+an SDK, by mimicking the shape and running `swiftc -typecheck` (that is how `convert(.zero, to:)` was
+caught). ⚠ `swiftc -parse` proves *nothing* about it — it passed that file.
 
 ## Non-negotiables (each one is a bug if missed)
 
@@ -156,3 +167,32 @@ Plus `../LOGGING.md` §9: a round of testing produces **one file** holding every
 duration and correlation id; a HUD correlation id from a screenshot resolves to matching lines in that
 file (**demonstrated, not assumed**); and `grep -iE "password|token|api_key|rkm_session"` over a real
 run's log returns **nothing**.
+
+### ✅ All three §9 items demonstrated, 2026-09-14 — the raw output
+
+Run against the app's own file log after a real session on the simulator (pasted verbatim, not
+summarised):
+
+```
+=== 1. the join:                      (26a253 was read off a HUD screenshot)
+[2026-09-14 09:03:47.514] I [26a253] net      GET /api/library/continue-watching -> 200 in 446ms (532 B)
+
+=== 2. redaction (must print NOTHING):   ← printed nothing
+
+=== 3. requests in the file (excerpt)
+[2026-09-14 09:03:47.363] I [a73fa7] net      GET /api/library/items -> 200 in 299ms (60.1 KB)
+[2026-09-14 09:03:47.445] I [5f67ad] net      GET /api/library/recently-watched -> 200 in 380ms (28 B)
+[2026-09-14 09:03:47.461] I [e87827] net      GET /api/jellyfin/detail?id=c2e55d3adc… -> 200 in 395ms (3.2 KB)
+[2026-09-14 09:03:47.489] I [b05ebe] net      GET /api/library -> 200 in 423ms (3.6 KB)
+[2026-09-14 09:03:48.802] I [664704] net      GET /api/jellyfin/similar?id=c2e55d3adc…&limit=10 -> 200 in 1.33s (2.3 KB)
+```
+
+**What each proves.** (1) A correlation id visible *in a photograph* resolves to the matching line in
+the file — the property this whole design exists for, and the one that turns "it didn't work" into a
+`grep`. (2) The redactor: no credential, token or cookie value reached a file that gets pasted into
+chat. (3) One file holds every request the page made, with status, duration and size.
+
+⚠ **The gap this closes:** until this run the JavaScript bridge was silently dead — a weak proxy let it
+deallocate — so the HUD showed an empty request list *while a film played*. These lines are the first
+proof the shell has an account of what the page fetched, which is what made §9 items 1 and 2 unprovable
+before.

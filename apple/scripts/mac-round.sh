@@ -61,15 +61,28 @@ STAMP="$(date +%Y%m%d-%H%M%S)"
 BUILD_LOG="apple/logs/build-${TARGET}-${STAMP}.log"
 
 if [ "$WANT_SIM" = "--sim" ]; then
-  DEST="platform=${PLATFORM} Simulator,name=${SIM_DEVICE}"
+  # ⚠ A destination that names a device this Xcode does not have fails the BUILD, not just the
+  # install+launch step, and the error says nothing about simulators. Check first;
+  # `generic/platform=iOS Simulator` always resolves.
+  if xcrun simctl list devices available 2>/dev/null | grep -q "$SIM_DEVICE"; then
+    DEST="platform=${PLATFORM} Simulator,name=${SIM_DEVICE}"
+  else
+    echo "note: no simulator named '$SIM_DEVICE' on this Mac — building for any iOS Simulator."
+    echo "      (install+launch will be skipped; Xcode > Window > Devices to add one.)"
+    DEST="generic/platform=${PLATFORM} Simulator"
+  fi
 else
+  # ⚠ A DEVICE build is SIGNED. It needs a team set in Xcode > Signing & Capabilities, and
+  # the profile for the bundle id has to be creatable — which is what -allowProvisioningUpdates
+  # below grants. Without it the build dies with "No profiles for '…' were found", which looks
+  # like a code error and is not.
   DEST="generic/platform=${PLATFORM}"
 fi
 
 say "3. building ($DEST)"
 echo "   full log: $BUILD_LOG"
 set +e
-xcodebuild -project "$PROJ" -scheme "$SCHEME" -destination "$DEST" build >"$BUILD_LOG" 2>&1
+xcodebuild -project "$PROJ" -scheme "$SCHEME" -destination "$DEST" -allowProvisioningUpdates build >"$BUILD_LOG" 2>&1
 RC=$?
 set -e
 
@@ -85,6 +98,15 @@ else
   if grep -qi "agree to the Xcode license\|license agreement" "$BUILD_LOG"; then
     echo
     echo "This is the Xcode licence, not a code error. Fix:  sudo xcodebuild -license accept" >&2
+  fi
+  # ⚠ Same idea for signing: it reads like a code failure and is not, and the fix depends on
+  # whether he wants a simulator run (no signing at all) or a device build (needs a team).
+  if grep -qi "no profiles for\|requires a development team\|provisioning profile" "$BUILD_LOG"; then
+    echo
+    echo "This is a SIGNING failure, not a code error." >&2
+    echo "  - Simulator builds need no signing:   ./apple/scripts/mac-round.sh ${TARGET} --sim" >&2
+    echo "  - For a device build: Xcode > Signing & Capabilities > set your Team, then run again." >&2
+    echo "  - This script passes -allowProvisioningUpdates, so Xcode can create the profile itself." >&2
   fi
 fi
 

@@ -189,6 +189,7 @@ export function ItemDetailContent({
   onPlayMovie,
   onPlayEpisode,
   onToggleWatched,
+  inModal = false,
 }: {
   itemId: string;
   onBack: () => void;
@@ -197,6 +198,10 @@ export function ItemDetailContent({
   /** Start an episode from the series list (queue rides along for Up Next). */
   onPlayEpisode: (episode: EpisodeShape, queue: QueueEntry[]) => void;
   onToggleWatched?: (item: MediaItem) => void;
+  /** Rendered inside the shared `Dialog` (his Bug 5, 2026-09-13): the dialog supplies the dismiss
+   *  controls (its own close X, Esc, backdrop), so the hero's own "Back" button would be a second,
+   *  competing exit — and a 400px hero is a lot of a 90vh panel. */
+  inModal?: boolean;
 }) {
   const { data: detail, isLoading, isError } = useItemDetail(itemId);
   // List lookup supplies type + fallback facts (undefined on a cold deep link
@@ -307,7 +312,7 @@ export function ItemDetailContent({
       ) : (
         <>
           {/* Cinematic backdrop hero */}
-          <div className="relative h-[300px] w-full overflow-hidden rounded-2xl sm:h-[400px]">
+          <div className={`relative w-full overflow-hidden rounded-2xl ${inModal ? "h-[190px] sm:h-[230px]" : "h-[300px] sm:h-[400px]"}`}>
             <div aria-hidden="true" className={`absolute inset-0 art-${artTone(title)}`} />
             {backdrop && (
               <img
@@ -327,14 +332,17 @@ export function ItemDetailContent({
               aria-hidden="true"
               className="absolute inset-0 bg-gradient-to-r from-canvas/60 via-transparent to-transparent"
             />
-            <button
-              onClick={onBack}
-              aria-label="Back"
-              className="absolute left-4 top-4 inline-flex h-9 items-center gap-1.5 rounded-full border border-white/10 bg-black/40 px-3.5 text-[13px] font-semibold text-zinc-100 backdrop-blur-md transition hover:bg-black/70 hover:text-white"
-            >
-              <Icon name="back" size={15} />
-              Back
-            </button>
+            {/* The dialog owns the exit in modal mode (see `inModal`). */}
+            {!inModal && (
+              <button
+                onClick={onBack}
+                aria-label="Back"
+                className="absolute left-4 top-4 inline-flex h-9 items-center gap-1.5 rounded-full border border-white/10 bg-black/40 px-3.5 text-[13px] font-semibold text-zinc-100 backdrop-blur-md transition hover:bg-black/70 hover:text-white"
+              >
+                <Icon name="back" size={15} />
+                Back
+              </button>
+            )}
           </div>
 
           {/* Content block overlapping the hero */}

@@ -19,15 +19,27 @@ export function Dialog({
   onClose,
   children,
   panelClassName = "",
+  canEscapeClose,
 }: {
   /** id of the element that names this dialog (screen-reader title). */
   labelledBy?: string;
   onClose: () => void;
   children: ReactNode;
   panelClassName?: string;
+  /** When this returns false, Escape is left ALONE — not stopped, not consumed.
+   *
+   * ⚠ Why this exists (2026-09-13): a dialog that layers over the full-screen player must not treat
+   * Escape as its own while the player is open. This handler runs in the CAPTURE phase and calls
+   * `stopPropagation()`, so a dialog that merely ignored Escape would still swallow it and the player
+   * would never see the key — one keypress, nothing closes. The item-detail modal passes the player's
+   * own state here; the rule is the same one the item page carried before it became a modal. */
+  canEscapeClose?: () => boolean;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const restoreRef = useRef<HTMLElement | null>(null);
+  // Read LIVE, without re-running the effect (which would re-focus the panel mid-playback).
+  const canEscapeRef = useRef(canEscapeClose);
+  canEscapeRef.current = canEscapeClose;
 
   useEffect(() => {
     restoreRef.current = document.activeElement as HTMLElement | null;
@@ -37,6 +49,8 @@ export function Dialog({
     // Focus trap: keep Tab inside the dialog (spec §37/§56).
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
+        // Leave the key to whoever is above us (see `canEscapeClose`).
+        if (canEscapeRef.current && !canEscapeRef.current()) return;
         e.stopPropagation();
         onClose();
         return;

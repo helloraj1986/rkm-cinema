@@ -1,29 +1,31 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
-import { ItemDetailContent } from "./ItemDetail";
-import { useLibraryOutlet } from "./LibraryLayout";
+import { ItemDetailModal } from "./ItemDetailModal";
+import { LibraryHomeView } from "./LibraryHomeView";
 
 /**
- * /library/item/:itemId — the item's OWN dedicated page (PLEX_VIEWS_PLAN Phase 1):
- * the URL is the source of truth (deep-linkable, Back works, refresh keeps you
- * here). Chrome:
- * - Back button + Esc leave the page (Esc closes the full-screen player FIRST —
- *   the player overlay owns Esc while it is open, this page only fires when the
- *   player is closed; exactly as Plex layers the player over the item page).
- * - Scrolling resets on item change so each title opens at its hero.
+ * `/library/item/:itemId` — the item's detail as a MODAL over the library (his Bug 5, 2026-09-13).
+ *
+ * The URL is still the source of truth: every in-app entry point (search results, poster cards, the
+ * hero's Details) navigates here, a deep link works on a cold load, Back and refresh behave, and
+ * closing the panel walks history back to where he came from. What changed is PRESENTATION — this
+ * route used to render a full page whose content block read as an un-scrimmed panel occupying the
+ * right ~67% of a wide screen. It now renders the app's `Dialog` (see `ItemDetailModal`).
+ *
+ * ⚠ The library view he came from is not re-rendered underneath: the router replaced it with this
+ * route, and this route has no memory of the caller (the callers navigate by URL, deliberately — no
+ * overlay state anywhere). Home stands in as the dimmed, INERT backdrop, which is the view a search
+ * or a card click is almost always made from. It is marked `pointer-events-none` as well as
+ * `aria-hidden`, so "the page behind looks fully interactive" cannot happen again even if the scrim's
+ * geometry ever changed.
  */
 export function ItemDetailPage() {
   const { itemId = "" } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const { player, startMovie, startEpisode, toggleWatched } = useLibraryOutlet();
 
-  // Refs so the keydown listener stays stable while reading LIVE player state.
-  const playerRef = useRef(player);
-  playerRef.current = player;
-
+  /** Close → the page he came from; a cold deep link has no in-app history to unwind. */
   const goBack = useCallback(() => {
-    // Deep link (location.key === "default"): no in-app history to unwind.
     if (location.key !== "default") {
       navigate(-1);
     } else {
@@ -31,34 +33,18 @@ export function ItemDetailPage() {
     }
   }, [location.key, navigate]);
 
-  const goBackRef = useRef(goBack);
-  goBackRef.current = goBack;
-
-  // Esc: player closes itself first; only when no player is open does Esc leave
-  // the page. (Player's own window listener closes it; this one is inert then.)
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !playerRef.current) goBackRef.current();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
-
-  // A new title (or a direct refresh of a deep link) opens at the hero.
+  // A new title (or a refresh of a deep link) starts at the top — the panel scrolls itself.
   useEffect(() => {
     window.scrollTo({ top: 0 });
   }, [itemId]);
 
   return (
-    <div className="flex flex-col gap-4">
-      <ItemDetailContent
-        key={itemId}
-        itemId={itemId}
-        onBack={goBack}
-        onPlayMovie={startMovie}
-        onPlayEpisode={startEpisode}
-        onToggleWatched={toggleWatched}
-      />
-    </div>
+    <>
+      {/* aria-hidden + pointer-events-none (React 18's typings predate the `inert` attribute). */}
+      <div aria-hidden="true" className="pointer-events-none select-none">
+        <LibraryHomeView />
+      </div>
+      <ItemDetailModal itemId={itemId} onClose={goBack} />
+    </>
   );
 }

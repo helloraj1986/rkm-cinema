@@ -1,41 +1,31 @@
 # ============================================================================
-# RKM stack - THE one script. Everything you ever need to run is in here.
+# RKM Cinema - THE one script. Everything this stack needs, in one place.
 #
-#   .\rkm-cinema.ps1 status                 what is running, drives wired, scan state
-#   .\rkm-cinema.ps1 apply                  make the running stack match THIS folder
-#                                           (re-render .env, rebuild + restart api/web)
-#   .\rkm-cinema.ps1 deploy [-NoBackup]     apply + Jellyfin provisioner (first run,
-#                                           new libraries or keys)
-#   .\rkm-cinema.ps1 auth                   is sign-in required right now?
-#   .\rkm-cinema.ps1 auth on                require sign-in for everything (the switch)
-#   .\rkm-cinema.ps1 auth off               back to open - THE RECOVERY if you lock out
-#   .\rkm-cinema.ps1 logs [api|web|jellyfin]
-#   .\rkm-cinema.ps1 backup                 archive Jellyfin state now (keeps newest 7)
-#   .\rkm-cinema.ps1 restore [-Archive <file>] [-Yes]
-#   .\rkm-cinema.ps1 schedule               install the nightly 04:00 state backup
-#   .\rkm-cinema.ps1 diagnose               why a library / episode / watch-state looks wrong
-#   .\rkm-cinema.ps1 reset-admin-password [-DryRun] [-Name <account>]
-#                                           locked out of the ADMINISTRATOR account: set a
-#                                           new password using the stack's own API key
-#   .\rkm-cinema.ps1 help                   this list
+#   .\rkm-cinema.ps1                 (or `help`) - what each command does, in plain words
+#   .\rkm-cinema.ps1 status          what is running right now (read-only)
+#   .\rkm-cinema.ps1 apply           make the running stack match THIS folder
+#   .\rkm-cinema.ps1 deploy          apply + Jellyfin provisioning (first run / new libraries)
+#   .\rkm-cinema.ps1 auth            is sign-in required right now?
+#   .\rkm-cinema.ps1 auth on|off     require sign-in for everything / back to open (recovery)
+#   .\rkm-cinema.ps1 logs [service]  last lines from the containers
+#   .\rkm-cinema.ps1 backup          archive Jellyfin state now (keeps newest 7)
+#   .\rkm-cinema.ps1 restore         put an archive back (DESTRUCTIVE - asks for YES)
+#   .\rkm-cinema.ps1 schedule        install the nightly 04:00 state backup
+#   .\rkm-cinema.ps1 diagnose        why a show looks watched / episodes look missing
+#   .\rkm-cinema.ps1 reset-admin-password   locked out of the ADMIN account: set a new one
 #
-# WHICH ONE DO I WANT?
-#   You edited .env, or you pulled new code            ->  apply
-#   You want the app to stop being open to everyone    ->  auth on
-#   You are setting the stack up / changed libraries   ->  deploy
-#   You are locked out of the app                      ->  auth off
-#   Something is wrong                                 ->  status, then diagnose
+# Run `.\rkm-cinema.ps1 help` for the full explanation of every command - what it does,
+# when to use it, and what it touches. This block is just the index.
 #
-# DO NOT run raw `docker compose` commands for these. `apply` is what recreates the
-# containers so a changed .env actually takes effect - editing .env alone does nothing,
-# because a container reads its environment when it STARTS.
+# WHY apply EXISTS: editing .env on its own changes NOTHING, because a container reads its
+# environment when it STARTS. `apply` is what re-renders .env and recreates the containers,
+# and it is the right command after any code change too. It rebuilds `api` and `web` only,
+# and deliberately does NOT run the Jellyfin provisioner (which can cancel a library scan) -
+# `deploy` is that heavier path, for first runs and library/key changes.
 #
-# Why `apply` instead of a full rebuild: it re-renders .rkm.env, rebuilds only api and
-# web (Docker caches unchanged layers), and skips the Jellyfin provisioner - which
-# matters, because the provisioner can cancel an in-flight library scan.
-#
-# The real work lives in render_config.py, tools\*.py and scripts\*.ps1 (the last only
-# for backup/restore). Those are internals: this script is the only one you run.
+# Everything else is an internal: render_config.py, tools\*.py and scripts\*.ps1. The one
+# exception is bootstrap.ps1 / rkm.ps1, which are one-line forwarders to this script so that
+# older notes and shortcuts keep working. There is only ONE implementation, this file.
 #
 # ASCII only - PowerShell 5.1 misreads UTF-8 without a BOM.
 # ============================================================================
@@ -324,26 +314,121 @@ function Invoke-ResetAdminPassword {
 }
 
 function Show-Help {
+    $dp = Get-DashboardPort
     Write-Host ""
-    Write-Host "RKM stack - one script" -ForegroundColor Cyan
+    Write-Host "RKM Cinema - one script. Everything this stack needs, in one place." -ForegroundColor Cyan
     Write-Host ""
-    Write-Host "  .\rkm-cinema.ps1 status                 what is running, drives wired, scan state"
-    Write-Host "  .\rkm-cinema.ps1 apply                  make the running stack match THIS folder"
-    Write-Host "                                          (use after editing .env or pulling code)"
-    Write-Host "  .\rkm-cinema.ps1 deploy [-NoBackup]     apply + Jellyfin provisioner (first run,"
-    Write-Host "                                          new libraries or keys)"
-    Write-Host "  .\rkm-cinema.ps1 auth                   is sign-in required right now?"
-    Write-Host "  .\rkm-cinema.ps1 auth on                require sign-in for everything"
-    Write-Host "  .\rkm-cinema.ps1 auth off               back to open (THE RECOVERY if you lock out)"
-    Write-Host "  .\rkm-cinema.ps1 logs [service]         tail api + web + jellyfin (or one of them)"
-    Write-Host "  .\rkm-cinema.ps1 backup                 archive Jellyfin state now (keeps newest 7)"
-    Write-Host "  .\rkm-cinema.ps1 restore                -Archive <file>  (default: newest archive)"
-    Write-Host "  .\rkm-cinema.ps1 schedule               install the nightly 04:00 backup task"
-    Write-Host "  .\rkm-cinema.ps1 diagnose               investigate a library, episode or watch-state"
-    Write-Host "  .\rkm-cinema.ps1 reset-admin-password [-DryRun] [-Name <admin>]"
+    Write-Host "  Dashboard  http://localhost:$dp/     Jellyfin  http://localhost:8098/web" -ForegroundColor DarkGray
+    Write-Host "  Folder     $PSScriptRoot" -ForegroundColor DarkGray
+
     Write-Host ""
-    Write-Host "  Dashboard: http://localhost:$(Get-DashboardPort)/   Jellyfin: http://localhost:8098/web"
-    Write-Host "  Full runbook: docs\OPERATIONS.md"
+    Write-Host "WHAT DO YOU WANT TO DO?" -ForegroundColor Cyan
+    # A decision list first: the reader starts from their situation ("I changed code"), not
+    # from a verb list they would have to decode. Dot leaders keep the two columns readable.
+    $intents = @(
+        @("I changed code, or edited .env", "apply"),
+        @("I want the app to require sign-in", "auth on"),
+        @("I am locked out, or want it open again", "auth off"),
+        @("Is sign-in on right now?", "auth"),
+        @("Something looks wrong", "status"),
+        @("First-time setup, or I changed libraries/keys", "deploy"),
+        @("I am locked out of the admin ACCOUNT", "reset-admin-password"),
+        @("Show me this text", "help")
+    )
+    foreach ($pair in $intents) {
+        Write-Host ("  {0}  " -f $pair[0].PadRight(46, ".")) -NoNewline
+        Write-Host $pair[1] -ForegroundColor White
+    }
+
+    Write-Host ""
+    Write-Host "WHAT EACH COMMAND DOES" -ForegroundColor Cyan
+
+    # Each entry: the command line, then lines of explanation. A line starting with "!"
+    # is a warning and prints in yellow.
+    $commands = @(
+        @("status", @(
+            "Shows what is actually happening: which containers are up, the state",
+            "volumes, app + Jellyfin health, library counts, whether a scan is",
+            "running, and whether sign-in is required.",
+            "> Changes nothing. Start here when anything looks off.")),
+        @("apply", @(
+            "Makes the running stack match this folder: re-renders .env, rebuilds",
+            "and restarts the 'api' and 'web' containers from the current source.",
+            "> Use after ANY code change, or any edit to .env.",
+            "> Touches api + web only. Never Jellyfin, your media, or watch state.",
+            "> Safe to run as often as you like.")),
+        @("deploy [-NoBackup]", @(
+            "Everything 'apply' does, PLUS the Jellyfin provisioner (creates the",
+            "admin account, the API key and the libraries).",
+            "> Use for the very first run, or after changing libraries or keys.",
+            "! Not for ordinary changes: it is slower, and the provisioner can",
+            "! cancel a library scan that is in progress.",
+            "> -NoBackup skips the state archive it takes first.")),
+        @("auth", @(
+            "Answers one question: does the app require sign-in RIGHT NOW?",
+            "> It asks the running api, so it reports what is true - not what .env",
+            "> says but has not applied yet.")),
+        @("auth on", @(
+            "Requires sign-in for everything except /api/health and the sign-in",
+            "screens themselves. Anyone else gets the login page.",
+            "> Writes .env (with a backup), applies it, then verifies the result.",
+            "> This is the switch that makes the app private.")),
+        @("auth off", @(
+            "The reverse: the app is open again to anyone who can reach it on your",
+            "LAN or tailnet.",
+            "> THIS IS THE RECOVERY if you ever lock yourself out of the app.")),
+        @("logs [api|web|jellyfin]", @(
+            "Shows the last lines from the containers.",
+            "> Use it right after an 'apply' that reported problems.",
+            "> No service name = api + web + jellyfin.")),
+        @("backup", @(
+            "Archives the Jellyfin state (accounts, watch history, libraries) to",
+            "D:\RKM_BACKUPS, keeping the newest 7.",
+            "> Safe and read-only - it never changes the running stack.")),
+        @("restore [-Archive <file>] [-Yes]", @(
+            "Replaces the CURRENT Jellyfin state with an archive.",
+            "! Destructive: it asks you to type YES unless -Yes is given.",
+            "> Without -Archive it uses the newest archive in D:\RKM_BACKUPS.")),
+        @("schedule", @(
+            "Installs the nightly 04:00 state backup task.",
+            "> Run once per machine; it runs as you, because Docker Desktop is",
+            "> session-scoped.")),
+        @("diagnose", @(
+            "Investigates a library, an episode or a watch-state problem:",
+            "classifies every series as watched vs episodes actually present.",
+            "> Read-only.")),
+        @("reset-admin-password [-DryRun] [-Name <account>]", @(
+            "Locked out of the ADMINISTRATOR account: sets a new password using the",
+            "stack's own API key - the old password is not needed.",
+            "> You type the new password at the tool's own prompt, never here (an",
+            "> argument would sit in your history and in the process list).",
+            "> -DryRun only names the account it would change.")),
+        @("help", @("This text."))
+    )
+    foreach ($entry in $commands) {
+        Write-Host ""
+        Write-Host ("  " + $entry[0]) -ForegroundColor White
+        foreach ($line in $entry[1]) {
+            # TrimStart after the marker: the source keeps "! warning" readable, and the output
+            # still lines up with the untagged lines (which it did not, by one space).
+            if ($line.StartsWith("!")) {
+                Write-Host ("      " + $line.Substring(1).TrimStart()) -ForegroundColor Yellow
+            } elseif ($line.StartsWith(">")) {
+                Write-Host ("      " + $line.Substring(1).TrimStart()) -ForegroundColor DarkGray
+            } else {
+                Write-Host ("      " + $line)
+            }
+        }
+    }
+
+    Write-Host ""
+    Write-Host "GOOD TO KNOW" -ForegroundColor Cyan
+    Write-Host "  * Editing .env on its own changes NOTHING. A container reads its"
+    Write-Host "    environment when it starts - run 'apply' after an edit."
+    Write-Host "  * If you are ever unsure, run 'status'. It is read-only."
+    Write-Host "  * You never need raw 'docker compose ...' commands for any of this."
+    Write-Host ""
+    Write-Host "  Full runbook: docs\OPERATIONS.md" -ForegroundColor DarkGray
     Write-Host ""
 }
 

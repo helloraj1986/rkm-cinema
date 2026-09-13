@@ -338,4 +338,37 @@ Two things this frame learned/decided:
   what the check asserts — an unowned row must never offer something that resumes or opens what he
   does not have.
 
+## `item-frame.html` — the item detail as a modal (Bug 5, 2026-09-13)
+
+`python3 tools/check_item_modal.py` mounts the REAL router (`AppShell` + `LibraryLayout` + the real
+views) over a stubbed api at **2560×1440** — the viewport where his "detail overlay" report was
+measured. ⚠ Read that report's cause carefully before touching this frame: **there was no broken
+modal** — clicking a search result or a poster card navigated to `/library/item/:id`, a full PAGE
+(`dialogCount=0`, `scrimCount=0`, and `main` at x 540→2260, i.e. the right 67% with the sidebar and a
+300px gutter exposed). The route now renders `components/ui/Dialog` instead, which is why the check is
+about PRESENTATION of a route, not about a component's internals.
+
+| Scenario | What it asserts |
+|---|---|
+| A–F (search result) | scrim covers the viewport and really dims (alpha ≥ 0.4; measured `rgba(0,0,0,0.65)`); the panel is centred (±2px), rounded, shadowed, internally scrollable; content is inset from the panel's edges; a close X exists; body scroll is LOCKED; the library behind is rendered but `pointer-events: none` |
+| D | each of the three dismissals — X, **Esc**, and a backdrop click — closes it AND releases the scroll lock |
+| I | a poster CARD reaches the same dialog (his report asked for the other entry points too) |
+| G | a COLD DEEP LINK renders the same modal, and closing it lands on the library |
+| H | ⚠ with the PLAYER open, one Esc closes the PLAYER and the modal stays behind it |
+
+Three things this frame learned the hard way:
+
+* ⚠ **The dialog must not swallow Escape it does not act on.** `Dialog`'s handler runs in the CAPTURE
+  phase and calls `stopPropagation()`, so a modal that merely ignored Escape while the player was open
+  consumed the key and NOTHING closed. `Dialog` grew `canEscapeClose`; the modal passes the player's
+  state. Scenario H is the assertion that keeps it (it caught this before the commit).
+* ⚠ **Scope every measurement to the PANEL.** The backdrop is a real library view with a hero of its
+  own, so a `main …` query for "the panel's inner inset" measured the wrong element and reported 0px.
+* Readiness waits on the library view, never on the dialog: waiting for the dialog turns "there is no
+  modal" into "the frame did not render", which is the defect under test. Falsified by restoring the
+  old page route: **8 failures**, all reading *"no dialog on screen — the detail is not being presented
+  as a modal at all"* — and every click on a dialog-only control is guarded so the run reports those
+  failures instead of a Playwright timeout.
+
+
 

@@ -65,24 +65,31 @@
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 	<!--
-	  ⚠ App Transport Security. Both keys are set deliberately.
+	  ⚠ App Transport Security — READ BEFORE ADDING A SECOND KEY.
 
-	  NSAllowsArbitraryLoads: the address is user-entered at runtime, so it can be ANY host — a raw
-	  LAN IP, a Tailscale name, a future domain. A build-time exception list cannot cover a
-	  runtime address, and `NSAllowsLocalNetworking` alone has never been a reliable guarantee for a
-	  bare private IPv4 literal such as http://192.168.1.10:8124, which is this stack's documented
-	  LAN address (apple/README.md). This is the configuration that actually works for a household
-	  app. (App Review asks for a justification for NSAllowsArbitraryLoads — irrelevant unless this
-	  is ever submitted to the store.)
+	  NSAllowsArbitraryLoads is the ONLY key here, deliberately. The address is typed by a human at
+	  runtime, so it can be ANY host — a raw LAN IP, a Tailscale name, a future domain — and no
+	  build-time exception list can cover that.
 
-	  NSAllowsLocalNetworking is kept as well: it is the narrower, correct declaration for the local
-	  case and costs nothing to state alongside.
+	  ⚠⚠ DO NOT ADD NSAllowsLocalNetworking (nor NSAllowsArbitraryLoadsInWebContent / …ForMedia)
+	  ALONGSIDE IT. On iOS 10+ the presence of any of those more specific keys makes ATS **ignore
+	  NSAllowsArbitraryLoads entirely** — so with both keys set, plain http:// was blocked for every
+	  host that is not "local networking". That is not theory: the first real connect in the app
+	  failed as exactly this —
+
+	      http://rkm-hp.tail8d5e8.ts.net:8124
+	      NSURLErrorDomain -1022 — the resource could not be loaded because the App Transport
+	      Security policy requires the use of a secure connection
+
+	  — while the same plain http:// to a LAN IP still worked, because the local-networking
+	  exemption covered that one. The narrower-looking key was the more damaging one.
+
+	  (App Review asks for a justification for NSAllowsArbitraryLoads. Irrelevant unless this is
+	  ever submitted to the store.)
 	-->
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>
-		<true/>
-		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
 </dict>

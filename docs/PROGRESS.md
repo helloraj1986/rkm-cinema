@@ -1,3 +1,49 @@
+## ▶ 🟡 **THE "STUCK TO THE TOP" MODAL — A BLURRED ANCESTOR WAS CAPTURING `fixed` (2026-09-13, latest) · branch `feat/search-external-fallback` · commit `cbfb2be`** · ⚠ STACKED on the unmerged `fix/cta-button-alignment` — his tree carries ALL of it · gates green (1111 backend · 325 vitest · tsc · build · **7 browser checks**)
+
+**His follow-up, verbatim:** *"i think its still not fixed...when there is no poster (the items which are not in
+library)...the overlay breaks and sticks to the top"* — with a screenshot of a **"Canelo Alvarez vs. Amir Khan"**
+panel (Add to Watchlist / Download, STARRING/VOTES) stuck at the top with the page behind undimmed.
+
+## ⚠ It was the OTHER modal — and a different bug
+
+The panel in his screenshot is the **not-in-library** (discovery) detail modal, not the library item detail
+fixed earlier in this branch. Both live in the same search overlay; only one had been tested from where it is
+actually mounted.
+
+Measured in the real app shell: **scrim 2320×63** (not the 2560×1440 viewport) and **the panel's top ABOVE the
+viewport**, with the DOM ancestor chain reading
+`['div.fixed', 'div.relative', 'div.max-w-[430px]', 'header.sticky', …]` — the modal is mounted inside the top bar.
+
+**Cause:** `position: fixed` is laid out against the nearest **containing block**, and that is not always the
+viewport — an ancestor with `backdrop-filter`, `filter`, `transform`, `perspective` or `contain: paint` becomes
+one. The top bar is `sticky top-0 … backdrop-blur-xl`, so the dialog's `fixed inset-0` resolved against a
+**64px-tall header**: the panel was centred inside that strip (top off-screen → "stuck to the top, title flush")
+and the scrim dimmed only the bar (→ "no scrim, the page behind looks interactive"). **Pre-existing**, not
+introduced here — it had simply never been measured from inside the header.
+
+**Fix:** `Dialog` renders through `createPortal(…, document.body)`, so every dialog is pinned to the viewport
+wherever it is mounted from. Any future overlay rendered from the header or any transformed/blurred ancestor
+inherits the fix instead of repeating it.
+
+## ⚠ THE LESSON FOR THE NEXT SESSION — a harness must mount the REAL ancestor context
+
+`search-frame` and `cta-frame` render `GlobalSearch` in a plain `<div>`, so this bug was invisible to them; and
+the earlier `item-frame` had `discovery: []` in its stub, so the discovery path was never drivable there. The
+bug only appears when the component sits inside the actual `backdrop-blur-xl` header. The new **scenario J** in
+`tools/check_item_modal.py` now drives his exact case — a not-in-library row with **NO POSTER**, clicked in the
+dropdown inside the real header — and asserts the panel is fully inside the viewport, the scrim covers it and
+the scroll is locked. After: panel **672×509 at y=466** (centred in 1440), scrim full-viewport. **Falsified** by
+reverting only the portal: J fails with *"got {'above': True…}"* and *"the scrim must cover the whole viewport,
+got 2320×63"*, naming `header.sticky` in the ancestor chain.
+
+All six other browser checks still pass with the portal (household modals exercise the dialog's focus
+trap/Esc/backdrop contract most heavily). Screenshot on his box:
+`/workspace/rkm-ux-shots/modal-discovery-no-poster-AFTER.png`.
+
+**For him:** same deploy as before (`docker compose -p rkm-bundled up -d --build api web`), then search a title
+that is **not** in the library (no poster) and click it — the panel must be centred with the page dimmed and
+unscrollable, not stuck to the top.
+
 ## ▶ 🟡 **ITEM DETAIL IS NOW A REAL MODAL — AWAITING HIS RKM-HP EYEBALL** (2026-09-13, latest) · branch **`feat/search-external-fallback`** (4 commits: `2e0976c` plan · `c3b94a5` search fix · `e21b2c0` harness index · `9b6c7b5` this fix + `docs(harness)`/`docs(status)` after it) · ⚠ **STACKED on the unmerged `fix/cta-button-alignment`** — his tree carries ALL of it, so ONE `docker compose -p rkm-bundled up -d --build api web` shows every fix · gates green (1111 backend · 325 vitest · tsc · build · `check_item_modal` + `check_cta_alignment` + `check_search_fallback` in both directions)
 
 **His report (Bug 5), verbatim in substance:** clicking the "Sholay" search result gave a detail view
@@ -4135,6 +4181,7 @@ Endpoint shapes NOT yet live-verified from the sandbox (oEmbed blocked; use `scr
   - **Structured logging** - JSON logs enable log aggregation and debugging
   - **Pydantic models for API** - Type safety, auto-documentation, validation
   - **Tests first** - Writing tests for plex ownership, radarr/sonarr routing, duplicates, trailers, status, e2e, errors caught design issues early
+
 
 
 

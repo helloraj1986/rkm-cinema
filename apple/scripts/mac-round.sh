@@ -55,6 +55,23 @@ if [ ! -d "$PROJ" ]; then
   exit 1
 fi
 
+# ⚠ Pre-flight, because this is the most common first-run failure and it reads like a code error.
+# `xcodebuild` lives INSIDE Xcode, and installing Xcode does not move this pointer — anything that
+# once ran `xcode-select --install` (Homebrew, a git prompt) leaves it on the Command Line Tools,
+# and every build then dies with "requires Xcode, but active developer directory … is a command
+# line tools instance". Fail fast with the fix rather than wasting a build on it.
+DEV_DIR="$(xcode-select -p 2>/dev/null || true)"
+case "$DEV_DIR" in
+  */Xcode*.app/Contents/Developer) ;;
+  *)
+    echo "xcodebuild is not pointed at Xcode." >&2
+    echo "  active developer directory: ${DEV_DIR:-<none>}" >&2
+    echo "  fix:  sudo xcode-select -s /Applications/Xcode.app/Contents/Developer" >&2
+    echo "  then: sudo xcodebuild -license accept   # if it complains about the licence" >&2
+    exit 1
+    ;;
+esac
+
 # ---------------------------------------------------------------- 3. build
 mkdir -p apple/logs
 STAMP="$(date +%Y%m%d-%H%M%S)"

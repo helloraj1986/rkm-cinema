@@ -1,3 +1,66 @@
+## ▶ ✅ ON `main` (2026-09-13) — **`status` no longer blames the api for NGINX's answer** (the fix for what HE hit, `7c2bef2`) · this block also records `4e4cb9a` (the check itself), whose record the interrupted session never wrote · **next = HE runs `.\rkm-cinema.ps1 apply`, re-checks `status`, then arms the switch**
+
+**What he hit, on the real stack.** `.\rkm-cinema.ps1 status` ended with
+
+    did not answer: Expecting value: line 1 column 1 (char 0)
+
+⚠ **That message lied about WHO answered — the worst possible failure mode for a tool whose whole job is "did my change take effect?".** It did NOT mean his change had failed to deploy. It meant the tool never reached the api at all.
+
+### Root cause (measured, not reasoned)
+
+`nginx/default.conf` proxied only `/api/`, so `/openapi.json` fell through to `location /` — the React SPA fallback — and came back as **index.html**. The tool parsed a web page as JSON and printed the parser's complaint.
+
+### What landed (`7c2bef2`)
+
+| | |
+|---|---|
+| `nginx/default.conf` | `location = /openapi.json` → `api:8000` — the api's OWN contract, so the check can finally see it. Exposed deliberately: that contract is already committed (`docs/api/openapi.v1.json`, ADR-0001) and carries no secrets |
+| `tools/check_deployed.py` | reads the body itself (not `json.load`) and **names which failure it hit**: HTML ⇒ the web container's SPA fallback ⇒ this stack predates the nginx rule ⇒ deploy; anything else ⇒ NOT the SPA fallback (a proxy error page, or an api that is not FastAPI) ⇒ the reader is not sent to the wrong container |
+| `tools/rkm_common.py` | a sign-in **401** now names the two `.env` values to check against the administrator's CURRENT password, instead of asking "(wrong administrator password?)" |
+
+### Falsified — and it changed the fix
+
+Every case was run by breaking the REAL files, then restoring them byte-identical:
+
+| Broken on purpose | Result |
+|---|---|
+| the nginx rule **commented out** | FAILS — ⚠ **the first version of this check PASSED here**: a substring test cannot tell a live rule from a dead one. Found by the falsification pass and fixed |
+| the rule **deleted** | FAILS |
+| the rule live in **another form** | passes ⇒ correct, the behaviour is intact (the check pins behaviour, not syntax) |
+| the rule no longer `no-store` | FAILS |
+| the rule proxying to the **web container** | FAILS |
+| one story for **every** non-JSON answer | FAILS (the plain-text test) |
+| the **raw json error** returns | FAILS (the HTML test) |
+
+### Gates (`7c2bef2`)
+
+**1086 backend pytest** · ruff clean (`api/application/config/core/domain/infrastructure/jobs/services` + `tools/`) · docs links (39 files, all resolve). Nothing under `frontend/` changed, so its gates were not re-run. **No `.ps1` file was touched**: `& $py` already passes the tool's stderr straight through, and the script's own `docker compose` calls (constant stderr) prove that path works on his machine.
+
+### ⚠ The one thing this fix needs from him
+
+The nginx rule is **baked into the web image** (`frontend/Dockerfile`), so the fix is not live until the `web` container is rebuilt:
+
+```powershell
+cd D:\hermes_agent\hermes-workspace\projects\rkm-cinema
+.\rkm-cinema.ps1 apply
+.\rkm-cinema.ps1 status
+```
+
+Before the apply, `status` will now say **COULD NOT ASK** and name the SPA fallback — the honest answer for a stack built before the rule. After it, that same section should say **MATCH**, or name the real contract differences.
+
+### Also recorded here: `4e4cb9a` — the check itself
+
+`tools/check_deployed.py` landed as `4e4cb9a` (pushed, 10 tests at the time) but the session was interrupted before its record was written. It answers "did my change take effect?" by comparing the RUNNING api's `/openapi.json` with this folder's snapshot (`docs/api/openapi.v1.json`), and it is wired into `.\rkm-cinema.ps1 status`. Its honest limit stands: it compares the **contract**, not the implementation — a change that leaves the API shape identical is invisible to it.
+
+### NEXT (unchanged, in priority order)
+
+1. **HE runs `apply`, confirms `status` says MATCH, then arms the switch** — `RKM_AUTH_REQUIRED` is still `false`. Remember `status`/`auth` report BEHAVIOUR (a 401 from the running api), never the `.env` value.
+2. **Phase 5** — `ADR-0006` (never written) + the docs truth pass (`ARCHITECTURE.md` mentions identity zero times and its §11 still documents the DELETED legacy frontend), plus the two `§6h` hardening items (the media-call 401 taxonomy; per-session device ids for browsers).
+3. **Phase 1's fresh-install test** on a throwaway stack — still the one path only HE can run (`ADMIN_CREDENTIALS_PLAN.md` §7).
+4. **XS:** `BROWSER_RADARR_URL` / `BROWSER_SONARR_URL` point at `:7878`/`:8989` while the bundled compose publishes `7879`/`8988`.
+
+---
+
 ## ▶ ✅ MERGED TO `main` (2026-09-13) — **Phase E + the tool sessions + the ONE-SCRIPT consolidation are on `main`** (7 commits) · worktree on `main` · **next = HE runs `.\rkm-cinema.ps1 auth on`**
 
 **His instruction, verbatim:** *"okey git commit and merge to main everything looks good for now and then

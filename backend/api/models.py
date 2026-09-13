@@ -324,7 +324,7 @@ class GlobalHint(BaseModel):
 
 
 class GlobalDiscoveryRow(BaseModel):
-    """TMDB discovery row — ONLY when no strong owned match exists."""
+    """External-metadata row for a title the LIBRARY does not have (deduped server-side)."""
 
     tmdb_id: int
     media_type: str  # movie | tv
@@ -342,7 +342,10 @@ class SearchGlobalResponse(BaseModel):
     provider: Optional[str] = None
     #: Whether TMDB discovery is configured (False → discovery is empty by design).
     tmdb_key: bool = False
-    #: A strong owned match exists → clients should NOT show the DISCOVER section.
+    #: An EXACT owned-title match exists (services.global_search.EXACT_TITLE_SCORE) → the library
+    #: already has what was asked for. ⚠ Clients must NOT gate the DISCOVER section on this: the
+    #: server already decides which discovery rows to send. A second copy of this rule in the UI is
+    #: exactly what hid the external results on 2026-09-13.
     strong_match: bool = False
     items: List[GlobalOwnedRow] = Field(default_factory=list)
     people: List[GlobalHint] = Field(default_factory=list)

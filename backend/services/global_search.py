@@ -13,6 +13,14 @@ from typing import Any, Iterable, Optional
 _NON_WORD = re.compile(r"[^0-9A-Za-z]+")
 _SPACES = re.compile(r"\s+")
 
+#: ⚠ The ONE threshold that decides "the library already has what was asked for" — used by the
+#: discovery GATE (route) and by the dedupe below, so the two can never drift apart again.
+#: It is deliberately the EXACT tier (3), not containment (2): an owned "Sholay — Special Ops" is a
+#: DIFFERENT work from "Sholay", and treating a longer title that merely contains the query as an
+#: answer is what hid the real film from a global search (measured 2026-09-13: score 2, so
+#: `strong_match` went true and the route never asked TMDB at all).
+EXACT_TITLE_SCORE = 3
+
 
 def normalize_title(raw: Any) -> str:
     """Case/punctuation-insensitive title key ("3 Body Problem:" -> "3 body problem")."""
@@ -51,7 +59,11 @@ def title_match_score(query: str, title: Any, *, query_year: Optional[int] = Non
 
 
 def owned_strong_match(owned: Iterable[dict], query: str, *, query_year: Optional[int] = None) -> int:
-    """Best ``title_match_score`` across owned rows (drives the library-first gate)."""
+    """Best ``title_match_score`` across owned rows.
+
+    ⚠ The caller compares this against ``EXACT_TITLE_SCORE`` — a number alone cannot say whether the
+    library *answered* the query (see that constant).
+    """
     best = 0
     for row in owned or []:
         best = max(best, title_match_score(query, row.get("title", ""), query_year=query_year,
@@ -62,8 +74,12 @@ def owned_strong_match(owned: Iterable[dict], query: str, *, query_year: Optiona
 def is_duplicate_discovery(candidate: dict, owned: Iterable[dict]) -> bool:
     """True when a TMDB candidate is already owned (drop it from DISCOVER).
 
-    Matches by TMDB provider id first, then by exact/containment title with
-    year compatibility — same-name remakes of a different year stay distinct.
+    Matches by TMDB provider id first — the strongest identity signal, always decisive — then by
+    title. ⚠ The title path needs ``EXACT_TITLE_SCORE``, not containment: an owned "Sholay —
+    Special Ops" would otherwise swallow the real "Sholay" (1975), and it does so **whenever the
+    owned row carries no year**, because the remake guard below cannot fire without two years
+    (measured 2026-09-13: dropped_as_duplicate=True for exactly that pair). Same-name remakes of a
+    different year remain distinct on both paths.
     """
     cand_tmdb = candidate.get("tmdb_id")
     for row in owned or []:
@@ -76,7 +92,7 @@ def is_duplicate_discovery(candidate: dict, owned: Iterable[dict]) -> bool:
                 pass
         score = title_match_score(candidate.get("title", ""), row.get("title", ""),
                                   query_year=candidate.get("year"), title_year=row.get("year"))
-        if score >= 2:
+        if score >= EXACT_TITLE_SCORE:
             return True
     return False
 

@@ -1,10 +1,17 @@
-"""Global search endpoint — library-first, TMDB discovery only when needed.
+"""Global search endpoint — library-first, TMDB discovery when the library has no exact answer.
 
 GLOBAL_SEARCH_PLAN: ONE intelligent search for the top-bar overlay. Answers
 "do I own this?" first: owned Movie/Series/Episode rows (with playback facts +
 a state-aware primary action), People/Genre/BoxSet intent hints, actor
-drill-down titles, and a TMDB DISCOVER group ONLY when no strong owned match
-exists. Duplicate TMDB rows are suppressed by tmdb-id / normalised title.
+drill-down titles, and a TMDB DISCOVER group of titles the library does not
+have. Duplicate TMDB rows are suppressed by tmdb-id / exact title.
+
+⚠ The DISCOVER group is NOT conditional on "the library found something"
+(2026-09-13). It used to be gated on `strong_match`, i.e. on any owned title
+that CONTAINED the query — so searching "sholay" while owning "Sholay — Special
+Ops" never reached TMDB at all and the real film was invisible. The gate now
+asks the only question that matters: does the library have EXACTLY this title
+(`EXACT_TITLE_SCORE`)?
 
 Additive endpoint (ADR-0001): the legacy ``/api/search`` is untouched.
 """
@@ -16,8 +23,10 @@ from api.models import (
     SearchGlobalResponse, GlobalOwnedRow, GlobalHint, GlobalDiscoveryRow,
 )
 from config.settings import get_config
+from core.cache import TTLCache
 from services.global_search import (
-    is_duplicate_discovery, next_episode_facts, owned_state, owned_strong_match,
+    EXACT_TITLE_SCORE, is_duplicate_discovery, next_episode_facts, normalize_title,
+    owned_state, owned_strong_match,
 )
 from services.library import build_library_service
 from services.tmdb import TMDBService
@@ -27,6 +36,31 @@ logger = logging.getLogger("rkm.api.search_global")
 
 #: How many Series rows get the episodes enrich (resume/next-episode target).
 SHOW_ENRICH_LIMIT = 3
+
+#: How many external candidates the overlay shows (§ his report: "top 5–6").
+DISCOVERY_LIMIT = 6
+
+#: ⚠ The external half is cached, the LOCAL half never is. Metadata search is stable for minutes and
+#: the user retypes the same query as they refine it; playback state (progress, next episode) is stale
+#: in seconds, so caching the merged response would show him an old resume position. The client's
+#: `staleTime` stays 15s for the same reason.
+SEARCH_CACHE_TTL = 300
+_search_cache: TTLCache[list] = TTLCache(default_ttl=SEARCH_CACHE_TTL)
+
+
+def _tmdb_search_cached(cfg, query: str) -> list:
+    """``TMDBService.search_multi`` for *query*, cached per normalised query for ``SEARCH_CACHE_TTL``.
+
+    ``search_multi`` itself stays uncached on purpose (the legacy /api/search must read fresh), so the
+    cache lives here — on the ONE path where the same query is asked repeatedly as he types. A
+    transport failure raises (and is NOT cached), which the caller degrades on explicitly.
+    """
+    key = f"search_multi:{normalize_title(query)}"
+    hit = _search_cache.get(key)
+    if hit is not None:
+        return hit
+    rows = list(TMDBService(config=cfg).search_multi(query))
+    return _search_cache.set(key, rows) or rows
 
 
 def _to_owned(row: dict, next_ep: dict | None = None) -> dict:
@@ -102,10 +136,12 @@ def search_global(q: str = Query(default="", min_length=1)):
             except Exception as e:  # noqa: BLE001
                 logger.warning("person titles failed for %r: %s", query, e)
 
-        payload["strong_match"] = owned_strong_match(owned_raw, query) >= 2
+        # ⚠ EXACT title only: a longer owned title that merely CONTAINS the query is a different
+        # work and must not suppress the external search (see EXACT_TITLE_SCORE).
+        payload["strong_match"] = owned_strong_match(owned_raw, query) >= EXACT_TITLE_SCORE
 
-    # TMDB discovery ONLY when there is no strong owned match — and never a row
-    # that is already owned (tmdb-id or normalised title+year).
+    # External discovery runs whenever the library has no EXACT answer — and never carries a row the
+    # library already owns (tmdb-id, or an exact title+year).
     if cfg.has_tmdb() and not payload["strong_match"]:
         # Watchlist membership so the overlay can offer Download (not Add) for
         # titles already on the watchlist — matches the Suggest card contract.
@@ -122,7 +158,7 @@ def search_global(q: str = Query(default="", min_length=1)):
         except Exception as e:  # noqa: BLE001
             logger.warning("watchlist membership lookup failed: %s", e)
         try:
-            for res in TMDBService(config=cfg).search_multi(query)[:6]:
+            for res in _tmdb_search_cached(cfg, query)[:DISCOVERY_LIMIT]:
                 mtype = res.get("media_type")
                 if mtype not in ("movie", "tv"):
                     continue

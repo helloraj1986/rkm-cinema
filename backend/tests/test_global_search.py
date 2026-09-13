@@ -9,7 +9,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from services.global_search import (
-    is_duplicate_discovery, next_episode_facts, normalize_title,
+    EXACT_TITLE_SCORE, is_duplicate_discovery, next_episode_facts, normalize_title,
     owned_state, owned_strong_match, title_match_score,
 )
 
@@ -30,11 +30,35 @@ def test_title_match_score_tiers_and_years():
     assert title_match_score("zzz", "No Match At All") == 0
 
 
-def test_owned_strong_match_gate():
+def test_owned_match_tiers_and_the_gate_that_reads_them():
+    """⚠ The tiers are unchanged; the GATE is what changed (2026-09-13).
+
+    ``owned_strong_match`` still reports containment as 2 — but the route now compares against
+    ``EXACT_TITLE_SCORE`` (3), because a longer owned title that merely CONTAINS the query is a
+    DIFFERENT work. Pinning both numbers here is the point: if someone later "fixes" the gate back to
+    >= 2, the assertion below that 2 < EXACT_TITLE_SCORE fails and says why.
+    """
     owned = [{"title": "3 Body Problem", "year": 2024}, {"title": "Dark", "year": 2017}]
-    assert owned_strong_match(owned, "3 body problem") >= 2
-    assert owned_strong_match(owned, "3 Body") >= 2   # containment
+    assert owned_strong_match(owned, "3 body problem") == EXACT_TITLE_SCORE   # the library has it
+    assert owned_strong_match(owned, "3 Body") == 2                           # containment only
     assert owned_strong_match(owned, "Something Else") == 0
+    # The library has NOT answered a containment query — which is what let the real "Sholay" be hidden.
+    assert owned_strong_match(owned, "3 Body") < EXACT_TITLE_SCORE
+
+
+def test_duplicate_discovery_ignores_containment():
+    """⚠ The landmine behind the gate: with the owned row carrying NO year, the remake guard cannot
+    fire, so a containment match used to swallow the candidate (measured True on 2026-09-13). The
+    real "Sholay" (1975) must survive against an owned "Sholay — Special Ops" either way."""
+    candidate = {"tmdb_id": 12259, "title": "Sholay", "year": 1975}
+    assert not is_duplicate_discovery(dict(candidate), [{"title": "Sholay — Special Ops", "year": 2025}])
+    assert not is_duplicate_discovery(dict(candidate), [{"title": "Sholay — Special Ops"}])
+    # …while an EXACT owned title is still a duplicate, and the tmdb-id path stays decisive.
+    assert is_duplicate_discovery(dict(candidate), [{"title": "Sholay", "year": 1975}])
+    assert is_duplicate_discovery(
+        {"tmdb_id": 12259, "title": "Something Else Entirely", "year": 1975},
+        [{"title": "Sholay — Special Ops", "provider_ids": {"tmdb": 12259}}],
+    )
 
 
 def test_duplicate_discovery_by_tmdb_id_and_title():
@@ -177,11 +201,21 @@ class _FakeService:
         return {"provider": "jellyfin", "items": self._person_rows}
 
 
-def _route_env(lib_service, tmdb_rows=()):
+def _route_env(lib_service, tmdb_rows=(), counter=None):
     from api.routes import search_global as mod
+    # ⚠ The route's external-search cache is MODULE-level: without this clear, a test that uses a
+    # query a previous test already asked would be answered from that test's rows instead of this
+    # stub, and the assertion would be about the wrong fixture.
+    mod._search_cache.clear()
     cfg = SimpleNamespace()
     cfg.has_tmdb = lambda: True
-    fake_tmdb = SimpleNamespace(search_multi=lambda q: list(tmdb_rows))
+
+    def search_multi(q):
+        if counter is not None:
+            counter.append(q)
+        return list(tmdb_rows)
+
+    fake_tmdb = SimpleNamespace(search_multi=search_multi)
     patchers = [
         patch.object(mod, "get_config", return_value=cfg),
         patch.object(mod, "build_library_service", return_value=lib_service),
@@ -192,7 +226,8 @@ def _route_env(lib_service, tmdb_rows=()):
     return mod.search_global, patchers
 
 
-def test_route_strong_match_suppresses_discovery():
+def test_route_exact_match_suppresses_discovery():
+    """An EXACT owned title means the library has answered the query — no external section."""
     svc = _FakeService(
         items=[{"id": "s1", "kind": "show", "title": "3 Body Problem", "year": 2024,
                 "genres": [], "rating": None, "played": False, "playback_position": 0,
@@ -214,6 +249,82 @@ def test_route_strong_match_suppresses_discovery():
     assert row.state == "next_episode"
     assert row.next_episode is not None and row.next_episode.kind == "play"
     assert resp.people == []
+
+
+def test_route_containment_match_still_returns_discovery():
+    """⚠ HIS BUG (2026-09-13), verbatim: searching **"sholay"** while the library holds only
+    "Sholay — Special Ops" (a different work) returned that one unrelated row and NO external
+    section, because containment scored 2 and the gate was `>= 2`.
+
+    Both halves are asserted: the unrelated owned row is still OFFERED (library first), and the real
+    film now appears beside it. Run against the old gate this test fails at `strong_match is False`.
+    """
+    owned_row = {"id": "ep-shso", "kind": "episode", "title": "Sholay — Special Ops",
+                 "year": 2025, "season": 1, "episode": 8, "series_id": "s-shso",
+                 "series_name": "Sholay — Special Ops", "genres": [], "rating": None, "played": False,
+                 "playback_position": 120, "runtime": 3600, "play_count": 1, "provider_ids": {}}
+    tmdb = [
+        {"id": 12259, "media_type": "movie", "title": "Sholay", "release_date": "1975-08-15",
+         "overview": "Two friends, their village, and a bandit.", "poster_path": "/sholay.jpg"},
+        {"id": 586776, "media_type": "movie", "title": "The Sholay Girl", "release_date": "2019-03-01",
+         "overview": "", "poster_path": ""},
+    ]
+    # (a) the owned row carries a year, and (b) it does not — the second is the landmine, because the
+    # remake guard cannot fire without two years.
+    for label, owned in (("with a year", dict(owned_row)), ("with NO year", {**owned_row, "year": None})):
+        fn, patchers = _route_env(_FakeService(items=[owned]), tmdb_rows=tmdb)
+        try:
+            resp = fn(q="sholay")
+        finally:
+            for p in patchers:
+                p.stop()
+        assert resp.strong_match is False, label
+        assert [d.title for d in resp.discovery] == ["Sholay", "The Sholay Girl"], label
+        assert [i.title for i in resp.items] == ["Sholay — Special Ops"], label
+        assert resp.discovery[0].year == 1975 and resp.discovery[0].media_type == "movie", label
+        assert resp.discovery[0].poster.endswith("/sholay.jpg"), label
+
+
+def test_route_never_offers_a_title_it_already_owns():
+    """The other direction: a containment QUERY opens the external search, and the exact title among
+    the candidates is then deduped away — the section must not offer to acquire what he has."""
+    fn, patchers = _route_env(
+        _FakeService(items=[{"id": "m1", "kind": "movie", "title": "The Matrix", "year": 1999,
+                             "genres": [], "rating": None, "played": True, "playback_position": 0,
+                             "runtime": 8160, "play_count": 2, "provider_ids": {"tmdb": 603}}]),
+        tmdb_rows=[{"id": 603, "media_type": "movie", "title": "The Matrix",
+                    "release_date": "1999-03-31", "overview": "", "poster_path": ""}],
+    )
+    try:
+        resp = fn(q="matrix")   # containment: the library answers, but not EXACTLY
+    finally:
+        for p in patchers:
+            p.stop()
+    assert resp.strong_match is False
+    assert resp.discovery == []
+    assert [i.title for i in resp.items] == ["The Matrix"]
+
+
+def test_route_caches_the_external_search_per_query():
+    """His report asks for a short-lived cache. Only the EXTERNAL half is cached (the local rows carry
+    playback state), keyed on the NORMALISED query, so a refinement that normalises to the same key
+    does not call the provider twice."""
+    seen: list[str] = []
+    fn, patchers = _route_env(
+        _FakeService(items=[]), counter=seen,
+        tmdb_rows=[{"id": 12259, "media_type": "movie", "title": "Sholay",
+                    "release_date": "1975-08-15", "overview": "", "poster_path": ""}],
+    )
+    try:
+        first = fn(q="sholay")
+        second = fn(q="  Sholay  ")      # same normalised key
+        third = fn(q="sholay 2")         # a different query must reach the provider
+    finally:
+        for p in patchers:
+            p.stop()
+    assert seen == ["sholay", "sholay 2"], seen
+    assert [d.title for d in first.discovery] == ["Sholay"]
+    assert [d.title for d in second.discovery] == ["Sholay"]
 
 
 def test_route_no_owned_match_returns_discovery():

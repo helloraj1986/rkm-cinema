@@ -2444,7 +2444,7 @@
           "title"
         ],
         "title": "GlobalDiscoveryRow",
-        "description": "TMDB discovery row \u2014 ONLY when no strong owned match exists."
+        "description": "External-metadata row for a title the LIBRARY does not have (deduped server-side)."
       },
       "GlobalEpisodeFacts": {
         "properties": {

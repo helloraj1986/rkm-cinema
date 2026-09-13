@@ -231,7 +231,11 @@ export function GlobalSearch() {
   };
 
   const ownedCount = data ? data.items.length + data.person_titles.length : 0;
-  const showDiscovery = Boolean(data && !data.strong_match && data.discovery.length);
+  // ⚠ The SERVER decides whether an external section exists (`discovery` rows come back already
+  // filtered and deduped). This used to repeat the decision as `!data.strong_match`, so the two could
+  // disagree — and did: the backend gate was relaxed on 2026-09-13 while this copy kept hiding the
+  // rows. One rule, one place.
+  const showDiscovery = Boolean(data && data.discovery.length);
   const personLabel = data?.people[0]?.name;
 
   return (
@@ -321,7 +325,9 @@ export function GlobalSearch() {
 
           <div className="flex items-center gap-4 border-t border-white/[.06] px-4 py-2 text-[10px] font-medium text-zinc-500">
             <span>↑↓ navigate · Enter details · Esc close</span>
-            {!data?.tmdb_key && !data?.strong_match ? <span className="ml-auto">TMDB discovery off — library only</span> : null}
+            {/* The note is about the CAPABILITY (no metadata key is configured), not about this
+                query: with one, the server answers the external half itself. */}
+            {!data?.tmdb_key ? <span className="ml-auto">TMDB discovery off — library only</span> : null}
           </div>
         </div>
       ) : null}

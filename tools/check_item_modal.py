@@ -268,6 +268,60 @@ def scenario_h_player_layering(page: Page, base: str, shots: str) -> None:
         print("  H  Esc closed the player only — the modal stayed behind it")
 
 
+def scenario_j_discovery_no_poster(page: Page, base: str, shots: str) -> None:
+    """J — his screenshot: a "not in your library" title with NO POSTER, opened from the search
+    dropdown that lives INSIDE the blurred top bar.
+
+    ⚠ The top bar is `sticky top-0 … backdrop-blur-xl`, and `backdrop-filter` (like filter/transform)
+    makes an element a CONTAINING BLOCK for `position: fixed` descendants. The dialog's `fixed inset-0`
+    therefore resolved against a 64px-tall header: the panel was centred inside that strip — its top
+    above the viewport, i.e. "sticks to the top with the title flush" — and the scrim dimmed only the
+    bar. Fixed by portalling the dialog to `<body>`.
+    """
+    print("J — the discovery modal (no poster), opened from the top bar")
+    page.goto(f"{base}{FRAME}?route=/library/home", wait_until="networkidle")
+    try:
+        page.wait_for_function(
+            "() => (document.querySelector('main')?.textContent || '').length > 20", timeout=15000)
+    except Exception:
+        problem("J: the library view never rendered — the frame did not load")
+        return
+    page.fill('input[type="search"]', "canelo")
+    try:
+        page.wait_for_function(
+            "() => document.querySelectorAll('[role=\\\"option\\\"]').length >= 2", timeout=15000)
+    except Exception:
+        problem("J: the dropdown never rendered an external row — his case cannot be reproduced")
+        return
+    page.wait_for_timeout(250)
+    # The DISCOVERY row's Details is the last one (owned rows render first).
+    page.locator('[data-testid="row-action-secondary"]').last.click()
+    page.wait_for_timeout(900)
+    probe = page.evaluate("window.__probe()")
+    if shots:
+        page.screenshot(path=f"{shots}/modal-discovery-no-poster.png")
+    check(probe["dialogCount"] >= 1,
+          "J: clicking a not-in-library row must open its detail modal")
+    if probe["dialogCount"] == 0:
+        return
+    out = probe.get("panelOutOfViewport")
+    check(out is not None and not any(out.values()),
+          f"J: the panel must sit fully INSIDE the viewport — got {out} for a {probe['viewport']} "
+          f"viewport. A `fixed` dialog mounted inside a `backdrop-filter` ancestor is laid out against "
+          f"THAT element, not the viewport, so the panel lands off-screen and the scrim dims only the "
+          f"bar (panel ancestors: {probe.get('panelAncestors')})")
+    scrim = probe.get("scrim") or {}
+    check(bool(scrim.get("coversViewport")),
+          f"J: the scrim must cover the whole viewport, got "
+          f"{scrim.get('width')}x{scrim.get('height')} for {probe['viewport']}")
+    check(probe["bodyOverflow"] == "hidden",
+          f"J: the scroll must be locked while it is open, got {probe['bodyOverflow']!r}")
+    if not PROBLEMS:
+        print(f"  J  the no-poster modal is fully on screen "
+              f"({probe['panel']['width']:.0f}×{probe['panel']['height']:.0f}px at y="
+              f"{probe['panel']['top']:.0f}), the scrim covers the viewport, scroll locked")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--base", default="http://localhost:5199")
@@ -288,6 +342,8 @@ def main() -> int:
         scenario_i_card_click(page, args.base, args.shots)
         page.goto("about:blank")
         scenario_g_deep_link(page, args.base, args.shots)
+        page.goto("about:blank")
+        scenario_j_discovery_no_poster(page, args.base, args.shots)
         page.goto("about:blank")
         scenario_h_player_layering(page, args.base, args.shots)
 

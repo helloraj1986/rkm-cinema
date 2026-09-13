@@ -91,7 +91,32 @@ window.fetch = (async (input: RequestInfo | URL, init: RequestInit = {}) => {
   if (path.startsWith("/api/search/global")) {
     return send({
       query: "sholay", provider: "jellyfin", tmdb_key: true, strong_match: true,
-      items: [EPISODE_ROW], people: [], person_titles: [], genres: [], collections: [], discovery: [],
+      items: [EPISODE_ROW], people: [], person_titles: [], genres: [], collections: [],
+      // ⚠ A discovery row with NO POSTER — his report ("when there is no poster (the items which are
+      // not in library) the overlay breaks and sticks to the top"). The poster is what makes the
+      // suggest modal tall; without it the mispositioned panel is unmistakable. This row is opened
+      // from the REAL header (which is `backdrop-blur-xl`), so the frame reproduces the containing
+      // block that broke `position: fixed`.
+      discovery: [
+        {
+          tmdb_id: 400160, media_type: "movie", title: "Canelo Alvarez vs. Amir Khan", year: 2016,
+          poster: "", overview: "Middleweight world championship at T-Mobile Arena, Las Vegas.",
+          in_watchlist: false,
+        },
+        {
+          tmdb_id: 586776, media_type: "movie", title: "The Sholay Girl", year: 2019,
+          poster: "", overview: "", in_watchlist: true,
+        },
+      ],
+    });
+  }
+  if (path.startsWith("/api/suggest/detail/")) {
+    return send({
+      ok: true, id: 400160, media_type: "movie", title: "Canelo Alvarez vs. Amir Khan", year: 2016,
+      overview: "Middleweight world championship at T-Mobile Arena, Las Vegas.",
+      genres: ["Action"], runtime: 90, cert: "PG", cast: ["Canelo Alvarez", "Amir Khan"],
+      director: "", tmdb_score: 7.0, vote_count: 1, poster: "", backdrop: "",
+      imdb_id: "", imdb_rating: 0,
     });
   }
   if (path.startsWith("/api/jellyfin/detail")) {
@@ -189,8 +214,23 @@ const rect = (el: Element) => {
       : null,
     scrim: scrim
       ? { ...rect(scrim), bg: css(scrim, "background-color"), blur: css(scrim, "backdrop-filter"),
-          position: css(scrim, "position") }
+          position: css(scrim, "position"),
+          coversViewport: rect(scrim).width >= innerWidth - 1 && rect(scrim).height >= innerHeight - 1 }
       : null,
+    // ⚠ The bug his screenshot shows: a `fixed` dialog laid out against a blurred ANCESTOR (the top
+    // bar is `backdrop-blur-xl`) lands off-screen instead of centred. Measured as a fact about the
+    // panel's box, so it cannot be satisfied by the class list alone.
+    panelOutOfViewport: panel
+      ? { above: rect(panel).top < -0.5, below: rect(panel).bottom > innerHeight + 0.5,
+          left: rect(panel).left < -0.5, right: rect(panel).right > innerWidth + 0.5 }
+      : null,
+    panelAncestors: panel
+      ? [...(function* () { let n: Element | null = panel.parentElement;
+          while (n && n !== document.body) { yield n.tagName.toLowerCase() + (n.className ? "." + String(n.className).split(" ")[0] : ""); n = n.parentElement; } })()]
+      : null,
+    modalKind: document.querySelector('[data-testid="item-detail-close"]')
+      ? "item-detail"
+      : panel ? "other" : "none",
     closeBtn: closeBtn ? rect(closeBtn) : null,
     behindInert: inertWrap ? { pointerEvents: css(inertWrap, "pointer-events"),
                                text: (inertWrap.textContent || "").trim().slice(0, 60) } : null,

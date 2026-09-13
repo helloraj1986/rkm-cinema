@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 /**
  * Premium modal dialog shell (design spec §51).
@@ -13,6 +14,16 @@ import { useCallback, useEffect, useRef, type ReactNode } from "react";
  *    element on close
  *  - Tab is trapped inside the panel (no focus leaks into the app behind)
  * The caller renders the panel content (hero, close button, body) as children.
+ *
+ * ⚠ RENDERED INTO `document.body` (2026-09-13). This dialog is `position: fixed`, and a `fixed`
+ * element is laid out against its nearest **containing block** — which is NOT always the viewport:
+ * an ancestor with `backdrop-filter`, `filter`, `transform`, `perspective` or `contain: paint` becomes
+ * one. The top bar is `sticky top-0 … backdrop-blur-xl`, and the global search's overlay renders its
+ * discovery modal from INSIDE that bar — so `fixed inset-0` resolved against a 64px-tall header: the
+ * scrim dimmed only that strip and the panel was centred inside it, its top cut off above the
+ * viewport. His screenshot (2026-09-13) of the "not in your library" modal stuck to the top of the
+ * screen is exactly that. Portalling to `<body>` pins every dialog to the viewport regardless of
+ * where it is mounted from.
  */
 export function Dialog({
   labelledBy,
@@ -89,10 +100,11 @@ export function Dialog({
     [onClose],
   );
 
-  return (
+  return createPortal(
     <div
       className="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center bg-black/65 p-4 backdrop-blur-[8px]"
       onMouseDown={onBackdropMouseDown}
+      data-testid="dialog-scrim"
     >
       <div
         ref={panelRef}
@@ -104,6 +116,7 @@ export function Dialog({
       >
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

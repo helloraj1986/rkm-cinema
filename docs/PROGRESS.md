@@ -1,4 +1,44 @@
-## ▶ 🟡 **THE "STUCK TO THE TOP" MODAL — A BLURRED ANCESTOR WAS CAPTURING `fixed` (2026-09-13, latest) · branch `feat/search-external-fallback` · commit `cbfb2be`** · ⚠ STACKED on the unmerged `fix/cta-button-alignment` — his tree carries ALL of it · gates green (1111 backend · 325 vitest · tsc · build · **7 browser checks**)
+## ▶ ✅ **MERGED TO `main` — CTA ALIGNMENT + EXTERNAL SEARCH + THE MODAL FIXES** (2026-09-13, latest) · **`main` = `e0b5c67`** (fast-forward, at HIS direction) · deploy branch `experiment/bundled-docker-stack` fast-forwarded to match · **his RKM-HP eyeball of these fixes is STILL PENDING** — he directed the merge, he has not yet reported seeing them
+
+**What he asked:** *"git commit and merge to main"*. Nothing was left uncommitted; the merge was a single
+fast-forward of `main` → `feat/search-external-fallback`, which **contains the CTA branch** (it was stacked on it),
+so one merge brought every fix from this session:
+
+| Block | What landed |
+|---|---|
+| CTA alignment (line 192) | the poster "▶ Episodes" pill is a flex row; one shared `Button` size token across the search rows |
+| External search (line 118) | TMDB discovery is no longer suppressed by a mere CONTAINMENT match in the owned title; the UI stopped keeping its own copy of that gate; the external half is cached 5 min |
+| Item detail modal (line 47) | `/library/item/:id` renders the shared `Dialog` — scrim, centred rounded panel, close X, Esc/backdrop, scroll lock — on every entry point |
+| The "stuck to the top" modal (line 1) | `Dialog` renders through `createPortal(…, document.body)`, because `backdrop-blur-xl` on the top bar was capturing `position: fixed` |
+
+**Proven, not assumed:**
+* `git merge --ff-only feat/search-external-fallback` → fast-forward `7f0e16c..e0b5c67` (26 files, +2743/−104).
+* `git merge-base --is-ancestor fix/cta-button-alignment main` → **true** (the CTA branch is merged by ancestry,
+  so nothing was dropped by merging only the stacked branch).
+* `experiment/bundled-docker-stack` fast-forwarded `7f0e16c..e0b5c67` — **the deploy branch equals `main`**.
+* Pushed via the token URL and verified with `git ls-remote` for all four branches (the authoritative check —
+  a token-URL push does not update the local `origin/*` refs).
+
+**⚠ The eyeball is still outstanding, and that is a real caveat on this merge.** He reported Bug 5 as *"still not
+fixed"*, I found and fixed a second, different cause (the portal), and his next message was the merge instruction —
+so the portal fix has **not** been visually confirmed on RKM-HP. If the next session finds the modal is still wrong,
+the first thing to read is the portal block at line 1 (and the harness README's note that a frame must mount the
+component in its REAL ancestor context, or this class of bug is invisible to it).
+
+**Layout state (important — his tree is the sandbox's tree):** the checkout is left on **`main`** at `e0b5c67`, so
+his next deploy builds everything above:
+
+```
+cd D:\hermes_agent\hermes-workspace\projects\rkm-cinema
+docker compose -p rkm-bundled up -d --build api web
+```
+
+⚠ Backend changed in this merge (the search gate), so `api` is not optional this time; `web` carries the CTA,
+modal and portal fixes. Then: the "Recently Added" rail's ▶ Episodes pill, a search for **sholay** (library row
+**and** the "not in your library" section), and clicking a title that is **not** in the library (no poster) to see
+the modal centred with the page dimmed.
+
+## ▶ 🟡 **THE "STUCK TO THE TOP" MODAL — A BLURRED ANCESTOR WAS CAPTURING `fixed` (2026-09-13, latest) · branch `feat/search-external-fallback` · commit `cbfb2be`** · ⚠ STACKED on the unmerged `fix/cta-button-alignment` — his tree carries ALL of it · gates green (1111 backend · 325 vitest · tsc · build · **7 browser checks**)  → ✅ **MERGED to `main` `e0b5c67` 2026-09-13** (fast-forward, at his direction — the RKM-HP eyeball of this fix is STILL PENDING)
 
 **His follow-up, verbatim:** *"i think its still not fixed...when there is no poster (the items which are not in
 library)...the overlay breaks and sticks to the top"* — with a screenshot of a **"Canelo Alvarez vs. Amir Khan"**
@@ -44,7 +84,7 @@ trap/Esc/backdrop contract most heavily). Screenshot on his box:
 that is **not** in the library (no poster) and click it — the panel must be centred with the page dimmed and
 unscrollable, not stuck to the top.
 
-## ▶ 🟡 **ITEM DETAIL IS NOW A REAL MODAL — AWAITING HIS RKM-HP EYEBALL** (2026-09-13, latest) · branch **`feat/search-external-fallback`** (4 commits: `2e0976c` plan · `c3b94a5` search fix · `e21b2c0` harness index · `9b6c7b5` this fix + `docs(harness)`/`docs(status)` after it) · ⚠ **STACKED on the unmerged `fix/cta-button-alignment`** — his tree carries ALL of it, so ONE `docker compose -p rkm-bundled up -d --build api web` shows every fix · gates green (1111 backend · 325 vitest · tsc · build · `check_item_modal` + `check_cta_alignment` + `check_search_fallback` in both directions)
+## ▶ 🟡 **ITEM DETAIL IS NOW A REAL MODAL — AWAITING HIS RKM-HP EYEBALL** (2026-09-13, latest) · branch **`feat/search-external-fallback`** (4 commits: `2e0976c` plan · `c3b94a5` search fix · `e21b2c0` harness index · `9b6c7b5` this fix + `docs(harness)`/`docs(status)` after it) · ⚠ **STACKED on the unmerged `fix/cta-button-alignment`** — his tree carries ALL of it, so ONE `docker compose -p rkm-bundled up -d --build api web` shows every fix · gates green (1111 backend · 325 vitest · tsc · build · `check_item_modal` + `check_cta_alignment` + `check_search_fallback` in both directions)  → ✅ **MERGED to `main` `e0b5c67` 2026-09-13** (fast-forward, at his direction — the RKM-HP eyeball is STILL PENDING)
 
 **His report (Bug 5), verbatim in substance:** clicking the "Sholay" search result gave a detail view
 with **no scrim**, **hard-cut edges**, sitting in the **right ~60%** of the screen with the sidebar
@@ -115,7 +155,7 @@ earlier in this branch. No further button work was invented to match the report.
 4. Screenshots on his box: `/workspace/rkm-ux-shots/bug5-2560-series-detail.png` (BEFORE — the page he
    described), and `/workspace/rkm-ux-shots/modal-*.png` (AFTER; captured by the check).
 
-## ▶ 🟡 **EXTERNAL SEARCH RESULTS FIXED — AWAITING HIS RKM-HP EYEBALL** (2026-09-13, latest) · branch **`feat/search-external-fallback`** (3 commits: plan `2e0976c`, fix `c3b94a5`, harness index `e21b2c0`) · ⚠ **STACKED on the unmerged `fix/cta-button-alignment`** — his tree carries BOTH fixes, so ONE `docker compose -p rkm-bundled up -d --build api web` shows both · gates green (1111 backend · 325 vitest · tsc · build · `check_search_fallback` AND `check_cta_alignment` in both directions)
+## ▶ 🟡 **EXTERNAL SEARCH RESULTS FIXED — AWAITING HIS RKM-HP EYEBALL** (2026-09-13, latest) · branch **`feat/search-external-fallback`** (3 commits: plan `2e0976c`, fix `c3b94a5`, harness index `e21b2c0`) · ⚠ **STACKED on the unmerged `fix/cta-button-alignment`** — his tree carries BOTH fixes, so ONE `docker compose -p rkm-bundled up -d --build api web` shows both · gates green (1111 backend · 325 vitest · tsc · build · `check_search_fallback` AND `check_cta_alignment` in both directions)  → ✅ **MERGED to `main` `e0b5c67` 2026-09-13** (fast-forward, at his direction — the RKM-HP eyeball is STILL PENDING)
 
 **His report, verbatim:** *"Search only matches local library, doesn't surface external/metadata
 matches … searching 'sholay' only returns the one local library item that happens to contain that
@@ -189,7 +229,7 @@ than smuggled into a fix commit — the next session that regenerates should do 
 3. His tree is on **`feat/search-external-fallback`**, which CONTAINS the CTA fix awaiting his eyeball —
    so this deploy covers both reports. Merge is **his call**; nothing here is on `main` yet.
 
-## ▶ 🟡 **CTA ALIGNMENT FIXED — AWAITING HIS RKM-HP EYEBALL** (2026-09-13, later still) · branch **`fix/cta-button-alignment`** (2 commits: plan `c8650c1`, fix `4c1abe3`) · **NOT merged** — his eyeball gates it · gates green (325 vitest · tsc · build · `check_cta_alignment` in BOTH directions) · web-only deploy
+## ▶ 🟡 **CTA ALIGNMENT FIXED — AWAITING HIS RKM-HP EYEBALL** (2026-09-13, later still) · branch **`fix/cta-button-alignment`** (2 commits: plan `c8650c1`, fix `4c1abe3`) · **NOT merged** — his eyeball gates it · gates green (325 vitest · tsc · build · `check_cta_alignment` in BOTH directions) · web-only deploy  → ✅ **MERGED to `main` `e0b5c67` 2026-09-13** (fast-forward, at his direction — the RKM-HP eyeball of these fixes is STILL PENDING)
 
 **His report, verbatim:** *"for rkm-cinema app fix this"* — a two-bug UX report on the poster CTA
 ("Bug 1: Misaligned 'Episodes' button on media card") and the search result row ("Bug 2: 'Resume' and
@@ -4181,6 +4221,7 @@ Endpoint shapes NOT yet live-verified from the sandbox (oEmbed blocked; use `scr
   - **Structured logging** - JSON logs enable log aggregation and debugging
   - **Pydantic models for API** - Type safety, auto-documentation, validation
   - **Tests first** - Writing tests for plex ownership, radarr/sonarr routing, duplicates, trailers, status, e2e, errors caught design issues early
+
 
 
 

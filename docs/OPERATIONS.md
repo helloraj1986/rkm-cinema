@@ -9,7 +9,7 @@ cd D:\hermes_agent\hermes-workspace\projects\rkm-cinema
 
 | Command | What it does | Use it when |
 |---|---|---|
-| `.\rkm-cinema.ps1 status` | Containers, state volumes, app + Jellyfin health, library counts, scan state, **and whether sign-in is required** | Anything looks off — **start here** |
+| `.\rkm-cinema.ps1 status` | Containers, state volumes, app + Jellyfin health, library counts, scan state, **whether sign-in is required**, and **whether the running code is this folder's code** | Anything looks off — **start here** |
 | `.\rkm-cinema.ps1 apply` | Make the running stack match this folder: re-render `.env`, rebuild + restart `api` and `web` | **You edited `.env`, or pulled new code** |
 | `.\rkm-cinema.ps1 deploy [-NoBackup]` | `apply` **plus** the Jellyfin provisioner | First run, or new libraries/keys |
 | `.\rkm-cinema.ps1 auth` | Is sign-in required right now? | You are unsure whether the lock is on |
@@ -165,6 +165,7 @@ The app's own watchlist is a JSON file at `D:\RKM_MEDIA\rkm\watchlist.json`
 | `scripts\backup-rkm-state.ps1` | archive state volumes (verifies + prunes) — internal, via `backup` |
 | `scripts\restore-rkm-state.ps1` | restore an archive (pre-backs-up the current state) — internal, via `restore` |
 | `scripts\install-backup-task.ps1` | nightly 04:00 task, runs as you (Docker Desktop is session-scoped) — internal, via `schedule` |
+| `tools\check_deployed.py` | is the RUNNING api this folder's code? Compares its live `/openapi.json` with `docs/api/openapi.v1.json` — the honest answer to "did my change take effect?" |
 | `tools\rkm_status.py` | the deep status behind `.\rkm-cinema.ps1 status` |
 | `tools\diagnose_series_state.py` | watched-vs-episodes classifier |
 | `tools\probe_media_files.py` | what the *server* sees in a folder + ffprobe errors |

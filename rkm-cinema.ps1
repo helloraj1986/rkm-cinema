@@ -254,13 +254,19 @@ function Show-Status {
 
     Show-Auth
 
-    Write-Head "App + Jellyfin health"
     $py = Get-Python
     if (-not $py) {
-        Write-Host "   python not found on PATH - skipping the deep check" -ForegroundColor Yellow
+        Write-Host "   python not found on PATH - skipping the deep checks" -ForegroundColor Yellow
         Write-Host "   (install Python 3, or read the dashboard at http://localhost:$(Get-DashboardPort)/)"
         return
     }
+
+    # "Did my change take effect?" - answered from the RUNNING api's own contract against this
+    # folder's snapshot. Reading .env or the logs cannot answer it; this can.
+    Write-Head "Is the running api the code in THIS folder?"
+    & $py "$PSScriptRoot\tools\check_deployed.py"
+
+    Write-Head "App + Jellyfin health"
     & $py "$PSScriptRoot\tools\rkm_status.py"
 }
 
@@ -349,7 +355,8 @@ function Show-Help {
         @("status", @(
             "Shows what is actually happening: which containers are up, the state",
             "volumes, app + Jellyfin health, library counts, whether a scan is",
-            "running, and whether sign-in is required.",
+            "running, whether sign-in is required, and whether the code you are",
+            "RUNNING is the code in this folder.",
             "> Changes nothing. Start here when anything looks off.")),
         @("apply", @(
             "Makes the running stack match this folder: re-renders .env, rebuilds",

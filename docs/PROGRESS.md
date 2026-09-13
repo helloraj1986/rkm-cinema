@@ -1,4 +1,4 @@
-## ▶ ✅ **BRAND LOCKUP ALIGNMENT FIXED** (2026-09-13, later) · branch **`fix/brand-lockup-alignment`** · gates green (tsc · 321 vitest · build · `check_brand_lockup` · `check_nav_access`) · **not merged — his word** · web-only deploy again
+## ▶ ✅ **BRAND LOCKUP ALIGNMENT FIXED** (2026-09-13, later) · branch **`fix/brand-lockup-alignment`** → **`main` `d9f6e90`** (fast-forward, at his direction — his eyeball of this fix is still pending) · gates green (tsc · 321 vitest · build · `check_brand_lockup` · `check_nav_access`) · web-only deploy
 
 **His report, verbatim:** *"i have the seen the changes it looks good..i just need one more small ux
 change RKM Cinema text on top left is not perfectly aligned with the icon..can you fix it"*
@@ -39,6 +39,15 @@ four font stacks. **Falsified:** deleting the two utility classes turns it into 
 **Method note / honest limit:** the check derives the ink analytically (the text run's own client rect
 locates the baseline; canvas `actualBoundingBoxAscent` gives the extent above it), which carries ~0.3px
 of its own uncertainty — that is why (C), a difference, is the assertion that bites rather than (B).
+
+### The merge
+
+He merged this one too *before* looking at it (*"merge to the main branch"*), so the same caveat as the
+household block applies: **`main` carries the fix while the eyeball is pending** — if the lockup still
+looks off, the answer is a forward fix, never a revert. Sequence: `git checkout main && git merge
+--ff-only fix/brand-lockup-alignment` → `3c2f611..d9f6e90` (4 files, +324/−4), then this docs-only
+record, then `fix/brand-lockup-alignment` and `experiment/bundled-docker-stack` fast-forwarded to match
+and all three pushed. Deploy is web-only again: `docker compose -p rkm-bundled up -d --build web`.
 
 ## ▶ ✅ **HOUSEHOLD REDESIGN — PHASE 1 BUILT AND MERGED** (2026-09-13) · branch **`feat/household-ux`** → **`main` `3e9d343`** (fast-forward, at his direction) · gates green (**321 vitest · tsc · build · 6 browser checks · docs links · backend 1107**) · **the RKM-HP deploy + eyeball is STILL OUTSTANDING** (see the merge note at the end) · his deploy is **web-only**: `docker compose -p rkm-bundled up -d --build web`  → ✅ **MERGED to `main` 2026-09-13** (fast-forward, at his direction, before his eyeball) — and then **eyeballed: *"i have the seen the changes it looks good"***, which is the report the block above acts on.
 

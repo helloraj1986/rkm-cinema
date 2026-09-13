@@ -94,8 +94,8 @@ notepad .env                      # set RKM_MEDIA_PATH + your media folders/keys
 ```
 
 Then open **http://localhost:8124/** — and Jellyfin itself at
-**http://localhost:8098/web** (user `admin`; the password is set on the account — a fresh
-install prints it once during bootstrap, and you can change it any time in the app).
+**http://localhost:8098/web** (sign in as your administrator account — a fresh install prints the
+password once via `deploy`, and you can change it any time in the app).
 
 First run does a full library scan: **2–4 h** for a large collection. Leave it alone
 while it runs — see the rules below.
@@ -116,20 +116,27 @@ Everything is behind one entry point. `.\rkm-cinema.ps1 help` prints this list t
 
 | Command | What it does |
 |---|---|
-| `.\rkm-cinema.ps1 status` | Containers, state volumes, app + media-server health, library counts, scan state — **start here when anything looks off** |
-| `.\rkm-cinema.ps1 deploy` | Build + start the stack, wire libraries, trigger a scan |
+| `.\rkm-cinema.ps1 status` | Containers, state volumes, app + media-server health, library counts, **and whether sign-in is required** — **start here when anything looks off** |
+| `.\rkm-cinema.ps1 apply` | Make the running stack match this folder: re-render `.env`, rebuild + restart `api` and `web`. **Use this after editing `.env` or pulling code** |
+| `.\rkm-cinema.ps1 deploy [-NoBackup]` | Everything `apply` does **plus** the Jellyfin provisioner — first run, new libraries or keys |
+| `.\rkm-cinema.ps1 auth` | Is sign-in required right now? (reported from what the api *does*, not from `.env`) |
+| `.\rkm-cinema.ps1 auth on` | Require sign-in for everything except `/api/health` and the sign-in routes |
+| `.\rkm-cinema.ps1 auth off` | Back to open — **the recovery if you lock yourself out** |
 | `.\rkm-cinema.ps1 backup` | Archive media-server state (users, watch history, libraries) to `D:\RKM_BACKUPS` |
 | `.\rkm-cinema.ps1 restore -Archive <file>` | Restore that state (defaults to the newest archive) |
 | `.\rkm-cinema.ps1 schedule` | Install the nightly 04:00 backup task |
 | `.\rkm-cinema.ps1 diagnose` | Classify every series: watched vs episodes present; find why a show looks wrong |
-| `.\rkm-cinema.ps1 logs` | Tail api + web + jellyfin |
+| `.\rkm-cinema.ps1 reset-admin-password [-DryRun]` | Locked out of the administrator account: set a new password |
+| `.\rkm-cinema.ps1 logs [service]` | Tail api + web + jellyfin |
 | `.\rkm-cinema.ps1 help` | The command list |
 
-Underlying scripts, if you prefer them directly:
+⚠ **Editing `.env` alone changes nothing.** A container reads its environment when it *starts*, so
+after any `.env` edit run `.\rkm-cinema.ps1 apply` (or use `auth on|off`, which applies for you).
+
+`.\bootstrap.ps1` still works — it is now a one-line forwarder to `deploy`, kept so older notes and
+shortcuts do not break. There is only one implementation: `rkm-cinema.ps1`.
 
 ```powershell
-.\bootstrap.ps1                 # same as .\rkm-cinema.ps1 deploy
-.\bootstrap.ps1 -NoBackup       # skip the automatic pre-rebuild backup
 docker compose -p rkm-bundled ps
 docker compose -p rkm-bundled down          # stop (keeps state)
 ```

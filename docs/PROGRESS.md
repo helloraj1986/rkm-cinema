@@ -1,3 +1,71 @@
+## ▶ SAME SESSION (2026-09-13) — **ONE SCRIPT**: `rkm-cinema.ps1` absorbed `bootstrap.ps1` and gained `apply` + `auth on|off`
+
+**His instruction, verbatim:** *"why are we running docker compose -p rkm-bundled up -d --force-recreate
+api everytime rather than bootstrap or rkm-cinema.ps1 ... i want you to consolidate to one script for
+everything rather than thousand diffrent scripts...torun rkm-cinema there should be only one very
+concise and clear highly optimised script that would do everything"*
+
+**He was right, and the cause was a GAP IN HIS OWN SCRIPTS, not his memory.** `rkm-cinema.ps1` had
+`deploy` (full rebuild + **provisioner**) and `status`, but nothing that means *"make the running stack
+match my files"* — so applying a `.env` change had no verb, and I handed him raw `docker compose`
+instead of fixing that. The missing verb is now `apply`.
+
+### The surface — one script, every verb
+
+| Command | What it does |
+|---|---|
+| `.\rkm-cinema.ps1 status` | containers, volumes, app + Jellyfin health, **and whether sign-in is required** |
+| `.\rkm-cinema.ps1 apply` | **the missing verb** — re-render `.env`, rebuild + restart `api`/`web`, **no provisioner** |
+| `.\rkm-cinema.ps1 deploy [-NoBackup]` | `apply` + the Jellyfin provisioner (first run, new libraries/keys) |
+| `.\rkm-cinema.ps1 auth` | is sign-in required **right now**? |
+| `.\rkm-cinema.ps1 auth on\|off` | the switch, applied **and proved** |
+| `.\rkm-cinema.ps1 logs [service]` · `backup` · `restore` · `schedule` · `diagnose` · `reset-admin-password` · `help` | unchanged verbs |
+
+`bootstrap.ps1` is now a **one-line forwarder** to `deploy` (`rkm.ps1` was already a forwarder to this
+script), so every note, shortcut and doc written against the old name still works, and there is exactly
+**one implementation** to keep correct.
+
+### Three things that make it more than a rename
+
+1. **`auth` reports BEHAVIOUR, not intention.** It asks the api for a session-required route and reads
+   the status code: `401` = armed, `200` = open. That distinction is the whole reason this switch felt
+   unpredictable — a `.env` value that has not been applied yet is *intent*, and I had been reporting it
+   as fact.
+2. **`auth on|off` proves its own result.** It edits `.env` through a tested tool, applies, then asks the
+   api again and says `Confirmed` or names the mismatch. A switch that reports success without checking
+   is how *"it says changed but nothing changes"* keeps happening in this repo.
+3. **The `.env` edit is a tested tool, not a text munge in PowerShell.** `tools/set_env_value.py` wraps
+   the repo's existing `render_config.py::write_env_key`, adds a timestamped backup, a no-op when the
+   value is already right, and a refusal for a value containing a line break (a second line in `.env`).
+   ⚠ **That writer had never been tested directly** — the renderer's tests only *stub* it — so this adds
+   the first direct tests of its promise (comments, ordering and other keys survive; a missing key is
+   appended; a commented-out key stays a comment).
+
+### Two PowerShell traps this avoided (it could not be RUN here — no PowerShell in the sandbox)
+
+* ⚠ **A `Compose` helper function taking the flag-like arguments does not work.** PowerShell binds
+  anything that looks like a parameter name (`-d`, `--build`) BEFORE a `ValueFromRemainingArguments`
+  parameter, so `Compose up -d --build api web` dies with *"a parameter cannot be found that matches
+  parameter name 'd'"*. Every call names `$Project` directly instead.
+* ⚠ `-NoBackup` **only** skipped the state archive in the old bootstrap (lines 41-50) — it never skipped
+  the render or the provisioner. The new `deploy` keeps the archive as its safety net and `apply` is the
+  no-provisioner path.
+
+`tools/check_md_links.py` and the test suite cannot see PowerShell, so the .ps1 files were checked
+statically for the classes of fault that would only surface on his machine: **PowerShell 7-only syntax**
+(`&&`, `||`, `??`, `?.`), non-ASCII bytes (PS 5.1 misreads UTF-8 without a BOM), unbalanced braces, and
+a dispatch entry calling a function that is not defined. **Falsified** by renaming one handler to a typo
+(`Invoke-Appy`) — the check named it. ⚠ **The script bodies themselves have NOT been executed anywhere**
+(this sandbox has no PowerShell), so the first real run is his; the deploy body is the old bootstrap's,
+moved verbatim.
+
+| | |
+|---|---|
+| Branch | `feat/route-enforcement` (still unmerged; `main` untouched) |
+| Gates | **1071 backend pytest** (+20) · ruff clean · docs links · .ps1 static check clean |
+| What he runs now | **`.\rkm-cinema.ps1 auth on`** — one command, for the switch that started all this |
+
+
 ## ▶ SAME SESSION (2026-09-13) — **"the media is still not behind auth"** was the SWITCH, not a miss · and the last obstacle to flipping it is now cleared (the tools sign in)
 
 **His report, verbatim:** *"the maedia is still not behind auth...when i logout i still can access the

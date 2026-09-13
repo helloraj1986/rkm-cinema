@@ -186,8 +186,9 @@ device-id header cases), including the two that matter most: an *unsigned* clien
 
 ### ⚠ What this does NOT do
 
-* **`RKM_AUTH_REQUIRED` is still `false`** — his switch, unchanged, and named in `OPERATIONS.md` with
-  the exact add-and-recreate commands and the rollback beside them.
+* **`RKM_AUTH_REQUIRED` is still `false`** — his switch, unchanged. `OPERATIONS.md` documents it as one
+  command each way (`.\rkm-cinema.ps1 auth on` / `auth off`), and the script **proves** the result by
+  asking the api for a session-required route rather than trusting the file it just wrote.
 * **Browser per-session device ids are NOT done** (`§4e`): two browsers signed in as the same account
   still share `rkm-cinema-web` and rotate each other's tokens. He chose the tools-only scope; this
   phase is half of that item and the half was driven by a real need rather than a tidy-up.

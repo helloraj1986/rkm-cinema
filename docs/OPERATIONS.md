@@ -9,15 +9,24 @@ cd D:\hermes_agent\hermes-workspace\projects\rkm-cinema
 
 | Command | What it does | Use it when |
 |---|---|---|
-| `.\rkm-cinema.ps1 status` | Containers, state volumes, app + Jellyfin health, library counts, scan state | Anything looks off — **start here** |
-| `.\rkm-cinema.ps1 deploy` | Build + refresh the stack, wire libraries, trigger a scan | You changed `.env`, or code, or want the stack rebuilt |
+| `.\rkm-cinema.ps1 status` | Containers, state volumes, app + Jellyfin health, library counts, scan state, **and whether sign-in is required** | Anything looks off — **start here** |
+| `.\rkm-cinema.ps1 apply` | Make the running stack match this folder: re-render `.env`, rebuild + restart `api` and `web` | **You edited `.env`, or pulled new code** |
+| `.\rkm-cinema.ps1 deploy [-NoBackup]` | `apply` **plus** the Jellyfin provisioner | First run, or new libraries/keys |
+| `.\rkm-cinema.ps1 auth` | Is sign-in required right now? | You are unsure whether the lock is on |
+| `.\rkm-cinema.ps1 auth on` | Require sign-in for everything (except `/api/health` and sign-in) | You want the app private |
+| `.\rkm-cinema.ps1 auth off` | Back to open | **You locked yourself out** |
 | `.\rkm-cinema.ps1 backup` | Archive Jellyfin state to `D:\RKM_BACKUPS` (keeps newest 7) | Before anything risky |
 | `.\rkm-cinema.ps1 restore -Archive <file>` | Replace current state from an archive | Something was lost / a bad upgrade |
 | `.\rkm-cinema.ps1 schedule` | Install the nightly 04:00 backup task | Once, per machine |
 | `.\rkm-cinema.ps1 diagnose` | Classify every TV series: watched vs episodes present | Shows look watched, or episodes are missing |
-| `.\rkm-cinema.ps1 logs` | Tail api + web + jellyfin | Right after a deploy that reported problems |
+| `.\rkm-cinema.ps1 reset-admin-password [-DryRun]` | Set a new administrator password using the stack's own API key | Locked out of the account itself |
+| `.\rkm-cinema.ps1 logs [service]` | Tail api + web + jellyfin | Right after an `apply` that reported problems |
 
-Every verb is a thin wrapper around a real script (`bootstrap.ps1`, `scripts\*.ps1`, `tools\*.py`), so the wrapper and the tool can never behave differently. Run either.
+⚠ **Editing `.env` alone changes nothing** — a container reads its environment when it *starts*. That
+is the whole reason `apply` exists, and why `auth on|off` applies for you.
+
+Only `rkm-cinema.ps1` is meant to be run. `render_config.py`, `tools\*.py` and `scripts\*.ps1` are its
+internals; `bootstrap.ps1` and `rkm.ps1` are one-line forwarders kept so older notes still work.
 
 ## The only three rules
 
@@ -149,10 +158,13 @@ The app's own watchlist is a JSON file at `D:\RKM_MEDIA\rkm\watchlist.json`
 | Path | What |
 |---|---|
 | `.env` | single source of config; rendered to `.rkm.env` for the containers |
-| `bootstrap.ps1` | build + provision + start (called by `deploy`) |
-| `scripts\backup-rkm-state.ps1` | archive state volumes (verifies + prunes) |
-| `scripts\restore-rkm-state.ps1` | restore an archive (pre-backs-up the current state) |
-| `scripts\install-backup-task.ps1` | nightly 04:00 task, runs as you (Docker Desktop is session-scoped) |
+| `rkm-cinema.ps1` | **the only script you run** — every verb, including `apply`, `deploy` and `auth on\|off` |
+| `bootstrap.ps1` | one-line forwarder to `rkm-cinema.ps1 deploy` (old name, kept so notes still work) |
+| `rkm.ps1` | one-line forwarder to `rkm-cinema.ps1` (old name) |
+| `tools\set_env_value.py` | the tested `.env` editor behind `auth on\|off` (backup + comment-preserving) |
+| `scripts\backup-rkm-state.ps1` | archive state volumes (verifies + prunes) — internal, via `backup` |
+| `scripts\restore-rkm-state.ps1` | restore an archive (pre-backs-up the current state) — internal, via `restore` |
+| `scripts\install-backup-task.ps1` | nightly 04:00 task, runs as you (Docker Desktop is session-scoped) — internal, via `schedule` |
 | `tools\rkm_status.py` | the deep status behind `.\rkm-cinema.ps1 status` |
 | `tools\diagnose_series_state.py` | watched-vs-episodes classifier |
 | `tools\probe_media_files.py` | what the *server* sees in a folder + ffprobe errors |
@@ -181,18 +193,28 @@ served as the stack's own credential, so the libraries, playback and watch state
 * `GET /api/health` — the Docker HEALTHCHECK; a 401 here marks the api unhealthy and cascades;
 * the six `/api/auth/*` routes — sign-in cannot require a session to be reachable.
 
-**To arm it:**
+**To arm it — one command:**
 
 ```powershell
 cd D:\hermes_agent\hermes-workspace\projects\rkm-cinema
-# 1. .env  ->  RKM_AUTH_REQUIRED=true
-# 2. the api reads this value per request, so no render is needed:
-docker compose -p rkm-bundled up -d --force-recreate api
+.\rkm-cinema.ps1 auth on
 ```
 
-**To go back** — same two steps with `false`. That is the recovery for a mistake, and it is why the
-flag is a value in `.env` rather than a code change. If you are locked out of the *administrator*
-account itself, `. \rkm-cinema.ps1 reset-admin-password` is the break-glass (see the ladder above).
+That edits `.env` (with a timestamped backup), applies it, and then **proves it** by asking the api
+for a route that needs a session — so you are told `401` (armed) or `200` (still open), never left
+guessing. `.\rkm-cinema.ps1 auth` on its own reports the current state without changing anything.
+
+**To go back — the recovery, one command:**
+
+```powershell
+.\rkm-cinema.ps1 auth off
+```
+
+Underneath, `auth on|off` is just: `tools\set_env_value.py RKM_AUTH_REQUIRED <value>` followed by
+`.\rkm-cinema.ps1 apply` (which is what recreates the containers — editing `.env` alone does nothing).
+If you prefer the manual path it is those two commands, but the switch is the one place where being
+*proved* rather than assumed is worth having. Locked out of the **account** as well?
+`.\rkm-cinema.ps1 reset-admin-password` is the break-glass (see the ladder above).
 
 **What changes:** the browser sends no session → the app shows the login view (the frontend discovers
 enforcement from the first 401; no frontend change is involved). Sessions last **30 days, refreshed on

@@ -26,6 +26,7 @@ import {
   posterUrl,
   ratingText,
   resumePercent,
+  scanFailure,
   seriesTargetForEpisode,
   similarItemToResult,
 } from "./lib";
@@ -470,5 +471,27 @@ describe("configurable media libraries", () => {
     expect(folderCountLabel(0)).toBe("0 titles");
     expect(folderCountLabel(1)).toBe("1 title");
     expect(folderCountLabel(6)).toBe("6 titles");
+  });
+});
+
+describe("scanFailure", () => {
+  // Phase E (2026-09-13): `GET /api/library/scan` is administrators-only, and
+  // `require_admin_session` refuses a signed-out caller (401) and a member (403) even while
+  // enforcement is off. The controls are hidden for a non-administrator, so this normally fires
+  // only when a session expired mid-scan — and "check the backend" would then be a lie about a
+  // backend that is working perfectly.
+  it("names the permission problem for 401 and 403, never the backend", () => {
+    for (const status of [401, 403]) {
+      const f = scanFailure({ status });
+      expect(f.title).toContain("administrator");
+      expect(f.sub).toContain("administrator");
+      expect(f.sub).not.toContain("backend");
+    }
+  });
+
+  it("keeps the backend wording for a real backend failure", () => {
+    expect(scanFailure({ status: 502 }).sub).toContain("backend");
+    expect(scanFailure(new TypeError("fetch failed")).sub).toContain("backend");
+    expect(scanFailure(undefined).sub).toContain("backend");
   });
 });

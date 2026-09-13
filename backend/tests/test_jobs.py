@@ -125,20 +125,25 @@ class TestReconcileJob:
 
 
 class TestJobRunEndpoint:
-    def test_unknown_job_404(self):
+    def test_unknown_job_404(self, signed_in):
+        """A signed-in ADMINISTRATOR still gets the honest 404 for an unknown name.
+
+        Signed out it is a 401 before the name is ever read — the gate answers first, which is the
+        point of Phase E gating the whole route rather than a per-name allow-list.
+        """
         from fastapi.testclient import TestClient
         import api.main
-        c = TestClient(api.main.app)
+        c = signed_in(TestClient(api.main.app))
         r = c.post("/api/jobs/nope/run")
         assert r.status_code == 404
 
-    def test_dispatch_known_job(self, monkeypatch):
+    def test_dispatch_known_job(self, monkeypatch, signed_in):
         from fastapi.testclient import TestClient
         import api.main
         import jobs.reconcile as reconcile_mod
         fake = lambda: JobResult(name="reconcile", status="success", items_processed=2, counts={"a": 1})
         monkeypatch.setattr(reconcile_mod, "run_reconcile", fake)
-        c = TestClient(api.main.app)
+        c = signed_in(TestClient(api.main.app))
         r = c.post("/api/jobs/reconcile/run")
         assert r.status_code == 200
         body = r.json()

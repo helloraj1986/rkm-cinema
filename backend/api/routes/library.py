@@ -8,7 +8,7 @@ through to the next; if ALL fail the endpoint returns a partial 200
 (``available=False``) — never an HTTP error. URL bases are owned by the
 providers, not duplicated.
 """
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from api.models import (
@@ -25,7 +25,7 @@ from services.library.media_libraries import (
     server_default_libraries,
     visible_libraries,
 )
-from api.session import acting_profile_is_owner
+from api.session import SessionContext, acting_profile_is_owner, require_admin_session
 
 
 router = APIRouter()
@@ -248,11 +248,17 @@ def set_item_state(item_id: str, body: ItemStateRequest):
 
 
 @router.get("/library/scan")
-def scan_library():
+def scan_library(session: SessionContext = Depends(require_admin_session)):
     """Browser/address-bar friendly trigger for the Jellyfin library scan (GET).
 
     Mirrors the canonical ``POST /api/jobs/library_scan/run`` job so a plain GET
     (e.g. typing the URL) can force a scan. Returns the job result.
+
+    **Administrators only (Phase E, his decision 2026-09-13).** It forces a full scan of every
+    configured media library on the media server — expensive server-side work, not a request from
+    a member. ⚠ The UI's "Scan Library" control is hidden for a non-administrator by the same
+    rule (``mayManageHousehold``-style gating in the library views): the app does not OFFER what
+    this route refuses.
     """
     from jobs.library_scan import run_library_scan
     return run_library_scan().to_dict()

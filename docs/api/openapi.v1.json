@@ -835,7 +835,7 @@
     "/api/library/scan": {
       "get": {
         "summary": "Scan Library",
-        "description": "Browser/address-bar friendly trigger for the Jellyfin library scan (GET).\n\nMirrors the canonical ``POST /api/jobs/library_scan/run`` job so a plain GET\n(e.g. typing the URL) can force a scan. Returns the job result.",
+        "description": "Browser/address-bar friendly trigger for the Jellyfin library scan (GET).\n\nMirrors the canonical ``POST /api/jobs/library_scan/run`` job so a plain GET\n(e.g. typing the URL) can force a scan. Returns the job result.\n\n**Administrators only (Phase E, his decision 2026-09-13).** It forces a full scan of every\nconfigured media library on the media server \u2014 expensive server-side work, not a request from\na member. \u26a0 The UI's \"Scan Library\" control is hidden for a non-administrator by the same\nrule (``mayManageHousehold``-style gating in the library views): the app does not OFFER what\nthis route refuses.",
         "operationId": "scan_library_api_library_scan_get",
         "responses": {
           "200": {
@@ -2002,7 +2002,7 @@
     "/api/jobs/{name}/run": {
       "post": {
         "summary": "Run Job Endpoint",
-        "description": "Run a known job command by name and return its recorded result.\n\nSupported names: ``daily_watchlist`` (recommendation generation) and\n``reconcile`` (frequent status reconcile). Returns the JobResult shape.",
+        "description": "Run a known job command by name and return its recorded result.\n\nSupported names: ``daily_watchlist`` (recommendation generation), ``reconcile``\n(frequent status reconcile), ``add_watchlist`` (recommendation refresh) and\n``library_scan`` (a media-server library scan).\n\n**Administrators only (Phase E, his decision 2026-09-13).** A generic job runner is an\noperator verb: it starts server-side work on the media server and the *arr stack on the\ncaller's behalf, and it is the route that ``GET /api/library/scan`` mirrors. Gating the WHOLE\nroute (rather than a per-name allow-list) is deliberate \u2014 the default for an unknown or newly\nadded job name is then REFUSED rather than inherited, and a job added to the dict above cannot\nquietly become member-reachable.\n\n\u26a0 **Known consequence, recorded rather than hidden:** ``add_watchlist`` is the one name a\nmember-facing feature was written for \u2014 ``frontend/src/features/watchlist/actions.ts::\nrefreshRecommendations`` posts here. That action is currently referenced by no view, so no\nlive surface changes today; when the \"refresh recommendations\" control is wired up it needs\nits own member-facing route (the watchlist router is session-scoped), not this one.",
         "operationId": "run_job_endpoint_api_jobs__name__run_post",
         "parameters": [
           {

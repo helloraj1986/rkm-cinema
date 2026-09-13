@@ -93,6 +93,24 @@ export function mayManageHousehold(isAdmin: boolean | undefined): boolean {
 }
 
 /**
+ * May this profile trigger server-side library work — the library scan?
+ *
+ * The same shape as `mayManageHousehold`, for the same reason: **the server refuses these routes
+ * to anyone who is not an administrator, so the app must not OFFER them.** Phase E (his decision,
+ * 2026-09-13) put `require_admin_session` on `GET /api/library/scan` and
+ * `POST /api/jobs/{name}/run` — a full media-server scan and a generic job runner are operator
+ * verbs, and that gate is strict *even while* `RKM_AUTH_REQUIRED` is false, so a member's "Scan
+ * Library" button would answer 403 on today's stack.
+ *
+ * Fails closed, like the household gate: `undefined` is the state before `/api/auth/profiles` has
+ * answered, and a control that appears a moment late is better than one that turns into a refusal.
+ * A signed-out visitor gets the same answer — the route refuses them too.
+ */
+export function mayScanLibrary(isAdmin: boolean | undefined): boolean {
+  return isAdmin === true;
+}
+
+/**
  * What the ACCOUNT MENU offers, in order (2026-09-13, his request: *"consolidate the ui elements to
  * make it premium"*).
  *

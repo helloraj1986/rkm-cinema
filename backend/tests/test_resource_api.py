@@ -152,11 +152,12 @@ def test_watchlist_renders_entries(mock_rec, client):
 
 # ------------------------------------------------------ POST /api/reconcile
 @patch("api.routes.reconcile.Reconciler")
-def test_reconcile_ok(mock_rec, client):
+def test_reconcile_ok(mock_rec, client, signed_in):
+    """Administrators only since Phase E — so the test signs in as one."""
     result = Mock(indexer_issue=None)
     result.snapshots = {"tt0133093": _snap()}
     mock_rec.return_value.compute.return_value = result
-    r = client.post("/api/reconcile")
+    r = signed_in(client).post("/api/reconcile")
     assert r.status_code == 200
     body = r.json()
     assert body["ok"] is True

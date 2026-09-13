@@ -122,6 +122,49 @@ Three things this frame learned the hard way:
 * The account menu is **portalled to `<body>`**, so `window.__probe()` picks it out by excluding the
   mobile sheet's `role="menu"`.
 
+## `library-frame.html` — the library scan control (Phase E, 2026-09-13)
+
+`python3 tools/check_library_scan.py` mounts the REAL `LibraryLayout` + `LibraryHomeView` +
+`LibraryFolderView` and proves the rule Phase E put on the scan: **the app must not OFFER what the
+server refuses.** `GET /api/library/scan` and `POST /api/jobs/{name}/run` are
+`require_admin_session` — strict *even while* `RKM_AUTH_REQUIRED` is false — so a member's "Scan
+Library" button answers 403 on today's stack.
+
+| Query | What it asserts |
+|---|---|
+| `?admin=1` | the hero's scan control is **present** (the wiring, not just the rule, is under test) |
+| `?admin=1&empty=1` | the empty state's scan button is present — the path where it is the only action there is |
+| `?admin=0` | **no** scan control, and **zero** `/api/library/scan` calls |
+| `?admin=0&empty=1` | no button, and the reason is stated instead ("Scanning is an administrator action") |
+| `?admin=0&folder=1&empty=1` | the folder view's own copy of the control is gated the same way |
+| `?admin=1` + click | exactly **one** `/api/library/scan` call — hiding the control must not be the fix |
+| `?signedout=1` | the library still renders (the reads answer) and the control is still absent: the route refuses a 401 caller too |
+
+`?admin`/`?empty`/`?folder`/`?signedout` also drive `nav-frame`'s conventions: `current` IS the
+profile's own row, and the library reads answer normally even when signed out, because the point of
+the signed-out scenario is that the VIEW renders and offers nothing.
+
+### ⚠ Four traps this frame and its check found (2026-09-13) — read this before trusting a run
+
+1. **A STALE dev server makes the check pass on a BROKEN build.** Vite's watcher does not fire on this
+   mount, and an orphaned `vite` still holding port 5199 kept serving the pre-edit `LibraryHomeView`:
+   the deliberately-broken build reported **OK: every scenario passed**. Before believing any run,
+   confirm the module the server is serving is the one on disk:
+   `curl -s http://localhost:5199/src/features/library/LibraryHomeView.tsx | grep "mayScan = "`.
+2. **`process kill` on the background wrapper does NOT stop vite.** `nohup` + a subshell leave the
+   `node` process alive, so the "restarted" server silently fails to bind (`--strictPort` exits 1)
+   while the OLD one keeps serving. Kill the process that owns the port: `ss -ltnp | grep 5199`, then
+   `kill -9 <pid>`.
+3. **Do not `pkill -f "vite --port 5199"` from a shell whose own command line contains that string** —
+   the pattern matches the calling shell and kills it (exit 143 / 137), which looks exactly like a
+   successful restart. Use `pgrep -f` and skip your own PID, or kill by port owner.
+4. **A readiness gate must not raise.** The first version waited on `/api/auth/profiles` with a bare
+   `wait_for_function`, so a build where the wiring was removed (and with it the
+   `useCurrentProfile()` call) died on a `TimeoutError` traceback instead of reporting what was wrong.
+   `_wait_for` now records a clean FAIL, and readiness additionally asserts the view really rendered —
+   otherwise "the control is not offered" is true of an empty page, which is the definition of a check
+   that cannot fail.
+
 ## `password-frame.html` — Settings → My password (Phase 3)
 
 `python3 tools/check_password_change.py` mounts the REAL `PasswordView` (inside the real

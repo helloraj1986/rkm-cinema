@@ -23,9 +23,12 @@ import {
   pickHomeHero,
   posterUrl,
   resumePercent,
+  scanFailure,
 } from "./lib";
 import { useState } from "react";
 import type { MediaItem } from "../../lib/api/client";
+import { mayScanLibrary } from "../auth/lib";
+import { useCurrentProfile } from "../auth/useCurrentProfile";
 
 /** Poster-rail helper shared by the Recently Added / Recently Played rows. */
 type CardHandlers = {
@@ -91,6 +94,9 @@ export function LibraryHomeView() {
   const recent = useLibraryRecent();
   const scan = useScanLibrary();
   const { quickPlay, openItem, toggleWatched } = useLibraryOutlet();
+  // Phase E: the scan route is administrators-only and strict in every world, so the control is
+  // only OFFERED to an administrator. Signed out (or before the profiles answer) is not one.
+  const mayScan = mayScanLibrary(useCurrentProfile()?.is_admin);
 
   const all = items.data?.items ?? [];
   const cwItems = (continueWatching.data?.items ?? []).filter(isContinueWatching);
@@ -107,7 +113,10 @@ export function LibraryHomeView() {
   const runScan = () => {
     scan.mutate(undefined, {
       onSuccess: () => toast("Library scan complete", "New titles will appear as they are discovered."),
-      onError: () => toast("Scan failed", "Could not reach the scan job — check the backend.", "err"),
+      onError: (e: unknown) => {
+        const f = scanFailure(e);
+        toast(f.title, f.sub, "err");
+      },
     });
   };
 
@@ -148,15 +157,24 @@ export function LibraryHomeView() {
             Add movies and shows to your media folders, then scan your library to discover them.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={runScan}
-          disabled={scan.isPending}
-          className="inline-flex items-center gap-2 rounded-lg bg-accent px-5 py-2.5 text-sm font-bold text-black transition hover:bg-accent-hover disabled:opacity-60"
-        >
-          <Icon name="scan" size={16} />
-          {scan.isPending ? "Scanning…" : "Scan Library"}
-        </button>
+        {mayScan ? (
+          <button
+            type="button"
+            onClick={runScan}
+            disabled={scan.isPending}
+            className="inline-flex items-center gap-2 rounded-lg bg-accent px-5 py-2.5 text-sm font-bold text-black transition hover:bg-accent-hover disabled:opacity-60"
+          >
+            <Icon name="scan" size={16} />
+            {scan.isPending ? "Scanning…" : "Scan Library"}
+          </button>
+        ) : (
+          // Never OFFER what the server refuses: `GET /api/library/scan` is administrators-only,
+          // so a member (or a signed-out visitor) is told who can do it instead of being handed a
+          // button that answers 403.
+          <p className="max-w-md text-xs leading-relaxed text-zinc-500">
+            Scanning is an administrator action — sign in as the administrator to scan the library.
+          </p>
+        )}
       </div>
     );
   }
@@ -170,8 +188,8 @@ export function LibraryHomeView() {
           cw={heroIsCw}
           onPrimary={quickPlay}
           onDetails={openItem}
-          scan={runScan}
-          scanPending={scan.isPending}
+          scan={mayScan ? runScan : undefined}
+          scanPending={mayScan && scan.isPending}
         />
       ) : null}
 
@@ -223,8 +241,9 @@ function HomeHero({
   cw: boolean;
   onPrimary: (item: MediaItem) => void;
   onDetails: (item: MediaItem) => void;
-  scan: () => void;
-  scanPending: boolean;
+  /** Absent for a non-administrator: the scan route is administrators-only (Phase E). */
+  scan?: () => void;
+  scanPending?: boolean;
 }) {
   // Remounted per title (key=item_id) — the fallback state resets naturally.
   const [backdropFailed, setBackdropFailed] = useState(false);
@@ -336,18 +355,21 @@ function HomeHero({
           </div>
         </div>
 
-        {/* Scan — subtle, never dashboard-y (spec §49). */}
-        <button
-          type="button"
-          onClick={scan}
-          disabled={scanPending}
-          title="Scan Library"
-          aria-label="Scan Library"
-          className="absolute right-4 top-4 z-10 inline-flex h-9 items-center gap-2 rounded-full border border-white/10 bg-black/35 px-3.5 text-xs font-semibold text-zinc-200 backdrop-blur-md transition hover:bg-black/60 hover:text-white disabled:opacity-60 sm:right-6 sm:top-5"
-        >
-          <Icon name="scan" size={15} className={scanPending ? "animate-spin" : ""} />
-          <span className="hidden sm:inline">{scanPending ? "Scanning…" : "Scan Library"}</span>
-        </button>
+        {/* Scan — subtle, never dashboard-y (spec §49). Administrators only: absent for anybody
+            else, because the route refuses them (Phase E). */}
+        {scan ? (
+          <button
+            type="button"
+            onClick={scan}
+            disabled={scanPending}
+            title="Scan Library"
+            aria-label="Scan Library"
+            className="absolute right-4 top-4 z-10 inline-flex h-9 items-center gap-2 rounded-full border border-white/10 bg-black/35 px-3.5 text-xs font-semibold text-zinc-200 backdrop-blur-md transition hover:bg-black/60 hover:text-white disabled:opacity-60 sm:right-6 sm:top-5"
+          >
+            <Icon name="scan" size={15} className={scanPending ? "animate-spin" : ""} />
+            <span className="hidden sm:inline">{scanPending ? "Scanning…" : "Scan Library"}</span>
+          </button>
+        ) : null}
       </div>
     </section>
   );

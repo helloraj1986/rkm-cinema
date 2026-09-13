@@ -13,6 +13,7 @@ import {
   initials,
   loginErrorMessage,
   mayManageHousehold,
+  mayScanLibrary,
   accountDestinations,
   accountSubtitle,
   watchingName,
@@ -87,6 +88,25 @@ describe("mayManageHousehold", () => {
   it("fails CLOSED while the server has not answered", () => {
     // A briefly-visible admin link is worse than a briefly-missing one.
     expect(mayManageHousehold(undefined)).toBe(false);
+  });
+});
+
+describe("mayScanLibrary", () => {
+  // Phase E (2026-09-13): `GET /api/library/scan` and `POST /api/jobs/{name}/run` became
+  // administrators-only, and `require_admin_session` is strict EVEN WHILE enforcement is off — so
+  // a member's "Scan Library" button would answer 403 on today's stack. The app must not offer it.
+  it("is true only for an administrator profile", () => {
+    expect(mayScanLibrary(true)).toBe(true);
+  });
+
+  it("is false for a member profile", () => {
+    expect(mayScanLibrary(false)).toBe(false);
+  });
+
+  it("fails CLOSED while the server has not answered", () => {
+    // `undefined` is the moment before /api/auth/profiles replies — the same rule as the
+    // household gate, and also the signed-out case, which the route refuses too.
+    expect(mayScanLibrary(undefined)).toBe(false);
   });
 });
 

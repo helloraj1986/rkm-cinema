@@ -451,3 +451,24 @@ export function pickHomeHero(
   const anyMovie = (all ?? []).find((i) => !isSeries(i));
   return anyMovie ?? (all ?? [])[0] ?? null;
 }
+
+/**
+ * The honest wording for a FAILED library scan.
+ *
+ * Phase E (his decision, 2026-09-13) made `GET /api/library/scan` an administrator route, and
+ * `require_admin_session` refuses a signed-out caller (401) and a member (403) **even while
+ * enforcement is off**. The controls that call it are hidden for a non-administrator, so this
+ * normally fires only when a session expired or an administrator was switched out mid-scan — and
+ * in that moment "Could not reach the scan job — check the backend" sends the reader to inspect a
+ * backend that is working perfectly.
+ */
+export function scanFailure(e: unknown): { title: string; sub: string } {
+  const status = (e as { status?: number } | null | undefined)?.status;
+  if (status === 401 || status === 403) {
+    return {
+      title: "Scanning needs the administrator",
+      sub: "Sign in as the administrator to scan the library.",
+    };
+  }
+  return { title: "Scan failed", sub: "Could not reach the scan job — check the backend." };
+}

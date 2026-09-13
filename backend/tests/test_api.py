@@ -18,8 +18,12 @@ def client():
 
 
 @patch("api.routes.download.DownloadService")
-def test_download_movie_success(mock_svc, client):
-    """POST /api/download with an explicit movie routes to Radarr."""
+def test_download_movie_success(mock_svc, client, signed_in):
+    """POST /api/download with an explicit movie routes to Radarr.
+
+    Signed in as an ADMINISTRATOR: this route is admin-gated (Phase E) and strict even while the
+    app is unenforced — that refusal is pinned in tests/test_route_protection.py.
+    """
     from domain.enums import DownloadResultState
     from domain.enums import MediaType
     from domain.models import DownloadResult
@@ -27,7 +31,7 @@ def test_download_movie_success(mock_svc, client):
         success=True, state=DownloadResultState.REQUESTED,
         message="added", media_type=MediaType.MOVIE)
 
-    r = client.post("/api/download", json={
+    r = signed_in(client).post("/api/download", json={
         "imdbId": "tt0133093", "type": "movie", "qualityProfileId": 1})
     assert r.status_code == 200
     body = r.json()
@@ -40,20 +44,20 @@ def test_download_movie_success(mock_svc, client):
 
 
 @patch("api.routes.download.DownloadService")
-def test_download_missing_ids_rejected(mock_svc, client):
+def test_download_missing_ids_rejected(mock_svc, client, signed_in):
     """No imdb/tmdb -> unavailable, mapped to 502."""
     from domain.enums import DownloadResultState, MediaType
     from domain.models import DownloadResult
     mock_svc.return_value.download.return_value = DownloadResult(
         success=False, state=DownloadResultState.UNAVAILABLE,
         message="imdbId or tmdbId required", media_type=MediaType.MOVIE)
-    r = client.post("/api/download", json={"type": "movie"})
+    r = signed_in(client).post("/api/download", json={"type": "movie"})
     assert r.status_code == 502
     assert "imdbId or tmdbId required" in r.json()["detail"]
 
 
 @patch("api.routes.download.DownloadService")
-def test_download_ambiguous_maps_to_404(mock_svc, client):
+def test_download_ambiguous_maps_to_404(mock_svc, client, signed_in):
     """Ambiguous result -> HTTP 404 with the pick-one message."""
     from domain.enums import DownloadResultState, MediaType
     from domain.models import DownloadResult
@@ -62,7 +66,8 @@ def test_download_ambiguous_maps_to_404(mock_svc, client):
         message="Multiple Radarr matches — pick one: X (2023, tmdb:1)",
         media_type=MediaType.MOVIE)
 
-    r = client.post("/api/download", json={"imdbId": "tt2197033", "title": "X", "year": 2023})
+    r = signed_in(client).post("/api/download", json={
+        "imdbId": "tt2197033", "title": "X", "year": 2023})
     assert r.status_code == 404
     assert "Multiple Radarr matches" in r.json()["detail"]
 

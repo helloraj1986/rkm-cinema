@@ -484,8 +484,12 @@ def test_set_item_state_route(monkeypatch):
     assert body["played"] is True and body["play_count"] == 5
 
 
-def test_jobs_library_scan_endpoint(monkeypatch):
-    """POST /api/jobs/library_scan/run triggers the library-scan job."""
+def test_jobs_library_scan_endpoint(monkeypatch, signed_in):
+    """POST /api/jobs/library_scan/run triggers the library-scan job.
+
+    The job runner is admin-gated since Phase E (a generic operator verb), so the test signs in as
+    an administrator rather than reaching for the route signed out.
+    """
     from jobs.library_scan import LibraryScanJob
     from jobs.base import JobResult
 
@@ -494,14 +498,14 @@ def test_jobs_library_scan_endpoint(monkeypatch):
                          items_processed=1, counts={"jellyfin": True, "scanned": 1})
 
     monkeypatch.setattr(LibraryScanJob, "run", fake_run)
-    r = client.post("/api/jobs/library_scan/run")
+    r = signed_in(TestClient(api.main.app)).post("/api/jobs/library_scan/run")
     assert r.status_code == 200
     body = r.json()
     assert body["status"] == "success"
     assert body["counts"]["scanned"] == 1
 
 
-def test_library_scan_get_route(monkeypatch):
+def test_library_scan_get_route(monkeypatch, signed_in):
     """GET /api/library/scan lets a browser address bar trigger the scan."""
     from jobs.library_scan import LibraryScanJob
     from jobs.base import JobResult
@@ -511,7 +515,7 @@ def test_library_scan_get_route(monkeypatch):
                          items_processed=1, counts={"jellyfin": True, "scanned": 1})
 
     monkeypatch.setattr(LibraryScanJob, "run", fake_run)
-    r = client.get("/api/library/scan")
+    r = signed_in(TestClient(api.main.app)).get("/api/library/scan")
     assert r.status_code == 200
     body = r.json()
     assert body["status"] == "success"

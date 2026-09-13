@@ -9,6 +9,7 @@ import {
   libraryGenres,
   libraryIconFor,
   libraryViewFromParams,
+  scanFailure,
   type LibrarySort,
   type LibraryViewMode,
 } from "./lib";
@@ -18,6 +19,8 @@ import { LibraryToolbar } from "./LibraryToolbar";
 import { useLibraryOutlet } from "./LibraryLayout";
 import { toast } from "../watchlist/toast";
 import { Icon } from "../../components/ui/Icon";
+import { mayScanLibrary } from "../auth/lib";
+import { useCurrentProfile } from "../auth/useCurrentProfile";
 
 /**
  * /library/folder/:folderId — ONE configured library folder (MEDIA_LIBRARIES_PLAN
@@ -37,6 +40,9 @@ export function LibraryFolderView() {
   const items = useFolderItems(folderId || null);
   const scan = useScanLibrary();
   const { quickPlay, openItem, toggleWatched } = useLibraryOutlet();
+  // Phase E: administrators-only on the server, and strict in every world — so the control is only
+  // OFFERED to an administrator (a member, or a signed-out visitor, is not one).
+  const mayScan = mayScanLibrary(useCurrentProfile()?.is_admin);
   const [searchParams, setSearchParams] = useSearchParams();
 
   const parsed = libraryFilterFromParams(searchParams);
@@ -75,7 +81,10 @@ export function LibraryFolderView() {
   const runScan = () => {
     scan.mutate(undefined, {
       onSuccess: () => toast("Library scan complete", "New titles will appear as they are discovered."),
-      onError: () => toast("Scan failed", "Could not reach the scan job — check the backend.", "err"),
+      onError: (e: unknown) => {
+        const f = scanFailure(e);
+        toast(f.title, f.sub, "err");
+      },
     });
   };
 
@@ -152,15 +161,23 @@ export function LibraryFolderView() {
               Your media folder doesn't have any titles yet — scan your library after adding some.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={runScan}
-            disabled={scan.isPending}
-            className="inline-flex items-center gap-2 rounded-[10px] bg-accent px-4 py-2 text-sm font-bold text-black transition hover:bg-accent-hover disabled:opacity-60"
-          >
-            <Icon name="scan" size={15} />
-            {scan.isPending ? "Scanning…" : "Scan Library"}
-          </button>
+          {mayScan ? (
+            <button
+              type="button"
+              onClick={runScan}
+              disabled={scan.isPending}
+              className="inline-flex items-center gap-2 rounded-[10px] bg-accent px-4 py-2 text-sm font-bold text-black transition hover:bg-accent-hover disabled:opacity-60"
+            >
+              <Icon name="scan" size={15} />
+              {scan.isPending ? "Scanning…" : "Scan Library"}
+            </button>
+          ) : (
+            // Never OFFER what the server refuses (the route is administrators-only, Phase E).
+            <p className="max-w-sm text-xs leading-relaxed text-zinc-500">
+              Scanning is an administrator action — sign in as the administrator to scan the
+              library.
+            </p>
+          )}
         </div>
       ) : list.length === 0 ? (
         <div className="flex flex-col items-start gap-3 rounded-2xl border border-dashed border-white/[.08] px-8 py-14">

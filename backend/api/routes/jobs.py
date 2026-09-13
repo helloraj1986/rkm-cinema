@@ -10,9 +10,10 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
 from api.models import JobRunResponse, JobsResponse
+from api.session import SessionContext, require_admin_session
 from infrastructure.database.repository import build_repository
 
 router = APIRouter()
@@ -44,11 +45,26 @@ def get_jobs(limit: int = 20):
 
 
 @router.post("/jobs/{name}/run")
-def run_job_endpoint(name: str):
+def run_job_endpoint(name: str,
+                     session: SessionContext = Depends(require_admin_session)):
     """Run a known job command by name and return its recorded result.
 
-    Supported names: ``daily_watchlist`` (recommendation generation) and
-    ``reconcile`` (frequent status reconcile). Returns the JobResult shape.
+    Supported names: ``daily_watchlist`` (recommendation generation), ``reconcile``
+    (frequent status reconcile), ``add_watchlist`` (recommendation refresh) and
+    ``library_scan`` (a media-server library scan).
+
+    **Administrators only (Phase E, his decision 2026-09-13).** A generic job runner is an
+    operator verb: it starts server-side work on the media server and the *arr stack on the
+    caller's behalf, and it is the route that ``GET /api/library/scan`` mirrors. Gating the WHOLE
+    route (rather than a per-name allow-list) is deliberate — the default for an unknown or newly
+    added job name is then REFUSED rather than inherited, and a job added to the dict above cannot
+    quietly become member-reachable.
+
+    ⚠ **Known consequence, recorded rather than hidden:** ``add_watchlist`` is the one name a
+    member-facing feature was written for — ``frontend/src/features/watchlist/actions.ts::
+    refreshRecommendations`` posts here. That action is currently referenced by no view, so no
+    live surface changes today; when the "refresh recommendations" control is wired up it needs
+    its own member-facing route (the watchlist router is session-scoped), not this one.
     """
     from jobs.daily_watchlist import run_daily_watchlist
     from jobs.reconcile import run_reconcile

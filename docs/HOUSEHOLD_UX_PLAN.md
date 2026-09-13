@@ -1,7 +1,22 @@
 # Plan: Household page + account menu (from `household_UX/`)
 
-**Status: SCOPED 2026-09-13 — NOT STARTED.** Branch **`feat/household-ux`** (this plan is its first
-commit; next session executes it, commits code there, and the merge is his call).
+**Status: ✅ PHASE 1 BUILT 2026-09-13** — implemented on branch **`feat/household-ux`**, gates green,
+**awaiting his eyeball + merge**. Session record at the top of `docs/PROGRESS.md`.
+
+**What was taken, and the two decisions this plan left open:**
+
+* **§3.5 — counts: Option A.** His answer, verbatim: *"Skip the counts — no API change"*. The modal's
+  checklist is library NAMES only; nothing new is fetched.
+* **§2 — the menu delta: follow the mockup.** The account menu is now **Household · Account &
+  password · Switch profile · Settings · Sign out**, with an `ADMIN` pill on Household. The password
+  SCREEN still titles itself "My password" (flagged to him rather than changed unasked).
+* **Two dialogs beyond the three in §3.4** — `Rename` and `Remove` moved behind `Dialog` as well,
+  because deleting the inline forms without a home for those actions removes the capability.
+* **⚠ A real payload bug was found and fixed while porting the inline form:** "Every library" used to
+  send `library_ids: []`, which the route stores as *no libraries at all*. See
+  `folderSelectionPayload` in `frontend/src/features/admin/lib.ts`.
+
+Everything below is the original scoping, kept as written.
 
 **Visual/UX only.** No API, route, auth or data-model change — every action keeps calling the endpoint
 it calls today; only the markup, layout and entry points move. That constraint is his, verbatim:

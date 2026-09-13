@@ -128,21 +128,27 @@ export function mayScanLibrary(isAdmin: boolean | undefined): boolean {
  * Everything that belongs to *the person signed in* lives here — not scattered across the sidebar.
  * The rules, all pure so they are testable without a browser:
  *
- * * **My password** — EVERY profile, because a member's password is the lock on their profile and
- *   until Phase 3 only an administrator could change it (from Household, for somebody else).
+ * * **Account & password** — EVERY profile, because a member's password is the lock on their
+ *   profile and until Phase 3 only an administrator could change it (from Household, for somebody
+ *   else). His 2026-09-13 redesign renamed this entry from "My password"; the destination did not
+ *   move.
  * * **Household** — administrators only, through the SAME `mayManageHousehold` the nav used, so the
  *   gate cannot drift between two surfaces. The server refuses the routes regardless.
  * * **Switch profile** — the only way back to "Who's watching?" without signing out.
+ * * **Settings** — the app's own config/health screen, session-scoped rather than admin-only, so
+ *   every profile gets it (the mockup's menu lists it for everyone).
  *
  * `key` is stable so the UI (and the browser checks) can address an entry; `adminOnly` documents
  * which entries the gate filtered out, so a test can assert on the RULE rather than on the DOM.
  */
 export interface AccountDestination {
-  key: "switch" | "password" | "household";
+  key: "switch" | "password" | "household" | "settings";
   label: string;
   to: string;
-  icon: "switch" | "lock" | "users";
+  icon: "switch" | "lock" | "users" | "settings";
   adminOnly?: boolean;
+  /** A short trailing pill (the mockup's ADMIN tag on the Household entry). */
+  tag?: string;
 }
 
 export function accountDestinations(
@@ -157,7 +163,9 @@ export function accountDestinations(
   };
   const password: AccountDestination = {
     key: "password",
-    label: "My password",
+    // His brief, verbatim: the entry is "Account & password" — it navigates to the SAME screen the
+    // old "My password" sidebar link did, one that changes the password of the profile in effect.
+    label: "Account & password",
     to: "/settings/password",
     icon: "lock",
   };
@@ -167,10 +175,21 @@ export function accountDestinations(
     to: "/settings/household",
     icon: "users",
     adminOnly: true,
+    tag: "ADMIN",
   };
+  // Settings is the app's own status screen (config + service health). It is session-scoped on the
+  // server, not administrator-only, so every profile may see it — which is why the mockup puts it
+  // in the menu for everyone rather than gating it like Household.
+  const settings: AccountDestination = {
+    key: "settings",
+    label: "Settings",
+    to: "/settings",
+    icon: "settings",
+  };
+  // The mockup's order: Household · Account & password · Switch profile · Settings · Sign out.
   return mayManageHousehold(isAdmin)
-    ? [switchEntry, password, household]
-    : [switchEntry, password];
+    ? [household, password, switchEntry, settings]
+    : [password, switchEntry, settings];
 }
 
 /**

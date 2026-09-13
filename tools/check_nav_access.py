@@ -4,7 +4,7 @@
 His requests, in order:
   2026-09-12 — "household path should not be available to non admin users, and also it should be
                 available on ui" (the desktop sidebar offered it to EVERYONE, and the mobile sheet
-                offered neither Household nor My password);
+                offered neither Household nor Account & password);
   2026-09-13 — "you have removed the household from rkm(admin) as well … also we need tweaks in ui,
                 'my password' option doesn't need to be sitting on the left side bar it can simply
                 reside when user click its avatar … consolidate the ui elements".
@@ -12,10 +12,10 @@ His requests, in order:
 So the check now covers BOTH halves of the consolidation:
 
   A  administrator -> the ACCOUNT MENU (opened from the header avatar AND from the sidebar footer)
-                      offers My password and Household; the sidebar NAV no longer duplicates either
-  B  member        -> both triggers offer My password but NOT Household
+                      offers Account & password and Household; the sidebar NAV no longer duplicates either
+  B  member        -> both triggers offer Account & password but NOT Household
   C  member        -> the navigation fires no /api/admin/* call at all
-  D  every surface -> the mobile sheet carries navigation only (no Household, no My password)
+  D  every surface -> the mobile sheet carries navigation only (no Household, no Account & password)
 
 ⚠ The regression this exists for: Household disappeared for the ADMINISTRATOR too, because
 `/api/auth/profiles` sent `current` as a name-only row (is_admin always false). The harness stub now
@@ -96,20 +96,23 @@ def scenario_a_administrator(page: Page, base: str, shots: str) -> None:
     check(triggers["sidebar"], "A: the sidebar footer must offer it too (desktop convention)")
 
     header_menu = open_account_menu(page, HEADER_TRIGGER)
-    check("My password" in header_menu,
-          f"A: the account menu should offer My password, got {header_menu!r}")
+    check("Account & password" in header_menu,
+          f"A: the account menu should offer Account & password, got {header_menu!r}")
     check("Household" in header_menu,
           "A: the account menu should offer Household to an administrator — THIS is the regression "
           f"he reported ('you have removed the household from rkm as well'), got {header_menu!r}")
     check("Sign out" in header_menu, "A: and Sign out belongs here, not in the header row")
+    check("Settings" in header_menu,
+          "A: and Settings — the mockup's 2026-09-13 menu lists it, and the route is session-scoped, "
+          f"not administrator-only, got {header_menu!r}")
 
     sidebar_menu = open_account_menu(page, SIDEBAR_TRIGGER)
-    check("Household" in sidebar_menu and "My password" in sidebar_menu,
+    check("Household" in sidebar_menu and "Account & password" in sidebar_menu,
           f"A: both triggers must open the SAME menu, got {sidebar_menu!r}")
 
     nav = page.evaluate("window.__probe()")["sidebar"]
-    check("My password" not in nav,
-          f"A: the sidebar NAV must not duplicate My password any more, got {nav!r}")
+    check("Account & password" not in nav,
+          f"A: the sidebar NAV must not duplicate Account & password any more, got {nav!r}")
     check("Household" not in nav,
           f"A: nor Household — they are account destinations now, got {nav!r}")
     if not PROBLEMS:
@@ -123,8 +126,10 @@ def scenario_b_member(page: Page, base: str, shots: str) -> None:
         menu = open_account_menu(page, trigger)
         check("Household" not in menu,
               f"B: the {surface} account menu must NOT offer Household, got {menu!r}")
-        check("My password" in menu,
-              f"B: but My password is every profile's own screen, got {menu!r}")
+        check("Account & password" in menu,
+              f"B: but Account & password is every profile's own screen, got {menu!r}")
+        check("Settings" in menu,
+              f"B: and Settings is session-scoped, so a member gets it too, got {menu!r}")
     if not PROBLEMS:
         print("  OK: neither trigger offers Household to a member")
 
@@ -145,8 +150,8 @@ def scenario_d_sheet_is_navigation_only(page: Page, base: str, shots: str) -> No
     sheet = open_sheet(page)["sheet"]
     check("Household" not in sheet,
           f"D: Household moved into the account menu, got {sheet!r}")
-    check("My password" not in sheet,
-          f"D: so did My password, got {sheet!r}")
+    check("Account & password" not in sheet,
+          f"D: so did Account & password, got {sheet!r}")
     check(bool(sheet.strip()), "D: the sheet still has destinations")
     if not PROBLEMS:
         print("  OK: the mobile sheet is navigation only; both account screens are in the menu")
@@ -166,7 +171,7 @@ def scenario_e_phone_account_menu(page: Page, base: str, shots: str) -> None:
     page.wait_for_selector('[role="menu"]', timeout=5000)
     page.wait_for_timeout(200)
     menu = page.evaluate("window.__probe()")["accountMenu"]
-    check("My password" in menu and "Household" in menu,
+    check("Account & password" in menu and "Household" in menu,
           f"E: the phone must reach both, got {menu!r}")
     box = page.evaluate(
         """() => {

@@ -113,7 +113,7 @@ the change by signing in** with the new password, and says so only if that worke
 | You are locked out of | Do this |
 |---|---|
 | **The administrator account** (this stack) | `.\rkm-cinema.ps1 reset-admin-password` — one command, no old password |
-| **A member's password** | Sign in as the administrator → **avatar → Household → Reset password**. (Or that person changes it themselves: avatar → My password.) Resetting a member from the break-glass is refused on purpose — it is the lockout recovery, not a household tool |
+| **A member's password** | Sign in as the administrator → **avatar → Household → Reset password**. (Or that person changes it themselves: avatar → Account & password.) Resetting a member from the break-glass is refused on purpose — it is the lockout recovery, not a household tool |
 | **The administrator, and no API key in the volume** (`rkm_shared` wiped) | `.\rkm-cinema.ps1 deploy` — the provisioner re-provisions and, on a stack with no admin, **prints a new admin password once**. Watch the bootstrap output, not `.env` |
 | **Everything** (state volume also lost) | `.\rkm-cinema.ps1 restore` from the newest archive in `D:\RKM_BACKUPS` — the archive carries the accounts, so the passwords come back as they were |
 | **Everything, and no backup** | Out of scope here, and destructive: the accounts live in Jellyfin's own database (`jellyfin-config` volume). Nothing in this repo does that automatically — do not improvise it. Ask me, or see Jellyfin's own recovery docs |

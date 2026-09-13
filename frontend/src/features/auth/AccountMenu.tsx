@@ -19,7 +19,7 @@ import {
  *
  * Before this, four separate controls crowded the header (the name, an avatar that was only an
  * image, a "Switch profile" link and a "Sign out" button) and two more sat in the sidebar nav
- * (My password, for everyone; Household, for administrators) plus two in the mobile sheet — the
+ * (Account & password, for everyone; Household, for administrators) plus two in the mobile sheet — the
  * same three destinations offered in three different places, differently. Now: ONE trigger (the
  * avatar) with the identity it belongs to, and the destinations in `accountDestinations()`.
  *
@@ -85,6 +85,7 @@ export function AccountMenu({ variant = "chip" }: { variant?: "chip" | "wide" })
           key: destination.key,
           label: destination.label,
           icon: destination.icon,
+          tag: destination.tag,
           onSelect: () => navigate(destination.to),
         })),
         {

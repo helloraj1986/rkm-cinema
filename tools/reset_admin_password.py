@@ -103,7 +103,7 @@ def pick_administrator(users, wanted: str = "") -> tuple[Optional[dict], str]:
 
     ``wanted`` (from ``-Name``) must NAME AN ADMINISTRATOR: the break-glass is the lockout recovery,
     not a way to set somebody else's password -- a member's password is changed from Household (or
-    by the member, from My password), and quietly resetting one here would be a surprise nobody
+    by the member, from Account & password), and quietly resetting one here would be a surprise nobody
     asked for. The reason string is written for the person reading the console, and names what to do
     next.
     """
@@ -117,7 +117,8 @@ def pick_administrator(users, wanted: str = "") -> tuple[Optional[dict], str]:
                  if isinstance(row, dict)
                  and str(row.get("Name") or "").lower() == str(wanted).lower()), None) is not None:
             return None, (f"'{wanted}' is not an enabled administrator. A member's password is "
-                          "changed from Household in the app (or by that person, from My password).")
+                          "changed from Household in the app (or by that person, from "
+                          "Account & password).")
         return None, f"no account named '{wanted}' on the server."
     if len(admins) == 1:
         return admins[0], ""

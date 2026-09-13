@@ -163,3 +163,179 @@ export function lastLoginLabel(value: string): string {
   if (Number.isNaN(parsed.getTime())) return "Never signed in";
   return `Last seen ${parsed.toLocaleDateString("en-AU")}`;
 }
+
+/* --------------------------------------------------------------------------------------------
+ * The redesigned page (HOUSEHOLD_UX_PLAN.md Phase 1, 2026-09-13)
+ *
+ * The four layers his mockup asks for — header, summary, cards, modals — are all derived from
+ * the payload the page ALREADY has. Nothing here fetches, and nothing here invents a rule the
+ * server owns: these are the LABELS, the COUNTS and the PAYLOAD the switches send.
+ * ------------------------------------------------------------------------------------------ */
+
+/** The three numbers on the summary row. */
+export interface HouseholdSummary {
+  members: number;
+  /** Everyone who is not disabled. */
+  active: number;
+  /** Distinct libraries granted across non-administrator members. */
+  librariesShared: number;
+}
+
+/**
+ * Compute the summary row's three numbers from the household list alone.
+ *
+ * Two deliberate readings, both matching the mockup's own labels:
+ *  * an ADMINISTRATOR is not "granted" libraries — the server gives an administrator everything,
+ *    so counting them would inflate "Libraries shared" with libraries nobody shares;
+ *  * a DISABLED member's grants still count as shared (the grant is on the account), while the
+ *    member counts towards the total but not towards "Active profiles".
+ */
+export function householdSummary(
+  users: HouseholdUser[],
+  libraries: GrantableLibrary[],
+): HouseholdSummary {
+  const known = libraries.map((library) => library.id);
+  const shared = new Set<string>();
+  for (const user of users) {
+    if (user.is_admin) continue;
+    const granted = user.enable_all_folders ? known : user.enabled_folders ?? [];
+    for (const id of granted) {
+      // A grant whose library is gone grants NOTHING (it is an ItemId) — see `accessSummary`.
+      if (known.includes(id)) shared.add(id);
+    }
+  }
+  return {
+    members: users.length,
+    active: users.filter((user) => !user.disabled).length,
+    librariesShared: shared.size,
+  };
+}
+
+export type MemberBadgeTone = "accent" | "neutral" | "warn" | "muted";
+
+export interface MemberBadge {
+  key: "you" | "admin" | "disabled" | "no-password";
+  /** Already UPPERCASE: the browser checks read `innerText`, and CSS `uppercase` is invisible to it. */
+  label: string;
+  tone: MemberBadgeTone;
+}
+
+/**
+ * The pills on a profile card, in the mockup's order — the same facts the old row's `Tag`s showed.
+ *
+ * `label` is written uppercase HERE rather than by a CSS class, because a browser check reads
+ * `innerText` and a CSS-transformed label comes back in whatever case the DOM holds (his §7 QA
+ * checklist is asserted by content).
+ */
+export function memberBadges(
+  user: Pick<HouseholdUser, "id" | "is_admin" | "disabled" | "has_password">,
+  signedInAs: string,
+): MemberBadge[] {
+  const badges: MemberBadge[] = [];
+  if (user.id === signedInAs) badges.push({ key: "you", label: "YOU", tone: "accent" });
+  if (user.is_admin) badges.push({ key: "admin", label: "ADMINISTRATOR", tone: "neutral" });
+  if (user.disabled) badges.push({ key: "disabled", label: "DISABLED", tone: "warn" });
+  if (!user.has_password) badges.push({ key: "no-password", label: "NO PASSWORD", tone: "muted" });
+  return badges;
+}
+
+export interface MemberChip {
+  key: string;
+  label: string;
+  /** The single "Every library" chip an administrator (or a member granted everything) gets. */
+  every: boolean;
+}
+
+/**
+ * The library chips on a card.
+ *
+ * An administrator — and a member whose policy is `EnableAllFolders` — gets ONE chip rather than
+ * an enumeration, exactly as the mockup asks. Unresolvable grants are NOT silently dropped: the
+ * card still carries `accessSummary().unknown` as the amber note that explains why a grant does
+ * nothing.
+ */
+export function memberLibraryChips(
+  user: Pick<HouseholdUser, "is_admin" | "enable_all_folders" | "enabled_folders">,
+  libraries: GrantableLibrary[],
+): MemberChip[] {
+  if (user.is_admin || user.enable_all_folders) {
+    return [{ key: "all", label: "Every library", every: true }];
+  }
+  const byId = new Map(libraries.map((library) => [library.id, library.name]));
+  const chips: MemberChip[] = [];
+  for (const id of user.enabled_folders ?? []) {
+    const name = byId.get(id);
+    if (name) chips.push({ key: id, label: name, every: false });
+  }
+  return chips.length ? chips : [{ key: "none", label: "No libraries", every: false }];
+}
+
+/**
+ * What the card's password button says — the mockup's three labels, and the reason there are three.
+ *
+ * ⚠ They are LABELS, not three different calls: every one of them opens the same modal and posts
+ * to the same route with the same body (`POST /admin/users/{id}/password`). "Set password" is the
+ * no-password state, "Change password" is your own account, "Reset password" is somebody else's —
+ * the wording he asked for, and never a claim about the payload.
+ */
+export function passwordActionLabel(
+  user: Pick<HouseholdUser, "id" | "has_password">,
+  signedInAs: string,
+): string {
+  if (!user.has_password) return "Set password";
+  return user.id === signedInAs ? "Change password" : "Reset password";
+}
+
+/** The password MODAL's title, matching the button that opened it. */
+export function passwordModalTitle(
+  user: Pick<HouseholdUser, "id" | "has_password">,
+  signedInAs: string,
+): string {
+  const label = passwordActionLabel(user, signedInAs);
+  return label === "Set password" ? "Set a password" : label;
+}
+
+/**
+ * Why this password cannot be saved yet — the modal's own gate, checked BEFORE any request.
+ *
+ * Two rules only, and both are the app's business rather than the server's: the value has to be
+ * non-empty (the route refuses a blank one outright — *"an account is created without one, not
+ * emptied afterwards"*), and the two fields have to agree (the server only ever receives one, so a
+ * typo here is unrecoverable from the member's side).
+ */
+export function passwordConfirmIssue(next: string, confirm: string): string {
+  if (!next) return "Type the new password.";
+  if (next !== confirm) return "The two passwords do not match.";
+  return "";
+}
+
+/** A stable index into the avatar palette, so a person keeps the same colour between renders. */
+export function avatarToneIndex(name: string, tones = 5): number {
+  const raw = (name || "").trim().toLowerCase();
+  let hash = 0;
+  for (let i = 0; i < raw.length; i += 1) hash = (hash * 31 + raw.charCodeAt(i)) % 100003;
+  return Math.abs(hash) % Math.max(1, tones);
+}
+
+/**
+ * The `library_ids` a "Save access" must send.
+ *
+ * ⚠ **Measured against the live route, 2026-09-13 — this is the one place the old inline form was
+ * wrong, and it is a wire-level bug, not a layout one.** The route passes the ids straight to
+ * `set_folder_access(ids)` with `enable_all` defaulting to **False**, and the request model's own
+ * docstring says *"an empty list means none"* (create route: `None` = every library, `[]` = none).
+ * The old form sent `[]` for "Every library" — i.e. ticking that box and saving granted the member
+ * **NOTHING** (`EnableAllFolders=false` + `EnabledFolders=[]`), which reads afterwards as
+ * "Sees: None". The app has no way to ask for `EnableAllFolders=true` on this route at all, so
+ * "every library" has to MEAN the full id list.
+ *
+ * Pure, so the rule is testable: `all` ⇒ every library id; otherwise the ticked ids verbatim
+ * (which is still how "none" is expressed, and the modal warns before that is sent).
+ */
+export function folderSelectionPayload(
+  all: boolean,
+  ticked: string[],
+  libraries: GrantableLibrary[],
+): string[] {
+  return all ? libraries.map((library) => library.id) : [...ticked];
+}

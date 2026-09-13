@@ -77,21 +77,49 @@ development; if a scenario fails, check the stub before the app.
 ⚠ **Restart the dev server after editing app source** (the same watcher trap as above): a
 stale module gave a false FAIL here until the vite PID holding :5199 was killed.
 
-## `household-frame.html` — the Household screen (Phase 1b)
+## `household-frame.html` — the Household screen (Phase 1b, redesigned 2026-09-13)
 
-`python3 tools/check_household_ui.py` mounts the REAL `HouseholdView` (plus the real query client
-and auth provider) over a stubbed api and drives it in a browser:
+`python3 tools/check_household_ui.py` mounts the REAL `HouseholdView` + its modals (plus the real
+query client and auth provider) over a stubbed api and drives it in a browser. Eight scenarios, and
+they are the acceptance list of the redesign (HOUSEHOLD_UX_PLAN §3/§5) rather than a smoke test:
 
-| Query | What it asserts |
+| Scenario | What it asserts |
 |---|---|
-| `?admin=1` | the household lists; access resolves to library **names**; a password-less member says so; **Remove is disabled for your own account with the reason on screen**; the typed name arms the confirm button only on an exact match |
-| `?admin=0` | a non-administrator session sees the requirement stated plainly — no accounts, no add form, and **no write is attempted** |
-| `?admin=1` + add | adding a member posts the name, a **blank password**, and **only the ticked libraries** — the default is everything, and unticking one sticks |
+| A `?admin=1` | the four layers render: the header (eyebrow + his copy + Add member), the **summary counts** (3 members / 2 active / 2 libraries, derived from the payload), and the cards (badges `YOU`/`ADMINISTRATOR`/`DISABLED`/`NO PASSWORD`, chips, "Never signed in"); **your own card has NO ⋯ menu and says why** |
+| B `?admin=0` | a non-administrator session sees the requirement stated plainly — no cards, no add modal, and **no write is attempted** |
+| C | the **Library access modal**: a subset posts exactly the ticked ids; the chip AND the summary card follow the SERVER's next answer; and ⚠ "Every library" posts the **full id list**, never `[]` (the trap the inline form had — see below) |
+| D | the **password modal**: a mismatch is refused **before any request**, the title matches the button that opened it, and a match sends only `{new_password}` |
+| E | **Rename** from the ⋯ overflow: the rails refuse an unchanged or duplicate name with **no request sent**, the write carries only `{name}`, and an ordinary member never gains the role |
+| F | **Remove** from the ⋯ overflow: only the exact typed name arms the button, and the DELETE carries it |
+| G | the **Add member modal**: every library ticked by default, and a **blank password** + only the ticked folders reach the API |
+| H | the **modal contract**: Tab cannot leave the dialog (focus trap), Escape closes it, a backdrop click closes it, and closing writes nothing |
 
-The stub is deliberately generous but honest: it echoes the created member back the way the API does,
-so a refresh is visible. `window.__calls` records every request (url, method, body) and
-`window.__probe()` reports the rendered rows, whether the add form is open, whether the confirm
-button is armed, and any `role="alert"` text.
+`window.__calls` records every request (url, method, body) and `window.__probe()` reports the cards
+(badges, chips, buttons, whether the ⋯ exists), the three summary values, which modal is open, its
+title and text, where focus is, and any `role="alert"` text.
+
+Four things this frame learned the hard way:
+
+* ⚠ **The stub must read a `library_ids` write the way the SERVER does.** `POST …/policy` passes the
+  list straight to `set_folder_access(ids)`, whose `enable_all` defaults to **False** — so `[]` means
+  **NO libraries**, not "every library" (the request model's own docstring: *None* = every, *[]* =
+  none). The frame mutates the fixture from that rule, so scenario C catches the `[]` bug instead of
+  hiding it, and the chip honestly reads the granted NAMES after an "Every library" save (the route
+  has no way to express `EnableAllFolders=true`).
+* ⚠ **The stub must answer `403` to a non-administrator** for `/api/admin/users` and
+  `/api/admin/libraries` — a kinder stub makes a broken screen look correct, which is this repo's
+  most expensive repeating bug.
+* `/api/auth/profiles` carries the **server's own row** for the profile in effect (`current` with
+  `is_admin`), because the header's account menu gates Household on it.
+* Give a probe a **testid, not a class**: the first version read the chips with
+  `span.rounded-full` and picked up the avatar circle (whose text is the person's initials), so
+  every chip assertion was off by one element. The chips carry `data-testid="library-chip"` now.
+
+⚠ **Restart the dev server after editing app source.** This mount's vite watcher does not fire, and
+an orphaned server keeps serving the PRE-EDIT modules — that cost a whole run here (four failures
+that were already fixed on disk). Check before believing any result:
+`kill -9 $(ss -ltnp | grep 5199 | grep -oP 'pid=\K[0-9]+')`, start one vite, then
+`curl -s http://localhost:5199/src/features/admin/HouseholdView.tsx | grep -c 'summary-members'`.
 
 ## `nav-frame.html` — navigation access + the account menu (2026-09-12, reworked 2026-09-13)
 
@@ -101,11 +129,16 @@ trigger**, while the nav carries no duplicates:
 
 | Query | What it proves |
 |---|---|
-| `?admin=1` | the account menu — opened from the header avatar AND from the sidebar footer — offers **My password** and **Household**, and the sidebar NAV no longer lists either |
-| `?admin=0` | both triggers still offer My password, and **neither** offers Household |
+| `?admin=1` | the account menu — opened from the header avatar AND from the sidebar footer — offers **Household · Account & password · Switch profile · Settings · Sign out** (the mockup's order, and the sidebar NAV no longer lists the first two) |
+| `?admin=0` | both triggers still offer **Account & password** and **Settings**, and **neither** offers Household |
 | `?admin=0` | the navigation fires **zero** `/api/admin/*` calls |
 | `?admin=1` | the mobile sheet is **navigation only** (both account screens moved into the menu) |
 | `?admin=1` | the phone reaches both screens from the header avatar, and the menu fits the viewport |
+
+⚠ The entry was called **My password** until 2026-09-13, when the redesign (HOUSEHOLD_UX_PLAN §2)
+renamed it **Account & password** — his mockup's label, same destination (`/settings/password`).
+`Settings` joined the menu at the same time; the route is session-scoped, not administrator-only,
+so the check asserts a member is offered it too.
 
 Three things this frame learned the hard way:
 

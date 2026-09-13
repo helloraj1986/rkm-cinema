@@ -3,13 +3,24 @@
  *
  * Mounts the REAL `HouseholdView` (and the real query client + auth provider) over a stubbed
  * api, so `tools/check_household_ui.py` can prove in a browser what the screen actually renders
- * and what it actually posts:
+ * and what it actually posts — now for the REDESIGNED screen (HOUSEHOLD_UX_PLAN.md Phase 1):
+ * a header, three summary cards, one card per profile, and every action behind a modal.
  *
- *   ?admin=1  — a Jellyfin administrator: the household lists, access resolves to NAMES, the
- *               rails disable Remove where the server would refuse, and adding a member posts
- *               a blank password + only the ticked folders.
+ *   ?admin=1  — a Jellyfin administrator: the household lists, the summary counts, chips resolve
+ *               to library NAMES, a password-less member says so, the rails keep Rename/Disable/
+ *               Remove OFF your own card, and every modal posts the same body the old inline form
+ *               did.
  *   ?admin=0  — a non-administrator session: the screen must say so plainly instead of looking
  *               broken or, worse, appearing to work.
+ *
+ * ⚠ The stub is deliberately faithful, not generous — the differences that matter here are the
+ * ones that once made a correct screen look broken or a broken one look correct:
+ *  * `/api/admin/libraries` and `/api/admin/users` answer **403** to a non-administrator;
+ *  * `/api/auth/profiles` carries the SERVER's own row for the profile in effect (`current` with
+ *    `is_admin`), which is what the header's account menu gates on (a name-only stub hid Household
+ *    from the administrator — ADMIN_CREDENTIALS_PLAN §6g);
+ *  * a `/policy` write MUTATES the fixture, so "the chips and the counts update after saving"
+ *    is proved by the next render rather than assumed.
  *
  * `window.__calls` records every stubbed request (url, method, body) and `window.__probe()`
  * reports what is on screen.
@@ -39,19 +50,49 @@ const calls: Call[] = [];
 
 const ADMIN_ID = "uid-admin";
 const GUEST_ID = "uid-guest";
+const DISABLED_ID = "uid-meenu";
 
 const LIBRARY_ROWS = [
   { id: "f1", name: "Movies", collection_type: "movies", path: "/data/Movies" },
   { id: "f2", name: "TV Shows", collection_type: "tvshows", path: "/media2/TV Shows" },
 ];
 
+/** The admin profile's own row — the shape `/api/auth/profiles` really sends as `current`. */
+const PROFILE = {
+  id: ADMIN_ID,
+  name: "admin",
+  is_admin: true,
+  disabled: false,
+  has_password: true,
+  enable_all_folders: true,
+  enabled_folders: [],
+  last_login: "2026-09-12T07:25:10Z",
+};
+
 function household() {
   return {
     users: [
-      { id: ADMIN_ID, name: "admin", is_admin: true, disabled: false, has_password: true,
-        enable_all_folders: true, enabled_folders: [], last_login: "2026-09-12T07:25:10Z" },
-      { id: GUEST_ID, name: "Guest", is_admin: false, disabled: false, has_password: false,
-        enable_all_folders: false, enabled_folders: ["f1"], last_login: "" },
+      { ...PROFILE },
+      {
+        id: GUEST_ID,
+        name: "Guest",
+        is_admin: false,
+        disabled: false,
+        has_password: false,
+        enable_all_folders: false,
+        enabled_folders: ["f1"],
+        last_login: "",
+      },
+      {
+        id: DISABLED_ID,
+        name: "meenu",
+        is_admin: false,
+        disabled: true,
+        has_password: true,
+        enable_all_folders: false,
+        enabled_folders: ["f2"],
+        last_login: "2026-09-01T22:10:00Z",
+      },
     ],
     signed_in_as: ADMIN_ID,
     warning: "",
@@ -71,9 +112,27 @@ window.fetch = (async (input: RequestInfo | URL, init: RequestInit = {}) => {
     const text = payload === null ? "" : JSON.stringify(payload);
     return new Response(text, { status, headers: { "content-type": "application/json" } });
   };
+  const parse = () => JSON.parse(body || "{}") as Record<string, unknown>;
+  const patchUser = (id: string, patch: Record<string, unknown>) => {
+    householdBody = {
+      ...householdBody,
+      users: householdBody.users.map((u) => (u.id === id ? { ...u, ...patch } : u)),
+    };
+    return householdBody.users.find((u) => u.id === id) ?? householdBody.users[0];
+  };
+  const idFromPath = () => decodeURIComponent(path.split("/").slice(-2, -1)[0] ?? "");
 
   if (path === "/api/auth/me") {
-    return send(200, { user: { id: ADMIN_ID, name: "admin" }, expires: "2026-10-12T00:00:00Z" });
+    return send(200, {
+      user: { id: ADMIN_ID, name: "admin" },
+      expires: "2026-10-12T00:00:00Z",
+      profile_selected: true,
+    });
+  }
+  if (path === "/api/auth/profiles") {
+    // The server's own answer: `current` IS the profile's row (admin when ?admin=1).
+    const current = AS_ADMIN ? PROFILE : { ...PROFILE, name: "Guest", is_admin: false };
+    return send(200, { profiles: householdBody.users, current, profile_selected: true, warning: "" });
   }
   if (path === "/api/admin/libraries") {
     return AS_ADMIN
@@ -86,44 +145,42 @@ window.fetch = (async (input: RequestInfo | URL, init: RequestInit = {}) => {
       : send(403, { detail: "Only a Jellyfin administrator can manage household accounts" });
   }
   if (path === "/api/admin/users" && method === "POST") {
-    const parsed = JSON.parse(body || "{}") as { name?: string };
-    // Echo the created member back the way the API does, so the list refreshes visibly.
-    householdBody = {
-      ...householdBody,
-      users: [
-        ...householdBody.users,
-        {
-          id: "uid-new",
-          name: String(parsed.name ?? "New"),
-          is_admin: false,
-          disabled: false,
-          has_password: Boolean((JSON.parse(body || "{}") as { password?: string }).password),
-          enable_all_folders: false,
-          enabled_folders: ((JSON.parse(body || "{}") as { library_ids?: string[] })
-            .library_ids) ?? [],
-          last_login: "",
-        },
-      ],
+    const parsed = parse();
+    const ids = (parsed.library_ids as string[]) ?? [];
+    const created = {
+      id: "uid-new",
+      name: String(parsed.name ?? "New"),
+      is_admin: false,
+      disabled: false,
+      has_password: Boolean(parsed.password),
+      enable_all_folders: false,
+      enabled_folders: ids,
+      last_login: "",
     };
-    return send(200, { ok: true, user: householdBody.users.at(-1), granted: [], warning: "" });
+    householdBody = { ...householdBody, users: [...householdBody.users, created] };
+    return send(200, { ok: true, user: created, granted: ids, warning: "" });
   }
-  if (path.includes("/rename")) {
-    // Phase 2: echo the renamed row back the way the API does, so the list refreshes visibly.
-    const id = decodeURIComponent(path.split("/").slice(-2, -1)[0] ?? "");
-    const parsed = JSON.parse(body || "{}") as { name?: string };
-    householdBody = {
-      ...householdBody,
-      users: householdBody.users.map((u) =>
-        u.id === id ? { ...u, name: String(parsed.name ?? u.name) } : u,
-      ),
-    };
-    const updated = householdBody.users.find((u) => u.id === id) ?? householdBody.users[0];
+  if (path.endsWith("/policy")) {
+    const parsed = parse();
+    const patch: Record<string, unknown> = {};
+    // Exactly the server's reading: an EMPTY list is what the account may see (the route passes it
+    // straight to `set_folder_access`, whose `enable_all` defaults to False — see the check's
+    // regression guard for the `[]`-means-nothing trap).
+    if (Array.isArray(parsed.library_ids)) {
+      patch.enabled_folders = parsed.library_ids;
+      patch.enable_all_folders = false;
+    }
+    if (typeof parsed.disabled === "boolean") patch.disabled = parsed.disabled;
+    const updated = patchUser(idFromPath(), patch);
+    return send(200, { ok: true, user: updated, was: "Guest" });
+  }
+  if (path.endsWith("/rename")) {
+    const updated = patchUser(idFromPath(), { name: String(parse().name ?? "") });
     return send(200, { ok: true, user: updated, was: "Guest", warning: "" });
   }
-  if (path.includes("/policy")) return send(200, { ok: true, user: householdBody.users[1], was: "Guest" });
-  if (path.includes("/password")) return send(200, { ok: true });
+  if (path.endsWith("/password")) return send(200, { ok: true });
   if (method === "DELETE") {
-    const name = (JSON.parse(body || "{}") as { confirm_name?: string }).confirm_name ?? "";
+    const name = String(parse().confirm_name ?? "");
     return send(200, { ok: true, name });
   }
   return send(200, {});
@@ -131,24 +188,53 @@ window.fetch = (async (input: RequestInfo | URL, init: RequestInit = {}) => {
 
 (window as unknown as { __probe: () => unknown }).__probe = () => {
   const text = (selector: string) => document.querySelector(selector)?.textContent?.trim() ?? "";
-  const rows = [...document.querySelectorAll('[data-testid^="member-"]')].map((row) => {
-    const remove = [...row.querySelectorAll("button")].find((b) =>
-      (b.textContent || "").trim() === "Remove");
-    return {
-      name: (row.getAttribute("data-testid") || "").replace("member-", ""),
-      text: (row.textContent || "").replace(/\s+/g, " ").trim(),
-      removeDisabled: remove ? (remove as HTMLButtonElement).disabled : null,
-    };
-  });
-  const confirmButton = [...document.querySelectorAll("button")].find((b) =>
-    (b.textContent || "").trim() === "Remove member");
+  const modal = document.querySelector('[role="dialog"]');
+  const modalText = (modal?.textContent || "").replace(/\s+/g, " ").trim();
+  const rows = [...document.querySelectorAll('[data-testid^="member-"]')]
+    .filter((row) => !(row.getAttribute("data-testid") || "").startsWith("member-more-"))
+    .map((row) => {
+      const name = (row.getAttribute("data-testid") || "").replace("member-", "");
+      const buttons = [...row.querySelectorAll("button")].map((b) =>
+        (b.textContent || "").replace(/\s+/g, " ").trim(),
+      );
+      return {
+        name,
+        text: (row.textContent || "").replace(/\s+/g, " ").trim(),
+        buttons,
+        badges: [...row.querySelectorAll('[data-testid^="badge-"]')].map((b) =>
+          (b.textContent || "").trim(),
+        ),
+        chips: [...row.querySelectorAll('[data-testid="library-chip"]')].map((c) =>
+          (c.textContent || "").trim(),
+        ),
+        // The ⋯ trigger is the only button in the card with no text — and it carries the testid.
+        hasOverflow: !!document.querySelector(`[data-testid="member-more-${name}"]`),
+      };
+    });
+  const summaryValue = (testId: string) =>
+    Number(text(`[data-testid="${testId}"] p`) || "NaN");
+  const removeButton = [...document.querySelectorAll('[role="dialog"] button')].find((b) =>
+    (b.textContent || "").trim() === "Remove member",
+  );
   return {
     calls: [...calls],
     rows,
-    addForm: !!document.querySelector('[data-testid="add-member-form"]'),
-    folderTicks: !!document.querySelector('[data-testid="folder-ticks"]'),
+    summary: {
+      members: summaryValue("summary-members"),
+      active: summaryValue("summary-active"),
+      libraries: summaryValue("summary-libraries"),
+    },
+    addModal: !!document.querySelector('[data-testid="add-member-modal"]'),
+    libraryModal: !!document.querySelector('[data-testid="library-modal"]'),
+    passwordModal: !!document.querySelector('[data-testid="password-modal"]'),
+    renameModal: !!document.querySelector('[data-testid="rename-modal"]'),
+    removeModal: !!document.querySelector('[data-testid="remove-modal"]'),
+    modalText,
+    modalTitle: modal?.querySelector("h2")?.textContent?.trim() ?? "",
+    /** Is every watched element inside the dialog? Proves the focus trap, not just its presence. */
+    focusInsideModal: modal ? modal.contains(document.activeElement) : null,
+    confirmEnabled: removeButton ? !(removeButton as HTMLButtonElement).disabled : null,
     refusal: text('[role="alert"]'),
-    confirmEnabled: confirmButton ? !(confirmButton as HTMLButtonElement).disabled : null,
     body: document.body.innerText,
   };
 };

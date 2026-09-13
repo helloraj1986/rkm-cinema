@@ -138,7 +138,7 @@ describe("accountDestinations", () => {
   const keys = (isAdmin: boolean | undefined) =>
     accountDestinations(isAdmin, true).map((d) => d.key);
 
-  it("offers My password to EVERY profile — it is the lock on your own profile", () => {
+  it("offers Account & password to EVERY profile — it is the lock on your own profile", () => {
     expect(keys(true)).toContain("password");
     expect(keys(false)).toContain("password");
     expect(keys(undefined)).toContain("password");
@@ -151,6 +151,33 @@ describe("accountDestinations", () => {
     // fail-closed rule the nav used. The bug he hit was the opposite: `is_admin` never arrived at
     // all, so Household vanished for EVERYONE including him.
     expect(keys(undefined)).not.toContain("household");
+  });
+
+  it("offers Settings to every profile — it is session-scoped, not administrator-only", () => {
+    // The mockup lists it for the administrator; the server's own gate (SESSION_SCOPED, not
+    // require_admin_session) is what decides that a member may open it too.
+    expect(keys(false)).toContain("settings");
+    expect(keys(true)).toContain("settings");
+  });
+
+  it("keeps the mockup's order: Household · Account & password · Switch profile · Settings", () => {
+    // His brief §2 gives the order; a reorder here is a change to the reference he handed over.
+    expect(keys(true)).toEqual(["household", "password", "switch", "settings"]);
+    expect(keys(false)).toEqual(["password", "switch", "settings"]);
+  });
+
+  it("labels the password entry 'Account & password' — his wording, and the same destination", () => {
+    const entry = accountDestinations(true, true).find((d) => d.key === "password");
+    expect(entry?.label).toBe("Account & password");
+    // The destination did NOT move: it is still the screen that changes the profile in effect's
+    // password (`/settings/password`).
+    expect(entry?.to).toBe("/settings/password");
+  });
+
+  it("tags Household ADMIN and nothing else", () => {
+    const tagged = accountDestinations(true, true).filter((d) => d.tag);
+    expect(tagged.map((d) => d.key)).toEqual(["household"]);
+    expect(tagged[0].tag).toBe("ADMIN");
   });
 
   it("says Choose profile until one has been picked, then Switch profile", () => {

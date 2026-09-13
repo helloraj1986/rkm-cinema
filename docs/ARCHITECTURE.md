@@ -330,7 +330,8 @@ queue), subtitle **usage** counts (they rank one download quota), and the server
 - **`src/features/auth/`** — `AuthProvider` (session + profile state; purges the React Query cache on
   every identity change, so one person's rows can never flash for the next), `RequireSession` +
   `guardDecision` (**pure, unit-tested**: skeleton / login / picker / app), `LoginView`,
-  `AccountMenu` (one menu off the avatar: Switch profile · My password · Household for administrators).
+  `AccountMenu` (one menu off the avatar: Household for administrators · Account & password ·
+  Switch profile · Settings · Sign out).
 - **`/login` and `/profiles` sit OUTSIDE the app shell** for the same reason: they must render when
   nothing else can — including the day enforcement is armed and every other route is refusing.
 - **Browser checks.** `frontend/harness/*.html` are frames that mount real views over a stubbed api;

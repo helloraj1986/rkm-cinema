@@ -10,6 +10,13 @@ export interface PopupMenuItem {
   /** Destructive actions are separated + tinted (§25: destructive separated). */
   danger?: boolean;
   disabled?: boolean;
+  /**
+   * A short trailing pill (the account menu's `ADMIN` tag on Household, 2026-09-13).
+   *
+   * It is a LABEL, not a control: it must never look clickable, and it carries no behaviour — the
+   * gate that decides whether the item exists at all stays where it was (`mayManageHousehold`).
+   */
+  tag?: string;
 }
 
 /**
@@ -164,6 +171,11 @@ export function PopupMenu({
                 >
                   {item.icon ? <Icon name={item.icon} size={15} className="shrink-0 text-zinc-500" /> : null}
                   <span className="truncate">{item.label}</span>
+                  {item.tag ? (
+                    <span className="ml-auto shrink-0 rounded-full border border-white/10 px-1.5 py-[1px] text-[9px] font-semibold tracking-[.06em] text-zinc-500">
+                      {item.tag}
+                    </span>
+                  ) : null}
                 </button>
               ))}
             </div>,

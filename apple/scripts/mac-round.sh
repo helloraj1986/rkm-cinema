@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
 # The Mac side of the loop — ONE command per round of testing.
 #
-#   ./apple/scripts/mac-round.sh ios        # pull · generate · build iOS
-#   ./apple/scripts/mac-round.sh tvos       # pull · generate · build tvOS
+#   ./apple/scripts/mac-round.sh ios        # pull · (generate) · build iOS
+#   ./apple/scripts/mac-round.sh tvos       # pull · (generate) · build tvOS
 #   ./apple/scripts/mac-round.sh ios --sim  # ...then install+launch on a simulator
+#
+# Works with BOTH project arrangements (apple/WORKFLOW.md §2):
+#   - hand-made project committed in the repo (the default) → no generation step
+#   - XcodeGen                                            → generation runs if project.yml exists
 #
 # ⚠ WRITTEN BUT NOT RUN — there is no Xcode on the Windows side, so nothing here is
 # verified. Expect to correct a flag on first use. It is deliberately plain: it prints
@@ -18,11 +22,12 @@ TARGET="${1:-}"
 WANT_SIM="${2:-}"
 
 case "$TARGET" in
-  ios)  PROJ="apple/ios/RKMCinema.xcodeproj";    SCHEME="RKMCinema";    PLATFORM="iOS";     SIM_DEVICE="iPhone 16" ;;
-  tvos) PROJ="apple/tvos/RKMCinemaTV.xcodeproj"; SCHEME="RKMCinemaTV";  PLATFORM="tvOS";    SIM_DEVICE="Apple TV" ;;
+  ios)  PROJ="apple/ios/RKMCinema.xcodeproj";    SCHEME="RKMCinema";    PLATFORM="iOS";     SIM_DEVICE="iPhone 16"; BUNDLE_SUFFIX="ios" ;;
+  tvos) PROJ="apple/tvos/RKMCinemaTV.xcodeproj"; SCHEME="RKMCinemaTV";  PLATFORM="tvOS";    SIM_DEVICE="Apple TV";   BUNDLE_SUFFIX="tvos" ;;
   *) echo "usage: $0 ios|tvos [--sim]" >&2; exit 2 ;;
 esac
 
+SPEC_DIR="$(dirname "$PROJ")"
 say() { printf '\n\033[1m== %s\033[0m\n' "$*"; }
 
 # ---------------------------------------------------------------- 1. pull
@@ -31,15 +36,24 @@ git fetch origin
 git pull --ff-only
 echo "HEAD: $(git log --oneline -1)"
 
-# ---------------------------------------------------------------- 2. generate
-say "2. generating the Xcode project from project.yml"
-if ! command -v xcodegen >/dev/null 2>&1; then
-  echo "xcodegen not found. Install it once:  brew install xcodegen" >&2
+# ---------------------------------------------------------------- 2. generate (only if XcodeGen is in use)
+say "2. project"
+if [ -f "${SPEC_DIR}/project.yml" ]; then
+  if ! command -v xcodegen >/dev/null 2>&1; then
+    echo "project.yml found but xcodegen is missing. Install it once:  brew install xcodegen" >&2
+    exit 1
+  fi
+  ( cd "$SPEC_DIR" && xcodegen generate )
+  echo "regenerated from project.yml: $PROJ"
+else
+  echo "using the committed project (no project.yml — see apple/WORKFLOW.md §2)"
+fi
+
+if [ ! -d "$PROJ" ]; then
+  echo "Project not found: $PROJ" >&2
+  echo "It is created once in Xcode and committed — see apple/WORKFLOW.md §2 for the steps." >&2
   exit 1
 fi
-SPEC_DIR="$(dirname "$PROJ")"
-( cd "$SPEC_DIR" && xcodegen generate )
-echo "generated: $PROJ"
 
 # ---------------------------------------------------------------- 3. build
 mkdir -p apple/logs
@@ -53,7 +67,7 @@ else
 fi
 
 say "3. building ($DEST)"
-say "   full log: $BUILD_LOG"
+echo "   full log: $BUILD_LOG"
 set +e
 xcodebuild -project "$PROJ" -scheme "$SCHEME" -destination "$DEST" build >"$BUILD_LOG" 2>&1
 RC=$?
@@ -65,8 +79,13 @@ if [ $RC -eq 0 ]; then
   echo "BUILD SUCCEEDED"
 else
   echo "BUILD FAILED (exit $RC) — the errors:"
-  # The lines that matter, deduped: compiler errors and warnings-with-context.
   grep -E "(error|warning): " "$BUILD_LOG" | sort -u | head -40 || true
+  # A fresh Xcode refuses CLI builds until the licence is accepted — a confusing
+  # failure the first time, so name it explicitly.
+  if grep -qi "agree to the Xcode license\|license agreement" "$BUILD_LOG"; then
+    echo
+    echo "This is the Xcode licence, not a code error. Fix:  sudo xcodebuild -license accept" >&2
+  fi
 fi
 
 echo
@@ -76,7 +95,6 @@ tail -25 "$BUILD_LOG"
 # ---------------------------------------------------------------- 5. optional run
 if [ $RC -eq 0 ] && [ "$WANT_SIM" = "--sim" ]; then
   say "5. installing + launching on the simulator"
-  # Boot the first available device matching the name, then install the built .app.
   DEV_ID="$(xcrun simctl list devices available | grep -m1 "$SIM_DEVICE" | grep -oE '[0-9A-F-]{36}' || true)"
   if [ -z "$DEV_ID" ]; then
     echo "No available simulator matching '$SIM_DEVICE' — open Xcode > Window > Devices and add one." >&2
@@ -86,7 +104,7 @@ if [ $RC -eq 0 ] && [ "$WANT_SIM" = "--sim" ]; then
     APP="$(find ~/Library/Developer/Xcode/DerivedData -name "${SCHEME}.app" -path "*${PLATFORM}*" -newermt '-10 minutes' 2>/dev/null | head -1)"
     if [ -n "$APP" ]; then
       xcrun simctl install "$DEV_ID" "$APP"
-      xcrun simctl launch --console-pty "$DEV_ID" "com.helloraj1986.rkmcinema.$( [ "$TARGET" = ios ] && echo ios || echo tvos )"
+      xcrun simctl launch --console-pty "$DEV_ID" "com.helloraj1986.rkmcinema.${BUNDLE_SUFFIX}"
     else
       echo "Built .app not found in DerivedData — open the project in Xcode and run it there." >&2
     fi

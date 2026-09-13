@@ -76,10 +76,11 @@ frontend/public/harness-sample.mp4
 **/*.moved-aside
 **/Pods/
 
-# The Xcode projects are GENERATED from project.yml by XcodeGen — build output, not source.
-# The fix for a project setting is in project.yml + one regenerate, never in Xcode's UI
-# (a GUI change would be lost on the next generate). See apple/WORKFLOW.md §2.
-apple/**/*.xcodeproj/
+# The Xcode projects are created ONCE in Xcode and COMMITTED (apple/WORKFLOW.md §2). Only
+# Xcode writes a valid .xcodeproj, and the sources live inside the synchronized folder it
+# owns, so the project IS source here, not build output. Per-user state stays ignored.
+# ⚠ If we ever move to XcodeGen (§2.1) this flips: ignore the generated *.xcodeproj and
+# commit project.yml instead.
 apple/**/*.xcworkspace/
 
 # Test-run logs. They travel back by PASTING (apple/LOGGING.md §7); if a whole file ever

@@ -1,13 +1,14 @@
 # Two-machine workflow — authoring on Windows, testing on the Mac
 
-**Revised 2026-09-13** after the user's clarification: *"i plan to use mac only for testing... development will
-be strictly here."* That single constraint **changes the recommendation**: there is no reason to hand a project
-file to Xcode's GUI, so the project itself becomes something I author as text. See §2.
+**Revised 2026-09-13** for: *"i plan to use mac only for testing... development will be strictly here"* and
+*"will it work if i simply installed xcode app?"* → **Yes. Xcode alone is enough to build, run, sign and
+debug.** No Homebrew, no XcodeGen, no extra tooling required to test. See §2 for the one thing Xcode cannot do
+for me, and the check that decides whether that matters.
 
 ```
 ┌─────────────────────────────┐        ┌──────────────────────────┐
 │  Windows PC (RKM-HP)        │        │  MacBook Pro             │
-│  Hermes + its Docker sandbox│        │  Xcode + Apple SDKs      │
+│  Hermes + its Docker sandbox│        │  Xcode                   │
 │  /workspace/projects/       │        │  ~/dev/rkm-cinema        │
 │    rkm-cinema               │        │                          │
 │  = HIS WINDOWS CHECKOUT     │        │  TESTING ONLY            │
@@ -28,48 +29,88 @@ is no second Windows copy. **GitHub is the only bridge to the Mac.**
 
 | | Windows (Hermes) | MacBook Pro |
 |---|---|---|
-| Does | **writes all the code**, reviews, commits, pushes | pulls, generates, builds, runs, signs, screenshots, streams logs |
-| Edits | everything, including `project.yml` | **nothing** (testing only) |
+| Does | **writes all the code**, commits, pushes | pulls, creates the projects **once**, builds, runs, signs, screenshots, streams logs |
+| Edits | every source file | **only**: the two projects (once) · signing · one Info.plist setting |
 | Command | `bash .git/push_branch.sh feat/apple-clients` | `./apple/scripts/mac-round.sh ios\|tvos` |
-| Gate | `swift test` on shared/pure-Swift code | Xcode build + run on device; `log stream` |
 
 ---
 
 ## 1. One-time setup on the Mac
 
 ```bash
+# Just Xcode, from the App Store, then accept the licence — a fresh Xcode refuses
+# command-line builds until you do, with a confusing "agree to the license" failure.
+sudo xcodebuild -license accept
+xcodebuild -version          # confirm the toolchain responds
+
 # Clone (NOT inside iCloud Drive — Xcode and iCloud fight over derived data).
 git clone https://github.com/helloraj1986/rkm-cinema.git ~/dev/rkm-cinema
 cd ~/dev/rkm-cinema
 git checkout feat/apple-clients
-
-# The only extra tool. Generates the Xcode projects from text I write.
-brew install xcodegen
 ```
 
-**Xcode:** sign in with the Apple ID, and set the Team once under **Signing & Capabilities** after the first
-generate. A free personal team builds for 7 days at a time; the paid program (~AUD $149/yr) gives a year and
+**Signing:** sign in with the Apple ID, and set the Team once under **Signing & Capabilities** after the first
+build attempt. A free personal team builds for 7 days at a time; the paid program (~AUD $149/yr) gives a year and
 enables TestFlight.
 
-## 2. The project files are generated from `project.yml` — he never creates them
+## 2. The Xcode projects: he creates each one ONCE, then never again
 
-**Because development is strictly on Windows, the `.xcodeproj` should be build output, not something a human
-created in a GUI.** I write `apple/ios/project.yml` and `apple/tvos/project.yml`; `xcodegen generate` turns each
-into an `.xcodeproj`.
+**Xcode alone cannot be skipped for this one step** — only Xcode writes a valid `.xcodeproj`, and hand-writing
+one is how projects get corrupted. So: **he creates both projects once (a ~5-minute GUI job), commits them, and
+I write every source file after that.**
 
-Why this beat the earlier plan (he creates the project once in Xcode, then I add files):
+### Order matters — he creates the projects FIRST, then I write into them
 
-| | XcodeGen (chosen) | Hand-made project |
+Xcode's new-project template writes `RKMCinemaApp.swift` and `Assets.xcassets` into the source folder. Writing
+my sources first would collide with those files. So the sequence is:
+
+1. **He** creates both projects and pushes (below).
+2. **I** replace the template sources with the real ones.
+
+Meanwhile Phase 0's other half — the `apple/Shared/` package — is **not** blocked by this: it needs no Xcode, so
+I write and `swift test` it in the sandbox while he does the GUI step.
+
+### Creating each project
+
+In Xcode: **File → New → Project** → `iOS` → **App** (Product Name `RKMCinema`), save into **`apple/ios/`**.
+Then the same for `tvOS` → **App** (Product Name `RKMCinemaTV`), save into **`apple/tvos/`**.
+Interface **SwiftUI**, Language **Swift**. ⚠ **Untick "Create Git repository"** — the repo already exists.
+
+Xcode creates `apple/ios/RKMCinema.xcodeproj` beside the `apple/ios/RKMCinema/` source folder — which is exactly
+the documented layout, so nothing needs moving. Commit and push.
+
+### ⚠ The check that decides whether the loop stays smooth
+
+```bash
+grep -c PBXFileSystemSynchronizedRootGroup apple/ios/RKMCinema.xcodeproj/project.pbxproj
+```
+
+| Result | What it means |
+|---|---|
+| **≥ 1** | Xcode 16+ created a **synchronized** folder group: a file's *presence in the folder* is its target membership. **I add Swift files freely, forever, with no project edits.** Expected with any current Xcode. |
+| **0** | Classic groups — every new file must be registered in `project.pbxproj`. Then either he adds files in Xcode's GUI, or we move to XcodeGen (§2.1). **We do not hand-edit `project.pbxproj`.** |
+
+This is why every source lives under its target's own folder: synchronized groups only auto-include files
+*inside* that folder.
+
+### The complete list of things he ever has to touch (one-time)
+
+| Once | Why | If skipped |
 |---|---|---|
-| Who can add a source file | **me** — edit `project.yml`, done | depends on Xcode version behaviour (synchronized groups) |
-| Adding a file while he is on the Mac | never his job | needs Xcode, or `project.pbxproj` surgery |
-| Reviewable in a diff | yes — `project.yml` is text | `.xcodeproj` is a large generated blob |
-| Extra tool | `brew install xcodegen` once | none |
-| Risk | XcodeGen's development pace has slowed (stable, community-maintained) — acceptable, its input format barely changes | `.xcodeproj` corruption from hand-editing |
+| **Signing & Capabilities → Team** | device builds need a team | the build fails on device |
+| **`INFOPLIST_FILE` → `RKMCinema/Info.plist`** (I supply the file; he points the setting at it) | the ATS declaration is a nested dictionary, which `INFOPLIST_KEY_*` build settings **cannot express** — a real Info.plist is required | a user-typed `http://` address is blocked and the app looks broken |
+| **File → Add Package Dependencies → Add Local… → `apple/Shared`** (once per project) | links `RKMServerKit` into the target | compile error on the import |
 
-⚠ **The `.xcodeproj` files are generated, so they are git-ignored and never edited by hand.** If a project
-setting is wrong, the fix is in `project.yml` and one regenerate — not in Xcode's UI, where the change would be
-lost on the next generate. This is the one habit that makes the whole arrangement work.
+That is the whole list. ⚠ Everything else stays mine, and if project-level changes ever become routine, §2.1 is
+the answer.
+
+### 2.1 Fallback: XcodeGen — only if project-file changes become routine
+
+`brew install xcodegen`; I then own `apple/{ios,tvos}/project.yml` and the `.xcodeproj` becomes generated build
+output (flip the `.gitignore` line and delete the committed projects). Honest notes: XcodeGen is **not** bundled
+with Xcode, and its development pace has slowed — though its input format barely changes.
+**Not needed to start.** The reason it is no longer the default: synchronized folder groups already solve the
+only problem that mattered — adding a file without touching the project.
 
 ## 3. The loop, per round
 
@@ -79,7 +120,7 @@ lost on the next generate. This is the one habit that makes the whole arrangemen
 cd /workspace/projects/rkm-cinema
 git fetch origin                          # never trust origin/* without this
 git pull --ff-only                        # pick up anything he pushed back
-#   ... write the Swift / project.yml ...
+#   ... write the Swift ...
 git add -A && git commit -m "..."
 bash .git/push_branch.sh feat/apple-clients
 ```
@@ -90,20 +131,24 @@ bash .git/push_branch.sh feat/apple-clients
 cd ~/dev/rkm-cinema && ./apple/scripts/mac-round.sh ios      # or: tvos
 ```
 
-That script pulls, regenerates the project, builds, and drops a plain-text build log into `apple/logs/`.
-⚠ **It has not been run yet** — no Xcode on the Windows side, so it is written-but-unverified; expect one round
-of fixing its flags on the first real use.
+It pulls, builds, and drops a plain-text build log into `apple/logs/`, printing a **short** summary (the errors,
+then the tail) — a full `xcodebuild` log is thousands of lines. Add `--sim` to install and launch on a simulator.
+(If we ever move to XcodeGen it also regenerates the project first — the script handles both.)
 
-Then it is Xcode for run/install/screenshot, plus `log stream` per `LOGGING.md` §7.
+⚠ **It has not been run yet** — no Xcode on the Windows side, so it is written-but-unverified; expect one round
+of fixing its flags on first real use.
+
+Then: Xcode for run/install/screenshot, plus `log stream` per `LOGGING.md` §7.
 
 ## 4. The rules that keep the loop honest
 
-1. **One writer at a time.** I write code; he tests. He must not edit sources in Xcode — a fix that only exists
-   on the Mac is a fix that gets overwritten by the next pull.
-2. **Pull before starting, push before handing back** — including any `project.yml` change.
+1. **One writer at a time.** I write code; he tests. He must not edit sources in Xcode — a fix that exists only
+   on the Mac is a fix that the next pull overwrites.
+2. **Pull before starting, push before handing back.**
 3. **I fetch before trusting a ref.** A token-URL push does not update local `origin/*`.
-4. **Nothing is generated in the GUI.** Project settings live in `project.yml`; `.xcodeproj` is build output.
-5. **Testing evidence comes back as text I can read**: the build log, the `log stream` tail, and screenshots
+4. **The project file is his, once** (the GUI steps in §2) — then it is nobody's: with synchronized groups it
+   never needs editing again. If a project change *does* become routine, that is the signal for §2.1.
+5. **Testing evidence comes back as text I can read**: the build summary, the `log stream` tail, and screenshots
    with the **debug HUD visible** (`LOGGING.md` §3, §8). "It doesn't work" is not actionable; a HUD screenshot
    plus the log tail for that correlation id is.
 6. **Line endings are LF everywhere, pinned** in `.gitattributes`. Do not add `*.ps1 eol=crlf` — the existing

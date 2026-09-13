@@ -16,8 +16,8 @@ apple/
 ```
 
 ⚠ **Read [`WORKFLOW.md`](WORKFLOW.md) before touching either folder** — the two-machine loop
-(all development here, **the Mac is testing only**, GitHub as the only bridge) and why the Xcode
-projects are **generated from `project.yml`** rather than created in Xcode's GUI.
+(all development here, **the Mac is testing only**, GitHub as the only bridge) and the one-time
+Xcode step in §2 — he creates each project once, and after that the agent adds sources freely.
 
 ⚠ **Read [`LOGGING.md`](LOGGING.md) before writing any app code** — extensive logging is a Phase 0
 requirement, not a later addition: the Mac can only report what the apps can tell it, so a missing log

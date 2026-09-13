@@ -46,16 +46,22 @@ reports `{'library_ids': []}` with the card reading **"No libraries"**. Restored
 **Gates at hand-off:** `npx tsc --noEmit` clean · **321 vitest** (was 274; +47) · `VITE_ENABLE_REACT=1
 npm run build` ✓ · **6 browser checks green** (`check_household_ui` 8/8 scenarios, `check_nav_access`,
 `check_profile_picker`, `check_login_flow`, `check_password_change`, `check_library_scan`) ·
-`check_md_links.py` ✓ · backend untouched (`git diff --stat main -- backend` empty).
+`check_md_links.py` ✓ · backend untouched (`git diff --stat main -- backend` empty) and its FULL suite
+green — **1107 passed, 0 failed** — once the shell pollution described below was removed.
 
-**⚠ Unrelated pre-existing red, found while running the backend gate:** `pytest -q` = **1106 passed,
-1 failed** — `tests/test_jellyfin_provider.py::test_runtime_loader_merges_runtime_json` (asserts the
-provisioner's `runtime.json` supplies `JELLYFIN_API_KEY`; it reads `None`). The backend tree is
-**byte-identical to `main`** (`git diff --stat main -- backend` empty), so this is NOT from this
-branch. Reproduced standalone; `JELLYFIN_API_KEY` IS in `Config._get_all_keys()` and a hand-replay of
-the merge block DOES set it, which points at the runtime layer inside `Config._load()` rather than at
-the test. **Not diagnosed — worth its own session**, and only affects the runtime.json fallback (the
-container gets the rendered `.rkm.env`).
+**⚠ A red I first MIS-REPORTED, and the lesson — corrected in the same session.** The backend gate
+showed `1 failed` (`test_runtime_loader_merges_runtime_json`: the provisioner's `runtime.json` key reads
+`None`), and because the backend tree is byte-identical to `main` I told the user it was a pre-existing
+red on `main`. **That was wrong, and it is worth the ink:** my own first command of the session ran
+`set -a; . /workspace/.env; set +a` (to get `GITHUB_TOKEN` for a `git fetch`), and **this tool shell
+PERSISTS exported environment between commands** — so all 22 keys of `/workspace/.env` were in the
+process environment of every later command, including `JELLYFIN_API_KEY=''`. `Config._load()` ends with
+a real-environment layer (`self._env_passthrough(os.environ)`) that overrides **both** the `.env` file
+and the `runtime.json` merge for every known key, and an EMPTY-but-PRESENT value beats both
+(`env.get(...) or None` → `None`). Proof: `env -u JELLYFIN_API_KEY python -m pytest -q` →
+**1107 passed, 0 failed**. So: **never `set -a; . /workspace/.env` in the tool shell — source it inside
+a script** (the same rule the push token already had). Generalise: before blaming a test, check whether
+the SHELL is lying to it.
 
 **Next:** he deploys web + eyeballs (`Household` from the account menu → header/counts/cards → each
 modal → your own card has no ⋯). Then: **merge `feat/household-ux` → `main`** on his word, and the

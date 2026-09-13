@@ -1,4 +1,23 @@
-## ▶ ⚠⚠ **APPLE PHASE 0 — THE OVERLAY'S TOGGLE WAS 59pt TOO LOW AND HAD NEVER FIRED ONCE** (2026-09-14, latest) · branch **`feat/apple-clients`** (tip = `git log --oneline -1`) · code: **`apple/ios/RKMCinema/Debug/HUDToggle.swift`** (rewritten), `App/AppRootView.swift`, `App/AppModel.swift`, `App/AppLog.swift`, `Server/ServerSetupView.swift` · docs: **`apple/LOGGING.md` §4**, **`apple/ios/README.md`** · ⚠ **UI change: Mac-only, unverified until he builds it** — nothing in `backend/`, `frontend/` or the deployed stack was touched
+## ▶ ⚠ **APPLE PHASE 0 — MY OWN FIX FAILED TO COMPILE: ONE AMBIGUOUS `.zero`. REPRODUCED HERE WITHOUT AN SDK, THEN FIXED** (2026-09-14, latest) · branch **`feat/apple-clients`** · file: **`apple/ios/RKMCinema/Debug/HUDToggle.swift`** · doc: **`apple/WORKFLOW.md` §5** (new subsection) · ⚠ still **UI = Mac-only, unverified**
+
+**His paste:** the `xcodebuild` tail — `SwiftCompile … HUDToggle.swift … (3 failures)`. ⚠ **It did not include the `error:` lines**, and `mac-round.sh` prints those just above that block; asking for them would have been a round trip, and there was a faster way to the same certainty.
+
+**⚠ WHAT THE FAILURE LIST ALREADY TOLD US:** only `HUDToggle.swift` failed to compile. Everything else I changed in that commit — `AppRootView.swift`, `AppLog.swift`, `AppModel.swift`, `ServerSetupView.swift` — **compiled**, which is real evidence about those four files and narrowed the search to one.
+
+**⚠⚠ THE ERROR, REPRODUCED IN THE SANDBOX WITH A REAL COMPILER — NO SDK NEEDED.** The sandbox has no UIKit, but this was not an API-availability problem: it was an **overload** problem, and *that* is a pure Swift question. `swiftc -parse` on the file passed with no output (so it was never a syntax fault), which left exactly one candidate that `convert` is famous for:
+
+```
+error: ambiguous use of 'zero'
+```
+`UIView.convert` is overloaded on `CGPoint` and `CGRect`, so `convert(.zero, to: window)` has **two equally good candidates** and the compiler refuses to guess. Reproduced by mimicking the two overloads with plain structs and the same `.zero` member, then `swiftc -typecheck` — see `apple/WORKFLOW.md` §5 for the ten-line reproducer. **Fixed: `convert(CGPoint.zero, to: window)`.**
+
+**The rule this earns, now written into `WORKFLOW.md` §5:** ⚠ **a bare `.member` at a call site whose function has overloads is a coin toss — spell the type.** And the second lesson, about my own checking: **`swiftc -parse` proves *nothing* about this class of error.** Both of my static checks — the brace balance and `check-imports.py` — are *name*-based and structurally could not have caught it. A targeted typecheck of a mimicked shape can.
+
+**⚠ Two further hardening changes made in the same pass, so the next round is not spent on the same class of thing:** the chip's initialiser is now `override init(frame: CGRect)` (with `ToggleChipView(frame: .zero)`), because `init(frame:)` is the initialiser `UIView` actually *declares* — the inherited bare `init()` is legal here (I verified the rule with `-typecheck`: it is fine while the inherited `init()` is a convenience initialiser) but it depends on a subtlety of the ObjC importer that is not worth betting a build round on. Every `.zero` in the reproducer's blast radius was then swept: the only bare ones left are inside `frame:` parameters, where the parameter type makes them unambiguous.
+
+**⚠ WHAT IS STILL NOT VERIFIED, unchanged:** the chip has still never been compiled on the Mac. The `.zero` fault is *identified* with certainty, but "the error is fixed" and "the file compiles" are different claims, and only his build makes the second one. Everything else in Phase 0 remains open — the `LOGGING.md` §9 items (one file with every request, status, duration and correlation id; a HUD id joined to real log lines; the redaction grep over a real run), sign-in → playback → sign-out on the device, a deliberately wrong address → *Change server*, and **`IPHONEOS_DEPLOYMENT_TARGET = 26.5`** — still waiting on one answer from him: **what does his iPad run?**
+
+## ▶ ⚠⚠ **APPLE PHASE 0 — THE OVERLAY'S TOGGLE WAS 59pt TOO LOW AND HAD NEVER FIRED ONCE** (2026-09-14) · branch **`feat/apple-clients`** (tip = `git log --oneline -1`) · code: **`apple/ios/RKMCinema/Debug/HUDToggle.swift`** (rewritten), `App/AppRootView.swift`, `App/AppModel.swift`, `App/AppLog.swift`, `Server/ServerSetupView.swift` · docs: **`apple/LOGGING.md` §4**, **`apple/ios/README.md`** · ⚠ **UI change: Mac-only, unverified until he builds it** — nothing in `backend/`, `frontend/` or the deployed stack was touched
 
 **His report, twice verbatim:** *"i am clicking the top left corner for the overlay nothing comes up."* It was an exact report, and my previous session had no answer for it.
 

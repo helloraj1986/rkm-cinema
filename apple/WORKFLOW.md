@@ -185,6 +185,35 @@ Then: Xcode for run/install/screenshot, plus `log stream` per `LOGGING.md` §7.
 | **Pure Swift** — the shared package (address parse/normalise/persist) and the **log redactor** have no UIKit, so they compile and unit-test on Linux. ⚠ The sandbox is **Debian 13, glibc 2.41**; swift.org ships **Ubuntu 24.04** builds (glibc floor 2.39, reachable — verified 2026-09-13). I will **install the toolchain and actually run `swift test`**, and say plainly if it does not work rather than claiming a green run. | **Everything UI**: SwiftUI, `WKWebView`, `AVPlayer`, focus engine, ATS behaviour, signing, and any Apple SDK API. **A build that has not run on the Mac is not verified** — I will never describe it as working. |
 | `backend/` (pytest) · `frontend/` (tsc · vitest · build) — the existing loop. | Screenshots and live behaviour — his side of the loop, and the only real evidence for UI claims. |
 
+### ⚠ A *semantic* error CAN be reproduced here — by mimicking the overloads
+
+There is no UIKit here, but a Swift failure that is really a **language or overload question** is
+reproducible in pure Swift — and it is worth the two minutes, because guessing costs him a build round.
+⚠ **`swiftc -parse` passing proves nothing about it:** `-parse` only parses, and a type/overload error
+passes it happily. That is exactly how the first failure of the corner chip got through me.
+
+Worked example — the toggle's first compile failure, 2026-09-14. Mimic the shape, then typecheck:
+
+```swift
+class V { static let zero = V() }
+struct P { static let zero = P() }
+struct R { static let zero = R() }
+extension V {
+    func convert(_ p: P, to v: V?) -> P { p }
+    func convert(_ r: R, to v: V?) -> R { r }
+}
+let v = V(); let w: V? = nil
+let out = v.convert(.zero, to: w)      // error: ambiguous use of 'zero'
+```
+
+`UIView.convert` is overloaded on `CGPoint` and `CGRect` in precisely that shape, so
+`convert(.zero, to: window)` is ambiguous — which is what failed the build. Fixed by spelling
+`CGPoint.zero`. **The rule to carry forward: a bare `.member` at a call site whose function has
+overloads is a coin toss — spell the type.** The same two minutes also settles "does a `UIView`
+subclass's bare `init()` need `override`?" (it does not, while the inherited `init()` is a
+*convenience* initialiser; `override init(frame:)` is unambiguous either way and is what the code uses).
+
+
 ## 6. The handoff artefact
 
 Each phase ends with a block at the top of `docs/PROGRESS.md`: what was built, branch + commit, gates actually

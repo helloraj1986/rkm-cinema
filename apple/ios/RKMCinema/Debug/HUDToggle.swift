@@ -56,7 +56,13 @@ struct HUDToggleChip: UIViewRepresentable {
     static let upwardShift: CGFloat = -100
 
     func makeUIView(context: Context) -> ToggleChipView {
-        let view = ToggleChipView()
+        // ⚠ `ToggleChipView(frame:)`, not the inherited no-argument `init()`, and the class below
+        // overrides the same initialiser. `UIView` inherits `init()` from `NSObject`, so defining a
+        // bare `init()` in a subclass is a *redeclaration* of an inherited initialiser — which
+        // needs `override`, and reads as a type error in the build log rather than as a mistake in
+        // the code. `init(frame:)` is the initialiser `UIView` actually declares, so overriding it
+        // is unambiguous.
+        let view = ToggleChipView(frame: .zero)
         view.onToggle = onToggle
         return view
     }
@@ -76,12 +82,14 @@ final class ToggleChipView: UIView {
     /// corner), and keeping it as a subview means `allowsHitTesting` never has to be reasoned about.
     private let marker = UIImageView()
 
-    init() {
-        super.init(frame: .zero)
+    private static let markerSize: CGFloat = 26
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
         // ⚠ Clear is fine *and* fully tappable: `UIView.hitTest` is decided by `point(inside:)` and
         // `isUserInteractionEnabled`, never by alpha. The page shows through; only the touches are
         // taken, and only in this rectangle.
-        backgroundColor = .clear
+        backgroundColor = UIColor.clear
         isOpaque = false
 
         buildMarker()
@@ -100,25 +108,26 @@ final class ToggleChipView: UIView {
         marker.contentMode = .center
         // A translucent disc, so the glyph stays legible over a light *or* dark page.
         marker.backgroundColor = UIColor.black.withAlphaComponent(0.32)
-        marker.layer.cornerRadius = Self.markerSize / 2
+        marker.layer.cornerRadius = ToggleChipView.markerSize / 2
         marker.isUserInteractionEnabled = false
         addSubview(marker)
     }
 
-    private static let markerSize: CGFloat = 26
-
     override func layoutSubviews() {
         super.layoutSubviews()
-        guard let window else { return }
+        guard let hostWindow = window else { return }
         // ⚠ Positioned against the top-left of the **display**, not of this view. The frame is
         // deliberately shifted above the display's corner (`HUDToggleChip.upwardShift`), so a fixed
         // offset within the frame would draw the mark off the top of the screen. `max(6, …)` is the
         // other case: if the frame was laid out *below* the window's top after all — i.e. the
         // assumption this fix is built on stops holding — the mark still lands somewhere visible
         // instead of disappearing, which is how you tell the two apart.
-        let origin = convert(.zero, to: window)
-        let top = max(6, 6 - origin.y)
-        marker.frame = CGRect(x: 8, y: top, width: Self.markerSize, height: Self.markerSize)
+        //
+        // ⚠ `CGPoint.zero`, spelled out: `convert` is overloaded for `CGPoint` and `CGRect`, and a
+        // bare `.zero` leaves the compiler with two equally good candidates.
+        let origin = convert(CGPoint.zero, to: hostWindow)
+        let top: CGFloat = max(6, 6 - origin.y)
+        marker.frame = CGRect(x: 8, y: top, width: ToggleChipView.markerSize, height: ToggleChipView.markerSize)
     }
 
     // MARK: - Gestures
@@ -131,7 +140,7 @@ final class ToggleChipView: UIView {
         let tap = UITapGestureRecognizer(target: self, action: #selector(handleTap))
         addGestureRecognizer(tap)
 
-        let hold = UILongPressGestureRecognizer(target: self, action: #selector(handleHold))
+        let hold = UILongPressGestureRecognizer(target: self, action: #selector(handleHold(_:)))
         hold.minimumPressDuration = 0.5
         addGestureRecognizer(hold)
     }

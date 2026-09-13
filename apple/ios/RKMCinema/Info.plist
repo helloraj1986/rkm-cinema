@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  RKMCinema — the app's real Info.plist.
+
+  ⚠ POINT `INFOPLIST_FILE` AT THIS FILE (Build Settings → INFOPLIST_FILE = RKMCinema/Info.plist),
+  and set GENERATE_INFOPLIST_FILE = NO. It exists as a file rather than as INFOPLIST_KEY_* build
+  settings for one reason: **App Transport Security is a nested dictionary**, which the
+  INFOPLIST_KEY_* settings cannot express (apple/WORKFLOW.md §2).
+
+  Skip it and the app appears broken: the address is typed by a human and may be plain
+  http:// to a bare LAN IP, which iOS blocks by default (docs/APPLE_CLIENTS_PLAN.md §2.2). The
+  launch banner logs the resolved ATS values so a mis-pointed setting is visible immediately.
+-->
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>RKMCinema</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$(MARKETING_VERSION)</string>
+	<key>CFBundleVersion</key>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>LSRequiresIPhoneOS</key>
+	<true/>
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<false/>
+	</dict>
+	<!-- An empty UILaunchScreen is the documented way to get the default launch screen; omit it
+	     and the app is letterboxed on modern devices. -->
+	<key>UILaunchScreen</key>
+	<dict/>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+	<key>UISupportedInterfaceOrientations~ipad</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationPortraitUpsideDown</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+	<!--
+	  ⚠ App Transport Security. Both keys are set deliberately.
+
+	  NSAllowsArbitraryLoads: the address is user-entered at runtime, so it can be ANY host — a raw
+	  LAN IP, a Tailscale name, a future domain. A build-time exception list cannot cover a
+	  runtime address, and `NSAllowsLocalNetworking` alone has never been a reliable guarantee for a
+	  bare private IPv4 literal such as http://192.168.1.10:8124, which is this stack's documented
+	  LAN address (apple/README.md). This is the configuration that actually works for a household
+	  app. (App Review asks for a justification for NSAllowsArbitraryLoads — irrelevant unless this
+	  is ever submitted to the store.)
+
+	  NSAllowsLocalNetworking is kept as well: it is the narrower, correct declaration for the local
+	  case and costs nothing to state alongside.
+	-->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+</dict>
+</plist>

@@ -59,25 +59,49 @@ enables TestFlight.
 one is how projects get corrupted. So: **he creates both projects once (a ~5-minute GUI job), commits them, and
 I write every source file after that.**
 
-### Order matters — he creates the projects FIRST, then I write into them
+### Order matters — the projects come first, and Phase 0 arrived around it
 
-Xcode's new-project template writes `RKMCinemaApp.swift` and `Assets.xcassets` into the source folder. Writing
-my sources first would collide with those files. So the sequence is:
+Xcode's new-project template writes `RKMCinemaApp.swift` and `Assets.xcassets` into the source folder, so
+writing my sources first would normally collide with those files. The order is therefore:
 
-1. **He** creates both projects and pushes (below).
-2. **I** replace the template sources with the real ones.
+1. **He** creates both projects (below).
+2. **I** write every real source file into them.
 
-Meanwhile Phase 0's other half — the `apple/Shared/` package — is **not** blocked by this: it needs no Xcode, so
-I write and `swift test` it in the sandbox while he does the GUI step.
+⚠ **Phase 0 ran in the other order, deliberately.** His project did not exist yet and he asked for the
+sources anyway, so `apple/ios/RKMCinema/` is already populated. That changes only step 1 — it becomes the
+**collision-free variant** below (build the project scratch, move only the `.xcodeproj` in). Nothing else
+about the arrangement changes, and `apple/Shared/` was never affected by any of it: it needs no Xcode,
+which is why it was written and `swift test`ed first.
 
 ### Creating each project
 
-In Xcode: **File → New → Project** → `iOS` → **App** (Product Name `RKMCinema`), save into **`apple/ios/`**.
-Then the same for `tvOS` → **App** (Product Name `RKMCinemaTV`), save into **`apple/tvos/`**.
-Interface **SwiftUI**, Language **Swift**. ⚠ **Untick "Create Git repository"** — the repo already exists.
+⚠ **This is the Phase 0 variant, because `apple/ios/RKMCinema/` already holds the real sources.**
 
-Xcode creates `apple/ios/RKMCinema.xcodeproj` beside the `apple/ios/RKMCinema/` source folder — which is exactly
-the documented layout, so nothing needs moving. Commit and push.
+1. In Xcode: **File → New → Project** → `iOS` → **App**. Product Name `RKMCinema`, Interface **SwiftUI**,
+   Language **Swift**, ⚠ **untick "Create Git repository"** (the repo already exists). **Save it somewhere
+   scratch** — e.g. `~/Desktop/rkm-scratch` — and **not** into `apple/ios/`: Xcode would otherwise write its
+   own template `RKMCinemaApp.swift` and `Assets.xcassets` over ours.
+2. Move only the project across and throw the template away:
+
+   ```bash
+   cd ~/dev/rkm-cinema
+   mv ~/Desktop/rkm-scratch/RKMCinema.xcodeproj apple/ios/
+   rm -rf ~/Desktop/rkm-scratch
+   git status      # ⚠ expect ONLY the new .xcodeproj. If a source file shows as modified, Xcode
+                   #    overwrote it — restore it:  git checkout -- apple/ios/RKMCinema/
+   ```
+
+   This works because Xcode 16's source reference is the **synchronized folder `RKMCinema/`**, stored
+   relative to the project. So the project simply lands beside a folder of that name and picks up every
+   source file inside it. Nothing else needs moving.
+3. Open `apple/ios/RKMCinema.xcodeproj` and confirm the navigator lists `App/`, `Server/`, `Shell/`,
+   `Debug/` and `Info.plist` — that is the check that the synchronized group found the real sources.
+4. Work the settings in the table below, then commit and push. The same steps with `RKMCinemaTV` into
+   `apple/tvos/` when Phase 1 starts.
+
+⚠ **Then share the scheme** (Product → Scheme → Manage Schemes → tick **Shared**). `mac-round.sh` builds with
+`-scheme RKMCinema`, and a scheme that lives only in `xcuserdata` is not in the clone — a fresh checkout would
+fail with "scheme not found", for a reason that looks nothing like the cause.
 
 ### ⚠ The check that decides whether the loop stays smooth
 

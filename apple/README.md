@@ -9,7 +9,8 @@ apple/
 ├── WORKFLOW.md        ← ⚠ the two-machine loop: author on Windows, TEST on the Mac
 ├── LOGGING.md         ← the dev-phase logging/diagnostics spec (HUD · correlation ids · redaction)
 ├── Shared/            ← local Swift package: code BOTH apps genuinely need (deliberately tiny)
-│   └── Sources/RKMServerKit/     the server ADDRESS — parse, normalise, persist
+│   └── Sources/RKMServerKit/     the server ADDRESS (parse · normalise · persist)
+│                                 + the log REDACTOR and the rolling file log (LOGGING.md)
 ├── ios/               ← RKMCinema: a WKWebView shell around the LIVE web UI
 ├── tvos/              ← RKMCinemaTV: a native SwiftUI client (tvOS has no browser)
 └── scripts/           ← generate-api.sh: regen the Swift API types from the frozen contract
@@ -32,7 +33,7 @@ id** that the HUD displays — that is what makes a screenshot and a log join up
 | Why | iOS ships WebKit — the existing UI *is* the app | **tvOS has no WebKit at all**, so a native UI is the only option |
 | Screens | 2 (server address → web shell) | 7 (address, sign-in, profiles, home, browse, detail, player) |
 | API client | **none** — the web UI makes its own `/api` calls, same-origin | yes — generated from `docs/api/openapi.v1.json` |
-| New code | ~100 lines of Swift | thousands |
+| New code | thin — the shell itself is small; the dev-phase logging and debug overlay are the bulk | thousands |
 | Cost | 1–2 days | 2–4 weeks of evenings |
 
 **Consequence worth remembering:** because `ios/` loads the *live* UI, every future change to

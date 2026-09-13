@@ -224,20 +224,26 @@ apple/
 ├── Shared/                       local Swift package: RKMServerKit
 │   └── Sources/RKMServerKit/
 │       ├── ServerAddress.swift   parse + normalise a typed address (add scheme, strip trailing /)
-│       └── ServerStore.swift     persist it (UserDefaults)
-├── ios/                          RKMCinema — the WKWebView shell (~100 lines of Swift)
+│       ├── ServerStore.swift     persist it (UserDefaults)
+│       ├── LogRedactor.swift     ⚠ the ONE place a URL/header/cookie is made safe to log
+│       ├── CorrelationID.swift   the id that joins a screenshot to a log file
+│       ├── LogEntry.swift        level · category · line format
+│       ├── RollingFileLog.swift  the capped rolling file (LOGGING.md §1 layer 2)
+│       ├── LogRingBuffer.swift   the last N lines, for the HUD
+│       └── RKMLog.swift          os_log + file + ring, redacted on the way in
+├── ios/                          RKMCinema — the WKWebView shell (thin; the logging is the bulk)
 │   ├── README.md                 spec, non-negotiables, acceptance
-│   ├── project.yml               ← the PROJECT SOURCE (xcodegen ⇒ .xcodeproj, git-ignored)
-│   └── RKMCinema/
+│   ├── RKMCinema.xcodeproj       ← created ONCE in Xcode, then COMMITTED (WORKFLOW.md §2)
+│   └── RKMCinema/                the target's synchronized source folder
 │       ├── RKMCinemaApp.swift    @main — Setup or Shell, decided by the stored address
 │       ├── App/AppRootView.swift routing
 │       ├── Server/               ServerSetupView · UnreachableServerView
 │       ├── Shell/                WebShellView (WKWebView) · WebShellModel (load/nav failure)
-│       ├── Config/Info.plist     NSAppTransportSecurity
+│       ├── Info.plist            NSAppTransportSecurity (⚠ the file INFOPLIST_FILE points at)
 │       └── Assets.xcassets
 ├── tvos/                         RKMCinemaTV — the native client
 │   ├── README.md                 spec, screen budget, exclusions, acceptance
-│   ├── project.yml               ← the PROJECT SOURCE (xcodegen ⇒ .xcodeproj, git-ignored)
+│   ├── RKMCinemaTV.xcodeproj     ← created ONCE in Xcode, then COMMITTED (WORKFLOW.md §2)
 │   └── RKMCinemaTV/
 │       ├── RKMCinemaTVApp.swift  @main
 │       ├── Server/               screen #0 — PRE-FILLED address field

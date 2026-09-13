@@ -194,7 +194,9 @@ class App:
     def _sign_in_refusal(status: int) -> str:
         """The app's refusal, named. Never echoes the username or the password."""
         return {
-            401: "the app refused those credentials (wrong administrator password?)",
+            401: ("the app refused those credentials - check RKM_JELLYFIN_ADMIN_USER and "
+                  "RKM_JELLYFIN_ADMIN_PASSWORD in .env against the administrator account's "
+                  "CURRENT password"),
             403: "that account is not a media-server ADMINISTRATOR — only an administrator may sign in",
             503: "the app could not reach the media server to verify the account",
         }.get(status, f"the sign-in failed with HTTP {status}")

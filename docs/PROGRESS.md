@@ -1,4 +1,68 @@
-## ▶ 📋 **PLAN PARKED — Household page + account menu redesign** (2026-09-13) · scoped and ready in **`docs/HOUSEHOLD_UX_PLAN.md`** · branch **`feat/household-ux`** cut from `main` for the implementation · **NO CODE YET — next session executes it**
+## ▶ ✅ **HOUSEHOLD REDESIGN — PHASE 1 BUILT** (2026-09-13) · branch **`feat/household-ux`** · gates green (**321 vitest · tsc · build · 6 browser checks · docs links**) · **NOT merged — his eyeball first** · his deploy is **web-only**: `docker compose -p rkm-bundled up -d --build web`
+
+**His instruction, verbatim:** *"for rkm-cinema app continue household UX"* — execute
+`docs/HOUSEHOLD_UX_PLAN.md` Phase 1, the plan this branch was cut for. **Done.** The plan's §1/§2 were
+already shipped 2026-09-13; this session did §2's remaining menu delta + all of §3 + §4 + his §7 QA.
+
+| | |
+|---|---|
+| What moved | `HouseholdView.tsx` (599 lines of flat rows + inline forms) → **header · three summary cards · one card per profile · five modals** (Library access, Password, **Rename**, **Remove**, Add member). New: `features/admin/HouseholdModals.tsx`, `features/admin/ui.ts`, 8 new pure helpers in `features/admin/lib.ts` (+16 unit cases). |
+| Mutations | **Untouched** — same routes, same bodies (`create / policy / rename / password / delete`). Only the surface moved, per his constraint. |
+| Menu delta (§2) | Followed the mockup: **Household · Account & password · Switch profile · Settings · Sign out**, with an `ADMIN` pill on Household (`accountDestinations`, new `Settings` entry, `PopupMenu` gained an optional `tag`). |
+| The decision he took | §3.5 **Option A — no per-library counts**: *"Skip the counts — no API change"*. The modal's checklist is names only; nothing new is fetched. |
+| Two dialogs beyond his three | `Rename` and `Remove` had to move too: deleting the inline forms without a modal would have removed the capability, not the clutter. Same rails (`renameIssue`, `confirmsName`), same payloads. |
+| Deliberately NOT done | The password SCREEN (`features/settings/PasswordView`) still titles itself **"My password"** while the menu entry now says **Account & password** (his mockup's label). Flagged for his eyeball; renaming the screen is a one-liner if he wants it. |
+
+**⚠ The one real bug this phase found, and fixed — in the payload, not the layout.** The old
+"Folders" form sent `library_ids: []` for **Every library**. `POST /admin/users/{id}/policy` passes the
+list straight to `set_folder_access(ids)`, whose `enable_all` defaults to **False**, and the request
+model's docstring says *"an empty list means none"* — so ticking **Every library** and saving granted
+the member **NOTHING** (the card then read "Sees: None"). It is now `folderSelectionPayload()` (pure,
+tested): *every library* ⇒ the full id list. **Consequence to know:** the route has no way to express
+`EnableAllFolders=true` at all, so after such a save the chip honestly names the libraries instead of
+saying "Every library", and a library added later is not auto-granted. `library_ids: None` (create
+with every library) is unchanged.
+
+**Falsified, not assumed** (the repo's rule): both guards were broken on purpose and the check went
+red with the right messages — (a) rendering the ⋯ menu on your OWN card ⇒ *"YOUR OWN card must NOT
+offer the ⋯ menu"*; (b) `folderSelectionPayload` back to `[]` ⇒ the unit test fails **and** scenario C
+reports `{'library_ids': []}` with the card reading **"No libraries"**. Restored + re-run green.
+
+**The traps this session paid for (do not pay again):**
+1. ⚠ **A stale dev server makes a fixed screen look broken.** Vite's watcher does not fire on this
+   mount: four "failures" were all pre-edit modules. Kill the PID holding `:5199`
+   (`kill -9 $(ss -ltnp | grep 5199 | grep -oP 'pid=\K[0-9]+')`), start ONE vite, and grep the SERVED
+   module for a post-edit token before believing anything. It bit twice here.
+2. **A probe must select by testid, not by class.** The first chip probe used `span.rounded-full` and
+   picked up the avatar circle (initials `AD`/`GU`), so every chip assertion was off by one element.
+   The chips carry `data-testid="library-chip"` now.
+3. **`Dialog`'s effect depends on `onClose`** — pass a STABLE callback (the modals hold it in a ref),
+   otherwise a parent re-render re-runs the focus effect and steals focus mid-typing.
+4. **A CSS-uppercase label is invisible to `innerText`** — the badge labels are uppercase in the
+   source (`memberBadges`), so the browser check reads them as written.
+5. Add-member's default is still **every library ticked** (the app's own choice); `touched` — not
+   "is anything ticked" — is what switches over, so unticking every box stays possible.
+
+**Gates at hand-off:** `npx tsc --noEmit` clean · **321 vitest** (was 274; +47) · `VITE_ENABLE_REACT=1
+npm run build` ✓ · **6 browser checks green** (`check_household_ui` 8/8 scenarios, `check_nav_access`,
+`check_profile_picker`, `check_login_flow`, `check_password_change`, `check_library_scan`) ·
+`check_md_links.py` ✓ · backend untouched (`git diff --stat main -- backend` empty).
+
+**⚠ Unrelated pre-existing red, found while running the backend gate:** `pytest -q` = **1106 passed,
+1 failed** — `tests/test_jellyfin_provider.py::test_runtime_loader_merges_runtime_json` (asserts the
+provisioner's `runtime.json` supplies `JELLYFIN_API_KEY`; it reads `None`). The backend tree is
+**byte-identical to `main`** (`git diff --stat main -- backend` empty), so this is NOT from this
+branch. Reproduced standalone; `JELLYFIN_API_KEY` IS in `Config._get_all_keys()` and a hand-replay of
+the merge block DOES set it, which points at the runtime layer inside `Config._load()` rather than at
+the test. **Not diagnosed — worth its own session**, and only affects the runtime.json fallback (the
+container gets the rendered `.rkm.env`).
+
+**Next:** he deploys web + eyeballs (`Household` from the account menu → header/counts/cards → each
+modal → your own card has no ⋯). Then: **merge `feat/household-ux` → `main`** on his word, and the
+wider programme (`RKM-CINEMA_NEW_UX/…Design_Spec.md`, 87 sections, its own 9 phases) is the next
+multi-session body of work — it needs a delta pass against the real routes first (plan §6).
+
+## ▶ 📋 **PLAN PARKED — Household page + account menu redesign** (2026-09-13) · scoped and ready in **`docs/HOUSEHOLD_UX_PLAN.md`** · branch **`feat/household-ux`** cut from `main` for the implementation · **NO CODE YET — next session executes it**  → ✅ **DONE — same day, next session** (see the block above: Phase 1 built + gated on `feat/household-ux`). Kept for the brief it carries.
 
 **His instruction, verbatim:** *"inside the rkm-cinema app , there is a folder called household_ux, it
 has the ux of the house hold tab and other ux patterns which i need you to implement in next session

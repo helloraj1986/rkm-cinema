@@ -30,6 +30,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import secrets
 import socket
 import threading
@@ -77,13 +78,47 @@ CLIENT_HEADER = ('MediaBrowser Client="RKM Cinema", Device="RKM Cinema Web", '
 #: device would invalidate the very session asking for the change.
 VERIFY_DEVICE_ID = "rkm-password-verify"
 
+#: The device id the OPERATION TOOLS sign in on (``tools/rkm_common.py::App``). Same reason as
+#: :data:`VERIFY_DEVICE_ID`, from the other direction: a diagnostic tool that signed in on the app's
+#: own device would rotate the BROWSER's token away and leave the running session answering 401 on
+#: every media call — the §6h symptom, caused by running a tool.
+TOOLS_DEVICE_ID = "rkm-tools"
+
+#: Used when a caller SUPPLIED a device id that is unusable once sanitised. Deliberately NOT the
+#: app's own device: falling back to that would make the caller rotate the BROWSER's token away,
+#: which is precisely the harm the ``device_id`` parameter exists to avoid.
+UNIDENTIFIED_DEVICE_ID = "rkm-unidentified"
+
+#: Device ids are CLIENT-SUPPLIED names that end up inside a header value we build, so they are
+#: constrained rather than trusted: a quote would break out of ``DeviceId="..."`` and a control
+#: character is header injection.
+_DEVICE_ID_ALLOWED = re.compile(r"[^A-Za-z0-9._:-]")
+DEVICE_ID_MAX = 64
+
+
+def _safe_device_id(device_id: str) -> str:
+    """A device id that is safe to interpolate into the ``X-Emby-Authorization`` header."""
+    return _DEVICE_ID_ALLOWED.sub("", str(device_id or "").strip())[:DEVICE_ID_MAX]
+
 
 def _client_header(device_id: str = "") -> str:
-    """The app's own client header, or one for a specific device id."""
-    if not device_id or device_id == "rkm-cinema-web":
+    """The app's own client header, or one for a specific device id.
+
+    Three cases, and the difference between the first two is the whole point of the parameter:
+
+    * **nothing asked for** ⇒ the app's own device (the browser's, unchanged);
+    * **a specific id** ⇒ that id, so a caller that is not the browser (the operation tools) signs in
+      on its own ``(device, user)`` pair and does not rotate the browser's token away;
+    * **an unusable id** ⇒ :data:`UNIDENTIFIED_DEVICE_ID`, never the app's own — a caller that asked
+      to be somebody else must not silently become the browser.
+    """
+    if not str(device_id or "").strip():
+        return CLIENT_HEADER
+    safe = _safe_device_id(device_id) or UNIDENTIFIED_DEVICE_ID
+    if safe == "rkm-cinema-web":
         return CLIENT_HEADER
     return (f'MediaBrowser Client="RKM Cinema", Device="RKM Cinema Web", '
-            f'DeviceId="{device_id}", Version="2.0"')
+            f'DeviceId="{safe}", Version="2.0"')
 
 
 # ----------------------------------------------------------------------- errors

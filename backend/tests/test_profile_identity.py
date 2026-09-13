@@ -756,7 +756,7 @@ class TestTheOwnerTokenSurvivesASwitchBack:
             def last_api_error(self):
                 return None
 
-        def fake_auth(username, password, *, config=None, transport=None):
+        def fake_auth(username, password, *, config=None, transport=None, device_id=""):
             if username == "admin" and password != "the-password":
                 raise InvalidCredentialsError("Incorrect username or password")
             user = next(m for m in members if m["name"] == username)

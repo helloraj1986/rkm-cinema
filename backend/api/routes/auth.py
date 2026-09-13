@@ -68,7 +68,8 @@ def login(payload: LoginRequest):
     """
     cfg = get_config()
     try:
-        identity = authenticate_jellyfin(payload.username, payload.password, config=cfg)
+        identity = authenticate_jellyfin(payload.username, payload.password, config=cfg,
+                                         device_id=payload.device_id)
     except InvalidCredentialsError as exc:
         # Never the username, never the password: the log line is the outcome, and
         # the message is deliberately identical for an unknown user and a bad one.

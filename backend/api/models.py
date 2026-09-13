@@ -66,6 +66,16 @@ class LoginRequest(BaseModel):
 
     username: str = ""
     password: str = ""
+    #: Which CLIENT this sign-in belongs to, as Jellyfin sees it. **Empty means the app's own
+    #: device** (``services/auth.py::CLIENT_HEADER``), which is what the browser sends and must keep
+    #: sending — leaving it empty is today's behaviour exactly.
+    #:
+    #: It exists because Jellyfin invalidates the previous token of a **(device, user) pair** on
+    #: every login: a caller that is not the browser (the operation tools, ``tools/rkm_common.py::
+    #: App``) must sign in on its OWN id, or a diagnostic run would rotate the browser's token away
+    #: and leave the running session answering 401 on every media call. Constrained by
+    #: ``services/auth.py::_safe_device_id`` before it reaches a header.
+    device_id: str = ""
 
 
 class SessionUser(BaseModel):

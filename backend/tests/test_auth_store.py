@@ -251,6 +251,73 @@ class TestAuthenticateJellyfin:
         assert "RKM Cinema" in call["headers"]["X-Emby-Authorization"]
         assert call["json_body"] == {"Username": "rajeev", "Pw": PASSWORD}
 
+    def test_the_default_device_is_the_apps_own(self):
+        """⚠ Empty means the WEB APP's device — the browser must keep exactly today's behaviour."""
+        transport = FakeTransport()
+        authenticate_jellyfin("rajeev", PASSWORD, config=FakeConfig(), transport=transport)
+        assert 'DeviceId="rkm-cinema-web"' in transport.calls[0]["headers"]["X-Emby-Authorization"]
+
+    def test_a_caller_can_sign_in_on_its_OWN_device(self):
+        """⚠ The whole point: Jellyfin rotates the previous token of a (device, user) pair on every
+        login, so a tool signing in on the app's device would kill the browser's session (§6h)."""
+        from services.auth import TOOLS_DEVICE_ID
+
+        transport = FakeTransport()
+        authenticate_jellyfin("rajeev", PASSWORD, config=FakeConfig(), transport=transport,
+                              device_id=TOOLS_DEVICE_ID)
+        header = transport.calls[0]["headers"]["X-Emby-Authorization"]
+        assert f'DeviceId="{TOOLS_DEVICE_ID}"' in header
+        assert "rkm-cinema-web" not in header
+
+    @pytest.mark.parametrize("given", [
+        'rkm-tools" , DeviceId="stolen',     # a quote would break out of DeviceId="..."
+        "rkm-tools\r\nX-Injected: 1",        # header injection
+        "rkm tools/../../etc",               # anything else unusable
+    ])
+    def test_a_device_id_cannot_break_out_of_the_header(self, given):
+        """The id is CLIENT-SUPPLIED text inside a header value, so it is constrained, not trusted.
+
+        ⚠ The id's TEXT may survive — inside the quotes it is only data. What must never survive is a
+        character that can END the value (a quote) or SPLIT the header (CR/LF), so those are what the
+        assertions are about: exactly four quoted values, and nothing after the last one.
+        """
+        transport = FakeTransport()
+        authenticate_jellyfin("rajeev", PASSWORD, config=FakeConfig(), transport=transport,
+                              device_id=given)
+        header = transport.calls[0]["headers"]["X-Emby-Authorization"]
+        assert header.count('"') == 8, f"a quote got through: {header!r}"
+        assert "\r" not in header and "\n" not in header, f"header injection: {header!r}"
+        assert header.startswith("MediaBrowser ") and header.endswith('Version="2.0"'), (
+            f"something was appended after the header's own values: {header!r}")
+
+    def test_an_unusable_device_id_never_becomes_the_apps_own(self):
+        """⚠ The safe direction. Falling back to the APP's device would rotate the browser's token
+        away — the exact harm `device_id` exists to prevent — so an unusable id gets its own name."""
+        from services.auth import UNIDENTIFIED_DEVICE_ID
+
+        transport = FakeTransport()
+        authenticate_jellyfin("rajeev", PASSWORD, config=FakeConfig(), transport=transport,
+                              device_id='"""')
+        header = transport.calls[0]["headers"]["X-Emby-Authorization"]
+        assert f'DeviceId="{UNIDENTIFIED_DEVICE_ID}"' in header
+        assert "rkm-cinema-web" not in header
+
+    def test_whitespace_alone_is_nobody_asking_for_a_device(self):
+        """A blank/whitespace id is the DEFAULT, not an unusable one: the browser is unaffected."""
+        transport = FakeTransport()
+        authenticate_jellyfin("rajeev", PASSWORD, config=FakeConfig(), transport=transport,
+                              device_id="   ")
+        assert 'DeviceId="rkm-cinema-web"' in transport.calls[0]["headers"]["X-Emby-Authorization"]
+
+    def test_a_very_long_device_id_is_truncated(self):
+        from services.auth import DEVICE_ID_MAX
+
+        transport = FakeTransport()
+        authenticate_jellyfin("rajeev", PASSWORD, config=FakeConfig(), transport=transport,
+                              device_id="a" * 500)
+        header = transport.calls[0]["headers"]["X-Emby-Authorization"]
+        assert f'DeviceId="{"a" * DEVICE_ID_MAX}"' in header
+
     @pytest.mark.parametrize("status", [401, 403])
     def test_bad_credentials_are_generic(self, status):
         with pytest.raises(InvalidCredentialsError) as excinfo:

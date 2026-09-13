@@ -165,12 +165,20 @@ def main() -> int:
     # what does OUR api report for the same folder?
     print("\n=== our api's view of the same folder ===")
     app = args.app or rc.app_base(env)
-    folders = get(app, "/api/library/folders")
+    # The app's routes need a SESSION once `RKM_AUTH_REQUIRED` is armed — a tool is not a browser.
+    client = rc.app_client(base=app, env=env)
+    if not client.signed_in:
+        print(f"  cannot read the app: {client.error}")
+    folders = client.get("/api/library/folders")
+    if isinstance(folders, dict) and folders.get("__http_error__"):
+        print(f"  the api REFUSED the call ({folders['__http_error__']}) — {client.error}")
     if isinstance(folders, dict) and "libraries" in folders:
         row = next((l for l in folders["libraries"] if l.get("name") == args.library), None)
         print(f"  library row: {row}")
         if row and row.get("folder_id"):
-            items = get(args.app, f"/api/library/folders/{row['folder_id']}/items?limit=20")
+            # ⚠ `app`, not `args.app`: without `--app` this was None, and the NEXT line would crash
+            # on `None.rstrip` — the folder-items half of this tool never ran unless it was passed.
+            items = client.get(f"/api/library/folders/{row['folder_id']}/items?limit=20")
             print(f"  items endpoint keys: {list(items)[:8] if isinstance(items, dict) else items}")
             full = (items.get("items") or []) if isinstance(items, dict) else []
             if full:

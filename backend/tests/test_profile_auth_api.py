@@ -53,7 +53,7 @@ def _authenticate(users, seen):
     compare against); a password-protected account must match. Both branches are modelled here so a
     test cannot pass against a fake that is kinder than reality.
     """
-    def fake_auth(username, password, *, config=None, transport=None):
+    def fake_auth(username, password, *, config=None, transport=None, device_id=""):
         seen.setdefault("attempts", []).append((username, password))
         for user in users:
             if user["name"] != username:

@@ -38,8 +38,12 @@ def api(tmp_path, monkeypatch):
     store = SessionStore(path=tmp_path / "sessions.json")
     seen = {}
 
-    def fake_auth(username, password, *, config=None, transport=None):
+    def fake_auth(username, password, *, config=None, transport=None, device_id=""):
+        # ⚠ The signature MIRRORS the real one, `device_id` included. A fake that tolerated fewer
+        # arguments would go on passing while the route passed a value the real function needs —
+        # which is how a stub stops being evidence (plan §6g).
         seen["username"], seen["password"] = username, password
+        seen["device_id"] = device_id
         if username != "rajeev" or password != PASSWORD:
             raise InvalidCredentialsError("Incorrect username or password")
         return JellyfinIdentity(user_id="uid-1", user_name="Rajeev", token=TOKEN)
@@ -88,12 +92,31 @@ class TestLogin:
 
     def test_credentials_are_passed_through_untouched_and_never_stored(self, api):
         _login(api.client)
-        assert api.seen == {"username": "rajeev", "password": PASSWORD}
+        # `device_id` is "" here because the BROWSER did not ask for one — which is what keeps the
+        # web app's own device (the pair Jellyfin rotates on login) exactly as it was.
+        assert api.seen == {"username": "rajeev", "password": PASSWORD, "device_id": ""}
         # The display name is kept (the UI shows it); the CREDENTIAL is not stored
         # anywhere — what identifies the session on disk is the sha256 of the id.
         raw = api.store.path.read_text(encoding="utf-8")
         assert PASSWORD not in raw
         assert "Rajeev" in raw
+
+    def test_the_browser_signs_in_on_the_apps_own_device(self, api):
+        """⚠ The default, pinned: the web app must keep using ``rkm-cinema-web``."""
+        _login(api.client)
+        assert api.seen["device_id"] == ""
+
+    def test_a_caller_can_ask_to_sign_in_on_its_OWN_device(self, api):
+        """What the operation tools send (``tools/rkm_common.py::App``).
+
+        Jellyfin invalidates the previous token of a *(device, user)* pair on every login, so a tool
+        signing in on the app's device would rotate the BROWSER's token away and leave the running
+        session answering 401 on every media call — the §6h symptom, caused by running a diagnostic.
+        """
+        r = api.client.post("/api/auth/login", json={"username": "rajeev", "password": PASSWORD,
+                                                     "device_id": "rkm-tools"})
+        assert r.status_code == 200, r.text
+        assert api.seen["device_id"] == "rkm-tools"
 
     def test_a_wrong_password_is_a_generic_401_with_no_cookie(self, api):
         r = _login(api.client, password="wrong")

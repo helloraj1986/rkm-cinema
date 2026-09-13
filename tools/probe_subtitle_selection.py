@@ -20,7 +20,7 @@ from urllib.parse import quote
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from rkm_common import Jellyfin, app_base, http_json, load_env  # noqa: E402
+from rkm_common import Jellyfin, app_client, app_base, http_json, load_env  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -82,8 +82,12 @@ def main() -> int:
 
     api = app_base(env)
     print(f"\napp api: {api}")
-    search = http_json(f"{api}/api/jellyfin/subtitle-search?id={item_id}&language=en",
-                       timeout=60)
+    # The app's routes need a SESSION once `RKM_AUTH_REQUIRED` is armed — a tool is not a browser.
+    # Signing in on the tools' own device id keeps this probe from rotating the browser's token away.
+    client = app_client(base=api, env=env)
+    if not client.signed_in:
+        print(f"  cannot read the app: {client.error}")
+    search = client.get(f"/api/jellyfin/subtitle-search?id={item_id}&language=en", timeout=60)
     print(f"\n/subtitle-search -> {_shape(search)}")
     if isinstance(search, dict):
         print(f"  enabled={search.get('enabled')} disabled={search.get('disabled')} "
@@ -97,7 +101,7 @@ def main() -> int:
                   f"{r.get('display_title')}")
         print(f"  preferred_subtitle: {json.dumps(search.get('preferred_subtitle'))}")
 
-    info = http_json(f"{api}/api/jellyfin/playback-info?id={item_id}", timeout=60)
+    info = client.get(f"/api/jellyfin/playback-info?id={item_id}", timeout=60)
     print(f"\n/playback-info -> {_shape(info)}")
     if isinstance(info, dict):
         print(f"  preferred_subtitle: {json.dumps(info.get('preferred_subtitle'))}")

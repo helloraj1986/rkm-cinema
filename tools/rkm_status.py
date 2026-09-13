@@ -48,8 +48,18 @@ def main() -> int:
     if not services.get("jellyfin"):
         problems.append("the api cannot reach Jellyfin (check the API credential)")
 
-    folders = rc.http_json(f"{app}/api/library/folders", timeout=25)
+    # The app's own routes need a SESSION once `RKM_AUTH_REQUIRED` is armed — a tool is not a
+    # browser, so it signs in. `App` uses the TOOLS' own device id, so a status run cannot rotate the
+    # browser's token away (`services/auth.py::TOOLS_DEVICE_ID`).
+    client = rc.app_client(base=app, env=env)
+    folders = client.get("/api/library/folders", timeout=25)
     print("\n== libraries ==")
+    if isinstance(folders, dict) and folders.get("__http_error__"):
+        # ⚠ A refusal is not an unreadable library. With `RKM_AUTH_REQUIRED` armed, a tool with no
+        # session is as refused as any stranger — the fix is to sign in, not to check Jellyfin.
+        print(f"  REFUSED ({folders['__http_error__']}) — {client.error or 'the api refused the call'}")
+        problems.append("the api refused this tool — it has no session (see above)")
+        return 1
     if not isinstance(folders, dict) or "__error__" in folders:
         print(f"  UNREADABLE ({folders})")
         problems.append("the api could not read the library folders")

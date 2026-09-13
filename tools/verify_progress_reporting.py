@@ -19,7 +19,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from rkm_common import Jellyfin, app_base, http_json  # noqa: E402
+from rkm_common import Jellyfin, app_client, app_base  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "backend"))
 from services.library.jellyfin import JellyfinLibraryProvider  # noqa: E402
@@ -92,7 +92,10 @@ print(f"jellyfin Resume contains it: {in_jf}")
 assert in_jf, "the item is not in Jellyfin's Resume list"
 
 # --- 3. the app's endpoint ----------------------------------------------
-cw = http_json(f"{app_base()}/api/library/continue-watching") or {}
+# The app's route needs a SESSION once `RKM_AUTH_REQUIRED` is armed — a tool signs in first.
+client = app_client()
+cw = client.get("/api/library/continue-watching") or {}
+assert client.signed_in, f"could not sign in to the app: {client.error}"
 titles = [i.get("title") for i in (cw.get("items") or [])]
 print(f"app Continue Watching ({len(titles)}): {titles}")
 assert any((t or "").lower().startswith(TITLE.lower()[:6]) for t in titles), \

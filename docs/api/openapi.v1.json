@@ -2993,6 +2993,11 @@
             "type": "string",
             "title": "Password",
             "default": ""
+          },
+          "device_id": {
+            "type": "string",
+            "title": "Device Id",
+            "default": ""
           }
         },
         "type": "object",

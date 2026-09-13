@@ -12,7 +12,7 @@ import urllib.parse
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from rkm_common import Jellyfin, http_json, app_base, load_env  # noqa: E402
+from rkm_common import Jellyfin, app_client, app_base, load_env  # noqa: E402
 
 TITLE = sys.argv[1] if len(sys.argv) > 1 else "3 Deewarein"
 
@@ -65,8 +65,13 @@ if target is not None:
     print(f"  Played                : {ud.get('Played')}")
 
 # --- 3. the app's payload -------------------------------------------------
+# The app's routes need a SESSION once `RKM_AUTH_REQUIRED` is armed: a tool is not a browser,
+# so it signs in first — on the tools' own device id, so the browser's token is not rotated away.
 app = app_base()
-cw = http_json(f"{app}/api/library/continue-watching")
+client = app_client(base=app)
+if not client.signed_in:
+    print(f"  cannot read the app: {client.error}")
+cw = client.get("/api/library/continue-watching")
 apps = (cw or {}).get("items") or []
 print(f"\n--- app /api/library/continue-watching: {len(apps)} item(s) ---")
 print(f"  titles: {[i.get('title') for i in apps]}")

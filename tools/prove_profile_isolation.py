@@ -269,7 +269,7 @@ def main() -> int:
     app = App(port)
     exit_code = 1
     try:
-        exit_code = run_proof(app, member, member_name, admin_pw)
+        exit_code = run_proof(app, member, member_name, admin_pw, admin_user)
     finally:
         if args.keep:
             print(f"\n--keep: the api is still running on port {port} (kill {proc.pid})")
@@ -290,11 +290,16 @@ def main() -> int:
     return exit_code
 
 
-def run_proof(app: App, member: dict, member_name: str, admin_pw: str) -> int:
+def run_proof(app: App, member: dict, member_name: str, admin_pw: str,
+              admin_user: str = "") -> int:
+    # ⚠ The account's REAL name, from .env — never the literal "admin". It was renamed to `rkm`
+    # (ADMIN_CREDENTIALS_PLAN §5), so a hard-coded name signs in as nobody and this proof stopped
+    # at step 1 with a 401 while its Jellyfin half used the correct name.
+    admin_user = admin_user or "admin"
     member_id = str(member.get("Id") or "")
 
     print("\n== 1. the administrator opens the server ==")
-    status, body = app.post("/api/auth/login", {"username": "admin", "password": admin_pw})
+    status, body = app.post("/api/auth/login", {"username": admin_user, "password": admin_pw})
     check("administrator signs in", status == 200, f"HTTP {status}")
     if status != 200:
         return 1

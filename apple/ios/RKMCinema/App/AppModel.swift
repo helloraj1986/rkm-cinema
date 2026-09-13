@@ -1,5 +1,11 @@
 import Foundation
 import SwiftUI
+// ⚠ `ObservableObject` and `@Published` are **Combine**, not SwiftUI. SwiftUI used to re-export
+// Combine, so this compiled without the import — with the iOS 26 SDK it does not, and the failure
+// reads as "type 'AppModel' does not conform to protocol 'ObservableObject'" plus a wall of
+// "initializer 'init(wrappedValue:)' is not available due to missing import of defining module
+// 'Combine'". Caught on the first real build.
+import Combine
 import RKMServerKit
 
 /// Everything the app needs to say about a server it could not reach.

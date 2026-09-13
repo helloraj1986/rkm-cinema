@@ -1,4 +1,8 @@
 import SwiftUI
+// ⚠ UIKit as well: `Color(uiColor:)` takes a UIColor, and `.secondarySystemBackground` / `.separator`
+// are UIColor class properties. SwiftUI does not re-export UIKit, so the implicit-member lookup fails
+// without this import.
+import UIKit
 import RKMServerKit
 
 /// Screen #0 — the server address (`docs/APPLE_CLIENTS_PLAN.md` §2, the Jellyfin/Infuse/Plex

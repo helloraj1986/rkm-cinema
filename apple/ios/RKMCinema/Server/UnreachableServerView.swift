@@ -1,4 +1,6 @@
 import SwiftUI
+// ⚠ UIKit for `Color(uiColor: .systemBackground)` — see the note in ServerSetupView.swift.
+import UIKit
 import RKMServerKit
 
 /// The state that stops a wrong address bricking the app (plan §3.2, `apple/ios/README.md`).

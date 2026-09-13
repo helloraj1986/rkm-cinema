@@ -1,6 +1,9 @@
 import Foundation
 import SwiftUI
 import WebKit
+// ⚠ Combine carries `ObservableObject` / `@Published` — see the note in AppModel.swift. Needed on
+// the iOS 26 SDK even though SwiftUI is imported.
+import Combine
 import RKMServerKit
 
 /// The shell's state: is the page loading, what is it, and did the load fail.

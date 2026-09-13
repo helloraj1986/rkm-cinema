@@ -6,12 +6,17 @@ second implementation of it.** The full plan is [`../docs/APPLE_CLIENTS_PLAN.md`
 ```
 apple/
 ├── README.md          ← you are here: the tree, the rules, the build order
+├── WORKFLOW.md        ← ⚠ the two-machine loop: author on Windows, build on the Mac
 ├── Shared/            ← local Swift package: code BOTH apps genuinely need (deliberately tiny)
 │   └── Sources/RKMServerKit/     the server ADDRESS — parse, normalise, persist
 ├── ios/               ← RKMCinema: a WKWebView shell around the LIVE web UI
 ├── tvos/              ← RKMCinemaTV: a native SwiftUI client (tvOS has no browser)
 └── scripts/           ← generate-api.sh: regen the Swift API types from the frozen contract
 ```
+
+⚠ **Read [`WORKFLOW.md`](WORKFLOW.md) before touching either folder** — the two-machine loop
+(author on Windows/this checkout, build on the Mac, GitHub as the only bridge) and the one
+check that decides whether the project file ever needs editing.
 
 ## The two apps are NOT the same shape — do not make them match
 

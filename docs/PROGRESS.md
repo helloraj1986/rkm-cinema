@@ -1,3 +1,26 @@
+## ▶ 📋 **APPLE CLIENTS — THE TWO-MACHINE WORKFLOW AGREED** (2026-09-13, latest) · branch **`feat/apple-clients`** · doc: **`apple/WORKFLOW.md`** · **no code, no deploy** (`.gitattributes` + docs only)
+
+**His question:** *"since hermes resides on my windows pc... i can do the development and code here and then pull the code to mac and run there.... is that how we are going to do it"* — **yes, that is the loop**, with one rule and one check that decide whether it stays smooth.
+
+**Roles:** Windows/Hermes **authors** (writes Swift, commits, pushes) · **GitHub is the only bridge** · Mac **builds/runs/signs** and pushes fixes back · then the agent pulls on Windows and sees what Xcode produced. ⚠ **The sandbox IS his Windows checkout** (`/workspace/projects/rkm-cinema` == `D:\hermes_agent\hermes-workspace\projects\rkm-cinema`), so the agent's commits land in his Windows tree directly — there is no second Windows copy to sync.
+
+**⚠ The one check that decides the workflow** — because only Xcode can create a valid `.xcodeproj`, **HE creates the two projects once** (File → New → Project, `RKMCinema` into `apple/ios/`, `RKMCinemaTV` into `apple/tvos/`, SwiftUI+Swift, **untick "Create Git repository"**), pushes them, and the agent writes every Swift file after that. Whether that stays friction-free depends on:
+
+```
+grep -c PBXFileSystemSynchronizedRootGroup apple/ios/RKMCinema.xcodeproj/project.pbxproj
+```
+
+- **≥ 1** → Xcode 16+ **synchronized** folder group: a file's presence in the folder IS its target membership, so the agent adds Swift files freely and **never edits the project file**. This is the expected case.
+- **0** → classic groups: every new file needs `project.pbxproj` registration ⇒ **switch to XcodeGen** (`brew install xcodegen`; agent writes `project.yml` + sources, he runs `xcodegen generate`). ⚠ **We do NOT hand-edit `project.pbxproj`** — that is how projects get corrupted.
+
+This is also why every source lives under its target's own folder: synchronized groups only auto-include files *inside* that folder.
+
+**The four rules (WORKFLOW.md §4):** (1) **one writer at a time** — the agent and Xcode must never edit the same file in the same round; finish → push → hand over; (2) pull before starting, push before handing back; (3) the agent **fetches before trusting any ref** (a token-URL push does not update local `origin/*`); (4) `project.pbxproj` is his territory.
+
+**⚠ What the agent can and cannot verify without a Mac:** the **shared package** (address parse/normalise/persist) is pure Swift with no UIKit ⇒ it can compile and unit-test on Linux. The sandbox is **Debian 13, glibc 2.41** and swift.org's **Ubuntu 24.04** toolchain (glibc floor 2.39, reachable — verified 2026-09-13) should run on it; **the agent installs it and actually runs `swift test` at Phase 0, and will say plainly if it does not work rather than claim a green run.** Everything UI — SwiftUI, `WKWebView`, `AVPlayer`, focus engine, ATS, signing — is **Mac-only**: a build that has not run there is not verified.
+
+**`.gitattributes` ADDED (repo-wide line endings).** Verified first: the repo is **already 100% LF** (396 files `i/lf`, **zero CRLF**), so the file renormalises nothing — no churn, no mass diff. It pins LF so a future commit from Windows cannot inject CRLF and break a shell script with `bad interpreter: /bin/sh^M`. ⚠ **There is deliberately NO `*.ps1 eol=crlf` rule** — his PowerShell scripts already run correctly as LF on PS 5.1, so adding one would rewrite four working files for no benefit.
+
 ## ▶ 📋 **APPLE CLIENTS (iOS + tvOS) — PLAN PARKED, SCAFFOLDED, READY FOR NEXT SESSION** (2026-09-13, latest) · branch **`feat/apple-clients`** cut from `main` (tip moves with each record commit — `git log --oneline -1` is the truth) · **NO APP CODE YET — next session executes Phase 0** · plan: **`docs/APPLE_CLIENTS_PLAN.md`** · scaffold: **`apple/`** · ⚠ **his tree is now ON this branch** · **no deploy of any kind is needed for this commit** (docs + new `apple/` folder only — `frontend/`, `backend/`, `nginx/`, compose all untouched)
 
 **What he asked:** a strategy for iOS + tvOS "with minimal code changes", then: *"i want both the tvos and ios

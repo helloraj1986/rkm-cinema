@@ -1,0 +1,29 @@
+# Line endings — this repo is deliberately ALL LF, on every platform.
+#
+# Verified 2026-09-13: `git ls-files --eol` reports 396 files `i/lf` and ZERO CRLF,
+# so adding this file renormalises nothing (no churn, no mass diff). His PowerShell
+# scripts (rkm-cinema.ps1, bootstrap.ps1, scripts/*.ps1) already run correctly as LF
+# on PowerShell 5.1 — which is why there is deliberately NO `*.ps1 eol=crlf` rule
+# here: it would only rewrite four working files for no benefit.
+#
+# The Apple work makes this explicit rather than accidental: the agent authors on
+# Windows/Linux, the build happens on macOS, and an injected CRLF is the classic way
+# to break a shell script with "bad interpreter: /bin/sh^M".
+* text=auto eol=lf
+
+# Binary — never touch.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.webp binary
+*.ico  binary
+*.icns binary
+*.mp4  binary
+*.m4v  binary
+*.mov  binary
+*.ttf  binary
+*.otf  binary
+*.ttc  binary
+*.woff  binary
+*.woff2 binary

@@ -75,5 +75,16 @@ frontend/public/harness-sample.mp4
 **/.swiftpm/configuration/
 **/*.moved-aside
 **/Pods/
+
+# The Xcode projects are GENERATED from project.yml by XcodeGen — build output, not source.
+# The fix for a project setting is in project.yml + one regenerate, never in Xcode's UI
+# (a GUI change would be lost on the next generate). See apple/WORKFLOW.md §2.
+apple/**/*.xcodeproj/
+apple/**/*.xcworkspace/
+
+# Test-run logs. They travel back by PASTING (apple/LOGGING.md §7); if a whole file ever
+# needs to reach the repo, un-ignore that one file explicitly: git add -f apple/logs/<file>
+apple/logs/
+
 # Generated API types ARE committed on purpose (see apple/scripts/generate-api.sh) —
 # do not ignore apple/**/Core/GeneratedAPI/.

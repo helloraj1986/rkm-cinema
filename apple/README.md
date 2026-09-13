@@ -6,7 +6,8 @@ second implementation of it.** The full plan is [`../docs/APPLE_CLIENTS_PLAN.md`
 ```
 apple/
 ├── README.md          ← you are here: the tree, the rules, the build order
-├── WORKFLOW.md        ← ⚠ the two-machine loop: author on Windows, build on the Mac
+├── WORKFLOW.md        ← ⚠ the two-machine loop: author on Windows, TEST on the Mac
+├── LOGGING.md         ← the dev-phase logging/diagnostics spec (HUD · correlation ids · redaction)
 ├── Shared/            ← local Swift package: code BOTH apps genuinely need (deliberately tiny)
 │   └── Sources/RKMServerKit/     the server ADDRESS — parse, normalise, persist
 ├── ios/               ← RKMCinema: a WKWebView shell around the LIVE web UI
@@ -15,8 +16,13 @@ apple/
 ```
 
 ⚠ **Read [`WORKFLOW.md`](WORKFLOW.md) before touching either folder** — the two-machine loop
-(author on Windows/this checkout, build on the Mac, GitHub as the only bridge) and the one
-check that decides whether the project file ever needs editing.
+(all development here, **the Mac is testing only**, GitHub as the only bridge) and why the Xcode
+projects are **generated from `project.yml`** rather than created in Xcode's GUI.
+
+⚠ **Read [`LOGGING.md`](LOGGING.md) before writing any app code** — extensive logging is a Phase 0
+requirement, not a later addition: the Mac can only report what the apps can tell it, so a missing log
+line is an undiagnosable bug. Both apps ship a **debug HUD**, and every request carries a **correlation
+id** that the HUD displays — that is what makes a screenshot and a log join up.
 
 ## The two apps are NOT the same shape — do not make them match
 

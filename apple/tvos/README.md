@@ -11,8 +11,8 @@ rkm-cinema stays on web/iOS, where a keyboard and forms make sense.
 
 ```
 tvos/
-└── RKMCinemaTV/                      ← Xcode project (created in the first build session)
-    ├── RKMCinemaTV.xcodeproj
+└── RKMCinemaTV/                        ← sources; the project is GENERATED, not created by hand
+    ├── project.yml                 ← the project source (xcodegen ⇒ .xcodeproj, git-ignored)
     ├── README.md                     ← build/run/acceptance notes, filled in as it is built
     ├── RKMCinemaTV/
     │   ├── RKMCinemaTVApp.swift      @main

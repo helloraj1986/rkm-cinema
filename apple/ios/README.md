@@ -12,8 +12,8 @@ it; §6 of the plan records the source-level evidence.
 
 ```
 ios/
-└── RKMCinema/                        ← Xcode project (created in the first build session)
-    ├── RKMCinema.xcodeproj
+└── RKMCinema/                        ← sources; the project is GENERATED, not created by hand
+    ├── project.yml                 ← the project source (xcodegen ⇒ .xcodeproj, git-ignored)
     ├── README.md                     ← build/run/acceptance notes, filled in as it is built
     ├── RKMCinema/
     │   ├── RKMCinemaApp.swift        @main — picks Setup or Shell from the stored address

@@ -261,3 +261,46 @@ the run into 6 failures / exit 1 (*"the trim moves it 0.00px — the CSS is miss
 ⚠ And `document.fonts.check('16px Inter')` returns **true even when Inter is not installed** (it only
 reports that there is nothing to *load*), so it cannot tell you which font is rendering — the canvas
 metrics can (`ascent+descent = 1.200em, cap = 0.733em` is DejaVu Sans, not Inter).
+
+## `cta-frame.html` — the card CTA and the search action pair (2026-09-13)
+
+His report, two defects on two high-visibility surfaces: the poster's **"▶ Episodes"** pill rendered the
+glyph ABOVE the label, and the search row's **Resume**/**Details** pair rendered at two different
+heights. `python3 tools/check_cta_alignment.py` mounts the REAL `MediaCard` (a series card and a movie
+card) and the REAL `GlobalSearch` over a stubbed api and measures RECTS — because neither cause is
+visible in the source:
+
+* the pill was `grid place-items-center` with **two** children, so grid laid the glyph into row 1 and
+  the label into row 2 — and ⚠ the pill's height is FIXED (`h-9`), with the two stacked rows still
+  fitting inside it, so **nothing overflowed** to give the mistake away (box right, insides wrong);
+* the pair were two hand-rolled class strings that had drifted — the primary `h-8` with no vertical
+  padding, the secondary `py-1.5` with no height; their difference is the font's line-height, i.e.
+  machine-dependent, which is why a class-string assertion is the wrong instrument.
+
+`?scene=card` mounts only the cards, `?scene=search` only the search widget (its dropdown overlays
+everything below it, so the check visits them separately). The search stub answers `/api/search/global`
+the way the SERVER does — an episode row mid-play (the state machine's "Resume") and a movie row
+("Watch Now") — since those labels come from the backend's own state and an invented one would prove
+nothing.
+
+| Assertion | What it means |
+|---|---|
+| A | the pill's glyph and label boxes **overlap** by ≥ half the shorter one's height (a stack overlaps ~0px) |
+| B | the label sits AFTER the glyph, with a 3–12px gap (a centred stack puts it UNDER, so the gap goes negative) |
+| C | both are centred on the pill's own axis (1.5px — the analytic ink method's uncertainty) |
+| D | the movie CTA (a single glyph in a circle) is UNCHANGED — the flex rewrite must not touch it |
+| E | per row: the pair has equal height, vertical padding, border-radius and font-size |
+| F | per row: the pair is centred on each other and on the row, neither pokes outside… and **clicking either one still activates the row** (a restyle that leaves them inert would be worse than the misalignment) |
+| G | the glyph in the primary button is inline and centred, as in A–C (Resume is the report's reference case) |
+| H | the SAME size token reaches every row: both rows' primaries agree, as do their secondaries |
+
+⚠ **Falsified before trusting it** — this repo has twice shipped a check that could not fail, so
+`--expect-broken` runs the SAME assertions against the unfixed source and requires them to fail:
+**11 problems** before the fix (glyph −11.25px / label +10.25px off the pill's axis, gap −37.59px;
+32.00px vs 30.50px with padding 0/0 vs 6/6), none after. It is the same argument as `C` in the brand
+lockup: the direction matters more than the absolute.
+
+`Button.test.ts` is the companion, not a substitute: it pins that no `components/ui/Button` variant
+grows its own box class (falsified by injecting `py-1.5` into one variant). It cannot see what the
+browser does — that is what this frame is for.
+

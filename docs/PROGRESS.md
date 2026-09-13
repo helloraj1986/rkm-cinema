@@ -1,4 +1,46 @@
-## ▶ ✅ **HOUSEHOLD REDESIGN — PHASE 1 BUILT AND MERGED** (2026-09-13) · branch **`feat/household-ux`** → **`main` `3e9d343`** (fast-forward, at his direction) · gates green (**321 vitest · tsc · build · 6 browser checks · docs links · backend 1107**) · **the RKM-HP deploy + eyeball is STILL OUTSTANDING** (see the merge note at the end) · his deploy is **web-only**: `docker compose -p rkm-bundled up -d --build web`
+## ▶ ✅ **BRAND LOCKUP ALIGNMENT FIXED** (2026-09-13, later) · branch **`fix/brand-lockup-alignment`** · gates green (tsc · 321 vitest · build · `check_brand_lockup` · `check_nav_access`) · **not merged — his word** · web-only deploy again
+
+**His report, verbatim:** *"i have the seen the changes it looks good..i just need one more small ux
+change RKM Cinema text on top left is not perfectly aligned with the icon..can you fix it"*
+
+**What it was, and why it looked worse on his screen than in the sandbox.** The lockup was centred by
+BOX, and a line box carries its font's ascent and descent — uppercase type has no descenders, so a
+box-centred two-line stack leans by about `(ascent − capHeight − descent) / 2`, a number that belongs to
+the FONT. This app ships **no webfont** (the stack is `Inter, "SF Pro Display", …, "Segoe UI", system-ui`),
+so what actually renders is whatever the machine has:
+
+| Machine | Font actually used | The two lines read |
+|---|---|---|
+| his Windows box | **Segoe UI** | **~1.2px LOW** ← what he saw |
+| headless sandbox | DejaVu Sans (nothing earlier in the stack exists there) | ~0.3px high |
+
+⚠ `document.fonts.check('16px Inter')` returns **true** even when Inter is absent — it only reports that
+there is nothing to LOAD — so it cannot be used to detect the font in use. The canvas metrics are the
+evidence: `ascent+descent = 1.200em, cap = 0.733em` is DejaVu Sans, not Inter. A hand-tuned pixel nudge
+would therefore have been right on one machine and wrong on the other.
+
+**The fix** (`Sidebar.tsx`, `BrandLockup`): `text-box-trim: trim-both` + `text-box-edge: cap alphabetic`
+on the text block. The box is trimmed to the CAP ink, so `items-center` centres the letters themselves —
+in ANY font. Chromium ≥ 133; older browsers keep the previous rendering (no regression, only no fix).
+Verified in the production build as well as dev (`dist/assets/*.css` contains both declarations).
+
+**Measured, before → after** (pixel truth, 4x, same method both sides): the text ink moved from
+**−0.38px** to **+0.12px** off the mark's centre in the sandbox font; the box shrank 21.25px → 20.25px,
+which is the trim taking effect. In his font the same change removes ~1.2px.
+
+**New tool: `tools/check_brand_lockup.py`** — and it is deliberately NOT a "is it centred?" assertion,
+because that one would pass in a favourable font with the fix absent. It mounts the real Sidebar
+(`nav-frame.html`) and asserts (D) the trim is really applied and the block is shorter than untrimmed,
+(A) the play glyph is centred in its square (+0.00px), (B) the ink is centred within 1px, and
+(C) ⚠ **the trim must MOVE the geometry** — the same measurement with `text-box-trim: none` forced, over
+four font stacks. **Falsified:** deleting the two utility classes turns it into **6 failures, exit 1**
+(*"the trim moves it 0.00px — the CSS is missing or has no effect"*); restoring them goes green.
+
+**Method note / honest limit:** the check derives the ink analytically (the text run's own client rect
+locates the baseline; canvas `actualBoundingBoxAscent` gives the extent above it), which carries ~0.3px
+of its own uncertainty — that is why (C), a difference, is the assertion that bites rather than (B).
+
+## ▶ ✅ **HOUSEHOLD REDESIGN — PHASE 1 BUILT AND MERGED** (2026-09-13) · branch **`feat/household-ux`** → **`main` `3e9d343`** (fast-forward, at his direction) · gates green (**321 vitest · tsc · build · 6 browser checks · docs links · backend 1107**) · **the RKM-HP deploy + eyeball is STILL OUTSTANDING** (see the merge note at the end) · his deploy is **web-only**: `docker compose -p rkm-bundled up -d --build web`  → ✅ **MERGED to `main` 2026-09-13** (fast-forward, at his direction, before his eyeball) — and then **eyeballed: *"i have the seen the changes it looks good"***, which is the report the block above acts on.
 
 **His instruction, verbatim:** *"for rkm-cinema app continue household UX"* — execute
 `docs/HOUSEHOLD_UX_PLAN.md` Phase 1, the plan this branch was cut for. **Done.** The plan's §1/§2 were

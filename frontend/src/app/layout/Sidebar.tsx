@@ -42,9 +42,29 @@ function BrandLockup() {
       <div className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] bg-gradient-to-br from-surface-2 to-surface-3 text-accent ring-1 ring-white/10">
         <Icon name="play" size={15} filled />
       </div>
-      <div className="hidden min-w-0 leading-none xl:block">
-        <div className="truncate text-[15px] font-extrabold tracking-tight text-zinc-100">RKM</div>
-        <div className="text-[9.5px] font-bold uppercase tracking-[0.22em] text-accent">Cinema</div>
+      {/*
+       * ⚠ This lockup is aligned by INK, not by box (2026-09-13, his report: *"RKM Cinema text on top
+       * left is not perfectly aligned with the icon"*).
+       *
+       * A line box carries its font's ASCENT and DESCENT, and uppercase type has no descenders — so a
+       * box-centred stack always leans one way, and how far depends on which font the machine actually
+       * has. This app ships NO webfont, so the font is whatever the stack resolves to locally:
+       * **Segoe UI on Windows — which puts the two lines ~1.2px LOW, the offset he saw** — and DejaVu
+       * Sans in the headless sandbox (~0.3px high). A hand-tuned pixel nudge would therefore be right on
+       * one machine and wrong on the next.
+       *
+       * `text-box-trim` + `text-box-edge` fix it by construction: the box is trimmed to the CAP ink
+       * (`cap alphabetic`), so `items-center` centres the letters themselves, in ANY font. Browsers
+       * without support (Chromium < 133) just keep the old rendering — no regression, only no fix.
+       * Asserted by `tools/check_brand_lockup.py`.
+       */}
+      <div className="hidden min-w-0 [text-box-trim:trim-both] [text-box-edge:cap_alphabetic] xl:block">
+        <div className="truncate text-[15px] font-extrabold leading-none tracking-tight text-zinc-100">
+          RKM
+        </div>
+        <div className="text-[9.5px] font-bold uppercase leading-none tracking-[0.22em] text-accent">
+          Cinema
+        </div>
       </div>
     </div>
   );

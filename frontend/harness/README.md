@@ -233,3 +233,31 @@ a correct picker look broken.
 
 The stub's own `me()` must keep reporting `profile_selected` honestly — that flag IS the picker's
 trigger, so a stub that always said `true` would prove nothing about this screen.
+
+## The brand lockup (2026-09-13) — `nav-frame.html`, checked by `tools/check_brand_lockup.py`
+
+His report: *"RKM Cinema text on top left is not perfectly aligned with the icon"*. It was a real
+offset, and a **font-dependent** one: a line box carries its font's ascent/descent and uppercase type has
+no descenders, so a box-centred two-line stack leans by `(ascent − capHeight − descent) / 2` — about
+1.2px LOW in Segoe UI (what his Windows box renders, since the app ships no webfont) and ~0.3px high in
+DejaVu Sans (what this headless sandbox falls back to). The fix is `text-box-trim: trim-both` +
+`text-box-edge: cap alphabetic` on the text block, which trims the box to the CAP ink so
+`items-center` centres the letters in **any** font.
+
+`python3 tools/check_brand_lockup.py` uses THIS frame (it mounts the real `Sidebar`) and asserts, at
+1440px where the brand text is visible:
+
+| Assertion | What it means |
+|---|---|
+| A | the play glyph is centred inside its rounded square (within 0.75px) |
+| B | the two-line text's cap ink is centred on the mark (within 1px — the analytic method's own uncertainty) |
+| **C** | ⚠ **the trim must MOVE the geometry** (≥ 0.2px): the same measurement with `text-box-trim: none` forced, across four installed font stacks |
+| D | the trim is really applied (computed style, and the block IS shorter trimmed than untrimmed) |
+
+⚠ **C is the assertion that matters.** "Is it centred?" alone passes in a favourable font with the fix
+absent, which is the classic check-that-cannot-fail. Falsified: deleting the two utility classes turns
+the run into 6 failures / exit 1 (*"the trim moves it 0.00px — the CSS is missing or has no effect"*).
+
+⚠ And `document.fonts.check('16px Inter')` returns **true even when Inter is not installed** (it only
+reports that there is nothing to *load*), so it cannot tell you which font is rendering — the canvas
+metrics can (`ascent+descent = 1.200em, cap = 0.733em` is DejaVu Sans, not Inter).

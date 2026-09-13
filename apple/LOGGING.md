@@ -75,18 +75,28 @@ playback accessLog:   bitrate 4.2Mbps · segments 118 · dropped 3 · stalls 1 �
 
 ## 4. The HUD (both apps)
 
-Toggleable overlay. ⚠ **iOS: it opens ON in a Debug build, and the corner chip toggles it — one tap**
-(also press-and-hold; on a simulator, `Device ▸ Shake`, ⌃⌘Z). **tvOS: play-pause ×3.**
+Toggleable overlay. ⚠ **iOS: it opens ON in a Debug build. To toggle it: three taps — or one
+press-and-hold — in the top-left corner of the display** (on a simulator `Device ▸ Shake`, ⌃⌘Z, works
+too). **tvOS: play-pause ×3.**
 
-⚠⚠ **The 52pt triple-tap square the iOS app used to have was removed on 2026-09-14, having never
-fired once** — and the reason is worth keeping, because it was invisible on screen:
-`.overlay(alignment: .topLeading)` aligns to the **modified view's** bounds, and the root view is
-inset by the safe area, so the square sat **y ≈ 59pt — below the status bar, inside the page's own
-header** — while a thumb aims at the top of the *display*, which is above it. Fixes: the chip's hit
-area is shifted up so it begins at the display's corner whatever the device's inset is; it is
-**drawn**, so its position can be checked by looking; and it logs every touch it receives *before*
-toggling, so "the overlay did not appear" and "the touch never arrived" — opposite problems that look
-identical — are told apart from the file log instead of from another screenshot.
+⚠⚠ **The tap target cost TWO rounds, and both reasons are worth keeping** (2026-09-14).
+
+**(1) It was 59pt below the corner it is aimed at.** The original was a 52pt `Color.clear` square in an
+`.overlay(alignment: .topLeading)`, which aligns to the **modified view's** bounds — and the root view
+is inset by the safe area — so it sat **y ≈ 59pt, below the status bar, inside the page's own header**,
+while a thumb aims at the top of the *display*. His screenshot measured it: the page's title and back
+chevron begin at the same height as the overlay's first line, with an empty strip above both.
+
+**(2) Then the fix moved the wrong thing.** The next version drew its marker correctly in the corner
+and *still* could not be tapped — because an offset moves what is **drawn** without promising to move
+where the app **listens**. So the mark was in the corner and the hit area was still 59pt lower.
+
+**The design that survives:** the gesture recognisers live on the **`UIWindow`** (installed in
+`didMoveToWindow`), limited by `shouldReceive` to a **110pt corner** — so no safe-area value, no
+subscription to SwiftUI's overlay layout, and no z-order question can affect it. `cancelsTouchesInView = false`
+plus simultaneous recognition keeps every page interaction intact, inside the corner as well as outside.
+It also **logs each received gesture before toggling**, so "the overlay did not appear" and "the touch
+never arrived" — opposite problems that look identical — are told apart from the file log.
 
 ```
 ── RKMCinema debug ─────────────

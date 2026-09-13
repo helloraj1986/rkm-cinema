@@ -29,16 +29,18 @@ struct AppRootView: View {
             }
         }
         .overlay(alignment: .topLeading) {
-            // ⚠ Drawn last so it is above the overlay's own panel (whose ⚙ sits top-right, clear of
-            // this) *and* above the web view.
+            // ⚠⚠ The frame and the offset below place the visible **mark** only. It is shifted up
+            // because the overlay's top-leading corner is the *safe area's* — ~59pt below the top of
+            // the display — which is the measurement that explains the original bug.
             //
-            // ⚠⚠ It is also deliberately **shifted up** out of its laid-out position: the overlay's
-            // top-leading corner is the **safe area's**, ~59pt below the top of the display, so a
-            // tap aimed at the corner of the screen never reached it. That measurement is the whole
-            // bug (see `HUDToggleChip`), and it is why this is not simply `.frame(…)` any more.
-            HUDToggleChip { app.toggleHUD() }
-                .frame(width: HUDToggleChip.size.width, height: HUDToggleChip.size.height)
-                .offset(y: HUDToggleChip.upwardShift)
+            // ⚠ The **touch target** is not here at all: `HUDCornerToggleView` installs its gesture
+            // recognisers on the window, limited to a 110pt corner. That separation is the fix for
+            // the second failure — an offset moves what is *drawn* without promising to move where
+            // the app *listens*, so the mark sat in the corner while the tap target stayed 59pt
+            // lower, and a click on the glyph itself did nothing.
+            HUDCornerToggle { app.toggleHUD() }
+                .frame(width: HUDCornerToggle.size.width, height: HUDCornerToggle.size.height)
+                .offset(y: HUDCornerToggle.upwardShift)
         }
         .background(ShakeToToggle { app.toggleHUD() })
     }

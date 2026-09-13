@@ -1,4 +1,21 @@
-## ▶ ✅ **APPLE PHASE 0 — IT BUILT, IT RAN, AND THE JS BRIDGE IS ALIVE: the overlay is full of real `/api` requests** (2026-09-14, latest) · branch **`feat/apple-clients`** · files: `Debug/DebugHUD.swift`, `Shell/WebShellView.swift` · ⚠ **the two fixes below are Mac-unverified until the next build; the evidence above them is from HIS run**
+## ▶ ⚠⚠ **APPLE PHASE 0 — THE FIX MOVED THE MARK BUT NOT THE HIT AREA. THE TOGGLE IS NOW A WINDOW GESTURE, WHICH HAS NOTHING LEFT TO GET WRONG** (2026-09-14, latest) · branch **`feat/apple-clients`** · file: **`apple/ios/RKMCinema/Debug/HUDToggle.swift`** (rewritten), `App/AppRootView.swift`, `Server/ServerSetupView.swift` · docs: **`apple/LOGGING.md` §4**, **`apple/ios/README.md`** · ⚠ **Mac-unverified until he builds it**
+
+**His report, verbatim:** *"i cant tap the bug, even if i clik it nothing happens."* And it was a precise report — **he clicked the glyph itself.**
+
+**⚠⚠ FAILURE 2, AND IT IS THE MORE INSTRUCTIVE ONE: THE OFFSET MOVED WHAT IS *DRAWN*, NOT WHERE THE APP *LISTENS*.** The previous version was a real `UIView` whose frame was shifted up by 100pt so the target began at the top of the display, with a bug glyph drawn inside it. The glyph appeared **exactly in the corner** — the screenshot proves the drawing is right — and a click on it did nothing. So the hit area did not follow the visual. (It is the same *shape* of mistake as failure 1 — the control's position was reasoned about in a coordinate space the touch system does not share — and it is why "I moved it up" is not evidence that the target moved.)
+
+**THE DESIGN THAT REMOVES THE WHOLE CLASS OF UNKNOWNS — the gesture recognisers now live on the `UIWindow`:**
+- **Installed on the window in `didMoveToWindow`.** Every touch in the app passes through the window whatever is on top of it, whatever the safe-area inset is, and whatever SwiftUI does with an overlay laid over a `WKWebView`. ⚠ **There is no longer any SwiftUI layout, z-order or inset for this control to be wrong about.**
+- **`shouldReceive` accepts a touch only inside a 110pt corner**, and `cancelsTouchesInView = false` with simultaneous recognition — so the page keeps every interaction, *inside* that corner as well as outside. A three-tap there does not steal a page gesture; it just also toggles the overlay. This is strictly less intrusive than the 68×134 block the previous version claimed.
+- ⚠ **One live instance at a time** (a `static weak var`), and the outgoing instance removes its own recognisers first. Two sets would each toggle once per gesture — **on and straight back off**, i.e. an overlay that looks broken while being perfectly correct. That failure mode cost a `static`.
+- ⚠ `installedWindow` is **weak**, so `window → recogniser → view` is not a cycle and a removed view cannot keep toggling.
+- The glyph stays (drawn against the **window**, so it lands in the corner regardless of insets) and every received gesture is logged **before** toggling, so the log still separates "the overlay did not appear" from "the gesture never arrived".
+
+**⚠ BOTH ROUNDS WERE SPENT ON THE TOGGLE — and the honest accounting is that neither was a gesture problem.** Round 1: the target sat 59pt below the corner, because `.overlay(alignment: .topLeading)` aligns to the safe-area-inset bounds. Round 2: the fix moved the drawing but not the target. Round 3 has no coordinate space left to be wrong about, and the overlay is not even needed to reach the diagnostics — **a Debug build opens with it already on.**
+
+**⚠ STILL OPEN — and now genuinely just the file checks:** the `LOGGING.md` §9 greps (the redaction gate must print **nothing**; a HUD correlation id must resolve to matching lines — `26a253` is still on screen); sign-in → playback → sign-out on the **device**; and **`IPHONEOS_DEPLOYMENT_TARGET = 26.5`** — still waiting on **what his iPad runs**.
+
+## ▶ ✅ **APPLE PHASE 0 — IT BUILT, IT RAN, AND THE JS BRIDGE IS ALIVE: the overlay is full of real `/api` requests** (2026-09-14) · branch **`feat/apple-clients`** · files: `Debug/DebugHUD.swift`, `Shell/WebShellView.swift` · ⚠ **the two fixes below are Mac-unverified until the next build; the evidence above them is from HIS run**
 
 **Two rounds of Phase 0 landed at once in his first post-fix run:**
 1. ⚠ **The corner chip works and is where he looks — the overlay opened ON at launch, unprompted, and the bug glyph is visible in the very top-left of the display** (`upload_20260914_090501_1.png`). The geometry fix (hit area shifted up to the display's corner) and the Debug-opens-visible change are therefore both **demonstrated on screen**, not asserted.
@@ -44,10 +61,14 @@ error: ambiguous use of 'zero'
 **⚠ "THE OVERLAY DID NOT APPEAR" IS NOW FALSIFIABLE, WHICH IT WAS NOT.** The chip logs **every touch it receives, before toggling**, so one `grep` separates two opposite problems that look identical on screen:
 
 ```bash
-grep -E "toggle chip|debug overlay" "$LOG"
+grep -E "toggle:|debug overlay" "$LOG"
 ```
-- `toggle chip: tap` **and** `debug overlay on/off` → the touch arrived and the toggle worked; a missing overlay is then a rendering problem.
-- `toggle chip:` **absent** → the touch never reached the chip, and the target geometry is still wrong.
+- `toggle: 3-tap in the corner` **and** `debug overlay on/off` → the gesture arrived and the toggle
+  worked; a missing overlay is then a rendering problem.
+- `toggle:` **absent** → the gesture never reached the window recogniser at all.
+- ⚠ **SUPERSEDED — the chip's hit area did not follow its drawing, so the toggle is a window gesture
+  now (top block).** The grep above used to be `toggle chip`; the mechanism it describes is history,
+  the distinction and the ids are not.
 
 **⚠ WHAT IS STILL NOT VERIFIED — stated plainly.** Everything UI remains Mac-only: this chip has never been compiled. The reasoning above is measurement-based, but a build that has not run on the Mac is not verified. **Everything else in Phase 0 is unchanged and still open:** the `LOGGING.md` §9 items (one file holding every request with status/duration/id — the JS-bridge fix that makes this possible has *also* never been run; a HUD id joined to real log lines; the redaction grep over a real run), sign-in → playback → sign-out on the device, a deliberately wrong address → *Change server*, and the **`IPHONEOS_DEPLOYMENT_TARGET = 26.5`** question — **still one answer needed from him: what does his iPad run?** Then it is a one-line change to `16.4`.
 

@@ -15,7 +15,7 @@ enum AppLog {
     ///
     /// ⚠⚠ **A Debug build opens with the overlay already ON, and that is now the primary route to
     /// it.** `LOGGING.md` §4 asked for "a build flag / triple-tap"; the triple-tap is gone (see
-    /// `HUDToggleChip` — it sat 59pt below the corner it was supposed to occupy, so it never fired
+    /// `HUDCornerToggle` — it sat 59pt below the corner it was supposed to occupy, so it never fired
     /// once), and the build flag is what replaces it. The reason is the whole point of this
     /// document: dev happens on Windows, testing happens on the Mac, so **the overlay is the only
     /// way a screenshot and the file log can be joined** — and a diagnostic that depends on

@@ -92,10 +92,10 @@ tablet acceptance run.
 ⚠⚠ **The overlay opens ON in a Debug build** (`AppLog.hudStartsVisible`, and `-RKMDebugHUD YES` works
 in any build via `UserDefaults`'s argument domain). That is the primary route to it: dev happens on
 Windows, testing on the Mac, so an overlay that has to be *found* is missing exactly when it is
-needed. Hiding it is still a session-scoped choice — the overlay's ⚙, or the corner chip.
+needed. Hiding it is still a session-scoped choice — the overlay's ⚙, or the corner gesture below.
 
-**To toggle it in the shell: tap the small bug chip in the top-left corner of the screen (one tap, or
-press-and-hold it).** On a simulator, `Device ▸ Shake` (⌃⌘Z) also works.
+**To toggle it in the shell: three taps in the top-left corner of the screen — or one press-and-hold
+there.** On a simulator, `Device ▸ Shake` (⌃⌘Z) also works.
 
 ⚠ **The previous 52pt triple-tap square never fired once, and the cause was geometry, not the
 gesture.** `.overlay(alignment: .topLeading)` aligns to the **modified view's** bounds; the root view
@@ -106,20 +106,32 @@ wrong place looks like. Two independent measurements in his own screenshot agree
 back chevron start at the same height as the overlay's first line, and the strip above both is
 **white** — the window background, not page content, since the cinema UI is dark there.
 
-The chip answers that with four properties: the hit area is **shifted up** so it begins at the display's
-corner regardless of the device's inset; it is **drawn**, so its position is verifiable by looking at
-it; a **single tap** replaces three, which removes the multi-tap timing window; and it is a real
-`UIView` added above the web view, so hit-testing does not depend on how SwiftUI composites drawing
-over a representable. ⚠ It also logs **every touch it receives, before toggling** — which is what makes
-"the overlay did not appear" falsifiable from the log:
+⚠⚠ **AND THEN THE FIX MOVED THE WRONG THING — a second round, and the more instructive one.** The next
+version drew its bug glyph correctly in the corner and *still* could not be tapped: he clicked the
+glyph itself and nothing happened. **An offset moves what is *drawn* without promising to move where the
+app *listens*** — the mark was in the corner, the hit area was still 59pt lower. The general lesson is
+the one to keep: **a control whose hit area depends on SwiftUI's layout of an overlay over a `WKWebView`
+is a control with two unknowns multiplying.** So the working design removes both:
+
+- ⚠ **The gesture recognisers are installed on the `UIWindow`** (in `didMoveToWindow`), not on a view in
+  the overlay. Every touch passes through the window, whatever is on top of it, whatever the safe area
+  is, whatever SwiftUI does with an overlay — nothing is left to be wrong.
+- ⚠ **`shouldReceive` accepts a touch only inside a 110pt corner**, and `cancelsTouchesInView = false`
+  with simultaneous recognition, so the page keeps every interaction — inside that corner as well as
+  outside it. A triple-tap there does not steal a page gesture; it just also toggles the overlay.
+- ⚠ **One live instance at a time** (a `static weak var`): if SwiftUI ever rebuilds the view, the old
+  one takes its recognisers off the window first — otherwise two sets would toggle once each per
+  gesture, i.e. on and straight back off, and the overlay would look broken while being correct.
+- It still **logs every received gesture before toggling** — which is what makes "the overlay did not
+  appear" falsifiable from the log:
 
 ```bash
-grep -E "toggle chip|debug overlay" "$LOG"
+grep -E "toggle:|debug overlay" "$LOG"
 ```
 
-- `toggle chip: tap` **and** `debug overlay on/off` → the touch arrived and the toggle worked; a
-  missing overlay is then a rendering problem.
-- `toggle chip:` **absent** → the touch never reached the chip, and the target geometry is wrong.
+- `toggle: 3-tap in the corner` **and** `debug overlay on/off` → the gesture arrived and the toggle
+  worked; a missing overlay is then a rendering problem.
+- `toggle:` **absent** → the gesture never reached the window recogniser at all.
 
 ## What NOT to add here
 

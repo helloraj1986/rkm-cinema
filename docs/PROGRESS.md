@@ -1,3 +1,86 @@
+## ▶ 📋 **APPLE CLIENTS (iOS + tvOS) — PLAN PARKED, SCAFFOLDED, READY FOR NEXT SESSION** (2026-09-13, latest) · branch **`feat/apple-clients`** cut from `main` (tip moves with each record commit — `git log --oneline -1` is the truth) · **NO APP CODE YET — next session executes Phase 0** · plan: **`docs/APPLE_CLIENTS_PLAN.md`** · scaffold: **`apple/`** · ⚠ **his tree is now ON this branch** · **no deploy of any kind is needed for this commit** (docs + new `apple/` folder only — `frontend/`, `backend/`, `nginx/`, compose all untouched)
+
+**What he asked:** a strategy for iOS + tvOS "with minimal code changes", then: *"i want both the tvos and ios
+app to provide the server address on the front page so that it can access and load the ui from there i can just
+login by giving usual login and password"*, then: *"update a specific progress.md file for this work and create a
+new branch for this job and start the work in next session... also i want ios and tvos specific codes on its own
+folders properly organized"*.
+
+**The one hard constraint (verified 2026-09-13):** **tvOS has no browser at all** — Apple removed WebKit from
+Apple TV (`WKWebView` absent, not deprecated; guidelines prohibit embedding one). So the two targets cannot share
+an approach: iOS can wrap the existing React UI, Apple TV cannot.
+
+**The server-address requirement made the plan SMALLER — it deleted three items an earlier revision listed:**
+
+| Item from the first revision | Status now |
+|---|---|
+| Pin the CORS origin list + `allow_credentials` (`api/main.py:64`) | **DELETED** — same-origin once the frame IS the server origin |
+| `VITE_API_BASE` in `frontend/src/lib/api/client.ts:732` | **DELETED** — the relative `"/api"` becomes *correct* |
+| Config-driven `Secure` cookie (`api/routes/auth.py:133`) | **DOWNGRADED to optional hygiene** — `secure=False` works on http AND https, which is what a user-entered address needs |
+
+**iOS is a WKWebView shell, NOT Capacitor — and the reason is source-level, not preference.** Capacitor's
+`ios/Capacitor/Capacitor/WebViewDelegationHandler.swift` **cancels a top-level navigation to an unknown host and
+hands it to Safari**, unless the host is in `server.allowNavigation` — a **build-time** list. A runtime address is
+exactly what it refuses. Fixing that needs a custom `shouldOverrideLoad` plugin: more code than not using
+Capacitor. (Second reason: navigating off `capacitor://localhost` detaches the plugin bridge, which buys nothing
+here — native Safari HLS, plain `<video>`.) ⚠ **Do not re-propose Capacitor for iOS.**
+
+**⚠ THE HEADLINE FOR NEXT SESSION: the iOS app requires ZERO changes to `frontend/` or `backend/`.** It loads the
+UI nginx already serves; the web UI's relative `/api` calls and the session cookie behave exactly as in Safari.
+Its whole cost is three mandatory bits of native config: the **ATS declaration** (a user-typed `http://` host is
+blocked by default), **`allowsInlineMediaPlayback = true`** (else iOS hijacks the custom player and the seek
+bar/quality/subs controls never render), and an **always-reachable "Change server"** (a typo must not brick the
+app until reinstall).
+
+**tvOS is the real work** — a lean native SwiftUI client, **read + play only**, 7 screens (address · sign-in ·
+who's watching · home · browse · detail · player). Acquisition/download, Household admin, subtitle-vendor search
+and global search stay on web/iOS. **The cost is the focus engine** (no pointer, no hover — the web app's hover
+menus, `Dialog` and the pointer-capture seek bar all need focusable equivalents), budget **2–4 weeks of evenings**,
+first two days lost to Xcode toolchain/signing.
+
+**The ONLY backend change in the whole plan** — and it blocks the **tvOS player only** (`/api/session.py`'s
+`session_context_from_request` reads the cookie and nothing else — there is no `Authorization` path in the tree):
+B1 return a `session_token` from login; B2 accept it as `Authorization: Bearer` in that ONE function (the §11
+identity seam); B3 inject it into each URI at the HLS proxy's **existing** rewrite point, so `AVPlayer` needs no
+cookie plumbing. ⚠ A token in a query string is a credential — never log it. Do NOT bet playback on cookie
+propagation to HLS segments.
+
+**Folder layout (his requirement: each app in its own, properly organised folder) — full tree in plan §5:**
+
+```
+apple/README.md          the tree, the two DO-NOT rules (ios has no API client; Shared only takes what BOTH need)
+apple/Shared/            local SPM package RKMServerKit — server address parse/normalise/persist, and nothing else
+apple/ios/  (RKMCinema)  App/ Server/ Shell/ Config/    RKMCinemaApp.swift  — shell + setup, ~100 lines
+apple/tvos/ (RKMCinemaTV) Server/ Auth/ Library/ Player/ Core/{APIClient,GeneratedAPI}
+apple/scripts/generate-api.sh   regen Swift types from docs/api/openapi.v1.json (⚠ NOT RUN — no swift in sandbox;
+                                verify the subcommand/flags against `swift-openapi-generator --help` on the Mac)
+```
+
+`GeneratedAPI/` is **generated then committed** (mirrors how `frontend/` commits its generated TS types from the
+same contract); `.gitignore` was extended with Xcode state (`xcuserdata/`, `DerivedData/`, `.build/`) and
+explicitly does **not** ignore the generated types. Bundle IDs to confirm on first build:
+`com.helloraj1986.rkmcinema.ios` / `.tvos`.
+
+**NEXT SESSION — the exact first action: PHASE 0, the iOS shell.** Build `apple/Shared/` + `apple/ios/`
+(setup screen → stored address → `WKWebView` → ATS → `allowsInlineMediaPlayback` → unreachable state). Gate: on
+the iPad, install → enter the address → sign in with the ordinary household credentials → play a title and see
+the **custom** transport (not the iOS player) → sign out to the app's own state; then a deliberately wrong
+address must offer **Change server**. **No backend work is needed for Phase 0.**
+
+**Constraints that must not be lost:** ⚠ the Apple tracks **cannot be built in this sandbox** (`swift` and
+`xcodebuild` are absent — verified) — they build on the **MacBook Pro**; the agent writes/reviews/diffs, **he
+compiles and runs**. ⚠ Away from home the **Tailscale app must run on the device itself** — these apps cannot
+route to `100.x` tailnet addresses. ⚠ A remote-URL shell is what App Store guideline 4.2 targets, so a store
+submission would likely be rejected — irrelevant for a household app. ⚠ `Shared/` takes **only** what both apps
+genuinely need (today: just the address); if it grows API models or networking, split it instead.
+
+**Decisions carried from the rejected list (plan §6) so they are not re-litigated:** Capacitor (both platforms),
+Electron/Tauri for tvOS, "one web app everywhere", and **react-native-tvos** — the last is *viable* but shares
+only the logic layer (no DOM ⇒ Tailwind/react-router/`hls.js` all lost, every screen rewritten anyway), so it is
+the right call **only** if a Shield/Chromecast (Android TV) is also in the plan. Also noted: **Swiftfin/Infuse on
+the Apple TV pointed at the bundled Jellyfin :8098 costs $0 today** — the honest cheapest option, and only the
+wrong answer if the point is *this app's* UX on the big screen.
+
 ## ▶ ✅ **MERGED TO `main` — CTA ALIGNMENT + EXTERNAL SEARCH + THE MODAL FIXES** (2026-09-13, latest) · **`main` = `e0b5c67`** (fast-forward, at HIS direction) · deploy branch `experiment/bundled-docker-stack` fast-forwarded to match · **his RKM-HP eyeball of these fixes is STILL PENDING** — he directed the merge, he has not yet reported seeing them
 
 **What he asked:** *"git commit and merge to main"*. Nothing was left uncommitted; the merge was a single

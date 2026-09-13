@@ -64,3 +64,16 @@ app.js.bak3
 
 # Player layout harness fixture (downloaded by frontend/harness/README.md, not source)
 frontend/public/harness-sample.mp4
+
+# ---- Apple clients (apple/) ----
+# Xcode per-user state must never be committed; everything else in the projects IS source.
+**/xcuserdata/
+**/*.xcuserstate
+**/*.xcscmblueprint
+**/DerivedData/
+**/.build/
+**/.swiftpm/configuration/
+**/*.moved-aside
+**/Pods/
+# Generated API types ARE committed on purpose (see apple/scripts/generate-api.sh) —
+# do not ignore apple/**/Core/GeneratedAPI/.

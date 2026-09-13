@@ -1,0 +1,869 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>RKM Cinema — Household (Redesign Reference)</title>
+<style>
+  :root{
+    --bg: #0a0a0d;
+    --surface: #15151b;
+    --surface-2: #1c1c24;
+    --surface-3: #232330;
+    --border: #2a2a34;
+    --border-soft: #232330;
+    --text: #f2f2f5;
+    --text-dim: #a3a3ae;
+    --text-faint: #6f6f7a;
+    --accent: #f0b429;
+    --accent-dim: #7a5c14;
+    --accent-text: #1a1200;
+    --danger: #e5674a;
+    --danger-dim: #3a2420;
+    --ok: #57b37a;
+    --radius-lg: 16px;
+    --radius-md: 12px;
+    --radius-sm: 8px;
+    --shadow-modal: 0 24px 60px rgba(0,0,0,.55);
+    font-size: 16px;
+  }
+
+  *{box-sizing:border-box;}
+  html,body{height:100%;}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--text);
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+
+  a{color:inherit;text-decoration:none;}
+  button{font-family:inherit;}
+
+  .app{
+    display:flex;
+    min-height:100vh;
+  }
+
+  /* ---------- Sidebar ---------- */
+  .sidebar{
+    width: 240px;
+    flex-shrink:0;
+    border-right:1px solid var(--border-soft);
+    padding: 22px 16px;
+    display:flex;
+    flex-direction:column;
+    gap: 28px;
+  }
+  .brand{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    padding: 0 4px 4px;
+  }
+  .brand-mark{
+    width:34px;height:34px;border-radius:9px;
+    background:var(--accent);
+    display:flex;align-items:center;justify-content:center;
+    color:#1a1200;font-size:15px;
+  }
+  .brand-name{font-weight:700;font-size:15.5px;line-height:1.15;}
+  .brand-sub{font-size:10.5px;letter-spacing:.14em;color:var(--accent);font-weight:700;}
+
+  .nav-group{display:flex;flex-direction:column;gap:2px;}
+  .nav-label{
+    font-size:11px;
+    color:var(--text-faint);
+    letter-spacing:.08em;
+    padding: 10px 10px 4px;
+  }
+  .nav-item{
+    display:flex;align-items:center;gap:10px;
+    padding:9px 10px;
+    border-radius:var(--radius-sm);
+    color:var(--text-dim);
+    font-size:14px;
+    cursor:pointer;
+  }
+  .nav-item svg{width:17px;height:17px;flex-shrink:0;opacity:.85;}
+  .nav-item:hover{background:var(--surface);color:var(--text);}
+  .nav-item.active{background:var(--surface-2);color:var(--text);position:relative;}
+  .nav-item.active::before{
+    content:"";position:absolute;left:-16px;top:8px;bottom:8px;width:3px;
+    background:var(--accent);border-radius:0 3px 3px 0;
+  }
+
+  .sidebar-footer{margin-top:auto;}
+  .profile-chip{
+    display:flex;align-items:center;gap:10px;
+    padding:8px;border-radius:var(--radius-sm);
+    color:var(--text-dim);font-size:13px;
+  }
+  .avatar-sm{
+    width:30px;height:30px;border-radius:50%;
+    background:var(--accent-dim);color:var(--accent);
+    display:flex;align-items:center;justify-content:center;
+    font-size:12px;font-weight:700;
+  }
+
+  /* ---------- Main ---------- */
+  .main{flex:1;min-width:0;display:flex;flex-direction:column;}
+
+  .topbar{
+    display:flex;align-items:center;gap:16px;
+    padding: 18px 32px;
+    border-bottom:1px solid var(--border-soft);
+  }
+  .search{
+    flex:1;max-width:520px;
+    display:flex;align-items:center;gap:10px;
+    background:var(--surface);
+    border:1px solid var(--border-soft);
+    border-radius:999px;
+    padding:9px 14px;
+    color:var(--text-faint);
+    font-size:13.5px;
+  }
+  .search svg{width:15px;height:15px;opacity:.6;}
+
+  .topbar-right{
+    margin-left:auto;
+    display:flex;align-items:center;gap:12px;
+    position:relative;
+  }
+  .user-name{font-size:13.5px;color:var(--text-dim);}
+
+  .avatar-btn{
+    width:38px;height:38px;border-radius:50%;
+    background:var(--accent-dim);
+    color:var(--accent);
+    border:1px solid transparent;
+    display:flex;align-items:center;justify-content:center;
+    font-weight:700;font-size:13px;
+    cursor:pointer;
+  }
+  .avatar-btn:hover{border-color:var(--accent);}
+  .avatar-btn.menu-open{border-color:var(--accent);box-shadow:0 0 0 3px rgba(240,180,41,.15);}
+
+  /* ---------- Account menu ---------- */
+  .account-menu{
+    position:absolute;
+    top: 48px;
+    right:0;
+    width: 268px;
+    background:var(--surface-2);
+    border:1px solid var(--border);
+    border-radius:var(--radius-md);
+    box-shadow: var(--shadow-modal);
+    padding:8px;
+    display:none;
+    flex-direction:column;
+    gap:2px;
+    z-index: 40;
+  }
+  .account-menu.open{display:flex;}
+  .account-menu-header{
+    display:flex;align-items:center;gap:10px;
+    padding:10px 10px 12px;
+  }
+  .account-menu-header .avatar-sm{width:36px;height:36px;font-size:13px;}
+  .account-menu-header .who .name{font-size:14px;font-weight:600;}
+  .account-menu-header .who .email{font-size:12px;color:var(--text-faint);}
+
+  .menu-item{
+    display:flex;align-items:center;gap:10px;
+    padding:9px 10px;
+    border-radius:var(--radius-sm);
+    font-size:13.5px;
+    color:var(--text);
+    cursor:pointer;
+    background:none;border:none;width:100%;text-align:left;
+  }
+  .menu-item svg{width:16px;height:16px;opacity:.75;flex-shrink:0;}
+  .menu-item:hover{background:var(--surface-3);}
+  .menu-item .tag{
+    margin-left:auto;
+    font-size:10px;letter-spacing:.05em;
+    color:var(--text-faint);
+    border:1px solid var(--border);
+    padding:2px 6px;border-radius:5px;
+  }
+  .menu-divider{height:1px;background:var(--border-soft);margin:6px 4px;}
+  .menu-item.danger{color:var(--danger);}
+  .menu-item.danger svg{opacity:.9;}
+
+  /* ---------- Page shell ---------- */
+  .page{
+    padding: 36px 40px 64px;
+    max-width: 1180px;
+    width:100%;
+    margin: 0 auto;
+  }
+
+  .eyebrow{
+    font-size:11.5px;
+    letter-spacing:.09em;
+    color: var(--accent);
+    font-weight:700;
+    margin-bottom:10px;
+  }
+  .page-head{
+    display:flex;align-items:flex-end;justify-content:space-between;
+    gap:24px;
+    margin-bottom: 34px;
+  }
+  .page-head h1{
+    font-size: 32px;
+    margin: 0 0 8px;
+    letter-spacing:-0.01em;
+  }
+  .page-head p{
+    margin:0;
+    color:var(--text-dim);
+    font-size:14.5px;
+    max-width:560px;
+    line-height:1.55;
+  }
+
+  .btn{
+    display:inline-flex;align-items:center;gap:8px;
+    padding:10px 16px;
+    border-radius:999px;
+    font-size:13.5px;
+    font-weight:600;
+    cursor:pointer;
+    border:1px solid var(--border);
+    background:var(--surface);
+    color:var(--text);
+    white-space:nowrap;
+  }
+  .btn:hover{background:var(--surface-3);}
+  .btn.primary{
+    background:var(--accent);
+    color:var(--accent-text);
+    border-color:var(--accent);
+  }
+  .btn.primary:hover{filter:brightness(1.06);}
+  .btn.subtle{background:transparent;border-color:transparent;color:var(--text-dim);}
+  .btn.subtle:hover{background:var(--surface);color:var(--text);}
+  .btn.danger-outline{border-color:var(--danger);color:var(--danger);background:transparent;}
+  .btn.danger-outline:hover{background:var(--danger-dim);}
+  .btn svg{width:15px;height:15px;}
+  .btn.icon-only{padding:9px;width:36px;height:36px;justify-content:center;}
+
+  /* ---------- Summary cards ---------- */
+  .summary-row{
+    display:grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap:14px;
+    margin-bottom: 36px;
+  }
+  .summary-card{
+    background:var(--surface);
+    border:1px solid var(--border-soft);
+    border-radius:var(--radius-lg);
+    padding:20px 22px;
+  }
+  .summary-card .value{
+    font-size:30px;
+    font-weight:700;
+    letter-spacing:-0.02em;
+  }
+  .summary-card .label{
+    margin-top:4px;
+    font-size:13px;
+    color:var(--text-dim);
+  }
+
+  .section-title{
+    font-size:13px;
+    color:var(--text-faint);
+    letter-spacing:.04em;
+    margin: 0 0 14px;
+  }
+
+  /* ---------- Profile cards ---------- */
+  .profiles{
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+  }
+  .profile-card{
+    background:var(--surface);
+    border:1px solid var(--border-soft);
+    border-radius:var(--radius-lg);
+    padding: 18px 20px;
+    display:flex;
+    align-items:flex-start;
+    gap:16px;
+    position:relative;
+  }
+  .profile-card .avatar-lg{
+    width:48px;height:48px;border-radius:50%;
+    background:var(--accent-dim);
+    color:var(--accent);
+    display:flex;align-items:center;justify-content:center;
+    font-weight:700;font-size:16px;
+    flex-shrink:0;
+  }
+  .profile-card.disabled .avatar-lg{
+    background:var(--surface-3);color:var(--text-faint);
+  }
+  .profile-body{flex:1;min-width:0;}
+  .profile-top{
+    display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+    margin-bottom:4px;
+  }
+  .profile-name{font-size:16px;font-weight:600;}
+  .badge{
+    font-size:10.5px;
+    letter-spacing:.04em;
+    padding:3px 8px;
+    border-radius:999px;
+    border:1px solid var(--border);
+    color:var(--text-dim);
+  }
+  .badge.you{color:var(--accent);border-color:var(--accent-dim);background:rgba(240,180,41,.08);}
+  .badge.admin{color:var(--text);border-color:var(--border);background:var(--surface-3);}
+  .badge.disabled{color:var(--danger);border-color:transparent;background:var(--danger-dim);}
+  .badge.nopass{color:var(--text-faint);}
+
+  .profile-meta{
+    font-size:13px;color:var(--text-dim);
+    margin-bottom:10px;
+  }
+  .profile-meta .dot{color:var(--text-faint);margin:0 6px;}
+
+  .lib-chips{display:flex;flex-wrap:wrap;gap:6px;}
+  .lib-chip{
+    font-size:12px;
+    padding:4px 10px;
+    border-radius:999px;
+    background:var(--surface-2);
+    border:1px solid var(--border-soft);
+    color:var(--text-dim);
+  }
+  .lib-chip.all{color:var(--accent);border-color:var(--accent-dim);background:rgba(240,180,41,.06);}
+
+  .profile-actions{
+    display:flex;align-items:center;gap:8px;
+    flex-shrink:0;
+    padding-top:2px;
+  }
+
+  .overflow{position:relative;}
+  .overflow-menu{
+    position:absolute;top:42px;right:0;
+    width:190px;
+    background:var(--surface-2);
+    border:1px solid var(--border);
+    border-radius:var(--radius-md);
+    box-shadow:var(--shadow-modal);
+    padding:6px;
+    display:none;
+    flex-direction:column;
+    z-index:30;
+  }
+  .overflow-menu.open{display:flex;}
+
+  /* ---------- Modal ---------- */
+  .modal-overlay{
+    position:fixed;inset:0;
+    background:rgba(6,6,8,.6);
+    backdrop-filter: blur(2px);
+    display:none;
+    align-items:center;justify-content:center;
+    z-index:100;
+    padding:24px;
+  }
+  .modal-overlay.open{display:flex;}
+  .modal{
+    width: 420px;
+    max-width:100%;
+    background:var(--surface-2);
+    border:1px solid var(--border);
+    border-radius:var(--radius-lg);
+    box-shadow:var(--shadow-modal);
+    padding: 26px 26px 22px;
+  }
+  .modal-head{
+    display:flex;align-items:flex-start;justify-content:space-between;
+    margin-bottom: 18px;
+  }
+  .modal-head h3{margin:0 0 4px;font-size:18px;}
+  .modal-head p{margin:0;font-size:13px;color:var(--text-dim);}
+  .modal-close{
+    background:none;border:none;color:var(--text-faint);
+    cursor:pointer;padding:4px;border-radius:6px;
+  }
+  .modal-close:hover{color:var(--text);background:var(--surface-3);}
+  .modal-close svg{width:18px;height:18px;}
+
+  .field{margin-bottom:14px;}
+  .field label{
+    display:block;font-size:12.5px;color:var(--text-dim);margin-bottom:6px;
+  }
+  .field input{
+    width:100%;
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:var(--radius-sm);
+    padding:10px 12px;
+    color:var(--text);
+    font-size:14px;
+  }
+  .field input:focus{outline:none;border-color:var(--accent);}
+
+  .checklist{display:flex;flex-direction:column;gap:2px;margin-bottom: 6px;}
+  .check-row{
+    display:flex;align-items:center;gap:10px;
+    padding:9px 10px;
+    border-radius:var(--radius-sm);
+  }
+  .check-row:hover{background:var(--surface);}
+  .check-row input{width:16px;height:16px;accent-color:var(--accent);}
+  .check-row .name{font-size:13.5px;}
+  .check-row .count{margin-left:auto;font-size:12px;color:var(--text-faint);}
+
+  .modal-actions{
+    display:flex;justify-content:flex-end;gap:10px;
+    margin-top: 20px;
+  }
+
+  .visually-hidden{
+    position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);
+  }
+
+  @media (max-width: 860px){
+    .sidebar{display:none;}
+    .summary-row{grid-template-columns:1fr;}
+    .profile-card{flex-wrap:wrap;}
+  }
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <!-- ============ SIDEBAR ============ -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">▶</div>
+      <div>
+        <div class="brand-name">RKM</div>
+        <div class="brand-sub">CINEMA</div>
+      </div>
+    </div>
+
+    <div class="nav-group">
+      <div class="nav-label">BROWSE</div>
+      <div class="nav-item active">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg>
+        Home
+      </div>
+    </div>
+
+    <div class="nav-group">
+      <div class="nav-label">LIBRARIES</div>
+      <div class="nav-item">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/></svg>
+        Movies Kids
+      </div>
+      <div class="nav-item">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16v14H4z"/><path d="M9 21h6"/></svg>
+        Movies
+      </div>
+      <div class="nav-item">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="12" rx="1"/><path d="M8 20h8"/></svg>
+        TV Shows
+      </div>
+    </div>
+
+    <div class="nav-group">
+      <div class="nav-label">COLLECTIONS</div>
+      <div class="nav-item">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.8 8.6c0 5-8.8 10-8.8 10s-8.8-5-8.8-10a4.6 4.6 0 0 1 8.8-2 4.6 4.6 0 0 1 8.8 2Z"/></svg>
+        Watchlist
+      </div>
+      <div class="nav-item">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l3 2"/></svg>
+        Discover
+      </div>
+      <div class="nav-item">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v18M3 12h18"/></svg>
+        Suggest
+      </div>
+    </div>
+
+    <!-- Household + My password intentionally removed from here.
+         They now live inside the account menu (see topbar avatar). -->
+    <div class="nav-group">
+      <div class="nav-item">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 9 19.36a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.64 15a1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.64 9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.64a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.36 9c.14.36.4.66.75.85.35.19.76.24 1.14.15H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1Z"/></svg>
+        Settings
+      </div>
+    </div>
+
+    <div class="sidebar-footer">
+      <div class="profile-chip">
+        <div class="avatar-sm">RK</div>
+        <div>rkm<br><span style="color:var(--text-faint);font-size:11.5px;">Personal library</span></div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ============ MAIN ============ -->
+  <div class="main">
+    <div class="topbar">
+      <div class="search">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+        Search movies, shows, people…
+      </div>
+
+      <div class="topbar-right">
+        <span class="user-name">rkm</span>
+
+        <button class="avatar-btn" id="avatarBtn" aria-haspopup="true" aria-expanded="false" aria-label="Account menu">RK</button>
+
+        <!-- ============ ACCOUNT MENU (new) ============ -->
+        <div class="account-menu" id="accountMenu" role="menu">
+          <div class="account-menu-header">
+            <div class="avatar-sm">RK</div>
+            <div class="who">
+              <div class="name">rkm</div>
+              <div class="email">Administrator</div>
+            </div>
+          </div>
+
+          <button class="menu-item" role="menuitem" id="menuHousehold">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="10" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            Household
+            <span class="tag">ADMIN</span>
+          </button>
+
+          <button class="menu-item" role="menuitem">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            Account &amp; password
+          </button>
+
+          <button class="menu-item" role="menuitem">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 7h13M8 12h13M8 17h13"/><path d="M3 7h.01M3 12h.01M3 17h.01"/></svg>
+            Switch profile
+          </button>
+
+          <button class="menu-item" role="menuitem">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 9 19.36a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.64 15a1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.64 9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.64a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.36 9c.14.36.4.66.75.85.35.19.76.24 1.14.15H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1Z"/></svg>
+            Settings
+          </button>
+
+          <div class="menu-divider"></div>
+
+          <button class="menu-item danger" role="menuitem">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>
+            Sign out
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ HOUSEHOLD PAGE (new) ============ -->
+    <div class="page">
+
+      <div class="page-head">
+        <div>
+          <div class="eyebrow">ACCOUNT · HOUSEHOLD</div>
+          <h1>Household</h1>
+          <p>Everyone signs in with their own account and keeps their own watch history and resume points. Choose which libraries each person can see — it's enforced the same way across every device.</p>
+        </div>
+        <button class="btn primary" id="openAddMember">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+          Add member
+        </button>
+      </div>
+
+      <div class="summary-row">
+        <div class="summary-card">
+          <div class="value">4</div>
+          <div class="label">Household members</div>
+        </div>
+        <div class="summary-card">
+          <div class="value">3</div>
+          <div class="label">Active profiles</div>
+        </div>
+        <div class="summary-card">
+          <div class="value">3</div>
+          <div class="label">Libraries shared</div>
+        </div>
+      </div>
+
+      <div class="section-title">MEMBERS</div>
+
+      <div class="profiles">
+
+        <!-- meenu — disabled -->
+        <div class="profile-card disabled">
+          <div class="avatar-lg">M</div>
+          <div class="profile-body">
+            <div class="profile-top">
+              <span class="profile-name">meenu</span>
+              <span class="badge disabled">DISABLED</span>
+            </div>
+            <div class="profile-meta">Last seen 13/09/2026</div>
+            <div class="lib-chips">
+              <span class="lib-chip">TV Shows</span>
+              <span class="lib-chip">Movies Kids</span>
+            </div>
+          </div>
+          <div class="profile-actions">
+            <button class="btn subtle" data-open-modal="libraryModal">Library access</button>
+            <button class="btn subtle" data-open-modal="passwordModal">Reset password</button>
+            <div class="overflow">
+              <button class="btn icon-only subtle overflow-trigger" aria-label="More actions">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="12" cy="19" r="1.3"/></svg>
+              </button>
+              <div class="overflow-menu">
+                <button class="menu-item">Rename</button>
+                <button class="menu-item">Enable</button>
+                <div class="menu-divider"></div>
+                <button class="menu-item danger">Remove</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- raj -->
+        <div class="profile-card">
+          <div class="avatar-lg">R</div>
+          <div class="profile-body">
+            <div class="profile-top">
+              <span class="profile-name">raj</span>
+            </div>
+            <div class="profile-meta">Last seen 13/09/2026</div>
+            <div class="lib-chips">
+              <span class="lib-chip">Movies</span>
+            </div>
+          </div>
+          <div class="profile-actions">
+            <button class="btn subtle" data-open-modal="libraryModal">Library access</button>
+            <button class="btn subtle" data-open-modal="passwordModal">Reset password</button>
+            <div class="overflow">
+              <button class="btn icon-only subtle overflow-trigger" aria-label="More actions">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="12" cy="19" r="1.3"/></svg>
+              </button>
+              <div class="overflow-menu">
+                <button class="menu-item">Rename</button>
+                <button class="menu-item">Disable</button>
+                <div class="menu-divider"></div>
+                <button class="menu-item danger">Remove</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- rkm — you / administrator -->
+        <div class="profile-card">
+          <div class="avatar-lg">RK</div>
+          <div class="profile-body">
+            <div class="profile-top">
+              <span class="profile-name">rkm</span>
+              <span class="badge you">YOU</span>
+              <span class="badge admin">ADMINISTRATOR</span>
+            </div>
+            <div class="profile-meta">Last seen 13/09/2026</div>
+            <div class="lib-chips">
+              <span class="lib-chip all">Every library</span>
+            </div>
+          </div>
+          <div class="profile-actions">
+            <button class="btn subtle" data-open-modal="libraryModal">Library access</button>
+            <button class="btn subtle" data-open-modal="passwordModal">Change password</button>
+          </div>
+        </div>
+
+        <!-- sharanya — no password, never signed in -->
+        <div class="profile-card">
+          <div class="avatar-lg">S</div>
+          <div class="profile-body">
+            <div class="profile-top">
+              <span class="profile-name">sharanya</span>
+              <span class="badge nopass">NO PASSWORD</span>
+            </div>
+            <div class="profile-meta">Never signed in</div>
+            <div class="lib-chips">
+              <span class="lib-chip">Movies Kids</span>
+            </div>
+          </div>
+          <div class="profile-actions">
+            <button class="btn subtle" data-open-modal="libraryModal">Library access</button>
+            <button class="btn primary" style="padding:10px 14px;" data-open-modal="passwordModal">Set password</button>
+            <div class="overflow">
+              <button class="btn icon-only subtle overflow-trigger" aria-label="More actions">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="12" cy="19" r="1.3"/></svg>
+              </button>
+              <div class="overflow-menu">
+                <button class="menu-item">Rename</button>
+                <button class="menu-item">Disable</button>
+                <div class="menu-divider"></div>
+                <button class="menu-item danger">Remove</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ MODAL: Library Access ============ -->
+<div class="modal-overlay" id="libraryModal">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="libraryModalTitle">
+    <div class="modal-head">
+      <div>
+        <h3 id="libraryModalTitle">Library access</h3>
+        <p>Choose which libraries this profile can see.</p>
+      </div>
+      <button class="modal-close" data-close-modal><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+    </div>
+    <div class="checklist">
+      <label class="check-row"><input type="checkbox" checked> <span class="name">Movies</span> <span class="count">412 items</span></label>
+      <label class="check-row"><input type="checkbox"> <span class="name">Movies Kids</span> <span class="count">88 items</span></label>
+      <label class="check-row"><input type="checkbox"> <span class="name">TV Shows</span> <span class="count">1,204 episodes</span></label>
+    </div>
+    <div class="modal-actions">
+      <button class="btn subtle" data-close-modal>Cancel</button>
+      <button class="btn primary" data-close-modal>Save access</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ MODAL: Password ============ -->
+<div class="modal-overlay" id="passwordModal">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="passwordModalTitle">
+    <div class="modal-head">
+      <div>
+        <h3 id="passwordModalTitle">Set a password</h3>
+        <p>This profile will use it to sign in on any device.</p>
+      </div>
+      <button class="modal-close" data-close-modal><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+    </div>
+    <div class="field">
+      <label for="newPass">New password</label>
+      <input type="password" id="newPass" placeholder="Enter a new password">
+    </div>
+    <div class="field">
+      <label for="confirmPass">Confirm password</label>
+      <input type="password" id="confirmPass" placeholder="Re-enter the password">
+    </div>
+    <div class="modal-actions">
+      <button class="btn subtle" data-close-modal>Cancel</button>
+      <button class="btn primary" data-close-modal>Save password</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ MODAL: Add Member ============ -->
+<div class="modal-overlay" id="addMemberModal">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="addMemberTitle">
+    <div class="modal-head">
+      <div>
+        <h3 id="addMemberTitle">Add a member</h3>
+        <p>Create a new profile for your household.</p>
+      </div>
+      <button class="modal-close" data-close-modal><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+    </div>
+    <div class="field">
+      <label for="memberName">Name</label>
+      <input type="text" id="memberName" placeholder="e.g. priya">
+    </div>
+    <div class="field">
+      <label for="memberPass">Password (optional)</label>
+      <input type="password" id="memberPass" placeholder="Leave blank to set up later">
+    </div>
+    <div class="checklist">
+      <label class="check-row"><input type="checkbox"> <span class="name">Movies</span></label>
+      <label class="check-row"><input type="checkbox"> <span class="name">Movies Kids</span></label>
+      <label class="check-row"><input type="checkbox"> <span class="name">TV Shows</span></label>
+    </div>
+    <div class="modal-actions">
+      <button class="btn subtle" data-close-modal>Cancel</button>
+      <button class="btn primary" data-close-modal>Create member</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  // ---- Account menu ----
+  const avatarBtn = document.getElementById('avatarBtn');
+  const accountMenu = document.getElementById('accountMenu');
+
+  function closeAccountMenu(){
+    accountMenu.classList.remove('open');
+    avatarBtn.classList.remove('menu-open');
+    avatarBtn.setAttribute('aria-expanded','false');
+  }
+
+  avatarBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const isOpen = accountMenu.classList.toggle('open');
+    avatarBtn.classList.toggle('menu-open', isOpen);
+    avatarBtn.setAttribute('aria-expanded', isOpen);
+    closeAllOverflows();
+  });
+
+  document.getElementById('menuHousehold').addEventListener('click', () => {
+    closeAccountMenu();
+    // In the real app: navigate to /settings/household (route unchanged)
+  });
+
+  // ---- Overflow (per-profile "...") menus ----
+  function closeAllOverflows(){
+    document.querySelectorAll('.overflow-menu.open').forEach(m => m.classList.remove('open'));
+  }
+  document.querySelectorAll('.overflow-trigger').forEach(trigger => {
+    trigger.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const menu = trigger.parentElement.querySelector('.overflow-menu');
+      const isOpen = menu.classList.contains('open');
+      closeAllOverflows();
+      closeAccountMenu();
+      if(!isOpen) menu.classList.add('open');
+    });
+  });
+
+  document.addEventListener('click', () => {
+    closeAccountMenu();
+    closeAllOverflows();
+  });
+
+  // ---- Modals ----
+  document.querySelectorAll('[data-open-modal]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.getElementById(btn.dataset.openModal).classList.add('open');
+    });
+  });
+  document.getElementById('openAddMember').addEventListener('click', () => {
+    document.getElementById('addMemberModal').classList.add('open');
+  });
+  document.querySelectorAll('[data-close-modal]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      btn.closest('.modal-overlay').classList.remove('open');
+    });
+  });
+  document.querySelectorAll('.modal-overlay').forEach(overlay => {
+    overlay.addEventListener('click', (e) => {
+      if(e.target === overlay) overlay.classList.remove('open');
+    });
+  });
+  document.addEventListener('keydown', (e) => {
+    if(e.key === 'Escape'){
+      document.querySelectorAll('.modal-overlay.open').forEach(m => m.classList.remove('open'));
+      closeAccountMenu();
+      closeAllOverflows();
+    }
+  });
+</script>
+
+</body>
+</html>

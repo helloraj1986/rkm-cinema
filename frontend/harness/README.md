@@ -304,3 +304,38 @@ lockup: the direction matters more than the absolute.
 grows its own box class (falsified by injecting `py-1.5` into one variant). It cannot see what the
 browser does — that is what this frame is for.
 
+## `search-frame.html` — the external ("not in your library") section (2026-09-13)
+
+His third report: searching **"sholay"** returned his one library row and **no external section**, so
+the real *Sholay* (1975) looked like it did not exist. The backend half of that cause — a gate that
+skipped the external search whenever an owned title merely CONTAINED the query — is pinned in
+`backend/tests/test_global_search.py`. This frame pins the half no backend test can reach:
+
+> ⚠ the UI kept its OWN copy of the gate: `showDiscovery` required `!data.strong_match`, so fixing the
+> server alone would still have shown him nothing. Two copies of one rule is the same drift that
+> produced bug 2's two hand-rolled button strings — and the reason this is a browser check is that what
+> must hold is the SERVER's answer versus what the SCREEN does with it.
+
+`python3 tools/check_search_fallback.py` mounts the REAL `GlobalSearch` and drives the real
+`/api/search/global` response shape for his query — `strong_match: true` **and** the external rows,
+which is exactly the combination the old UI threw away.
+
+| Query | What it proves |
+|---|---|
+| `?strong=1` (default) | the library row AND the "Discover · not in your library" group render together; the owned row is FIRST and keeps its own Resume action; each external row offers Add-to-watchlist/Download, is marked not-owned, and never offers an OWNED action; clicking one opens that title's metadata modal (the Suggest-card contract) |
+| `?tmdbkey=0` | capability off: no group, no rows, and the footer says "TMDB discovery off — library only" — a silently smaller answer reads as broken |
+
+Two things this frame learned/decided:
+
+* ⚠ **Readiness waits for the OWNED row, not for the whole expected set.** Waiting on all three rows
+  makes the run die at the gate with *"the frame did not render"* instead of failing the assertion
+  that says WHY the rows are missing — which is the defect under test. Falsified: restoring the old
+  UI gate turns it into 4 failures that name it (*"the UI showed groups `['In your library']`"*),
+  and the click step is guarded so a missing row reports a FAIL rather than a Playwright traceback.
+* His report suggested external rows should carry "no Resume/Details buttons". **Details stays, on
+  purpose**: on an unowned row it opens that title's metadata modal (the same destination as clicking
+  the row), not the owned item's page. The distinction that matters is the PRIMARY action, which is
+  what the check asserts — an unowned row must never offer something that resumes or opens what he
+  does not have.
+
+

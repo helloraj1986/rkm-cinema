@@ -1,4 +1,8 @@
 import SwiftUI
+// ⚠ WebKit for `shell.webView?.isInspectable` — a **member reached through an instance**, so this file
+// contains no `WK`-prefixed name at all. That is why the name-based sweep of the imports missed it and
+// cost a third build round; `apple/scripts/check-imports.py` exists to catch exactly this, and did.
+import WebKit
 import RKMServerKit
 
 /// The on-screen overlay — `apple/LOGGING.md` §4, layer 3.

@@ -137,6 +137,29 @@ log stream --device --subsystem com.helloraj1986.rkmcinema --level debug \
   --predicate 'category == "playback"' | tee ~/dev/rkm-cinema/apple/logs/tv-$(date +%Y%m%d-%H%M%S).log
 ```
 
+⚠ **`--device` needs exactly one device attached.** With more than one (an iPhone and an iPad, say) it
+refuses; get the UDID from `xcrun devicectl list devices` (or Xcode → Window → Devices and Simulators)
+and use `--device-udid <UDID>` instead. ✅ Verified on the iPad 2026-09-14: Xcode 26.6 (SDK 26.5) streams
+from an **iPadOS 27** device without complaint, so a device newer than the SDK is not a problem here.
+
+⚠⚠ **ON A PHYSICAL DEVICE THE *FILE* LOG IS NOT ON THE MAC'S DISK — the simulator's
+`get_app_container` trick does not apply.** Three ways to get at it, in order of convenience:
+
+1. **The overlay** (why §4 exists): a screenshot carries the correlation id and the last error.
+2. **The live stream above** — same lines, no file needed.
+3. **The file itself**, when a whole run has to be read offline: Xcode → **Window → Devices and
+   Simulators** → the device → **Installed Apps** → `RKMCinema` → **⚙ → Download Container…** → then, in
+   Terminal (adjust the path to wherever it landed):
+
+```bash
+C=~/Downloads/RKMCinema.xcappdata
+LOG="$(find "$C" -name 'rkm-ios.log')"
+echo "--- file: $LOG"
+tail -40 "$LOG"
+echo "=== redaction gate (must print NOTHING below) ==="
+grep -iE "password|token|api_key|rkm_session" "$LOG"
+```
+
 Then he pastes the tail in chat. ⚠ `apple/logs/` is **git-ignored** — logs travel by pasting, not by
 committing; if a whole file ever needs to reach me, un-ignore that one file explicitly with
 `git add -f apple/logs/<file>`. **Deferred decision:** if that round-trip proves clunky, the alternative is a

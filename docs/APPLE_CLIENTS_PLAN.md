@@ -1,8 +1,10 @@
 # Apple clients (iOS / iPadOS / tvOS) — plan
 
-> **Status:** 📋 **PLAN ONLY — not executed.** No code changed. Written 2026-09-13.
-> **Goal:** get rkm-cinema running on the household's Apple devices with the *minimum* new code,
-> without forking the backend and without a second implementation of any business rule.
+> **Status:** 📋 **PLAN ONLY — not executed.** No code changed. Written 2026-09-13, revised 2026-09-13
+> after the "server address on first launch" requirement (see §2) — which **deleted** several items an
+> earlier revision of this plan listed and **replaced the iOS approach entirely**.
+> **Goal:** run rkm-cinema on the household's Apple devices with the *minimum* new code, without forking
+> the backend and without a second implementation of any business rule.
 
 ---
 
@@ -12,116 +14,199 @@
 unavailable on the platform — not deprecated, absent) and the App Store guidelines prohibit embedding
 one. Verified 2026-09-13.
 
-Consequences:
-
-| Target | Can we wrap the existing React app? |
+| Target | Can we render the existing React UI? |
 |---|---|
-| iPhone / iPad | **Yes** — iOS ships a full WebKit (WKWebView). Wrapping is cheap. |
-| Apple TV | **No.** No web view exists. TV needs a **native** UI. |
+| iPhone / iPad | **Yes** — iOS ships full WebKit. A WKWebView can load the real UI. |
+| Apple TV | **No.** No web view exists. tvOS must be **native**. |
 
-So this is not one decision, it is two tracks with different costs. Everything below is arranged so
-the cheap track lands first and pays for the expensive one.
-
----
-
-## 2. What we get for free (why the TV app is smaller than it looks)
-
-The backend is already the right shape for a native second client:
-
-- **The contract is frozen and versioned** — `docs/api/openapi.v1.json` (ADR-0001, additive-only).
-  The frontend already regenerates its types from it (`npm run generate:types`, openapi-typescript).
-  A tvOS client generates **Swift** types from that same file (`swift-openapi-generator`) — one
-  source of truth, no handwritten model drift.
-- **No media URL and no credential ever reaches the client.** Playback goes through the same-origin
-  `/api/jellyfin/hls/{id}/master.m3u8` proxy, which rewrites every upstream URI and strips the Jellyfin
-  `api_key`. A native client gets the same protection the browser has.
-- **The player is easier on Apple hardware than in Chrome.** The HLS ladder in
-  `api/routes/jellyfin_hls.py` exists because **Chrome MSE cannot decode `ec-3`/`ac3`/DTS/TrueHD**, so
-  those titles need `mode=transcode_audio`. Apple silicon (A15/M-series/Apple TV 4K) decodes HEVC
-  **and** EAC3 in hardware, and `AVPlayer` speaks native HLS. A tvOS client can therefore ask for
-  `mode=remux` far more often than the web player can — *less* server CPU, not more.
-- **The logic is already extracted from the views.** Every feature has a pure, unit-tested `lib.ts`
-  (auth guard, playback, library, search, subtitles). That is the layer worth sharing; the views are
-  not shareable in any framework (see §5).
+Two tracks with different costs. The cheap track lands first.
 
 ---
 
-## 3. Track A — iOS / iPadOS (1–2 days, near-zero new UI)
+## 2. The server-address design (decided: both clients)
 
-**Approach: Capacitor shell over the existing React build.** Capacitor packages the built SPA into a
-WKWebView app; the React code, Tailwind, react-router and the whole UI are reused unchanged. This is
-the only approach that costs effectively no UI work, because on iOS the rendering engine *is* Safari.
+**Requirement (user, 2026-09-13):** both apps open on a **server address** field. Enter the address,
+the app loads the UI from there, and sign-in is the ordinary username/password the browser already
+uses.
 
-### Code changes required (all small, all additive)
+This is the **Jellyfin / Infuse / Plex model**, and it is the right call:
 
-| # | Where | Change | Why |
-|---|---|---|---|
-| A1 | `frontend/src/lib/api/client.ts:732` | `export const BASE = (import.meta.env.VITE_API_BASE ?? "/api") as string;` | `BASE` is currently relative (`"/api"`). In a Capacitor WKWebView the page origin is `capacitor://localhost`, which has nothing to resolve `/api` against. One line. |
-| A2 | `backend/api/main.py:64` | CORS is `allow_origins=["*"]` **with no `allow_credentials`** — a credentialed cross-origin request from `capacitor://localhost` is therefore refused. Pin the origin list and add `allow_credentials=True`. | ⚠ A wildcard origin is *invalid* with credentials (browsers reject it), so this must be an explicit list, not `["*"]`. Keep the existing behaviour for non-credentialed callers. |
-| A3 | iOS project | `NSAppTransportSecurity` exception for the tailnet host — **or better, remove the need for it** by enabling Tailscale HTTPS (§4 Phase 0). | iOS blocks plain `http://` by default (ATS). |
-| A4 | Capacitor config | `allowInlineMediaPlayback: true` — the player is a custom `<video>` with `playsInline` + `requestFullscreen`, not a native iOS player. | Without it, iOS forces the native fullscreen player and the custom control bar never renders. |
-| A5 | nginx / cookie | Nothing structural. If Phase 0 lands HTTPS, flip the session cookie to `secure=True` via config (`api/routes/auth.py:133` currently hardcodes `secure=False`). | The comment there says "tailnet is plain http — Secure would break login". HTTPS makes `Secure` correct. |
+- The tailnet host is **not baked into the build**, so the app is portable — LAN
+  (`http://192.168.x.x:8124`), Tailscale (`https://rkm-hp.tail8d5e8.ts.net/`), or a future domain.
+- It makes the app **shareable** — a family member installs it, types the same address, and gets the
+  household picker.
+- It keeps one UI. The iPad app is a shell around the *live* UI, so every future web change appears on
+  the device with **no app rebuild and no App Store release**.
 
-**Deliberately NOT in this track:** no rewrite, no new components, no new endpoints. If A1–A4 is done
-and the app signs in, the iOS track is finished.
+### 2.1 The consequence that matters: it deletes the CORS work
+
+Once the WebView's top frame is the server's origin, **every `/api` call is same-origin** — exactly as
+in Safari. Therefore:
+
+| Item from the first revision | Status now |
+|---|---|
+| Pin the CORS origin list + `allow_credentials` (`api/main.py:64`) | **DELETED** — same-origin, CORS never engages |
+| `VITE_API_BASE` in `frontend/src/lib/api/client.ts:732` | **DELETED** — the relative `"/api"` is *correct* once the origin is the server |
+| Make the session cookie's `Secure` flag config-driven (`api/routes/auth.py:133`) | **DOWNGRADED to optional hygiene** — `secure=False` works over both http and https, which is exactly what a user-entered address needs |
+
+**Net result: the iOS app requires ZERO changes to this repo.** No frontend change, no backend change,
+no CORS change. It loads the UI the nginx container already serves.
+
+### 2.2 The one thing it does cost: App Transport Security
+
+Because the address is user-entered, it can be plain `http://` to an arbitrary host — which iOS blocks
+by default. The app must declare `NSAppTransportSecurity` (prefer `NSAllowsLocalNetworking`; use
+`NSAllowsArbitraryLoads` only if a raw LAN IP must work). ⚠ Apple asks reviewers to justify
+`NSAllowsArbitraryLoads` — irrelevant for a household app, relevant only if it is ever submitted to
+the App Store.
+
+### 2.3 ⚠ The network is still the client's problem
+
+"Type any address" does **not** remove the connectivity prerequisite. For use away from home, Tailscale
+must be running **on the device** — the app itself cannot route to `100.x` tailnet addresses. On the
+LAN it just works. Worth knowing before expecting it to work from a hotel.
+
+---
+
+## 3. Track A — iOS / iPadOS (1–2 days, **zero repo changes**)
+
+**Approach: a thin native WKWebView shell with a setup screen.** NOT Capacitor.
+
+### 3.1 Why Capacitor was dropped
+
+The first revision recommended Capacitor. The server-address requirement kills it. Capacitor's own
+iOS navigation policy (`ios/Capacitor/Capacitor/WebViewDelegationHandler.swift`, read 2026-09-13):
+
+```swift
+// next, check if this is covered by the allowedNavigation configuration
+if let host = navURL.host, bridge.config.shouldAllowNavigation(to: host) {
+    decisionHandler(.allow); return
+}
+// otherwise, is this a new window or a main frame navigation but to an outside source
+let toplevelNavigation = (navigationAction.targetFrame == nil || ...isMainFrame == true)
+let isApplicationNavigation = navURL.absoluteString.starts(with: bridge.config.serverURL.absoluteString)
+                           || navURL.absoluteString.starts(with: bridge.config.localURL.absoluteString)
+if !isApplicationNavigation, toplevelNavigation {
+    if UIApplication.shared.applicationState == .active {
+        UIApplication.shared.open(navURL, options: [:], completionHandler: nil)   // Safari
+    }
+    decisionHandler(.cancel); return
+}
+```
+
+A top-level navigation to a host outside the app is **cancelled and handed to Safari** unless that host
+is in `server.allowNavigation` — a **build-time** list. "User types any address at runtime" is exactly
+what Capacitor refuses to do by default; making it work means a custom `shouldOverrideLoad` plugin
+patching the bridge. That is more code than simply not using Capacitor.
+
+There is a second, independent reason: navigating off `capacitor://localhost` detaches Capacitor's
+plugin bridge. Nothing here needs a plugin (HLS is native Safari; the player is a plain `<video>`), so
+the bridge buys nothing and costs a build pipeline.
+
+### 3.2 What the app actually is
+
+```
+┌─ Setup view (SwiftUI) ──────────────┐      ┌─ Web view ────────────────────────┐
+│  Server address                     │      │  WKWebView → https://rkm-hp...:   │
+│  [ https://rkm-hp.tail8d5e8.ts.net ]│ ───► │    the real React UI, live        │
+│  [ Connect ]   (persisted)          │      │    same-origin /api, normal login │
+│  "Can't reach server" + Change      │ ◄─── │                                   │
+└─────────────────────────────────────┘      └───────────────────────────────────┘
+```
+
+- `UserDefaults` holds the address; launch goes straight to the web view when one is stored.
+- `WKWebViewConfiguration.allowsInlineMediaPlayback = true` — mandatory. The player is a custom
+  `<video>` with `playsInline` + `requestFullscreen`; without this iOS hijacks it into the native
+  fullscreen player and the custom control bar (seek bar, quality, audio/subs pickers) never renders.
+- Handle navigation failure: a "can't reach this server" state with a Change-server affordance — a
+  stale address must not leave a blank screen with no way out.
+
+### 3.3 Repo changes required
+
+**None.** The iOS project is new code in a new `apple/` directory; it consumes the existing deployed
+UI. `frontend/` and `backend/` are untouched.
+
+⚠ One honest caveat: a remote-URL shell is precisely what App Store guideline 4.2 (Minimum
+Functionality) targets, so a store submission would likely be rejected. For a household app (free
+provisioning, TestFlight, or direct install) this is irrelevant.
 
 ---
 
 ## 4. Track B — tvOS (native, the real work)
 
-**Approach: a lean native SwiftUI client, read + play only.** Not a port — a *smaller* app. The
-acquisition/admin half of rkm-cinema stays on web/iOS where a keyboard and forms make sense.
+**Approach: a lean native SwiftUI client, read + play only.** The server-address screen is not an
+add-on here — tvOS has no other way to know where the server is, so it is screen #0 by construction.
 
-### Screen budget (the whole app)
+### 4.1 Screen budget
 
+0. **Server address** — text field + Connect, persisted
 1. **Sign in** → `POST /api/auth/login`
 2. **Who's watching** → `GET /api/auth/profiles`, `POST /api/auth/profile`
 3. **Home** — Continue Watching + Recently Added → `GET /api/library/*`
-4. **Browse** — folders → per-folder items → `GET /api/library/*`
-5. **Item detail** → `GET /api/status` / item detail
-6. **Player** — `AVPlayer` + `/api/jellyfin/hls/{id}/master.m3u8`, resumes via existing progress routes
+4. **Browse** — folders → per-folder items
+5. **Item detail**
+6. **Player** — `AVPlayer` + `/api/jellyfin/hls/{id}/master.m3u8`, resume via existing progress routes
 
 **Explicitly out of scope on tvOS:** Request/download + quality profiles, Household admin, subtitle
-*vendor* search and download, global search. Six screens is the whole product — TV as a
-*viewing* surface for the library the household already built.
+*vendor* search and download, global search. TV is a *viewing* surface for the library already built.
 
-### The one backend change that matters, and where the real risk is
+### 4.2 Entering a URL on a TV is a solved problem (mostly)
 
-**Auth is cookie-only.** `api/session.py::session_context_from_request()` reads
+Verified via Apple's own guidance: while a text field is focused on Apple TV, a nearby iPhone/iPad
+signed into the same Apple Account can be used as the keyboard (Continuity). Bluetooth keyboards pair,
+and Siri dictation works ("spell out complex terms"). So a typed address is tolerable — but:
+
+⚠ **Pre-fill the field** with the tailnet address so the common case is one button press. Do not make
+a Siri Remote the primary text input.
+
+### 4.3 What we get for free
+
+- **The contract is frozen and versioned** — `docs/api/openapi.v1.json` (ADR-0001, additive-only).
+  The frontend already regenerates TS types from it (`npm run generate:types`). The tvOS client
+  generates **Swift** types from the same file (`swift-openapi-generator`) — one source of truth, no
+  handwritten model drift.
+- **No media URL and no credential ever reaches the client.** Playback rides the same-origin
+  `/api/jellyfin/hls/{id}/master.m3u8` proxy, which rewrites every upstream URI and strips the Jellyfin
+  `api_key`.
+- **Apple hardware plays *more* than Chrome.** The HLS ladder in `api/routes/jellyfin_hls.py` exists
+  because **Chrome MSE cannot decode `ec-3`/`ac3`/DTS/TrueHD**, forcing `mode=transcode_audio` for
+  those titles. Apple silicon decodes HEVC **and** EAC3 in hardware and `AVPlayer` speaks native HLS,
+  so a tvOS client can ask for `mode=remux` far more often — *less* transcoder load, not more.
+
+### 4.4 The one backend change that matters: auth for non-browser clients
+
+**Auth is cookie-only today.** `api/session.py::session_context_from_request()` reads
 `request.cookies.get(SESSION_COOKIE)` — there is no `Authorization` path anywhere in the tree
-(verified). URLSession shares a cookie store, so ordinary REST calls authenticate fine. **But
-`AVPlayer`'s HLS requests are the risky part** — cookie propagation to segment requests is not
-something to bet the playback path on.
+(verified 2026-09-13). URLSession shares a cookie store, so ordinary REST calls authenticate fine.
+**But `AVPlayer`'s HLS segment requests are the risky part** — do not bet playback on cookie
+propagation.
 
-Do not fight this. Extend the seam the architecture already declares (§11 — *the credential comes from
+Do not fight it. Extend the seam the architecture already declares (§11 — *the credential comes from
 `api/session.py` only*):
 
 | # | Where | Change |
 |---|---|---|
-| B1 | `POST /api/auth/login` response | Add `session_token` (additive field) — the opaque session id, returned once to a client that asked for it. |
+| B1 | `POST /api/auth/login` response | Add `session_token` (additive field) — the opaque session id, returned once. |
 | B2 | `api/session.py::session_context_from_request` | Accept `Authorization: Bearer <session_id>` as an alternative to the cookie. **One function** — the single documented identity seam, so no route can bypass it. |
 | B3 | `api/routes/jellyfin_hls.py` | The proxy **already rewrites every URI** and already strips `api_key` (`_strip_api_keys`). Inject the session token into each rewritten URI the same way. `AVPlayer` then needs **zero** cookie plumbing. |
 
-⚠ **Log hygiene:** a token in a query string can reach access logs. The existing code already solves
-this exact class of problem (that is what `_strip_api_keys` is for) and the network is a private
-tailnet — but the token must be treated as a credential and never logged. If that is unacceptable,
-the fallback is an `AVAssetResourceLoaderDelegate` that injects the `Cookie` header on every request;
-it is more code and more edge cases.
+⚠ **Log hygiene:** a token in a query string can reach access logs. The code already solves this class
+of problem (that is what `_strip_api_keys` is for) and the network is a private tailnet — but the token
+must be treated as a credential and never logged. Fallback if that is unacceptable: an
+`AVAssetResourceLoaderDelegate` injecting the `Cookie` header; more code, more edge cases.
 
-### What actually costs the time on tvOS
+### 4.5 What actually costs the time on tvOS
 
 Not the networking — that is a weekend. It is the **focus engine**:
 
-- There is no pointer and no hover. `AccountMenu` (a hover menu), `PopupMenu`, the pointer-capture
-  seek bar (`Player.tsx`'s custom `div` slider), `Dialog`, and every `onClick` need a focusable
-  equivalent. The Siri Remote gives you a d-pad and a select button, nothing else.
-- The existing CSS viewport assumptions (fixed overlays, `inset-0`, 16:9 backdrops) are meaningless at
-  1080p/4K from three metres — the TV UI needs its own type scale and spacing.
-- The custom seek bar must become a proper transport: `AVPlayerViewController`'s built-in transport,
-  or `AVPlayer` + a focus-friendly scrubber.
+- No pointer, no hover. `AccountMenu` (hover menu), `PopupMenu`, `Dialog`, the pointer-capture seek bar
+  (`Player.tsx`'s custom `div` slider) and every `onClick` need a focusable equivalent for a d-pad.
+- The CSS viewport assumptions (fixed overlays, `inset-0`, 16:9 backdrops) are meaningless at 1080p/4K
+  from three metres — the TV UI needs its own type scale and spacing.
+- The custom seek bar becomes `AVPlayerViewController`'s transport, or `AVPlayer` + a focus scrubber.
 
-Budget this as **2–4 weeks of evenings**, not a weekend, and expect the first two days to be toolchain
-(Xcode tvOS target, signing, provisioning).
+Budget **2–4 weeks of evenings**, and expect the first two days to be toolchain (Xcode tvOS target,
+signing, provisioning).
 
 ---
 
@@ -129,36 +214,37 @@ Budget this as **2–4 weeks of evenings**, not a weekend, and expect the first 
 
 | Option | Verdict |
 |---|---|
-| **Capacitor for tvOS** | **Impossible.** No WKWebView on the platform, and the App Store guidelines prohibit embedding one. |
-| **Electron / Tauri for tvOS** | Same wall — both are wrappers around a web view. Tauri's iOS/tvOS story is WKWebView too. |
-| **The Plex/Emby-style "one web app everywhere" model** | Structurally unavailable on Apple TV. This is why Plex/Jellyfin/Infuse all ship *native* tvOS apps. |
-| **react-native-tvos** (fork of core RN, actively released — 0.85.x) | **Viable, and the right answer only under one condition** (below). It shares the *logic* layer with the web app, not the views: RN has no DOM, so Tailwind/react-router/`hls.js` do not carry over and every screen is rewritten anyway. Its real advantage is **Apple TV *and* Android TV from one codebase** — worth it only if a Shield/Chromecast is also in the plan. |
-| **Just install Swiftfin / Infuse on the Apple TV, pointed at the bundled Jellyfin :8098** | **Genuinely the cheapest option, and it costs nothing.** If the TV goal is only "watch in the lounge", this already works today. It is only the wrong answer if the point is *this app's* UX — the household profile picker, your library rows, your Continue Watching — on the big screen. |
+| **Capacitor for iOS with a runtime server address** | **Rejected.** Its navigation policy cancels a top-level load to an unknown host and opens Safari instead (§3.1, verified against the source). Build-time `allowNavigation` cannot satisfy a runtime address. |
+| **Capacitor for tvOS** | **Impossible.** No WKWebView on the platform; guidelines prohibit embedding one. |
+| **Electron / Tauri for tvOS** | Same wall — both wrap a web view. Tauri's iOS/tvOS story is WKWebView. |
+| **"One web app everywhere" (the Plex-style model)** | Structurally unavailable on Apple TV. That is why Plex, Jellyfin and Infuse all ship *native* tvOS apps. |
+| **react-native-tvos** (fork of core RN, actively released — 0.85.x) | **Viable, right answer only under one condition.** It shares the *logic* layer with the web app, not the views: no DOM means Tailwind, react-router and `hls.js` do not carry over and every screen is rewritten anyway. Its real advantage is **Apple TV *and* Android TV from one codebase**. |
+| **Install Swiftfin / Infuse on the Apple TV, pointed at the bundled Jellyfin :8098** | **Genuinely the cheapest option; costs nothing today.** Only the wrong answer if the point is *this app's* UX on the big screen. |
 
 **Decision rule:**
-
-- Apple TV **and** Android TV → build **react-native-tvos** from the start; do not write Swift.
-- Apple TV only → **lean SwiftUI** (recommended). More code than RN in the abstract, but the smallest
-  total surface because the iOS track already reuses the web UI in full.
+- Apple TV **and** Android TV → **react-native-tvos** from the start; do not write Swift.
+- Apple TV only → **lean SwiftUI** (recommended).
 
 ---
 
 ## 6. Phases, with gates
 
-Each phase ends green on its own gates before the next starts. Sandbox-side verification only —
-**the Apple tracks need Xcode on the MacBook Pro**, which this Linux sandbox cannot host
-(no `swift`, no `xcodebuild`; verified 2026-09-13). The agent can write, review and diff this code;
-**building and running it is his step.**
+Sandbox-side verification only — **the Apple tracks need Xcode on the MacBook Pro**, which this Linux
+sandbox cannot host (no `swift`, no `xcodebuild`; verified 2026-09-13). The agent writes, reviews and
+diffs this code; **building and running it is his step.**
 
 | Phase | Work | Gate |
 |---|---|---|
-| **0. Tailnet HTTPS + CORS seam** | Enable Tailscale HTTPS (`tailscale serve --bg --https 443 http://127.0.0.1:8124`) so the app has a real certificate on `https://rkm-hp.<tailnet>.ts.net/`; pin the CORS origin list; make the session cookie's `Secure` flag config-driven. | `cd backend && python -m pytest tests/ -q` green; `tools/check_deployed.py` MATCH; browser app still signs in over HTTPS. **Unblocks both tracks and improves the current browser app.** |
-| **1. iOS via Capacitor** | A1–A4. | `npm run typecheck && npx vitest run && npm run build` green; app signs in and plays on the iPad. |
-| **2. Non-browser auth** | B1–B3 + tests (`tests/test_route_protection.py` awareness if a route is touched). | pytest green; a `curl` proof: bearer-only request to `/api/status` and an HLS master fetched with **no cookie**, segments playable. |
-| **3. tvOS skeleton** | Xcode tvOS target; Swift API client generated from `docs/api/openapi.v1.json`; sign-in + Who's watching, focusable. | Builds and runs on the Apple TV simulator; sign-in + profile switch work on a real Apple TV. |
-| **4. tvOS browse + detail** | Home / Browse / Item detail views on the focus engine. | Posters, rows, navigation on hardware. |
-| **5. tvOS player** | `AVPlayer` + HLS; resume; progress reporting (`POST /api/jellyfin/progress`); remote transport controls. | A full film plays, resumes where it left off, and the position shows up in the web app's Continue Watching. |
-| **6. Polish** | Subtitles (AVPlayer rendition or overlay), artwork caching, top-shelf behaviour (optional), app icons. | Watchable end to end. |
+| **0. iOS shell** | New `apple/RKMCinema-iOS/`: setup screen (address + Connect, persisted), WKWebView, ATS declaration, `allowsInlineMediaPlayback`, unreachable-server state. | Install on the iPad; enter the address; sign in; play a title. Sign out returns to the app's own state, not a dead end. |
+| **1. tvOS skeleton** | New `apple/RKMCinema-tvOS/`: server-address screen (pre-filled), sign-in, Who's watching — focusable. | Runs on the Apple TV simulator; sign-in + profile switch work on a real Apple TV. |
+| **2. Non-browser auth** | B1–B3 + tests. **Only blocks the tvOS player (Phase 4)** — not Phases 0/1. | `cd backend && python -m pytest tests/ -q` green; a `curl` proof: a bearer-only request to `/api/status`, and an HLS master + segment fetched with **no cookie**. |
+| **3. tvOS browse + detail** | Home / Browse / Item detail on the focus engine. | Posters, rows, navigation on hardware. |
+| **4. tvOS player** | `AVPlayer` + HLS; resume; progress reporting (`POST /api/jellyfin/progress`); remote transport controls. | A full film plays, resumes where it left off, and the position appears in the web app's Continue Watching. |
+| **5. Polish** | Subtitles (AVPlayer rendition or overlay), artwork caching, app icons, optional top shelf. | Watchable end to end. |
+
+**Order note:** Phase 0 is deliberately first — it is the smallest piece of work, it needs no backend
+change at all, and it proves the whole "the app is a shell around the live UI" thesis before any Swift
+UI gets written for TV.
 
 ---
 
@@ -166,9 +252,9 @@ Each phase ends green on its own gates before the next starts. Sandbox-side veri
 
 | Item | Cost |
 |---|---|
-| Apple Developer Program | **~AUD $149/year** — needed to run on a real Apple TV beyond the 7-day free-provisioning window and to use TestFlight. |
-| Xcode, Swift, SwiftUI, AVPlayer, Capacitor, swift-openapi-generator | $0 (free, on the MacBook Pro he already has). |
-| Server | $0 — same containers, no new service. Apple clients are *lighter* on the transcoder than Chrome (HEVC/EAC3 hardware decode). |
+| Apple Developer Program | **~AUD $149/year** — needed to run on a real Apple TV past the 7-day free-provisioning window, and for TestFlight. |
+| Xcode, Swift, SwiftUI, AVPlayer, SwiftNIO/`swift-openapi-generator` | $0 (on the MacBook Pro he already has). |
+| Server | $0 — same containers, and Apple clients hit the transcoder *lighter* than Chrome. |
 | His time | iOS: 1–2 days. tvOS: 2–4 weeks of evenings. |
 
 ---
@@ -177,23 +263,27 @@ Each phase ends green on its own gates before the next starts. Sandbox-side veri
 
 1. **HLS auth to `AVPlayer`** — the #1 risk, and the reason B2/B3 exist. Mitigated by not depending on
    cookie propagation at all.
-2. **The focus engine rewrite** on tvOS — underestimated by everyone who has not shipped a TV app.
-   It is the bulk of Track B's effort, and it is *unavoidable*; there is no shared-view shortcut.
-3. **ATS / HTTPS** — plain-HTTP tailnet access is blocked by default on iOS. Phase 0 removes this
-   class of problem permanently (and is worth doing for the browser app regardless).
-4. **Signing / provisioning** — Xcode tvOS signing is its own afternoon; a paid account reduces the
-   friction to near zero.
+2. **The focus engine rewrite** on tvOS — underestimated by everyone who has not shipped a TV app; it
+   is the bulk of Track B and is *unavoidable*. There is no shared-view shortcut.
+3. **ATS with a user-entered address** — a user-typed `http://` host is blocked by default; the
+   declaration must be in place from the first build or the app appears broken (§2.2).
+4. **A stale/typo'd server address** with no way back — the iOS shell must always offer Change-server
+   (§3.2), or a wrong address bricks the app until reinstall.
+5. **Signing / provisioning** — Xcode tvOS signing is its own afternoon; a paid account removes most
+   of the friction.
 
 ---
 
 ## 9. Recommendation
 
-1. **Do Phase 0 first** — it is worth doing even if neither track is built, and it unblocks both.
-2. **Then Track A (iOS via Capacitor)** — 1–2 days, essentially free, and it puts the existing app in
-   his pocket immediately.
-3. **Then decide on Track B on the evidence of Track A** — if the wrapped app on the iPad already
-   satisfies the household, the TV app is a nice-to-have, not a need. If it is a need, build the lean
-   SwiftUI client with the contract regenerated from `openapi.v1.json`, and keep the acquisition and
-   admin half of the product on web/iOS where it belongs.
+1. **Build Phase 0 (the iOS shell) first.** ~1–2 days, **zero changes to `frontend/` or `backend/`**,
+   and it puts the entire existing app on the iPad. It also validates the server-address design before
+   any TV code exists.
+2. **Then decide on tvOS on the evidence of Phase 0.** If the shell on the iPad satisfies the
+   household, the TV app is a nice-to-have. If it is a need, build the lean SwiftUI client against the
+   frozen contract, with the server-address screen pre-filled.
+3. **Treat Phase 2 (bearer auth) as scoped to the tvOS player only** — it is the one backend change in
+   the whole plan, and nothing else waits on it.
 
-**Do not** start by rewriting the UI for TV. Start by proving the cheapest thing works.
+**Do not** rewrite the UI for TV, and **do not** reach for Capacitor — the requirement rules it out.
+Start by proving the cheapest thing works.

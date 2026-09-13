@@ -1,15 +1,29 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { Icon, type IconName } from "../../components/ui/Icon";
 import { useLibraryFolders } from "../../features/library/api";
-import { libraryIconFor } from "../../features/library/lib";
+import { libraryNavEntries, type LibraryNavEntry } from "../../features/library/lib";
+import { librariesBehindMore, libraryTabsThatFit } from "./lib";
 
 /**
  * Mobile navigation (design spec §38/§59): the sidebar disappears below md and
- * a bottom bar takes over — Home · first two libraries · More. More opens a
- * compact sheet above the bar with the remaining libraries + destinations.
- * Blurred, safe-area aware, z-indexed below the player/toasts. Library entries
- * come from the folders API (MEDIA_LIBRARIES_PLAN) — never hardcoded names.
+ * a bottom bar takes over — Home · the profile's libraries · More.
+ *
+ * ⚠ **The tab count is MEASURED, not assumed (2026-09-14).** It used to be a hardcoded two
+ * libraries with the rest behind More, and he reported the cost from his iPad: *"even though raj
+ * profile have access to all three libraries..only two can be seen at the bottom...the ui needs a
+ * bit of work to make sure all the libraries are accessible..specially for smaller devices like
+ * ipad and ios"*. The arithmetic lives in `./lib.ts` (`libraryTabsThatFit`) because it is pure and
+ * worth testing; this component only measures the bar and asks.
+ *
+ * ⚠ **The library list itself is no longer decided here.** `libraryNavEntries` is shared with the
+ * sidebar, which used to apply a *different* rule — the sidebar kept an unresolved library and
+ * warned about it, this bar dropped it. That divergence is what made a library vanish on a phone
+ * while sitting there greyed out on the desktop. One rule, both surfaces.
+ *
+ * ⚠ The sheet is the **complete index**: every library that is not on the bar, every library the
+ * server could not resolve (with its reason), then the destinations. It scrolls, because a library
+ * that exists but cannot be reached is exactly the bug this file was fixed for.
  */
 type Tab = { to: string; label: string; icon: IconName; end?: boolean };
 
@@ -35,6 +49,14 @@ function tabCls(active: boolean) {
   }`;
 }
 
+const rowCls = (active: boolean) =>
+  `flex items-center gap-3 px-4 py-3 text-sm font-medium transition-colors ${
+    active ? "bg-white/[.07] text-white" : "text-zinc-400 hover:bg-white/[.05] hover:text-zinc-100"
+  }`;
+
+const headingCls =
+  "px-4 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-[.12em] text-zinc-500";
+
 function activeFor(pathname: string, to: string): boolean {
   return to === "/library/home"
     ? pathname === "/library/home" || pathname === "/"
@@ -47,6 +69,8 @@ export function MobileNav() {
   const [moreOpen, setMoreOpen] = useState(false);
   const sheetRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
+  const barRef = useRef<HTMLDivElement>(null);
+  const [barWidth, setBarWidth] = useState(0);
   const destinations = MORE;
 
   // Close the More sheet on navigation.
@@ -68,23 +92,48 @@ export function MobileNav() {
     return () => window.removeEventListener("keydown", onKey);
   }, [moreOpen]);
 
-  // Live libraries only (resolved to a server folder) become tabs / sheet
-  // entries. Loading or empty → Home + More only, never fabricated names.
-  const liveLibs = (data?.libraries ?? []).filter((l) => l.ok && l.folder_id);
-  const tabLibraries: Tab[] = liveLibs.slice(0, 2).map((l) => ({
-    to: `/library/folder/${encodeURIComponent(l.folder_id as string)}`,
-    label: l.name,
-    icon: libraryIconFor(l.collection_type),
-  }));
-  const moreLibraries: Tab[] = liveLibs.slice(2).map((l) => ({
-    to: `/library/folder/${encodeURIComponent(l.folder_id as string)}`,
-    label: l.name,
-    icon: libraryIconFor(l.collection_type),
-  }));
+  /**
+   * Measure the bar so the tab count is a fact rather than a guess.
+   *
+   * ⚠ `useLayoutEffect`, not `useEffect`: this runs AFTER the render that mounted the element but
+   * BEFORE the browser paints it, so the measured width is applied in the same frame. With
+   * `useEffect` the bar would paint once with zero tabs and then flick to three on every mount —
+   * a visible flash, on the screen where the nav is the whole layout.
+   *
+   * ⚠ `ResizeObserver` covers the cases a `resize` listener does not: a rotation, a split-view
+   * resize on iPad, and the bar's own max-width kicking in without the window changing at all.
+   * The listener stays as the fallback for any engine without the observer.
+   */
+  useLayoutEffect(() => {
+    const bar = barRef.current;
+    if (!bar) return;
+    const measure = () => setBarWidth(bar.getBoundingClientRect().width);
+    measure();
+
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", measure);
+      return () => window.removeEventListener("resize", measure);
+    }
+    const observer = new ResizeObserver(measure);
+    observer.observe(bar);
+    return () => observer.disconnect();
+  }, []);
+
+  // ⚠ Every library the profile has. Loading or empty → Home + More only, never fabricated names.
+  const entries = libraryNavEntries(data?.libraries ?? []);
+  // ⚠ Only a RESOLVED library can be a tab: an unresolved one has no route to point at, and a tab
+  // that leads nowhere is worse than a row that explains itself.
+  const navigable = entries.filter((e) => e.to !== null);
+  const unavailable = entries.filter((e) => e.to === null);
+
+  const tabCount = libraryTabsThatFit(barWidth, navigable.length);
+  const tabLibraries: LibraryNavEntry[] = navigable.slice(0, tabCount);
+  const librariesBehind = librariesBehindMore(navigable, tabCount);
+  const hiddenLibraryCount = librariesBehind.length + unavailable.length;
 
   const moreActive =
     MORE.some((m) => activeFor(location.pathname, m.to)) ||
-    moreLibraries.some((m) => activeFor(location.pathname, m.to));
+    entries.some((e) => e.to !== null && activeFor(location.pathname, e.to));
 
   return (
     <nav
@@ -94,35 +143,47 @@ export function MobileNav() {
       {moreOpen && (
         <div
           ref={sheetRef}
-          role="menu"
           aria-label="More destinations"
-          className="absolute bottom-full left-0 right-0 mx-3 mb-2 overflow-hidden rounded-2xl border border-white/10 bg-surface-3 shadow-modal"
+          className="absolute bottom-full left-0 right-0 mx-3 mb-2 max-h-[70vh] overflow-y-auto overscroll-contain rounded-2xl border border-white/10 bg-surface-3 shadow-modal"
         >
-          {moreLibraries.map((m) => (
-            <NavLink
-              key={m.to}
-              to={m.to}
-              role="menuitem"
-              className={({ isActive }) =>
-                `flex items-center gap-3 px-4 py-3 text-sm font-medium transition-colors ${
-                  isActive ? "bg-white/[.07] text-white" : "text-zinc-400 hover:bg-white/[.05] hover:text-zinc-100"
-                }`
-              }
-            >
-              <Icon name={m.icon} size={18} />
-              {m.label}
-            </NavLink>
-          ))}
+          {hiddenLibraryCount > 0 && (
+            <>
+              <p className={headingCls}>
+                {hiddenLibraryCount === 1 ? "1 more library" : `${hiddenLibraryCount} more libraries`}
+              </p>
+              {librariesBehind.map((entry) => (
+                <NavLink
+                  key={entry.key}
+                  to={entry.to as string}
+                  title={entry.name}
+                  className={({ isActive }) => rowCls(isActive)}
+                >
+                  <Icon name={entry.icon} size={18} />
+                  <span className="truncate">{entry.name}</span>
+                </NavLink>
+              ))}
+              {unavailable.map((entry) => (
+                // ⚠ Rendered, not dropped — with the server's own reason. This is the half of the
+                // bug the sidebar already got right, moved to the surface that did not.
+                <div
+                  key={entry.key}
+                  title={entry.warning}
+                  aria-label={`${entry.name} — unavailable`}
+                  className="flex cursor-not-allowed items-center gap-3 px-4 py-3 text-sm font-medium text-zinc-600 opacity-70"
+                >
+                  <Icon name={entry.icon} size={18} />
+                  <span className="truncate">{entry.name}</span>
+                  <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />
+                </div>
+              ))}
+            </>
+          )}
+          <p className={headingCls}>{hiddenLibraryCount > 0 ? "Go to" : "More"}</p>
           {destinations.map((m) => (
             <NavLink
               key={m.to}
               to={m.to}
-              role="menuitem"
-              className={({ isActive }) =>
-                `flex items-center gap-3 px-4 py-3 text-sm font-medium transition-colors ${
-                  isActive ? "bg-white/[.07] text-white" : "text-zinc-400 hover:bg-white/[.05] hover:text-zinc-100"
-                }`
-              }
+              className={({ isActive }) => rowCls(isActive)}
             >
               <Icon name={m.icon} size={18} />
               {m.label}
@@ -130,7 +191,10 @@ export function MobileNav() {
           ))}
         </div>
       )}
-      <div className="mx-auto flex h-16 max-w-lg items-center gap-1 px-3">
+      <div
+        ref={barRef}
+        className="mx-auto flex h-16 max-w-lg items-center gap-1 px-3 sm:max-w-2xl"
+      >
         <NavLink
           to="/library/home"
           end={tabLibraries.length === 0}
@@ -140,9 +204,14 @@ export function MobileNav() {
           <span className="truncate">Home</span>
         </NavLink>
         {tabLibraries.map((t) => (
-          <NavLink key={t.to} to={t.to} className={() => tabCls(activeFor(location.pathname, t.to))}>
+          <NavLink
+            key={t.key}
+            to={t.to as string}
+            title={t.name}
+            className={() => tabCls(t.to !== null && activeFor(location.pathname, t.to))}
+          >
             <Icon name={t.icon} size={21} />
-            <span className="truncate">{t.label}</span>
+            <span className="truncate">{t.name}</span>
           </NavLink>
         ))}
         <button
@@ -150,12 +219,24 @@ export function MobileNav() {
           type="button"
           onClick={() => setMoreOpen((o) => !o)}
           aria-expanded={moreOpen}
-          aria-haspopup="menu"
           aria-label={moreOpen ? "Close more menu" : "More"}
-          className={tabCls(moreActive)}
+          title={
+            hiddenLibraryCount > 0
+              ? `${hiddenLibraryCount} more ${hiddenLibraryCount === 1 ? "library" : "libraries"}`
+              : undefined
+          }
+          className={`relative ${tabCls(moreActive)}`}
         >
           <Icon name="grid" size={21} />
           <span>More</span>
+          {hiddenLibraryCount > 0 && (
+            // ⚠ A signal, not decoration: he reported a library he could not find, and three words
+            // in the bar gave no hint that anything was behind this button.
+            <span
+              aria-hidden="true"
+              className="absolute right-[22%] top-0.5 h-1.5 w-1.5 rounded-full bg-accent"
+            />
+          )}
         </button>
       </div>
     </nav>

@@ -196,6 +196,71 @@ def scenario_e_phone_account_menu(page: Page, base: str, shots: str) -> None:
         print("  OK: the avatar is the phone's account surface, and the menu fits")
 
 
+def scenario_f_libraries(page: Page, base: str, shots: str) -> None:
+    """⚠ THE REPORT THIS EXISTS FOR (his iPad, 2026-09-14):
+
+        "even though raj profile have access to all three libraries..only two can be seen at the
+         bottom...the ui needs a bit of work to make sure all the libraries are accessible..
+         specially for smaller devices like ipad and ios"
+
+    The bar showed a HARDCODED two libraries; the rest sat behind More, which gave no sign that
+    anything was there. Two claims are checked, and the second is the one that matters:
+
+      1. the libraries FIT where they fit — an iPad mini in portrait shows all three as tabs, and so
+         does a phone, because the count is measured from the bar's real width;
+      2. NOTHING IS UNREACHABLE — with more libraries than any bar can hold, every one of them is
+         either a tab or a row in the sheet, and a library the SERVER could not resolve is shown with
+         its reason rather than dropped (which is what this bar used to do, while the sidebar did not).
+    """
+    print("F — every library a profile has is reachable, on an iPad and on a phone")
+    lib_names = ["Movies Kids", "Movies", "TV Shows", "Documentaries", "Home Videos",
+                 "Concerts", "Workouts", "Music"]
+    # ⚠ Mirrors MAX_LIBRARY_TABS in `frontend/src/app/layout/lib.ts`.
+    max_tabs = 4
+    bar_labels = ("Home", "More")
+
+    for label, viewport, query in (
+        ("iPad mini portrait", {"width": 744, "height": 1024}, "admin=1&libs=3"),
+        ("phone", {"width": 390, "height": 844}, "admin=1&libs=3"),
+    ):
+        page.set_viewport_size(viewport)
+        open_frame(page, base, query, shots, f"libs3-{viewport['width']}")
+        state = page.evaluate("window.__probe()")
+        tabs = state["mobileTabs"]
+        for name in lib_names[:3]:
+            check(name in tabs,
+                  f"F/{label}: '{name}' must be a tab — this is the library he could not see, "
+                  f"got {tabs}")
+        check(state["overflowX"] <= 0,
+              f"F/{label}: the bar must not push the page sideways, got {state['overflowX']}px")
+
+    # More libraries than fit: the cap holds, and the tail is still REACHABLE.
+    page.set_viewport_size({"width": 390, "height": 844})
+    open_frame(page, base, "admin=1&libs=8", shots, "libs8-phone")
+    state = page.evaluate("window.__probe()")
+    tabs = [t for t in state["mobileTabs"] if t not in bar_labels]
+    check(len(tabs) <= max_tabs,
+          f"F: the bar must cap the tabs at {max_tabs} however many libraries exist, got {tabs}")
+    check(state["mobileBadge"],
+          "F: More must say that libraries are behind it — a dot, not silence")
+    sheet = open_sheet(page)["sheet"]
+    for name in lib_names:
+        check(name in tabs or name in sheet,
+              f"F: '{name}' must be one tap away, in the bar or in the sheet — got neither")
+
+    # A library the server could not resolve is SHOWN, with the server's own reason.
+    open_frame(page, base, "admin=1&libs=1&broken=1", shots, "broken-phone")
+    state = open_sheet(page)
+    check(any("Old Drive" in label for label in state["mobileUnavailable"]),
+          f"F: an unresolved library must stay visible and explained, got {state['mobileUnavailable']}")
+    check("Old Drive" in state["sheet"],
+          f"F: …and it must be IN the sheet, not merely labelled, got {state['sheet']!r}")
+
+    if not PROBLEMS:
+        print("  OK: all three libraries are tabs on an iPad and a phone, the tail stays reachable "
+              "behind More, and an unresolved library is shown rather than dropped")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--base", default="http://localhost:5199")
@@ -221,6 +286,8 @@ def main() -> int:
         scenario_d_sheet_is_navigation_only(phone, args.base, args.shots)
         phone.goto("about:blank")
         scenario_e_phone_account_menu(phone, args.base, args.shots)
+        phone.goto("about:blank")
+        scenario_f_libraries(phone, args.base, args.shots)
 
         if errors:
             check(False, f"page errors: {errors}")
@@ -229,8 +296,8 @@ def main() -> int:
     if PROBLEMS:
         print(f"\n{len(PROBLEMS)} problem(s)")
         return 1
-    print("\nOK: the account menu offers Household to administrators only, from every trigger, and "
-          "the nav no longer duplicates it")
+    print("\nOK: the account menu offers Household to administrators only, from every trigger; the "
+          "nav no longer duplicates it; and every library a profile has is reachable on every width")
     return 0
 
 

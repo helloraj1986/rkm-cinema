@@ -79,6 +79,49 @@ export function libraryByFolderId(
   return (libraries ?? []).find((l) => l.folder_id === folderId) ?? null;
 }
 
+/** One library, ready to render as navigation — a link, or a warned row when it is unresolved. */
+export interface LibraryNavEntry {
+  /** Stable React key: the resolved folder, or the name for an unresolved library. */
+  key: string;
+  name: string;
+  icon: ReturnType<typeof libraryIconFor>;
+  /** The folder route, or `null` when the server could not resolve this library's folder. */
+  to: string | null;
+  /** Why it is unavailable — the row's tooltip, and its `aria-label` suffix. */
+  warning: string;
+}
+
+/**
+ * Every library the profile has, ready to render — **the ONE place that decides this**, for the
+ * sidebar AND the mobile bar.
+ *
+ * ⚠ It exists because the two surfaces disagreed. His report from the iPad, 2026-09-14:
+ *
+ *     "even though raj profile have access to all three libraries..only two can be seen at the
+ *      bottom...the ui needs a bit of work to make sure all the libraries are accessible"
+ *
+ * The sidebar listed **every** library and greyed the ones the server could not resolve; the mobile
+ * bar applied `ok && folder_id` and therefore **dropped** them. So a library with a stale path was
+ * visible and explained on a desktop and *silently absent* on a phone — and nothing anywhere said
+ * so. Two surfaces, two filters, one of them wrong: this function is that filter, once.
+ *
+ * ⚠ An unresolved library is deliberately **not** hidden. A library the profile is entitled to keeps
+ * its row, its icon and its warning, on every surface: hiding it is how "where did my library go?"
+ * starts, and the fix for that question must not be "look on a bigger screen".
+ */
+export function libraryNavEntries(libraries: ConfiguredLibraryShape[]): LibraryNavEntry[] {
+  return (libraries ?? []).map((lib) => {
+    const resolved = Boolean(lib.ok && lib.folder_id);
+    return {
+      key: resolved ? `folder:${lib.folder_id as string}` : `unresolved:${lib.name}`,
+      name: lib.name,
+      icon: libraryIconFor(lib.collection_type),
+      to: resolved ? `/library/folder/${encodeURIComponent(lib.folder_id as string)}` : null,
+      warning: lib.warning || "Library unavailable",
+    };
+  });
+}
+
 /** Human count line for a folder page ("6 titles" / "1 title"). */
 export function folderCountLabel(n: number): string {
   return `${n} title${n === 1 ? "" : "s"}`;

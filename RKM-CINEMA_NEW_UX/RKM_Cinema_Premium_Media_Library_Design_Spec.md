@@ -2153,6 +2153,30 @@ This prevents mobile from becoming navigation-heavy.
 
 ---
 
+## Revision — 2026-09-14: the bar shows as many libraries as FIT
+
+The bar above is the original spec (Home · Movies · Shows · Search · More). The app has since made it
+**data-driven** — libraries come from `/api/library/folders`, never hardcoded names
+(`MEDIA_LIBRARIES_PLAN`) — and that plan then fixed the count at "Home + first two libraries", which
+is exactly what the user hit on his iPad:
+
+> *"even though raj profile have access to all three libraries..only two can be seen at the bottom...
+> the ui needs a bit of work to make sure all the libraries are accessible.. specially for smaller
+> devices like ipad and ios"*
+
+**Revised rule:** Home · *as many library tabs as the bar's measured width allows* (max 4) · More.
+
+- The count comes from the bar's **own measured width**, never from a device name
+  (`frontend/src/app/layout/lib.ts`, `libraryTabsThatFit`) — and it is pinned by an invariant test:
+  **no tab is ever narrower than the minimum legible width.**
+- More carries the libraries that did not fit, **plus any library the server could not resolve, with
+  its reason** — a library is never dropped from the UI because its folder is missing.
+- More shows a **dot** when libraries sit behind it, so nothing is hidden silently.
+- §59's "prevents mobile from becoming navigation-heavy" is preserved by the **cap on tabs**, not by
+  hiding libraries: the bar stays a bar, and the sheet becomes the complete index.
+
+---
+
 # 60. PAGE TRANSITION MODEL
 
 Navigation should feel like one application rather than independent pages.

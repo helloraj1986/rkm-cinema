@@ -29,7 +29,30 @@ import { MobileNav } from "../src/app/layout/MobileNav";
 // (2026-09-13), and it is the kind of difference that makes a picture worthless as evidence.
 import "../src/styles/index.css";
 
-const ADMIN = new URLSearchParams(location.search).get("admin") !== "0";
+const PARAMS = new URLSearchParams(location.search);
+const ADMIN = PARAMS.get("admin") !== "0";
+
+/**
+ * `?libs=N` — how many libraries the stubbed profile can see. **Three is his real number**, and the
+ * reason `tools/check_nav_access.py` scenario F exists: on the iPad only two of the three were
+ * reachable at a glance (2026-09-14).
+ */
+const LIB_COUNT = Math.max(0, Number(PARAMS.get("libs") ?? "0") || 0);
+
+/** `?broken=1` — add ONE library the server could not resolve (`ok: false`, no folder id). */
+const BROKEN = PARAMS.get("broken") === "1";
+
+/** His real names first, so a screenshot of this frame looks like the screen he reported. */
+const LIB_NAMES = [
+  "Movies Kids",
+  "Movies",
+  "TV Shows",
+  "Documentaries",
+  "Home Videos",
+  "Concerts",
+  "Workouts",
+  "Music",
+];
 
 const PROFILE = {
   id: ADMIN ? "uid-admin" : "uid-kid",
@@ -72,7 +95,34 @@ window.fetch = (async (input: RequestInfo | URL, init: RequestInit = {}) => {
     });
   }
   if (path.startsWith("/api/library/folders")) {
-    return send({ libraries: [], warnings: [] });
+    const libraries: {
+      name: string;
+      path: string;
+      folder_id: string | null;
+      collection_type: string;
+      ok: boolean;
+      warning: string;
+    }[] = Array.from({ length: LIB_COUNT }, (_, i) => ({
+      name: LIB_NAMES[i] ?? `Library ${i + 1}`,
+      path: `/data/lib${i + 1}`,
+      folder_id: `folder-${i + 1}`,
+      collection_type: i % 2 === 0 ? "movies" : "tvshows",
+      ok: true,
+      warning: "",
+    }));
+    if (BROKEN) {
+      // A library the profile IS entitled to, whose folder the server could not resolve — the case
+      // the mobile bar used to drop silently while the sidebar showed it with a warning.
+      libraries.push({
+        name: "Old Drive",
+        path: "B:/gone",
+        folder_id: null,
+        collection_type: "mixed",
+        ok: false,
+        warning: "folder not found on the server",
+      });
+    }
+    return send({ provider: "jellyfin", folders: [], libraries, warnings: [] });
   }
   return send({});
 }) as typeof fetch;
@@ -97,6 +147,19 @@ function text(selector: string): string {
     header: !!document.querySelector('header [aria-haspopup="menu"]'),
     sidebar: !!document.querySelector('aside [aria-haspopup="menu"]'),
   },
+  // The MOBILE BAR — the surface his iPad report was about (`check_nav_access.py` scenario F).
+  // Tab labels only, so the check can say exactly which libraries are one tap away.
+  mobileTabs: [...document.querySelectorAll('nav[aria-label="Mobile"] a')].map(
+    (a) => a.textContent ?? "",
+  ),
+  mobileBar: text('nav[aria-label="Mobile"] > div:last-child'),
+  // The "there is something behind More" dot.
+  mobileBadge: !!document.querySelector('nav[aria-label="Mobile"] button [aria-hidden="true"]'),
+  mobileUnavailable: [...document.querySelectorAll('nav[aria-label="Mobile"] [aria-label$="— unavailable"]')]
+    .map((n) => n.getAttribute("aria-label") ?? ""),
+  // ⚠ Horizontal overflow is how a measured layout fails: a bar that fits its own box while pushing
+  // the page sideways is still broken on the device it was measured on.
+  overflowX: document.documentElement.scrollWidth - window.innerWidth,
 });
 
 function Frame() {

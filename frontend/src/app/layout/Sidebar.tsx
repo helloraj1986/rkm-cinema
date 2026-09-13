@@ -1,7 +1,7 @@
 import { NavLink } from "react-router-dom";
 import { Icon, type IconName } from "../../components/ui/Icon";
 import { useLibraryFolders } from "../../features/library/api";
-import { libraryIconFor } from "../../features/library/lib";
+import { libraryNavEntries } from "../../features/library/lib";
 import { useAuth } from "../../features/auth/AuthProvider";
 import { AccountMenu } from "../../features/auth/AccountMenu";
 
@@ -16,6 +16,11 @@ import { AccountMenu } from "../../features/auth/AccountMenu";
  * media server's own folder names. Names come from the API, never hardcoded;
  * a configured library that failed to resolve shows a warning glyph instead of
  * a dead link.
+ *
+ * ⚠ The list and that rule are `libraryNavEntries` (features/library/lib.ts), SHARED with
+ * `MobileNav` since 2026-09-14. This component used to build its own — and the mobile bar built a
+ * stricter one (`ok && folder_id`, i.e. dropping what it could not resolve), so a broken-path
+ * library showed here with a warning and was simply absent on a phone. One rule, both surfaces.
  */
 type NavItem = { to: string; label: string; icon: IconName; end?: boolean };
 
@@ -123,7 +128,7 @@ function GroupNav({ title, items }: { title: string; items: NavItem[] }) {
 
 export function Sidebar() {
   const { data } = useLibraryFolders();
-  const libraries = data?.libraries ?? [];
+  const libraries = libraryNavEntries(data?.libraries ?? []);
   const { status, user } = useAuth();
   const signedIn = status === "signedIn" && !!user;
 
@@ -138,15 +143,13 @@ export function Sidebar() {
           <div>
             <GroupHeading>Libraries</GroupHeading>
             {libraries.map((lib) => {
-              const icon = libraryIconFor(lib.collection_type);
-              const href = lib.ok && lib.folder_id
-                ? `/library/folder/${encodeURIComponent(lib.folder_id)}`
-                : null;
+              const icon = lib.icon;
+              const href = lib.to;
               if (!href) {
                 return (
                   <div
-                    key={lib.name}
-                    title={lib.warning || "Library unavailable"}
+                    key={lib.key}
+                    title={lib.warning}
                     aria-label={`${lib.name} — unavailable`}
                     className="flex cursor-not-allowed items-center gap-3 rounded-[10px] py-2.5 pl-3 text-[13.5px] font-medium text-zinc-600 opacity-70"
                   >
@@ -158,7 +161,7 @@ export function Sidebar() {
               }
               return (
                 <NavLink
-                  key={href}
+                  key={lib.key}
                   to={href}
                   title={lib.name}
                   className={({ isActive }) => linkCls(isActive)}

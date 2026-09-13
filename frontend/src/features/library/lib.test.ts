@@ -19,6 +19,7 @@ import {
   libraryFilterToParams,
   libraryGenres,
   libraryIconFor,
+  libraryNavEntries,
   libraryViewFromParams,
   personHeadshotUrl,
   pickHomeHero,
@@ -493,5 +494,67 @@ describe("scanFailure", () => {
     expect(scanFailure({ status: 502 }).sub).toContain("backend");
     expect(scanFailure(new TypeError("fetch failed")).sub).toContain("backend");
     expect(scanFailure(undefined).sub).toContain("backend");
+  });
+});
+
+/**
+ * `libraryNavEntries` — the ONE filter both navigation surfaces use (2026-09-14).
+ *
+ * His report, from the iPad: *"even though raj profile have access to all three libraries..only two
+ * can be seen at the bottom"*. The sidebar and the mobile bar had their own copies of this rule and
+ * they disagreed: the sidebar kept an unresolved library and warned about it, the mobile bar dropped
+ * it. These tests pin the rule, and the first one pins the reason it exists.
+ */
+describe("libraryNavEntries", () => {
+  const resolved: ConfiguredLibraryShape = {
+    name: "Movies",
+    path: "/data/movies",
+    folder_id: "f1",
+    collection_type: "movies",
+    ok: true,
+    warning: "",
+  };
+  const unresolved: ConfiguredLibraryShape = {
+    name: "TV Shows",
+    path: "B:/RKM_MEDIA/TV Shows",
+    folder_id: null,
+    collection_type: "tvshows",
+    ok: false,
+    warning: "folder not found on the server",
+  };
+
+  it("KEEPS EVERY LIBRARY — a profile's library is never dropped by the UI", () => {
+    // The whole complaint, in one assertion: three in, three out.
+    const entries = libraryNavEntries([resolved, unresolved, { ...resolved, name: "Movies Kids", folder_id: "f2" }]);
+    expect(entries.map((e) => e.name)).toEqual(["Movies", "TV Shows", "Movies Kids"]);
+  });
+
+  it("links a resolved library to its folder route", () => {
+    expect(libraryNavEntries([resolved])[0].to).toBe("/library/folder/f1");
+  });
+
+  it("keeps an unresolved library as a row, with the server's own reason", () => {
+    const [entry] = libraryNavEntries([unresolved]);
+    expect(entry.to).toBeNull();
+    expect(entry.warning).toBe("folder not found on the server");
+    expect(entry.icon).toBe("tv");
+  });
+
+  it("treats ok-without-a-folder as unresolved — the route needs the id, not the flag", () => {
+    expect(libraryNavEntries([{ ...resolved, ok: true, folder_id: null }])[0].to).toBeNull();
+  });
+
+  it("always has something to show when the server sends no reason", () => {
+    expect(libraryNavEntries([{ ...unresolved, warning: "" }])[0].warning).toBe("Library unavailable");
+  });
+
+  it("url-encodes the folder id, because ids are not ours to choose", () => {
+    expect(libraryNavEntries([{ ...resolved, folder_id: "a b/c" }])[0].to).toBe(
+      "/library/folder/a%20b%2Fc",
+    );
+  });
+
+  it("tolerates an empty list, which is what a fresh install answers", () => {
+    expect(libraryNavEntries([])).toEqual([]);
   });
 });

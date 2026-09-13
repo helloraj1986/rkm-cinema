@@ -25,8 +25,16 @@ so the portal fix has **not** been visually confirmed on RKM-HP. If the next ses
 the first thing to read is the portal block at line 1 (and the harness README's note that a frame must mount the
 component in its REAL ancestor context, or this class of bug is invisible to it).
 
-**Layout state (important — his tree is the sandbox's tree):** the checkout is left on **`main`** at `e0b5c67`, so
-his next deploy builds everything above:
+**Measured addendum (same session, AFTER the merge).** Probing what is actually deployed — the repo's own rule
+before trusting any report — his running web bundle at `http://host.docker.internal:8124/` is
+**`assets/index-RUV4g90t.js`**, and it contains **`item-detail-close`** and **`dialog-scrim`**: the two markers
+added by the item-detail-modal and the portal commits. Its CSS carries **`trim-both`** (the brand-lockup fix).
+So he deployed **after** the portal fix and asked for the merge with the fixed build in front of him — what is
+still missing is his verbal confirmation, not the build. The deploy command above is therefore only needed if he
+has NOT rebuilt since; the bundle name is the way to tell.
+
+**Layout state (important — his tree is the sandbox's tree):** the checkout is left on **`main`** (tip moves with
+each record commit; `git log --oneline -1 main` is the truth), so his next deploy builds everything above:
 
 ```
 cd D:\hermes_agent\hermes-workspace\projects\rkm-cinema

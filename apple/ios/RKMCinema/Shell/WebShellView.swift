@@ -36,9 +36,14 @@ struct WebShellView: UIViewRepresentable {
         let controller = configuration.userContentController
         let bridge = WebBridge()
         bridge.model = model
-        // Registered through a weak proxy: the controller retains handlers, and the controller is
-        // owned by the configuration, which the web view owns (see `WebBridge`).
-        controller.add(WeakScriptMessageHandler(bridge), name: WebInstrumentation.handlerName)
+        // ⚠ Registered DIRECTLY — and this is the fix for a real bug found on the first run, not a
+        // style choice. This was previously registered through a weak proxy, to avoid a retain cycle
+        // that does not exist (`WebBridge` holds its model weakly, and the model holds the web view
+        // weakly). With a weak proxy **nothing retained the bridge**, so it was deallocated the
+        // instant `makeUIView` returned and every JavaScript event was dropped in silence: no
+        // console capture, no `net` lines, no `page ready`. It presented as a film playing with an
+        // empty request log in the debug HUD — which is exactly what the HUD exists to reveal.
+        controller.add(bridge, name: WebInstrumentation.handlerName)
         controller.addUserScript(WebInstrumentation.userScript())
 
         let webView = WKWebView(frame: .zero, configuration: configuration)

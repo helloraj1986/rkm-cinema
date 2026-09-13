@@ -87,20 +87,12 @@ final class WebBridge: NSObject, WKScriptMessageHandler {
     }
 }
 
-/// ⚠ `WKUserContentController` retains its message handlers **strongly**, the controller is owned
-/// by the configuration, and the configuration is owned by the web view — so registering the
-/// bridge directly would form a cycle that keeps the entire web view (and the page in it) alive
-/// for the life of the app. This forwards weakly instead.
-final class WeakScriptMessageHandler: NSObject, WKScriptMessageHandler {
-
-    weak var target: WKScriptMessageHandler?
-
-    init(_ target: WKScriptMessageHandler) {
-        self.target = target
-    }
-
-    func userContentController(_ userContentController: WKUserContentController,
-                              didReceive message: WKScriptMessage) {
-        target?.userContentController(userContentController, didReceive: message)
-    }
-}
+// ⚠ There used to be a `WeakScriptMessageHandler` here, forwarding to the bridge through a weak
+// reference. It was removed because it caused a silent, total failure: with a weak proxy **nothing
+// retained the bridge**, so it deallocated as soon as `makeUIView` returned and every JavaScript
+// event was dropped — a film played while the debug HUD's request log stayed empty.
+//
+// ⚠ And the retain cycle it was guarding against does not exist: `WKUserContentController` does
+// retain its handler, but `WebBridge` holds its model **weakly** and the model holds the web view
+// **weakly**, so the chain terminates and the bridge simply dies with the web view that owns it.
+// Register the bridge directly — see `WebShellView.makeUIView`.

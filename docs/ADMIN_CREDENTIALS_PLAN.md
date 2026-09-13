@@ -112,6 +112,107 @@ Renaming the account breaks anything that assumes the name:
 | **3** ✅ | **Self-service password screen** for every profile (Phase D's other half): change my own password with `CurrentPw` + `NewPw`; honest messaging for a password-less member — **BUILT 2026-09-12** (`57dd122`); see §6b/§6h | gates + DOM check |
 | **4** ✅ | **Recovery, documented and tested** — **BUILT 2026-09-13**: `rkm-cinema.ps1 reset-admin-password` reads the API key from the `rkm_shared` volume (never `.env`), finds the administrator **by policy** (never the literal name `admin`), prompts for a new password (never an argument — history and the process list), writes it with **`ResetPassword: false`** ⚠ (this row said `true` until §6c measured that `true` is a silent no-op that CLEARS a password), then **proves it by signing in**. `OPERATIONS.md` gained the "Locked out? The ladder" section. See §6i | the tool's own verification output; **38 pytest** for its rules and its whole flow against a stub server |
 | **5** | ADR (the credential model), docs truth pass (`ARCHITECTURE`, `OPERATIONS`, `README`), PROGRESS record | full suite + docs links |
+| **E** ✅ | **The 401/403 sweep — six routes were administrative IN EFFECT and only session-gated.** Four became `require_admin_session` (HIS decision); the two member-facing ones were kept open (also his). Plus the UI half: the app must not OFFER what the route now refuses. **BUILT 2026-09-13**; see §6j. ⚠ Arming `RKM_AUTH_REQUIRED` is **NOT** part of this: he asked for the enforcement + the switch handed over, not flipped | 1028 pytest (incl. the route inventory that fails on a NEW route) · ruff · tsc · 287 vitest · build · **6** browser checks |
+
+### 6j. ✅ Phase E — the 401/403 sweep: four routes an administrator should own, and the UI that must not offer what the server refuses
+
+Built 2026-09-13, on the audit `tools/route_protection_report.py` had to write first (`7074abb`).
+That tool answered *"are the routes protected?"* with a list instead of a feeling — **54 routes** — and
+named the gap exactly: **six routes were administrative IN EFFECT while only a session was checked**,
+so a member's own session was accepted for a library scan, a generic job run, a whole-library
+reconcile and an *arr download action.
+
+**His decisions (2026-09-13), asked rather than guessed because three of the six are product calls:**
+
+| Route | Level now | Why |
+|---|---|---|
+| `POST /api/jobs/{name}/run` | **ADMIN** | a generic job runner — it starts server-side work on the caller's behalf |
+| `GET /api/library/scan` | **ADMIN** | forces a full scan of every configured library |
+| `POST /api/reconcile` | **ADMIN** | a whole-library write pass against the database and the *arr services |
+| `POST /api/download` | **ADMIN** | the legacy *arr command path |
+| `POST /api/media/{media_id}/request` | session | **member-facing by decision** — requesting a title is arguably the point of a household server |
+| `POST /api/suggest/add` | session | **member-facing by decision** — the household suggestion list |
+
+**The measurement, after (same tool, same tree):** `PUBLIC 1 · auth-route 6 · ADMIN 11 · session 36`.
+The seven `/api/admin/*` routes are unchanged; the four above are the only ones that moved.
+
+### The mechanism, and why it had to be `require_admin_session` and not `require_session`
+
+`require_admin_session` is the ONE dependency that is strict **in every world** — a missing session is
+a 401 and a member's session is a 403 *even while `RKM_AUTH_REQUIRED=false`*. That asymmetry is the
+whole point of shipping this before he arms the switch: the four routes are safe **today**, on the
+stack he is running right now, without changing anything else about the app.
+
+### What the sweep actually broke (measured before shipping, not after)
+
+* **7 existing tests** drove these routes signed out and would have gone 401: three `/api/download`
+  tests, two scan routes, two job-runner cases, one `/reconcile`. They now sign in through a new
+  `tests/conftest.py::signed_in` fixture — deliberately a *fixture*, so "make the test pass" cannot be
+  reached for silently: the refusal is the fact under test elsewhere.
+* **No live tool or browser check calls any of the four** (checked: `tools/*.py` and
+  `frontend/harness/*` — the only other hit is the archived legacy monolith under `tools/archive/`).
+  So nothing he runs by hand changes.
+* ⚠ **`GET /api/library/scan` IS a live, member-visible control** — "Scan Library" in
+  `LibraryHomeView` (both the hero and the empty state) and in `LibraryFolderView`. Gating the route
+  alone would have left a member clicking a button that answers 403, and the toast would have said
+  *"Could not reach the scan job — check the backend"*, blaming a backend that was working. **That is
+  the fault this section exists to record:** the server-side fix is half a fix when the UI offers what
+  the server refuses.
+* ⚠ **`POST /api/jobs/{name}/run` has one member-facing caller in the source** —
+  `features/watchlist/actions.ts::refreshRecommendations` posts `add_watchlist` here. **No view
+  currently consumes that action** (checked across the whole `src`), so no live surface changed. The
+  route is gated **whole** rather than per job name so an unknown or newly added name is refused by
+  default; when that control is wired up it needs its own member-facing route on the watchlist
+  router. Recorded in the route's own docstring, not just here.
+
+### The UI half: `mayScanLibrary`
+
+`features/auth/lib.ts` gained `mayScanLibrary(isAdmin)` — the same shape and the same **fail-closed**
+rule as `mayManageHousehold`, reading the server's own `is_admin` for the profile in effect
+(`useCurrentProfile`). Both library views pass it through: for anybody who is not an administrator the
+scan **button is not rendered** and the empty states state the reason instead
+(*"Scanning is an administrator action"*) — an empty screen with no explanation reads as a bug.
+`features/library/lib.ts::scanFailure` replaces the misleading toast the same way: a 401/403 now says
+who can scan, and only a real backend failure mentions the backend.
+
+### Falsified, not asserted (the house rule — four checks, each with the fix reverted)
+
+1. **Ungate `/api/reconcile`** → 3 pytest failures, naming it (`declared ADMIN, actually session` plus
+   both HTTP rows).
+2. **Delete its row from the inventory** → `test_no_route_shipped_without_a_decision` reports
+   `NEW: ['POST /api/reconcile']`. That is the guard against the class this repo has already been
+   bitten by twice: the enumeration that passed while inspecting ZERO routes (§6f), and a stub that
+   supplied an `is_admin` the server could not send (§6g).
+3. **Promote `/api/suggest/add` to ADMIN** → 2 failures, including
+   `test_the_two_member_facing_routes_are_still_member_facing` — his decision moves only if somebody
+   changes it on purpose.
+4. **Remove the frontend wiring** (`mayScan` hard-coded `true`) → `tools/check_library_scan.py` fails
+   **7 scenarios / 12 problems**. ⚠ Two traps found while doing this, both of which nearly produced a
+   check that could not fail:
+   * **The dev server served a STALE module.** Vite's watcher does not fire on this mount, and an
+     orphaned `vite` still holding port 5199 kept serving the pre-edit `LibraryHomeView` — so the
+     falsified build *passed* every scenario. The fix is to confirm the served module really changed
+     (`curl …/src/features/library/LibraryHomeView.tsx | grep "mayScan = "`) before trusting a run.
+     `harness/README.md` warned about exactly this and it still cost a round trip.
+   * **`process kill` on the background wrapper does NOT kill vite** — `nohup` + a subshell leave the
+     `node` process alive, so a "restart" silently fails to bind (`--strictPort` → exit 1). Kill the
+     PID that owns the port (`ss -ltnp | grep 5199`), or `pgrep -f "vite --port 5199"` — but **not**
+     `pkill -f "vite --port 5199"` from a command containing that string: it matches its own shell and
+     kills itself (exit 143/137), which is what made the first two restarts look like they worked.
+
+### ⚠ What is NOT done, stated plainly
+
+* **`RKM_AUTH_REQUIRED` is still false.** He chose *"land the enforcement + tests, then hand me the
+  switch and the exact recipe"* explicitly. Nothing in this work arms it, and
+  `test_RKM_AUTH_REQUIRED_is_not_armed_by_this_work` fails the suite if a future change ever does.
+* **ADR-0006** (the profile/session credential model) is still unwritten, and the **docs truth pass**
+  (`ARCHITECTURE.md`, `OPERATIONS.md`, `README.md` still describe the pre-auth app) is still open.
+  That is Phase 5, and it is the last substantial piece of this workstream.
+* The **two hardening items** from §6h ride with Phase 5 as planned: the media-call 401 taxonomy
+  (session-401 vs profile-token-401) and per-session device ids.
+* Phase 1's **fresh-install test on a throwaway stack** is still the one path never executed end to
+  end, and only he can run it (no Docker in the sandbox).
+
 
 ### 6i. ✅ Phase 4 — the break-glass (`rkm-cinema.ps1 reset-admin-password`), and the plan row that was wrong
 

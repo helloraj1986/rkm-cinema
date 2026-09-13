@@ -1,4 +1,109 @@
-## ▶ SAME SESSION (2026-09-13) — PHASE E IS PARKED (his decision) · everything it needs to start is below
+## ▶ SAME SESSION (2026-09-13) — **PHASE E IS IN: the four operational routes now need an administrator** · next = HIS recipe call on arming the switch, then Phase 5 (`ADR-0006` + the docs truth pass)
+
+**His instruction, verbatim:** *"continue with progress.md in rkm-cinema"* — the parked block below
+had left ONE thing first, and it was a product decision, not code. It was asked as three questions and
+he answered all three (2026-09-13):
+
+| Question | His answer |
+|---|---|
+| the four operational routes (`/api/jobs/{name}/run`, `/api/library/scan`, `/api/reconcile`, `/api/download`) | **all four → administrators only** |
+| `/api/media/{id}/request` + `/api/suggest/add` | **both stay member-facing** |
+| arm `RKM_AUTH_REQUIRED` now? | **no** — *"land the enforcement + tests, then hand me the switch and the exact recipe"* |
+
+**Where the repo is now:** branch **`feat/route-enforcement`** (cut from `main` @ `da0a55a`), worktree
+clean, pushed. `main` is untouched — **he asks for merges**, and all three long-lived branches
+(`main`, `feat/auth-multiuser`, `experiment/bundled-docker-stack`) are still level at `da0a55a` until
+he says otherwise.
+
+| | |
+|---|---|
+| Branch | `feat/route-enforcement` — **`main` (`da0a55a`) + this phase, nothing else** |
+| Gates | **1028 backend pytest** (+24) · ruff clean · **tsc** · **287 vitest** (+5) · `npm run build` · **6 browser checks** (5 existing + `check_library_scan.py`) · openapi **53 paths** (description-only change) · docs links resolve |
+| Deploy | ⚠ **BOTH containers**: `docker compose -p rkm-bundled up -d --build api web` — the api gained four gates and the web hides the scan control |
+
+### The measurement, before and after (same tool, `tools/route_protection_report.py`)
+
+| Level | Before | After |
+|---|---|---|
+| `PUBLIC` | 1 | 1 |
+| `auth-route` | 6 | 6 |
+| `ADMIN` | 7 | **11** |
+| `session` | 40 | **36** |
+
+`RKM_AUTH_REQUIRED` is **still `false`** — deliberate, and his explicit choice. The four routes are
+safe **today** anyway, because `require_admin_session` is the ONE dependency that is strict in every
+world: **401 for a signed-out caller, 403 for a member, and 503 when the server cannot be asked** —
+*even while enforcement is off*. Full mechanism: `ADMIN_CREDENTIALS_PLAN.md` **§6j**.
+
+### ⚠ The half-fix this session caught (the reason the frontend changed too)
+
+Gating the routes alone would have shipped a **member-facing regression**: `GET /api/library/scan` is
+the live **"Scan Library"** button in `LibraryHomeView` (hero AND empty state) and `LibraryFolderView`
+— offered to everyone. A member would have clicked it, got a 403, and been told *"Could not reach the
+scan job — check the backend"*: our refusal, the backend blamed for it. So:
+
+* `features/auth/lib.ts::mayScanLibrary(isAdmin)` — same shape and the same **fail-closed** rule as
+  `mayManageHousehold`, reading the server's own `is_admin` for the profile in effect. Not an
+  administrator (or signed out, or before the answer lands) → **the control is not rendered**, and the
+  empty states say *"Scanning is an administrator action"* instead of leaving a blank screen.
+* `features/library/lib.ts::scanFailure` — a 401/403 now names the permission, never the backend. The
+  old wording is kept for a real backend failure.
+
+⚠ **One known consequence, recorded in the route's own docstring rather than hidden:**
+`POST /api/jobs/{name}/run` is gated **whole**, and `add_watchlist` (the "refresh recommendations"
+job) was written for a member-facing action — `features/watchlist/actions.ts::refreshRecommendations`.
+**No view consumes that action today**, so nothing live changed; when that control is wired up it needs
+its own member-facing route on the watchlist router. Gating the whole route keeps the default for an
+unknown or newly added job name **refused**, which is the safer half of the trade.
+
+### The guard that stops this class returning
+
+`backend/tests/test_route_protection.py` (24 tests) declares the level of **every** `/api` route and
+compares it to what the app actually serves **in both directions** — so a NEW route fails the suite
+until somebody decides what it requires, and his two member-facing decisions are pinned as tests
+(`test_the_two_member_facing_routes_are_still_member_facing`). Falsified four ways, each with the fix
+reverted (all recorded in §6j): ungate `/api/reconcile` → 3 failures; delete its inventory row →
+`NEW: ['POST /api/reconcile']`; promote `/api/suggest/add` → 2 failures; remove the frontend wiring →
+**7 browser scenarios / 12 problems**.
+
+⚠ **`tests/conftest.py` is new** — `signed_in(client)` gives a test an administrator's session,
+replacing ONLY the thing that must ask the media server (`admin_status`). Seven existing tests needed
+it; they are the ones that drove these routes signed out. The gate's own three answers are still
+proved against a fake **provider** in `test_admin_users_api.py`, untouched.
+
+### ⚠ Two trap-traps found while falsifying the browser check — both nearly shipped a check that could not fail
+
+1. **A stale dev server made the check pass on a deliberately BROKEN build.** Vite's watcher does not
+   fire on this mount; an orphaned `vite` still holding port 5199 served the pre-edit module. Confirm
+   the served module matches disk before trusting any harness run:
+   `curl -s http://localhost:5199/src/features/library/LibraryHomeView.tsx | grep "mayScan = "`.
+2. **`process kill` on the background wrapper does NOT stop vite**, and
+   `pkill -f "vite --port 5199"` **matches its own shell** and kills it (exit 143/137) — which looks
+   exactly like a successful restart. Kill the PID that owns the port. All of it is now in
+   `frontend/harness/README.md`.
+
+### Waiting on HIM, in order
+
+1. **Deploy both containers** (see the table above).
+2. **Sign in as `rkm` and visit the library** → the Scan control is still there and still works. Then
+   **pick a member's profile** → the control is gone and the page says scanning is an administrator
+   action. That is the whole change, on one surface, in one place.
+3. **Then decide on the switch** — arming `RKM_AUTH_REQUIRED=true` is HIS call and is NOT done. The
+   exact recipe, and what it would break, is in his chat reply for this session.
+
+### The rest of the queue (unchanged, and now the LAST substantial piece)
+
+**Phase 5** — `ADR-0006` (the profile/session credential model, `docs/adr/` has 0001–0005) + the docs
+truth pass (`ARCHITECTURE.md`, `OPERATIONS.md` and `README.md` still describe the pre-auth app), now
+carrying the **two §6h attachments**: the media-call 401 taxonomy (session-401 vs profile-token-401)
+and **per-session device ids**. Then **Phase 1's fresh-install test on a throwaway stack** — still the
+one path never executed end to end, and **only he can run it** (no Docker in the sandbox). **Merge** to
+`main` whenever he asks. And the XS one still open: `BROWSER_RADARR_URL` / `BROWSER_SONARR_URL` point
+at `:7878`/`:8989` while the bundled compose publishes **7879**/**8988** (radarr/sonarr are not even
+running — `.env` sets no `COMPOSE_PROFILES` — so the links are dead either way).
+
+
+## ▶ ✅ SUPERSEDED (2026-09-13) — PHASE E WAS PARKED (his decision); it was picked up the same day and is now IN — see the block above
 
 **His decision, verbatim:** *"park it for next session...update progress.md"* — asked as a choice of
 *start now / the enforcement split only / park it*.

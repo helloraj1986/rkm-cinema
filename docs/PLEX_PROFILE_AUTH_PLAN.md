@@ -179,6 +179,15 @@ twice — a phone and a laptop — rotates the token under the first session, wh
 401 until it signs in again. Nothing in Phase C made this worse, and the household's normal path
 (sign in once, switch profiles) is unaffected.
 
+> ✅ **FIXED 2026-09-13 (Phase 5, `c61d7bb`).** Every session mints its own device id
+> (`rkm-cinema-web-<hex>`, `services/auth.py::new_session_device_id`) and a profile switch
+> re-authenticates on that same one, so a rotation can only ever affect the session that logged in.
+> A caller that names a device (`rkm-tools`) still wins. And because a stale credential can still
+> happen — the server may revoke a token at any time — the app now **says so** instead of going
+> silent: a refused credential while a profile is in effect answers `401` +
+> `X-RKM-Auth-Problem: profile-token`, which the browser turns into "pick your profile again" rather
+> than a sign-out (`ADMIN_CREDENTIALS_PLAN.md` §6h, settled in Phase 5).
+
 ### 4.3 The shared-device rule (recommended, decision 3)
 The device holds the administrator's session, so "anyone can walk up and administer" is the real risk
 of this model — Plex's answer is a PIN on the Home admin, and the backend equivalent is: **admin

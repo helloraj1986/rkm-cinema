@@ -138,6 +138,12 @@ setting one (measured, `ADMIN_CREDENTIALS_PLAN.md` §6c).
 | "It says added" but the picker shows no tick | `python tools\probe_subtitle_selection.py "<title>"` | Compares the stored choice, the panel's rows and the server's tracks — it prints which row is marked active |
 | Subtitle download refused | — | Daily limit reached; the message carries the reset time (counters reset 00:00 UTC = 10:00 AEST) |
 | Subtitles stopped applying after a change | `python tools\probe_subtitle_selection.py "<title>"` | The chosen identity no longer matches a track (re-indexed, file removed) — nothing is applied rather than something wrong |
+| **"Your profile's sign-in has expired"** and the app sent you to *Who's watching?* | pick the profile again | The media server refused the profile's credential (`X-RKM-Auth-Problem: profile-token`). **Your session is fine** — this is not a sign-out. See "The two 401s" below |
+| An empty library with no message at all | `.\rkm-cinema.ps1 logs api` | ⚠ The OLD behaviour of the row above (silent): look for `credential refused` in the api log |
+| Signed out on the laptop, still signed in on the TV | — | Expected, not a bug: the session is a cookie, so each browser/device holds its own |
+| Signed in, yet everything answers "Sign in to use this app" | `.\rkm-cinema.ps1 auth` | The switch is armed and this browser's cookie is gone — cleared site data, or 30 idle days expired it |
+| A new household member cannot sign in | — | Only the **administrator** signs in to the server. Create the account (avatar → Household), then that person picks their profile on *Who's watching?* — with the password you set for it |
+| No **Household** entry in the account menu | switch back to your own profile | Household is refused while somebody else's profile is selected (the shared-device rule, decision 3). It is hidden rather than shown-and-refused, deliberately |
 
 ## Where state lives, and what survives what
 
@@ -152,6 +158,13 @@ setting one (measured, `ADMIN_CREDENTIALS_PLAN.md` §6c).
 
 The app's own watchlist is a JSON file at `D:\RKM_MEDIA\rkm\watchlist.json`
 (`WATCHLIST_DB_PATH`), independent of Jellyfin.
+
+**Sessions** live beside it, at `D:\RKM_MEDIA\rkm\sessions.json` — one row per signed-in browser,
+holding the **sha256** of the session id (never the id, never a media-server token) with a 30-day
+sliding expiry. They are on the media root on purpose: rebuilding the `api` container does not sign
+the household out. `docker volume rm rkm-bundled_jellyfin-config` does *not* touch them; deleting that
+file signs everybody out and nothing else. A **corrupt** file is treated as empty (everyone signs in
+again; nobody is stuck), and the broken file is left alone rather than overwritten.
 
 ## Layout
 
@@ -187,12 +200,17 @@ never `len(Items)`.
 
 ## Arming `RKM_AUTH_REQUIRED` (the switch)
 
-`false` (today) = the app answers anyone who can reach it: a request with **no session at all** is
-served as the stack's own credential, so the libraries, playback and watch state work signed out.
-`true` = all 36 app routes need a session. Only these stay reachable signed out, both by design:
+**State: ARMED since 2026-09-13** (his call, with `.\rkm-cinema.ps1 auth on`). The app is private:
+`curl http://localhost:8124/api/config` with no cookie answers **401**.
+
+`false` = the app answers anyone who can reach it: a request with **no session at all** is served as
+the stack's own credential, so the libraries, playback and watch state work signed out.
+`true` = all **36 session routes** need a session, and the **11 admin-gated** ones need a Jellyfin
+administrator on top of that. Only these stay reachable signed out, both by design:
 
 * `GET /api/health` — the Docker HEALTHCHECK; a 401 here marks the api unhealthy and cascades;
-* the six `/api/auth/*` routes — sign-in cannot require a session to be reachable.
+* the six `/api/auth/*` routes — sign-in cannot require a session to be reachable, and they are also
+  the **fix** for a refused credential (below), so they are deliberately not probed.
 
 **To arm it — one command:**
 
@@ -231,10 +249,31 @@ use**, so a TV or tablet does not re-ask every time.
 | the scheduler and the provisioner | nothing to do — they call the services in-process, not over HTTP |
 
 **Why the tools use their own device id:** Jellyfin invalidates the previous token of a
-*(device, user)* pair on every login, so a tool authenticating on the app's device
-(`rkm-cinema-web`) would rotate the **browser's** token away and leave it answering 401 on every
-media call. Their credentials come from `.env` (`RKM_JELLYFIN_ADMIN_USER` /
+*(device, user)* pair on every login, so a tool authenticating on the same device as a **browser**
+would rotate that browser's token away and leave it answering 401 on every media call. Since
+2026-09-13 each browser session signs in on **its own** device id too (`rkm-cinema-web-<hex>`, minted
+per sign-in) — so a phone and a laptop signed in as the same account cannot kill each other's media
+calls either. Their credentials come from `.env` (`RKM_JELLYFIN_ADMIN_USER` /
 `RKM_JELLYFIN_ADMIN_PASSWORD`); only an administrator may sign in, so a member's account cannot be
 used here.
 
-Merge to `main` is parked until the user verifies on RKM-HP.
+## The two 401s — and why they need opposite answers
+
+A 401 from this app is not one thing, and answering both the same way was a real bug (fixed
+2026-09-13). The response carries `X-RKM-Auth-Problem`:
+
+| Marker | What is actually wrong | What the app does |
+|---|---|---|
+| `session` — or **no marker at all** (an older api) | the cookie is gone or stale | signs you out and shows the login view |
+| `profile-token` | your **session is fine**; the credential the *profile you are watching as* has been refused by the media server | keeps the session, drops the fetched rows, and sends you to **"Who's watching?"** with the server's own sentence — the message reads *"Your profile's sign-in has expired."* |
+
+**How to read it as the operator.** The app asks the media server directly ("is this credential still
+accepted?", a `GET /Users/<id>` cached for 20 seconds) rather than guessing. A refusal means the server
+no longer honours that token — the usual causes are: the profile's password was changed on the server,
+their sessions were revoked in Jellyfin's own dashboard, or the server was down when the token was
+minted. Nothing is broken in this repo when you see it, and the fix is one tap (**Who's watching? →
+pick the profile again**), never a sign-out.
+
+Before this existed the same state was **silent**: the media calls came back empty, so the app said
+"you have no library" with a blank sidebar. If you ever see an empty library with no message, that is
+what to suspect — check `.\rkm-cinema.ps1 logs api` for `credential refused`.

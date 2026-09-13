@@ -1,3 +1,155 @@
+## ▶ ✅ **PHASE 5 COMPLETE — MERGED TO `main`** (2026-09-13) — `ADR-0006`, the docs truth pass, the README rewrite, and the two §6h hardening attachments (`c61d7bb` code + this record) · **the switch is ARMED** · this closes the auth workstream
+
+**His instruction, verbatim:** *"complete the phase 5 and close this after merging to main.. also
+upodate the read.me file of the root with correct referenced to other .md files...readme file should
+very clean starting only very significant information about the app for a new user who wants to
+clone it"*
+
+**His report, which is where this session started:** `.\rkm-cinema status` — `api`/`web`/`jellyfin` up,
+3 state volumes, `auth`: `.env` says `true` **and** the api answers 401 (armed, proved), the
+deployed-check **MATCH at 53 paths**, libraries 713 movies / 115 series / 5192 episodes, verdict
+healthy.
+
+⚠ **One line in it was NOT green, and it is not the app's fault:** `degraded=True` is **qBittorrent
+alone** (radarr/sonarr/tmdb/jellyfin all ok). Measured from the sandbox: the host's
+`192.168.65.254:1701` refuses connections while `:7878` and `:8989` answer 200 — so the app is pointed
+exactly where it should be and the host's qBittorrent is not running. **Two reporting gaps made that
+hard to see, and both are recorded rather than fixed here** (they are not Phase 5's scope):
+`tools/rkm_status.py` prints jellyfin/radarr/sonarr/tmdb and **omits the qbit line**, so `status` can
+print "everything looks healthy" while the contract still says degraded; and
+`QBittorrentService.health()` swallows every exception into `return False`, so `serviceDetail.qbit`
+reads `{ok: false, detail: "", error: null}` — it knows it is down and refuses to say why.
+
+| | |
+|---|---|
+| Branch | `feat/phase-5-taxonomy-and-docs` → **fast-forwarded to `main`**, both refs pushed |
+| Code commit | `c61d7bb` — the two hardenings + 20 new backend tests, 7 new vitest cases |
+| Docs commit | this record (ADR-0006, ARCHITECTURE, OPERATIONS, README, both plan statuses) |
+| Gates | **1107 backend pytest** · ruff clean · **tsc** · **294 vitest** · `VITE_ENABLE_REACT=1 build` · **6 browser checks** · docs links (40 files) · contract **53 paths, regenerated with zero diff** |
+| Falsified | 6 ways, each by breaking the shipped file and confirming the named test fails, then restoring byte-identical |
+
+### 1. `ADR-0006` — the model, recorded at last
+
+`docs/adr/ADR-0006-delegated-identity-and-sessions.md`. ADR-0001 requires a **breaking contract
+change** to be explicit, and "every app path now requires a session" is exactly that, so it now has its
+ADR: the decision (identity delegated to Jellyfin; the app owns sessions and profiles), the **nine
+measurements** the design rests on, the rejected alternatives (shared password, app-owned accounts, an
+IP/localhost bypass, a browser-remembered profile, the token in the cookie, the never-built machine
+token), and the honest limits.
+
+### 2. Per-session device ids — §4e, the bug that made two browsers fight
+
+Every session used to sign in on ONE Jellyfin device id, and Jellyfin invalidates the previous token of
+a *(device, user)* pair **on every login** — so a phone and a laptop signed in as the same account
+killed each other's media calls, silently, with an empty sidebar. `new_session_device_id()` mints
+`rkm-cinema-web-<12 hex>` per **sign-in**, the login route stores it, and a profile switch
+re-authenticates on it. Random, not derived from the session id: the session id is a credential (kept
+only as a sha256) while a device id travels into Jellyfin's session list **and its logs**. A caller
+that names a device still wins — which is what keeps `rkm-tools` from rotating the browser's token away
+(§6k).
+
+### 3. The 401 taxonomy — §6h, and the measurement that changed the code
+
+Two 401s, opposite answers: *the cookie is gone* ⇒ sign in again (unchanged); *the cookie is fine and
+the credential the app is ACTING as was refused* ⇒ pick the profile again. The second used to be
+**invisible** (empty results, "you have no library"), and the only available 401 would have thrown a
+live session away. `require_live_credential` now asks the media server directly and answers
+`401 + X-RKM-Auth-Problem: profile-token`; the client fires a **different** handler for it (keep the
+session, drop the fetched rows, go to *Who's watching?* with the server's own sentence), and
+`guardDecision` gained `profileStale` — **required**, like `profileSelected`, because it takes the app
+away. The picker shows "Your profile's sign-in has expired."
+
+⚠ **The first version of the probe would have broken every healthy request.** Measured on the bundled
+Jellyfin 10.11.11, because the credential STYLE is the whole function:
+
+| Call | Result |
+|---|---|
+| `GET /Users/<id>` with `Authorization: <token>` | **401** — does not authenticate this endpoint |
+| `GET /Users/<id>?api_key=<token>` | **200** |
+| `?api_key=<a bad token>` | **401** — the stale signal, and it is real |
+| `?api_key=<token>` on an unknown id | **404** — NOT a refusal, and must never be read as one |
+
+`?api_key=` is the style every other call in this repo already uses; the probe is cached 20 s per
+credential so a page-load burst costs ONE upstream call (pinned). Three deliberate non-answers —
+no session, no credential, "could not ask" — must never block a request.
+
+### 4. The docs truth pass — what was actually wrong
+
+* **`ARCHITECTURE.md`** (296 lines, identity mentioned **zero** times): retitled (it still said "RKM
+  Watchlist"); §1 now describes what the app is (player, requests, **households**); **new §11** is the
+  identity model as built (the contextvar seam, the rail, the one dependency per router, the two 401s,
+  per-session devices, and what stays shared); §11-old (frontend) rewritten for the real React shell —
+  it had been describing `app.js`/`api.js`, **deleted on 2026-09-08**; §5 replaced a 9-row endpoint
+  table with the four LEVELS and a pointer to the inventory that enforces them; §10 dropped
+  `dashboard-data.json`/`rebuild_dashboard.py` (both deleted) and gained the session store; §12/§13
+  deployment corrected (one script; the shell is **baked into the image**, not volume-mounted).
+* **`OPERATIONS.md`**: the switch section now says **ARMED** and how it is proved; a new **"The two
+  401s"** section explains the taxonomy from the operator's side; six new symptom rows (*"Your
+  profile's sign-in has expired"*, an empty library with no message, laptop-vs-TV sign-out, a new
+  member who cannot sign in, no Household entry in the menu); where the **session store** lives and
+  what survives what.
+* **`AUTH_MULTIUSER_PLAN.md`** → **✅ COMPLETE**, with the two things it promised that were
+  deliberately NOT built named up front (`RKM_API_TOKEN`, `RKM_CORS_ORIGINS` — see below).
+* **`PLEX_PROFILE_AUTH_PLAN.md` §4e**'s "known limit" is marked **FIXED** in place, pointing at the
+  commit — a known limit that is quietly fixed is a doc that lies.
+
+### 5. README — rewritten, clone-first
+
+Root `README.md` was a feature dump with a stale dev section (499 backend tests, 160 vitest, `ruff
+check .`, port tables, the legacy `bootstrap.ps1` flow) and **no mention of signing in at all**. It is
+now: what the app is → what you get → requirements → **quick start** (clone → `.env` → `deploy` →
+`status`, then the first 5 minutes: the password printed once, the picker, `auth on`, adding members) →
+ports → the one script → the three rules → config → troubleshooting → development (1107 tests / 294
+vitest / the scoped ruff gate / the frozen-contract rule) → layout → a documentation index whose links
+are checked by `tools/check_md_links.py`.
+
+### Verification
+
+`1107 backend pytest` (+20: `test_credential_taxonomy.py` is new — the dependency's answers, the probe
+against a fake transport **including the measured credential style**, and per-session device ids) ·
+ruff clean (`api/application/config/core/domain/infrastructure/jobs/services` + the two changed tools;
+⚠ `tools/`'s probe scripts carry 8 pre-existing F401s and are NOT in the gate) · `tsc` clean ·
+`294 vitest` (+7) · `VITE_ENABLE_REACT=1 npm run build` · **6 browser checks** (login flow, picker, nav
+access, household, password, library scan — all run against a Vite harness) · docs links (40 files, 15
+relative links) · `snapshot_openapi.py` regenerated with **zero diff** (no route changed shape: this
+release is contract-neutral).
+
+**Falsified, six ways**, each by breaking the shipped file and confirming the NAMED test fails, then
+restoring byte-identically: no `X-RKM-Auth-Problem` header · "could not ask" read as a refusal · the
+`Authorization:` credential style · every refusal blamed on the profile · no probe cache · the shared
+device id returning. Plus one real find during the work: the conftest `signed_in` fixture mints
+`jf-token`, a credential no media server ever issued — so the probe correctly 401'd **21 existing
+tests**. That is the fixture doing its job as the one seam that fakes "asking the media server"
+(`admin_status` already worked that way); it now fakes this too, and the taxonomy itself is proved
+against a fake transport where the answer is False/True/None on purpose.
+
+### ⚠ Two findings recorded, deliberately NOT fixed
+
+1. **`revoke_jellyfin_session` has probably never revoked anything.** `POST /Sessions/Logout` with
+   `Authorization: <token>` answers **401** on the live server (measured while checking the probe's
+   style). This is the best-effort call that logs out a token the app obtained but will not use (the
+   refused non-administrator login). It never raises by design, so the failure is silent. The likely
+   fix is a different credential style — the same lesson as the probe — but it is auth-adjacent and out
+   of this phase's scope. **Next session's first task, if he wants it.**
+2. **The qBittorrent reporting gaps** in the block at the top (`status` omits the line; the provider
+   withholds the reason).
+
+### What is left (small, in order)
+
+1. **The fresh-install test on a throwaway stack** — still the ONE path never executed end to end, and
+   only HE can run it (no Docker in the sandbox). Recipe: `ADMIN_CREDENTIALS_PLAN.md` §7.
+2. The two findings above.
+3. The stale XS item is **resolved as wrong**, not outstanding: `BROWSER_RADARR_URL` /
+   `BROWSER_SONARR_URL` pointing at `:7878`/`:8989` is CORRECT — those are the host's instances, the
+   same ones `RADARR_URL`/`SONARR_URL` use, and they answer 200 (verified 2026-09-13). The bundled
+   `fullstack` containers never run because `.env` sets no `COMPOSE_PROFILES`.
+4. Parked, untouched: native Jellyfin collections, Bazarr bulk subtitles, the Plex-style views plan.
+
+**The auth workstream is closed.** Identity, household accounts, per-user state, per-user subtitles,
+the switch, the ADR and the docs are all on `main`, and the app is private.
+
+---
+
 ## ▶ ✅ ON `main` (2026-09-13) — **`status` no longer blames the api for NGINX's answer** (the fix for what HE hit, `7c2bef2`) · this block also records `4e4cb9a` (the check itself), whose record the interrupted session never wrote · **next = HE runs `.\rkm-cinema.ps1 apply`, re-checks `status`, then arms the switch**
 
 **What he hit, on the real stack.** `.\rkm-cinema.ps1 status` ended with

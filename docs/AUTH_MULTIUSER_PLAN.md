@@ -1,8 +1,27 @@
 # Plan: per-user identity via Jellyfin + app sessions (multi-user)
 
-**Status: SCOPED 2026-09-12, NOT STARTED.** Branch `feat/auth-multiuser` (cut from `main`), this plan is
-the branch's first commit. Execute phase by phase — **ONE commit per phase, gates green after every one**,
-and a `docs(status)` PROGRESS record at the end.
+**Status: ✅ COMPLETE 2026-09-13 — ALL SIX PHASES SHIPPED AND MERGED TO `main`.** Phases 0–2
+(`feat/auth-multiuser`) plus 1b (household accounts, `HOUSEHOLD_USERS_PLAN.md`), Phase 3 (identity
+threading), Phase 4 (per-user subtitle preferences) and **Phase 5** (`ADR-0006`, the docs truth pass
+and the two §6h hardening attachments) are in. `RKM_AUTH_REQUIRED` was armed by the user on
+2026-09-13, so the app is private.
+
+⚠ **Read this section before trusting any past-tense claim below.** Two things the plan promised were
+deliberately NOT built, and the reasons are the interesting part:
+
+* **No `RKM_API_TOKEN` machine token.** Phase 2 planned one for the repo's own tooling. §6k replaced it
+  with something better: the tools **sign in as the administrator on their own device id**
+  (`rkm-tools`), reusing credentials that already exist. `.env.example` documents no such key because
+  no such key exists.
+* **No `RKM_CORS_ORIGINS`.** Production is ONE origin through nginx and the Vite dev server proxies
+  `/api`, so CORS is never exercised. The middleware is vestigial; nothing needs to configure it.
+
+The two-phase-5 hardening items the plan left open at §6h are **done**, and the ADR that records the
+whole model is `adr/ADR-0006-delegated-identity-and-sessions.md`.
+
+**Superseded header (kept for history):** *SCOPED 2026-09-12, NOT STARTED.* Branch `feat/auth-multiuser`
+(cut from `main`), this plan is the branch's first commit. Execute phase by phase — **ONE commit per
+phase, gates green after every one**, and a `docs(status)` PROGRESS record at the end.
 
 **User decisions (2026-09-12):** this is the next feature; the goal is **real per-user state for the
 household, with identity DELEGATED to Jellyfin** (not a shared password, not app-owned accounts). Native

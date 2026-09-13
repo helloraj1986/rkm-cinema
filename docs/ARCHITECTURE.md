@@ -1,4 +1,10 @@
-# RKM Watchlist — Architecture
+# RKM Cinema — Architecture
+
+> **Identity: read §11 and [`adr/ADR-0006`](adr/ADR-0006-delegated-identity-and-sessions.md) before
+> touching anything that calls the media server.** Since 2026-09-12 the app has a session per browser
+> and a *profile* per person, and the credential a call is made with is decided in ONE place
+> (`api/session.py`). A route that skips that seam serves one household member another's library —
+> silently, and with no error anywhere.
 
 > ⚠ **2026-09-08:** repo restructured into a monorepo (`REPO_STRUCTURE_PLAN.md`)
 > and the legacy vanilla app removed (branch `chore/remove-legacy-app`):
@@ -18,14 +24,23 @@
 
 ## 1. What this is
 
-A self-hosted **media discovery + download dashboard**. It:
+A self-hosted **media library, player and acquisition dashboard** for one household. It:
+
 - Shows what's in your **Jellyfin** library (source of truth for availability) and recently added.
+- **Plays it in the browser** — same-origin HLS/MSE through the api, so no media URL or server
+  credential is ever exposed to the client.
 - Lets you **request** movies/series, which are added to **Radarr** (movies) or **Sonarr** (TV) and downloaded via **qBittorrent**.
 - Tracks each title through a lifecycle: requested → downloading → downloaded → available → recommended (history).
-- Deep-links each available title straight into **Jellyfin**'s own web UI, and plays it in-app (same-origin HLS/MSE) where the server exposes an item id.
-- Fetches **posters/backdrops/genres** from **TMDB** and **trailers** by scraping `youtube.com` (no YouTube API key).
+- Deep-links each available title straight into **Jellyfin**'s own web UI.
+- Fetches **posters/backdrops/genres** from **TMDB**, **trailers** by scraping `youtube.com` (no YouTube API key), and **subtitles** from OpenSubtitles.com (optional, ADR-0005).
+- **Signs people in and keeps them apart.** One administrator holds the server session; everyone else
+  picks a *profile* on the who's-watching screen, and each profile gets its own Continue Watching,
+  history and subtitle choices. The watchlist (the acquisition queue) and the subtitle download
+  quota stay deliberately **shared** — see §11.
 
-Access is private over **Tailscale**. The browser talks to nginx on :8124; nginx proxies `/api/*` to the FastAPI container, which holds all secrets.
+Access is private over **Tailscale**, and — since `RKM_AUTH_REQUIRED` was armed — the app itself is
+closed: the browser talks to nginx on :8124, nginx proxies `/api/*` to the FastAPI container (which
+holds all secrets), and every route but `/api/health` and the sign-in routes needs a session.
 
 ---
 
@@ -69,7 +84,7 @@ rkm-cinema/                       (full annotated tree in ../README.md)
 │   │   ├── qbittorrent.py watchlist.py media_status.py recommendations.py
 │   ├── domain/                   business layer: state machine + resolver
 │   ├── core/  config/  infrastructure/  application/  jobs/
-│   ├── scripts/                  daily pipeline + rebuild + probes
+│   ├── scripts/                  daily pipeline + probes
 │   ├── provisioner/              bundled-stack Jellyfin provisioner
 │   └── tests/                    unit + API tests (mockable, no live LAN)
 ├── frontend/                     React 18 + TS + Vite shell (the only UI)
@@ -89,10 +104,10 @@ Deploy stays at the root (`.\\bootstrap.ps1`, wrapped by `.\\rkm-cinema.ps1 depl
 ## 4. Dependency direction (the contract)
 
 ```
- Frontend (app.js)
-      ↓  /api/*
+ React shell (frontend/src)
+      ↓  /api/*            one client: frontend/src/lib/api/client.ts
  API routes (api/routes/*)         thin: validate → call service → map response
-      ↓
+      ↓                           every app router publishes the identity (§11)
  Domain + app services (services/)  business rules once, in one place
       ↓
  External service clients (services/*, core/http_client)  isolated URL/auth/HTTP
@@ -102,26 +117,47 @@ Deploy stays at the root (`.\\bootstrap.ps1`, wrapped by `.\\rkm-cinema.ps1 depl
 
 Rules:
 - Routes **never** call external APIs directly or build raw `urllib` calls.
-- Services **never** leak secrets; browser never sees keys/URLs (nginx fronts `/api`).
+- Services **never** leak secrets; the browser never sees keys/URLs (nginx fronts `/api`).
 - The `domain/` state machine + resolver are the **single owners** of status and movie/tv rules.
+- **The credential a call is made with comes from `api/session.py` only** (`acting_media_token` /
+  `owner_media_token`). Build a URL with a token from anywhere else and that call silently acts as the
+  administrator — §11.
 
 ---
 
-## 5. Endpoints
+## 5. Endpoints — and what each one requires
+
+**The frozen contract is the list** (`api/openapi.v1.json`, ADR-0001: additive-only). What matters
+architecturally is the LEVEL of each route, and that is declared and enforced in
+`tests/test_route_protection.py::ROUTE_LEVELS` — *the* inventory: it fails if a route ships without a
+decision, and a second test fails if a session route is not on the Phase-5 dependency.
+
+| Level | Count | Meaning |
+|---|---|---|
+| **PUBLIC** | 1 | `GET /api/health` — the Docker HEALTHCHECK calls it; a 401 here marks the api unhealthy and cascades |
+| **auth-route** | 6 | `/api/auth/*` — reachable signed out (sign-in cannot require a session) and deliberately **not** behind the credential probe: they are the FIX for a refused credential |
+| **session** | 36 | everything else in the app — the identity is published for the request (§11) |
+| **ADMIN** | 11 | `require_admin_session`: a Jellyfin **administrator**, strictly, *even while* `RKM_AUTH_REQUIRED` is false. The 6 `/api/admin/*` household routes plus the four operational ones Phase E gated (`POST /api/download`, `POST /api/jobs/{name}/run`, `GET /api/library/scan`, `POST /api/reconcile`) |
+
+Grouped by what they are for:
 
 | Endpoint | Purpose |
 |---|---|
-| `GET /api/health` | Service up/down flags (radarr, sonarr, tmdb, qbit, jellyfin) |
+| `GET /api/health` | Service up/down flags (radarr, sonarr, tmdb, qbit, jellyfin) + `degraded`. **Public** |
+| `POST /api/auth/login\|logout` · `GET /api/auth/me` | The session: sign in (administrator only), revoke server-side, who am I |
+| `GET /api/auth/profiles` · `POST /api/auth/profile` | "Who's watching?" — the picker's list and the switch (which re-authenticates as that profile) |
+| `POST /api/auth/profile/password` | Change **your own** password (proves the current one). The administrator's reset of somebody else is a different route, by design |
 | `GET /api/config` | Public-safe booleans + dashboard freshness (never keys/URLs) |
-| `GET /api/status` | Per-title state via the `Reconciler` → `domain.status.resolve_status()`; includes `jellyfinUrl` + `jellyfinItemId` |
-| `POST /api/download` | Add movie→Radarr / series→Sonarr via `DownloadService` (title fallback, "pick one" ambiguity) |
-| `GET /api/search` | Watchlist + live TMDB search |
-| `GET /api/library` | Library counts + recently-added (first provider that answers); per-item thumb |
-| `GET /api/jellyfin/poster` | Same-origin artwork proxy (person/backdrop variants too) — the api key stays server-side |
+| `GET /api/status` | Per-title state via the `Reconciler` → `domain.status.resolve_status()`; includes the watch url + item id |
+| `POST /api/download` | Add movie→Radarr / series→Sonarr (title fallback, "pick one" ambiguity). **Admin** |
+| `GET /api/search` · `/api/search/global` | Watchlist + live TMDB search; owned media + discovery |
+| `GET /api/library*` | Counts, folders, per-folder items, continue watching, recently watched, episodes |
+| `GET /api/jellyfin/poster\|person\|backdrop` | Same-origin artwork proxy — the api key stays server-side |
+| `GET /api/jellyfin/stream\|hls` · `POST /api/jellyfin/progress` | In-browser playback + watch-state reporting |
+| `GET·POST /api/jellyfin/subtitle-*` | Subtitle search/select/disable (ADR-0005) |
 | `GET /api/quality` | Radarr/Sonarr quality profiles for the download dialog |
-| `GET /api/jellyfin/subtitle-search` | Every subtitle choice for an item: its own tracks + ranked OpenSubtitles results (each with `used_count`/`active`). Degrades to the local tracks on any vendor failure |
-| `POST /api/jellyfin/subtitle-select` | Download + attach + remember one subtitle, then return the refreshed tracks |
-| `POST /api/jellyfin/subtitle-disable` | Turn subtitles off for an item, **keeping** the choice |
+| `GET /api/admin/*` | Household: list accounts, grant libraries, create/rename/policy/password/delete. **Admin**, and refused while somebody else's profile is selected |
+| `POST /api/jobs/{name}/run` · `GET /api/library/scan` · `POST /api/reconcile` | Operational verbs (a full scan, a generic job, a reconcile pass). **Admin** |
 
 ---
 
@@ -212,29 +248,107 @@ with fakes — **no test touches the live LAN**.
 ## 10. Config & data
 
 - **`config/settings.py`** — single `Config` singleton from the repo `.env` (+ env overrides). Provides `has_jellyfin()`, `has_tmdb()`, `validate_required()`, etc. **Never returns secrets via `/api/config`.** Exposes the browser-reachable `JELLYFIN_BROWSER_URL` used only for deep-links (falls back to the Tailscale host when unset), and the ONE media-server rule `resolve_media_server()` — jellyfin is the default AND the fallback for a blank/unknown value, so a missing key can never select a retired backend. `validate_required()` deliberately does **not** demand a media-server credential (a fresh install has none until the provisioner writes it; `/api/health` reports that state).
-- **`watchlist.json`** — source of truth; volume-mounted into the container at `/app/watchlist.json`. `WatchlistService` auto-resolves the correct path (container vs sandbox).
-- **`dashboard-data.json`** — published snapshot the SPA loads (built by `scripts/rebuild_dashboard.py`).
-- **`.env`** — canonical at `/workspace/.env`, never committed; see `.env.example`.
+- **`watchlist.json`** — the household acquisition queue; volume-mounted into the container at `/app/watchlist.json`. `WatchlistService` auto-resolves the correct path (container vs sandbox). Deliberately **shared** by every profile (§11).
+- **Sessions** — `<media root>/rkm/sessions.json` beside the watchlist, so an api rebuild does not sign
+  the household out. Written `0600`, atomically, and holding the **sha256** of each session id, never
+  the id and never a Jellyfin token. Corrupt-tolerant: an unreadable file starts empty (everyone signs
+  in again; nobody is stuck).
+- **`.env`** — canonical at `/workspace/.env`, never committed; see `.env.example`. 
 
 ---
 
-## 11. Frontend (app.js → api.js)
+## 11. Identity: sessions, profiles, and the one place a credential comes from
 
-- `api.js` — centralized API client (`API.getJSON`, `API.download`, `API.getStatus`, …). Loaded before `app.js` as a plain global.
-- `app.js` — rendering, state, UI. Delegates ALL `/api/*` and `/dashboard-data.json` calls to `API`. No direct `fetch` to backend endpoints anywhere else.
-- Served statically by nginx; **volume-mounted** so UI changes need no Docker rebuild.
+Read [`adr/ADR-0006`](adr/ADR-0006-delegated-identity-and-sessions.md) first: this section is the same
+model as built. The app owns **sessions**, Jellyfin owns **accounts**.
+
+```
+ browser ── rkm_session cookie (HttpOnly, opaque) ─┐
+                                                   ▼
+                                      api/session.py::require_live_credential     (per app router)
+                                                   │  resolves the cookie → SessionContext
+                                                   │  asks the media server: is this credential accepted?
+                                                   ▼
+                                       contextvar  ──►  acting_media_token()  ──►  provider / raw URLs
+```
+
+**The two identities in one session.** `user_*` is the account that signed in to the server (always an
+administrator); `profile_*` is who is WATCHING. With no profile chosen the profile IS the owner, so an
+old session behaves exactly as it did. `acting_media_token()` answers with the profile's token,
+`owner_media_token()` with the account's — and the difference is the whole feature: media and watch
+state use the first, account administration uses the second.
+
+**The rail.** `session_context_from_request` RECORDS that a request arrived as somebody.
+`_published_identity` then refuses (`UnpublishedIdentityError`) if a route resolved a session and
+published nothing, instead of falling back to the app's own key — that fallback once wrote a password
+to the wrong account while reporting success. Three states, three answers: no request context
+(provisioner, scheduler, tools, tests) ⇒ the app's own key, unchanged; a request as nobody ⇒ the same;
+a request as SOMEBODY with nothing published ⇒ an error. `owner_media_token` is the ONE deliberate
+exception (its fallback *is* the administrator by definition).
+
+**One dependency, per router.** `api/main.py::SESSION_SCOPED = [Depends(require_live_credential)]` —
+not a `Depends` on ~40 endpoints, because a site that forgot it would silently serve one person's
+library to another. It must be `async def`: a sync dependency runs in a worker thread whose context is
+a COPY, so the contextvar would be discarded and every user would share one identity with no error
+anywhere.
+
+**Two 401s, two answers.** The dependency asks the media server whether the credential it is about to
+act as is still accepted (`credential_is_accepted`, `/Users/<id>?api_key=…`, cached 20 s). A definite
+refusal becomes `401` + `X-RKM-Auth-Problem`:
+
+| Marker | What is wrong | What the app does |
+|---|---|---|
+| `session` (or no marker — an older api) | the cookie is gone or stale | the login view; the sign-out rule is unchanged |
+| `profile-token` | the cookie is fine, the credential the PROFILE acts as is refused | keeps the session, drops the fetched rows, sends the person to "Who's watching?" with the server's sentence (`guardDecision({profileStale})`) |
+
+Without this, a refused profile credential was **silent**: media calls came back empty and the app said
+"you have no library". `/api/auth/*` is deliberately NOT behind the probe — it is the fix.
+
+**One device per session.** Jellyfin invalidates the previous token of a `(device, user)` pair on every
+login, so `new_session_device_id()` mints `rkm-cinema-web-<hex>` per sign-in and a profile switch
+re-authenticates on it. A caller that NAMES a device keeps it — that is why the operation tools sign in
+on `rkm-tools` (a diagnostic must not rotate the browser's token away).
+
+**What stays shared (deliberate — do not "fix" these).** The watchlist (the household acquisition
+queue), subtitle **usage** counts (they rank one download quota), and the server itself.
 
 ---
 
-## 12. Deployment
+## 12. Frontend (React + TypeScript shell)
 
-- Deploy (RKM-HP / Windows): `.\\bootstrap.ps1` (or `.\\rkm-cinema.ps1 deploy`) → `docker compose -p rkm-bundled up -d --build`.
-- Two containers: `api` (FastAPI modular, holds secrets) + `web` (nginx :8124, static + `/api` proxy), plus the bundled `jellyfin` media server.
+`frontend/` is a Vite + React 18 + TypeScript SPA — **the only UI** (the legacy `app.js`/`api.js` and
+`frontend/legacy/` were deleted on 2026-09-08). It is **baked into the web image** by
+`frontend/Dockerfile` (`npm run build` → `nginx:alpine`), so a UI change needs `.\\rkm-cinema.ps1 apply`
+— it is not volume-mounted any more.
+
+- **`src/lib/api/client.ts`** — the ONE HTTP client (`api.*`), `credentials: "same-origin"`, and the
+  app's single auth rule: a 401 fires the sign-out handler **once per burst** (`noteUnauthorized`).
+  Since Phase 5 that rule reads `X-RKM-Auth-Problem` and fires a *different* handler for
+  `profile-token` — signing out there would throw a live session away. Auth-route calls pass
+  `{ skipAuthRedirect: true }`: a wrong password is the form's business, and `me()` saying 401 is the
+  ordinary signed-out answer.
+- **`src/features/auth/`** — `AuthProvider` (session + profile state; purges the React Query cache on
+  every identity change, so one person's rows can never flash for the next), `RequireSession` +
+  `guardDecision` (**pure, unit-tested**: skeleton / login / picker / app), `LoginView`,
+  `AccountMenu` (one menu off the avatar: Switch profile · My password · Household for administrators).
+- **`/login` and `/profiles` sit OUTSIDE the app shell** for the same reason: they must render when
+  nothing else can — including the day enforcement is armed and every other route is refusing.
+- **Browser checks.** `frontend/harness/*.html` are frames that mount real views over a stubbed api;
+  `tools/check_*.py` drive them headless (login flow, picker, nav access, household, password,
+  library scan, subtitle panel). Run them against `npx vite --port 5199`.
+
+---
+
+## 13. Deployment
+
+- Deploy (RKM-HP / Windows): **`.\\rkm-cinema.ps1`** — one script, every verb. `apply` (make the running stack match this folder: re-render `.env`, rebuild + restart `api`/`web`), `deploy` (`apply` + the Jellyfin provisioner), `auth on|off`, `status`, `logs`, `backup`/`restore`, `schedule`, `diagnose`, `reset-admin-password`. `bootstrap.ps1` and `rkm.ps1` are one-line forwarders to it, kept so older notes still work.
+- Three containers: `api` (FastAPI modular, holds secrets) + `web` (nginx :8124, the built React shell + `/api` proxy, **including `location = /openapi.json`** so `tools/check_deployed.py` can compare the running api's contract), plus the bundled `jellyfin` media server.
+- ⚠ **Editing `.env` alone changes nothing** — a container reads its environment when it STARTS. `apply` (or `auth on|off`) is what applies it.
 - **The media server is reached over Tailscale** (HTTPS via the MagicDNS host); deep-links must target the browser-reachable `JELLYFIN_BROWSER_URL` host, not the container-internal `JELLYFIN_URL` (see §8).
 
 ---
 
-## 13. Adding a feature (recommended path)
+## 14. Adding a feature (recommended path)
 
 1. **Business rule (status/movie-tv)?** → put it in `backend/domain/` (state machine or resolver). Wire service gatherers in `backend/services/`.
 2. **External integration?** → add a method on the relevant `backend/services/*` client; never in a route.
@@ -242,11 +356,15 @@ with fakes — **no test touches the live LAN**.
 4. **UI?** → update the React shell (`frontend/src/`).
 5. **Test it** → add a mockable pytest under `backend/tests/`; run `cd backend && python -m pytest tests/ -q`.
 6. No static dashboard rebuild exists any more — the React shell reads the live `/api` (the old `rebuild_dashboard.py` static generator was removed with the legacy app).
-7. Deploy with `.\bootstrap.ps1` (the bundled api + web + Jellyfin stack); verify `/api/health` + the dashboard.
+7. Deploy with `.\\rkm-cinema.ps1 apply` (rebuilds `api` + `web` from this folder) and confirm with
+   `.\\rkm-cinema.ps1 status` — the "Is the running api the code in THIS folder?" section answers MATCH
+   or names the difference. A **new route** also needs a line in
+   `tests/test_route_protection.py::ROUTE_LEVELS` (the test fails without one) and, if it touches the
+   media server, to ride the session dependency (§11) — never its own token.
 
 ---
 
-## 14. Testing
+## 15. Testing
 
 - `backend/tests/` cover: the status resolver + state machine, media-type resolver, Radarr/Sonarr routing + title fallback + ambiguity, duplicate prevention, error handling, trailer validation, the library provider + factory (one backend: Jellyfin), the `LibraryService` collapse and watch-link failure containment, the reconciler, recommendation pipeline, and API endpoints.
 - All tests use **injected fakes** — no real LAN, no real API keys required.
@@ -254,7 +372,7 @@ with fakes — **no test touches the live LAN**.
 
 ---
 
-## 15. Subtitles (OpenSubtitles) — additive, optional, never blocking
+## 16. Subtitles (OpenSubtitles) — additive, optional, never blocking
 
 Read `adr/ADR-0005-opensubtitles-integration.md` before changing any of this. The shape:
 

@@ -1,3 +1,74 @@
+## ▶ 🟡 **ITEM DETAIL IS NOW A REAL MODAL — AWAITING HIS RKM-HP EYEBALL** (2026-09-13, latest) · branch **`feat/search-external-fallback`** (4 commits: `2e0976c` plan · `c3b94a5` search fix · `e21b2c0` harness index · `9b6c7b5` this fix + `docs(harness)`/`docs(status)` after it) · ⚠ **STACKED on the unmerged `fix/cta-button-alignment`** — his tree carries ALL of it, so ONE `docker compose -p rkm-bundled up -d --build api web` shows every fix · gates green (1111 backend · 325 vitest · tsc · build · `check_item_modal` + `check_cta_alignment` + `check_search_fallback` in both directions)
+
+**His report (Bug 5), verbatim in substance:** clicking the "Sholay" search result gave a detail view
+with **no scrim**, **hard-cut edges**, sitting in the **right ~60%** of the screen with the sidebar
+exposed, its **title clipped at the top**, and **no dismiss control**.
+
+## ⚠ There was no broken modal — and finding that out WAS the work
+
+I mounted the REAL router (AppShell + LibraryLayout + the real views) over a stubbed api and
+reproduced his flow at **2560×1440**. Measured, after clicking that search result:
+
+| Symptom | Measurement | Cause |
+|---|---|---|
+| no scrim | `dialogCount=0`, `scrimCount=0` | it was a PAGE navigation to `/library/item/:id` |
+| right ~60% | `main` = x **540→2260** of 2560 (**67%**) | the content cap inside the post-sidebar area, at a wide viewport |
+| hard-cut edges | a 1640px-wide hero block | a 16px radius is visually nil at that size |
+| no dismiss control | `closeButtons=0` | a page exits by Back/Esc; its only visible exit scrolls away |
+| page behind "looks interactive" | correct — nothing was dimmed or locked | a page |
+
+⇒ Every symptom came from ONE cause: **item details were the only surface not using the app's own
+`Dialog`** (which already supplies the scrim, centred rounded panel, shadow, internal scroll, body
+scroll lock, Esc, backdrop-click close and a focus trap). His own note guessed it: *"the fix is
+routing, not new modal CSS."* ⚠ His "title flush at the top" is the ONE claim I could not reproduce
+(measured title top 434px; navigating while scrolled 800px left `scrollY=0`) — say so rather than
+pretend otherwise.
+
+**He chose, at the decision point:** every item-detail entry point opens the modal (search results
+AND poster cards), not just the search path.
+
+## The fix
+
+`/library/item/:itemId` now renders the shared `Dialog` — so **no call-site changes were needed** and
+the URL stays the source of truth (deep links, Back and refresh all still work):
+
+* `ItemDetailModal.tsx` (new): `Dialog` + a visible close X + `ItemDetailContent`, with content padding
+  on all sides so nothing touches the panel edges.
+* `ItemDetailPage.tsx`: renders `LibraryHomeView` as the backdrop — `aria-hidden` **and**
+  `pointer-events-none`, so "the page behind looks fully interactive" cannot recur — plus the modal.
+* `ItemDetailContent` gained `inModal`: hero 400px → 230px inside a 90vh panel, and its own Back button
+  is suppressed (the dialog owns the exit now).
+* `Dialog` gained `canEscapeClose`. ⚠ **This one was a real bug found by the new check, not a
+  nicety**: the dialog's Esc handler runs in the CAPTURE phase and calls `stopPropagation()`, so a
+  modal that merely *ignored* Escape while the player was open swallowed the key and **nothing**
+  closed. The modal now passes the player's state, and scenario H proves one Esc closes the player
+  while the modal stays behind it (the same rule the old item page carried).
+
+## Verified in both directions
+
+`tools/check_item_modal.py` over the new `frontend/harness/item-frame.*` (the real router, 2560×1440):
+panel **1024×760 centred to +0.0px**, scrim `rgba(0,0,0,0.65)` covering the viewport, rounded +
+shadowed + internally scrolling, content inset, close X present, **X / Esc / backdrop each dismissing
+and releasing the scroll lock**, backdrop inert, the same modal from a poster card, the same modal from
+a **cold deep link** (closing onto the library), and the player/Esc layering. **Falsified** by
+restoring the old page route: **8 failures**, every one reading *"no dialog on screen — the detail is
+not being presented as a modal at all"*.
+
+⚠ His other note — *"Add to Watchlist/Download in this same panel show the same size-mismatch pattern"*
+— does **not** reproduce: `SuggestDetailModal`'s pair already shares identical geometry (h-10, px-4,
+rounded-[10px], text-sm, font-bold), and the search rows' pairs were unified on the shared `Button`
+earlier in this branch. No further button work was invented to match the report.
+
+**For him:**
+1. Deploy: `docker compose -p rkm-bundled up -d --build api web`
+2. Search **sholay** → click the result (or its Details) → expect a dimmed page behind, a centred
+   rounded panel, an X top-right, and Esc / backdrop / X all closing it; the page behind must not
+   scroll while it is open.
+3. Poster cards and a bookmarked `/library/item/...` URL open the same modal. Play from it and press
+   Esc once: the player should close first, leaving the modal.
+4. Screenshots on his box: `/workspace/rkm-ux-shots/bug5-2560-series-detail.png` (BEFORE — the page he
+   described), and `/workspace/rkm-ux-shots/modal-*.png` (AFTER; captured by the check).
+
 ## ▶ 🟡 **EXTERNAL SEARCH RESULTS FIXED — AWAITING HIS RKM-HP EYEBALL** (2026-09-13, latest) · branch **`feat/search-external-fallback`** (3 commits: plan `2e0976c`, fix `c3b94a5`, harness index `e21b2c0`) · ⚠ **STACKED on the unmerged `fix/cta-button-alignment`** — his tree carries BOTH fixes, so ONE `docker compose -p rkm-bundled up -d --build api web` shows both · gates green (1111 backend · 325 vitest · tsc · build · `check_search_fallback` AND `check_cta_alignment` in both directions)
 
 **His report, verbatim:** *"Search only matches local library, doesn't surface external/metadata
@@ -4064,6 +4135,7 @@ Endpoint shapes NOT yet live-verified from the sandbox (oEmbed blocked; use `scr
   - **Structured logging** - JSON logs enable log aggregation and debugging
   - **Pydantic models for API** - Type safety, auto-documentation, validation
   - **Tests first** - Writing tests for plex ownership, radarr/sonarr routing, duplicates, trailers, status, e2e, errors caught design issues early
+
 
 
 

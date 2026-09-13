@@ -114,6 +114,85 @@ Renaming the account breaks anything that assumes the name:
 | **5** | ADR (the credential model), docs truth pass (`ARCHITECTURE`, `OPERATIONS`, `README`), PROGRESS record | full suite + docs links |
 | **E** ✅ | **The 401/403 sweep — six routes were administrative IN EFFECT and only session-gated.** Four became `require_admin_session` (HIS decision); the two member-facing ones were kept open (also his). Plus the UI half: the app must not OFFER what the route now refuses. **BUILT 2026-09-13**; see §6j. ⚠ Arming `RKM_AUTH_REQUIRED` is **NOT** part of this: he asked for the enforcement + the switch handed over, not flipped | 1028 pytest (incl. the route inventory that fails on a NEW route) · ruff · tsc · 287 vitest · build · **6** browser checks |
 
+### 6k. ✅ Before arming: a tool is not a browser — the operation tools sign in, on their OWN device
+
+Built 2026-09-13, triggered by his own observation: *"the media is still not behind auth... when i
+logout i still can access the libraries"*. That is the **un-armed switch**, not a Phase E miss
+(`§6j`): `require_session` lets a cookie-less caller through while `RKM_AUTH_REQUIRED=false`, and
+`guardDecision` sends a signed-out visitor into the app by design. Answering it exposed the last real
+obstacle to arming it, which was not code but **clients**:
+
+**The rule that comes with enforcement: only the BROWSER has a session for free.** Six operation tools
+speak HTTP to this app and would start receiving 401s — `rkm_status.py`,
+`diagnose_series_state.py`, `probe_continue_watching.py`, `verify_progress_reporting.py`,
+`probe_subtitle_selection.py` and `prove_profile_isolation.py`. The scheduler and the provisioner are
+unaffected: they call the services in-process, never over HTTP.
+
+### ⚠ The landmine: signing a tool in the obvious way would have broken the browser
+
+`services/auth.py::CLIENT_HEADER` pins `DeviceId="rkm-cinema-web"` for **every** app login, and the
+comment two lines below explains the trap:
+
+> *"Jellyfin rotates the token of a (device, user) pair on every login, so verifying on the app's
+> device would invalidate the very session asking for the change."*
+
+That is why `VERIFY_DEVICE_ID` exists. The same reasoning applies from the other direction: a tool
+POSTing `/api/auth/login` as the administrator on the app's own device would **rotate the browser's
+token away** and leave the running session answering 401 on every media call — the `§6h` symptom,
+caused by running a diagnostic. The plumbing was already there
+(`authenticate_jellyfin(..., device_id="")`); the login route simply never accepted one.
+
+**What was built**
+
+| Piece | What it does |
+|---|---|
+| `LoginRequest.device_id` | **additive, default `""`** — empty means the app's own device, so the browser is byte-for-byte unchanged (ADR-0001 additive-only; the openapi snapshot grew the field, 53 paths unchanged) |
+| `services/auth.py::TOOLS_DEVICE_ID` = `rkm-tools` | the identity the operation tools sign in on |
+| `services/auth.py::_safe_device_id` + `UNIDENTIFIED_DEVICE_ID` | the id is client-supplied text inside a header value, so it is **constrained, not trusted**: quotes removed (they would break out of `DeviceId="..."`), CR/LF removed (header injection), capped at 64. ⚠ An unusable id becomes `rkm-unidentified`, **never the app's device** — falling back to the app's would rotate the browser's token, i.e. exactly the harm the parameter exists to prevent |
+| `tools/rkm_common.py::App` (+ `app_client()`) | signs in as the administrator from `.env` on `rkm-tools`, carries the session cookie, and returns `http_json`'s own shapes so tool call sites barely change |
+| the six tools | rewired; a refusal now prints **why** (see below) |
+
+**The failure taxonomy is the point.** `App.error` distinguishes *no credentials configured* /
+*credentials refused* / *not an administrator* / *media server unreachable* / *a 200 without a cookie*.
+Before this, an armed app would have answered 401 and the tool would have printed `UNREADABLE` —
+sending its reader to inspect Jellyfin for a problem that was a missing session. Same class of lie as
+`§6h`'s *"that current password is not correct"*. It never echoes the username or the password.
+
+### Two pre-existing tool bugs found on the way (both fixed)
+
+1. `prove_profile_isolation.py` signed in to the **app** with the literal `"admin"` while its Jellyfin
+   half correctly used `RKM_JELLYFIN_ADMIN_USER` — a hard-coded role name, the `§5` trap, so the proof
+   stopped at step 1 with a 401 since the rename.
+2. `diagnose_series_state.py` called its second app route with `args.app` (None unless `--app` was
+   passed) — the folder-items half crashed on `None.rstrip` and had therefore never run.
+
+### Falsified, not asserted
+
+* **Revert `rkm_status.py` to a raw `http_json` call** → the end-to-end test fails with the tool's own
+  output in the message: `REFUSED (401) — the api refused the call` instead of the library row.
+  ⚠ The first run of that falsification *passed*, because `-k "signs_in"` did not match the class
+  `TestAToolActuallySignsIn` (no underscore) — the check had not run at all. Worth remembering: a
+  falsification that passes is a selector result until proven otherwise.
+* **The wrong-password test passed under falsification** (a tool that never even attempts a sign-in
+  produces the same message), so it now also asserts that `/api/auth/login` was actually called.
+* Five login-path fakes in the suite had `(username, password, *, config, transport)` signatures and
+  went to 47 failures the moment the route passed a new argument — they now mirror the real signature.
+  That is `§6g`'s lesson again: a stub that does not mirror the server is not evidence.
+
+**Evidence:** 24 new tests (20 for `App` against a real HTTP stub + 3 end-to-end tool runs + the
+device-id header cases), including the two that matter most: an *unsigned* client really is refused
+401 (or the signed one proves nothing), and the device id posted is `rkm-tools`, never
+`rkm-cinema-web`.
+
+### ⚠ What this does NOT do
+
+* **`RKM_AUTH_REQUIRED` is still `false`** — his switch, unchanged, and named in `OPERATIONS.md` with
+  the exact add-and-recreate commands and the rollback beside them.
+* **Browser per-session device ids are NOT done** (`§4e`): two browsers signed in as the same account
+  still share `rkm-cinema-web` and rotate each other's tokens. He chose the tools-only scope; this
+  phase is half of that item and the half was driven by a real need rather than a tidy-up.
+
+
 ### 6j. ✅ Phase E — the 401/403 sweep: four routes an administrator should own, and the UI that must not offer what the server refuses
 
 Built 2026-09-13, on the audit `tools/route_protection_report.py` had to write first (`7074abb`).

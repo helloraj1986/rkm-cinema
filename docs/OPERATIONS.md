@@ -168,4 +168,50 @@ Notes: the tools find the stack themselves (inside the sandbox via
 `Limit=0` in Jellyfin means *return zero items* — count with `TotalRecordCount`,
 never `len(Items)`.
 
+⚠ **Some tools read the APP, not just Jellyfin** (`rkm_status.py`, `diagnose_series_state.py`,
+`probe_continue_watching.py`, `verify_progress_reporting.py`, `probe_subtitle_selection.py`,
+`prove_profile_isolation.py`). Since 2026-09-13 those **sign in first** — see below.
+
+## Arming `RKM_AUTH_REQUIRED` (the switch)
+
+`false` (today) = the app answers anyone who can reach it: a request with **no session at all** is
+served as the stack's own credential, so the libraries, playback and watch state work signed out.
+`true` = all 36 app routes need a session. Only these stay reachable signed out, both by design:
+
+* `GET /api/health` — the Docker HEALTHCHECK; a 401 here marks the api unhealthy and cascades;
+* the six `/api/auth/*` routes — sign-in cannot require a session to be reachable.
+
+**To arm it:**
+
+```powershell
+cd D:\hermes_agent\hermes-workspace\projects\rkm-cinema
+# 1. .env  ->  RKM_AUTH_REQUIRED=true
+# 2. the api reads this value per request, so no render is needed:
+docker compose -p rkm-bundled up -d --force-recreate api
+```
+
+**To go back** — same two steps with `false`. That is the recovery for a mistake, and it is why the
+flag is a value in `.env` rather than a code change. If you are locked out of the *administrator*
+account itself, `. \rkm-cinema.ps1 reset-admin-password` is the break-glass (see the ladder above).
+
+**What changes:** the browser sends no session → the app shows the login view (the frontend discovers
+enforcement from the first 401; no frontend change is involved). Sessions last **30 days, refreshed on
+use**, so a TV or tablet does not re-ask every time.
+
+**What to know before you flip it:** anything that is not the browser must sign in. That is:
+
+| Who | Signs in how |
+|---|---|
+| the web app | the login screen; nothing to do |
+| the tools listed above | **already do** — they sign in as the administrator from `.env`, on their own device id (`rkm-tools`) |
+| the Jellyfin-direct probes (`probe_jellyfin_*.py`, `probe_media_files.py`, `reset_admin_password.py`) | nothing to do — they never call the app over HTTP |
+| the scheduler and the provisioner | nothing to do — they call the services in-process, not over HTTP |
+
+**Why the tools use their own device id:** Jellyfin invalidates the previous token of a
+*(device, user)* pair on every login, so a tool authenticating on the app's device
+(`rkm-cinema-web`) would rotate the **browser's** token away and leave it answering 401 on every
+media call. Their credentials come from `.env` (`RKM_JELLYFIN_ADMIN_USER` /
+`RKM_JELLYFIN_ADMIN_PASSWORD`); only an administrator may sign in, so a member's account cannot be
+used here.
+
 Merge to `main` is parked until the user verifies on RKM-HP.

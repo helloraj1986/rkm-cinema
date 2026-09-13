@@ -1,4 +1,94 @@
-## ▶ SAME SESSION (2026-09-13) — **PHASE E IS IN: the four operational routes now need an administrator** · next = HIS recipe call on arming the switch, then Phase 5 (`ADR-0006` + the docs truth pass)
+## ▶ SAME SESSION (2026-09-13) — **"the media is still not behind auth"** was the SWITCH, not a miss · and the last obstacle to flipping it is now cleared (the tools sign in)
+
+**His report, verbatim:** *"the maedia is still not behind auth...when i logout i still can access the
+libraries"* — then *"what is the correct way to do it..isnt it best to put all of these behind auth"*.
+
+**It is by design, and it is the one thing he did not arm.** Two lines decide it, and both are
+deliberate:
+
+* `backend/api/session.py::require_session` — *"With `RKM_AUTH_REQUIRED=false` … a missing session is
+  NOT an error: the request proceeds exactly as it did before auth existed."* So `GET /api/library/*`
+  answers a cookie-less caller.
+* `frontend/src/features/auth/lib.ts::guardDecision` — *"anything else ⇒ APP. Phase 1's unenforced
+  world, where a signed-out visitor is still a legitimate user of the app exactly as it was before auth
+  existed."* So signing out returns you to the app.
+
+Logout itself is real (`auth.py:369` revokes the session row **and** deletes the cookie). Pinned by
+tests that pass: `test_an_unsigned_request_is_still_served` (200 today) and
+`test_health_and_sign_in_stay_reachable_even_when_enforcement_is_armed` (the SAME route is 401 once
+armed). **A free check that he is running the Phase E build:** signed out, `/api/library/scan` must
+already answer 401 — if it returns a scan result, the api container is the old build.
+
+### The correct model: authentication vs authorisation (the end state)
+
+| Level | Count | Reachable when armed | Why |
+|---|---|---|---|
+| `PUBLIC` | 1 — `/api/health` | always | the Docker HEALTHCHECK; a 401 marks the api unhealthy and cascades through `depends_on` |
+| `auth-bootstrap` | 6 — `/api/auth/*` | signed out | sign-in cannot require a session |
+| `ADMIN` | 11 | session + live Jellyfin administrator | Phase E + Household |
+| `session` | 36 | any signed-in profile | the libraries, media, playback, watch state |
+
+"Everything behind auth" = the 47 non-public/non-bootstrap routes. 11 of them are enforced today
+(Phase E + household); **arming closes the other 36**. Four preconditions for doing it safely, three
+already met: sign-in reachable armed ✅ · `/api/health` public ✅ · the break-glass ✅ (`. \rkm-cinema.ps1
+reset-admin-password`) · **every non-browser client authenticates** — that was the gap, and it is now
+closed.
+
+### What was built (plan §6k): the operation tools sign in, on their OWN device
+
+Six tools call the app over HTTP with no session (`rkm_status`, `diagnose_series_state`,
+`probe_continue_watching`, `verify_progress_reporting`, `probe_subtitle_selection`,
+`prove_profile_isolation`) — arming the flag would have 401'd every one of them.
+
+⚠ **The landmine, measured before writing any of it:** `services/auth.py::CLIENT_HEADER` pins
+`DeviceId="rkm-cinema-web"` for every app login, and Jellyfin **rotates the previous token of a
+(device, user) pair on every login** (the comment two lines below explains why `VERIFY_DEVICE_ID`
+exists). A tool signing in the obvious way would have rotated **the browser's** token away and left
+the running session answering 401 on every media call — the `§6h` symptom, caused by running a
+diagnostic. So:
+
+* `LoginRequest.device_id` — **additive, default `""`**, so the browser is byte-for-byte unchanged
+  (`authenticate_jellyfin` already accepted a `device_id`; the route never passed one);
+* tools sign in as the administrator from `.env` on `rkm-tools`, via a new
+  `tools/rkm_common.py::App`/`app_client()` that carries the session cookie and returns the same
+  shapes `http_json` does;
+* a refusal now prints **why** — *credentials refused* vs *not an administrator* vs *media server
+  unreachable* vs *no credentials configured*. Previously an armed app's 401 would have printed
+  `UNREADABLE`, sending him to inspect Jellyfin for a missing session.
+
+Two pre-existing tool bugs fell out of it: `prove_profile_isolation.py` signed in to the **app** with
+the literal `"admin"` (the `§5` trap — so it 401'd since the rename), and `diagnose_series_state.py`
+used `args.app` (None unless `--app` was passed) so its folder-items half had never run.
+
+| | |
+|---|---|
+| Branch | `feat/route-enforcement` (still unmerged; **`main` untouched** — he asks for merges) |
+| Gates | **1051 backend pytest** (+23) · ruff clean · openapi **53 paths** (+the additive `device_id` field) · docs links resolve · **no frontend change → no web deploy for THIS phase** |
+| His deploy | `docker compose -p rkm-bundled up -d --build api` (Phase E still needs `api web`) |
+
+Falsified: reverting `rkm_status.py` to a raw `http_json` call makes the end-to-end test fail with the
+tool's own output (`REFUSED (401)`) instead of the library row. ⚠ The first attempt at that
+falsification *passed* because `-k "signs_in"` did not match the class `TestAToolActuallySignsIn` — the
+check had not run. And the wrong-password test passed under falsification too (a tool that never
+attempts a sign-in prints the same message), so it now also asserts `/api/auth/login` was called.
+
+### ⚠ THE SWITCH IS STILL `false` — his, and the recipe is now in `OPERATIONS.md`
+
+`docs/OPERATIONS.md` gained **"Arming `RKM_AUTH_REQUIRED` (the switch)"**: the two steps
+(`.env` → `true`, then `docker compose -p rkm-bundled up -d --force-recreate api`), the rollback
+beside them, what stays public, who has to sign in, and why the tools use their own device id. Nothing
+in this repo flips it.
+
+### The queue after this
+
+**Arming the switch** (his call, and now the only thing between the app and being private) · **Phase
+5** — `ADR-0006` + the docs truth pass (`ARCHITECTURE.md` is 296 lines and mentions identity **zero**
+times, and still documents the deleted `app.js`), plus the remaining `§4e` half: **browser per-session
+device ids**, so two browsers signed in as the same account stop rotating each other's tokens away ·
+**Phase 1's fresh-install test** (only he can run it) · **merge** when he asks.
+
+
+## ▶ SAME SESSION (2026-09-13) — **PHASE E IS IN: the four operational routes now need an administrator** · next = HIS recipe call on arming the switch, then Phase 5 (`ADR-0006` + the docs truth pass)  → ✅ **SAME SESSION, CONTINUED:** he asked why the media is still readable after logout — that is the un-armed SWITCH, and answering it cleared the last obstacle to arming it (the tools now sign in). See the block ABOVE.
 
 **His instruction, verbatim:** *"continue with progress.md in rkm-cinema"* — the parked block below
 had left ONE thing first, and it was a product decision, not code. It was asked as three questions and

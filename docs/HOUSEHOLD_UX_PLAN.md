@@ -1,7 +1,9 @@
 # Plan: Household page + account menu (from `household_UX/`)
 
-**Status: ✅ PHASE 1 BUILT 2026-09-13** — implemented on branch **`feat/household-ux`**, gates green,
-**awaiting his eyeball + merge**. Session record at the top of `docs/PROGRESS.md`.
+**Status: ✅ PHASE 1 BUILT AND MERGED 2026-09-13** — implemented on branch **`feat/household-ux`**, gates
+green, **merged to `main` by fast-forward** (`main` @ `3e9d343`) at his direction. ⚠ **His RKM-HP deploy
+and eyeball are still outstanding:** the merge happened BEFORE he looked, so anything he flags is a
+forward fix on `main`. Session record at the top of `docs/PROGRESS.md`.
 
 **What was taken, and the two decisions this plan left open:**
 

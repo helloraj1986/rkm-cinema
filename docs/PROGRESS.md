@@ -1,4 +1,4 @@
-## ▶ ✅ **HOUSEHOLD REDESIGN — PHASE 1 BUILT** (2026-09-13) · branch **`feat/household-ux`** · gates green (**321 vitest · tsc · build · 6 browser checks · docs links**) · **NOT merged — his eyeball first** · his deploy is **web-only**: `docker compose -p rkm-bundled up -d --build web`
+## ▶ ✅ **HOUSEHOLD REDESIGN — PHASE 1 BUILT AND MERGED** (2026-09-13) · branch **`feat/household-ux`** → **`main` `3e9d343`** (fast-forward, at his direction) · gates green (**321 vitest · tsc · build · 6 browser checks · docs links · backend 1107**) · **the RKM-HP deploy + eyeball is STILL OUTSTANDING** (see the merge note at the end) · his deploy is **web-only**: `docker compose -p rkm-bundled up -d --build web`
 
 **His instruction, verbatim:** *"for rkm-cinema app continue household UX"* — execute
 `docs/HOUSEHOLD_UX_PLAN.md` Phase 1, the plan this branch was cut for. **Done.** The plan's §1/§2 were
@@ -64,9 +64,22 @@ a script** (the same rule the push token already had). Generalise: before blamin
 the SHELL is lying to it.
 
 **Next:** he deploys web + eyeballs (`Household` from the account menu → header/counts/cards → each
-modal → your own card has no ⋯). Then: **merge `feat/household-ux` → `main`** on his word, and the
-wider programme (`RKM-CINEMA_NEW_UX/…Design_Spec.md`, 87 sections, its own 9 phases) is the next
-multi-session body of work — it needs a delta pass against the real routes first (plan §6).
+modal → your own card has no ⋯). ⚠ **The merge is already DONE** (`main` @ `3e9d343`, fast-forward) and
+**will not be undone**: if the eyeball wants something changed, fix FORWARD on `main` with a normal
+commit — never rewrite the merged history, and never re-branch the same work. After that the wider
+programme (`RKM-CINEMA_NEW_UX/…Design_Spec.md`, 87 sections, its own 9 phases) is the next multi-session
+body of work — it needs a delta pass against the real routes first (plan §6).
+
+### The merge (so the next session does not misread the order)
+
+He said **"git commit push and merge"** *before* the RKM-HP eyeball, i.e. merge-then-eyeball rather than
+the usual eyeball-then-merge. Nothing was uncommitted at that point (the branch was clean at `3e9d343`),
+so the merge added no code: `git checkout main && git merge --ff-only feat/household-ux` →
+`e888a56..3e9d343` (19 files, +1906/−737). This docs-only commit follows the FF, so `main` is one commit
+ahead of the feature tip; `feat/household-ux` and the deploy branch (`experiment/bundled-docker-stack`)
+were then fast-forwarded to match it and all three pushed. The consequence to hold onto: **`main` carries
+the redesign while his eyeball is still pending** — so a report of "the household page looks wrong" is a
+report about MERGED code, and the answer is a forward fix, not a revert.
 
 ## ▶ 📋 **PLAN PARKED — Household page + account menu redesign** (2026-09-13) · scoped and ready in **`docs/HOUSEHOLD_UX_PLAN.md`** · branch **`feat/household-ux`** cut from `main` for the implementation · **NO CODE YET — next session executes it**  → ✅ **DONE — same day, next session** (see the block above: Phase 1 built + gated on `feat/household-ux`). Kept for the brief it carries.
 

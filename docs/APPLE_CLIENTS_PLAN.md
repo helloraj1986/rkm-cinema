@@ -234,12 +234,13 @@ apple/
 ├── ios/                          RKMCinema — the WKWebView shell (thin; the logging is the bulk)
 │   ├── README.md                 spec, non-negotiables, acceptance
 │   ├── RKMCinema.xcodeproj       ← created ONCE in Xcode, then COMMITTED (WORKFLOW.md §2)
+│   ├── Config/Info.plist         ⚠ what INFOPLIST_FILE points at — OUTSIDE RKMCinema/, because a
+│                                 file inside the synchronized folder is copied in as a resource too
 │   └── RKMCinema/                the target's synchronized source folder
 │       ├── RKMCinemaApp.swift    @main — Setup or Shell, decided by the stored address
 │       ├── App/AppRootView.swift routing
 │       ├── Server/               ServerSetupView · UnreachableServerView
 │       ├── Shell/                WebShellView (WKWebView) · WebShellModel (load/nav failure)
-│       ├── Info.plist            NSAppTransportSecurity (⚠ the file INFOPLIST_FILE points at)
 │       └── Assets.xcassets
 ├── tvos/                         RKMCinemaTV — the native client
 │   ├── README.md                 spec, screen budget, exclusions, acceptance

@@ -13,8 +13,12 @@ it; §6 of the plan records the source-level evidence.
 ```
 ios/
 ├── README.md
+├── RKMCinema.xcodeproj/              ← created ONCE in Xcode, then COMMITTED (WORKFLOW.md §2)
+│   └── xcshareddata/xcschemes/RKMCinema.xcscheme  ← ⚠ SHARED, or the CLI build can't find it
+├── Config/
+│   └── Info.plist                    ← ⚠ what `INFOPLIST_FILE` points at — and it must sit
+│                                       OUTSIDE RKMCinema/ (see the note below)
 └── RKMCinema/                        ← the target's source folder (Xcode's synchronized group)
-    ├── Info.plist                    ← ⚠ POINT `INFOPLIST_FILE` AT THIS (WORKFLOW.md §2)
     ├── RKMCinemaApp.swift            @main — bootstrap the log FIRST, then Setup or Shell
     ├── App/
     │   ├── AppLog.swift              launch banner · file-log setup · flush on background
@@ -34,9 +38,18 @@ ios/
     │   ├── DebugHUD.swift            the overlay: state, last lines, correlation ids, actions
     │   └── HUDToggle.swift           triple-tap hotspot (shake too, on iPhone)
     ├── Assets.xcassets               AppIcon (generated placeholder) · AccentColor
-    ├── Preview Content/              ⚠ required by Xcode's DEVELOPMENT_ASSET_PATHS setting
-    └── RKMCinema.xcodeproj           ⚠ NOT HERE YET — he creates it once, then it is committed
+    └── Preview Content/              ⚠ required by Xcode's DEVELOPMENT_ASSET_PATHS setting
 ```
+
+⚠ **Two lessons the first real build paid for** (recorded so the tvOS app does not repeat them):
+
+1. **A custom `Info.plist` must live OUTSIDE the target's synchronized folder.** Inside it, the file is
+   automatically a target member — so Xcode both *copied it into the app as a resource* and *processed it
+   as the Info.plist*, failing with `error: Multiple commands produce …RKMCinema.app/Info.plist`. It sits
+   in `Config/` now, referenced only by the `INFOPLIST_FILE` build setting.
+2. **Xcode's template set `IPHONEOS_DEPLOYMENT_TARGET = 26.5`** — its own SDK version — so the app would
+   refuse to install on any iPad not already on iPadOS 26.5. ⚠ **Open, deliberately not bundled with the
+   build fix**: see `docs/PROGRESS.md`.
 
 `Server/` deliberately holds almost nothing: address parsing, normalisation and persistence live in the
 shared package (`../Shared/Sources/RKMServerKit/`), because the tvOS app needs the identical rules.

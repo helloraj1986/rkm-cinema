@@ -122,7 +122,7 @@ This is why every source lives under its target's own folder: synchronized group
 | Once | Why | If skipped |
 |---|---|---|
 | **Signing & Capabilities → Team** | device builds need a team | the build fails on device |
-| **`INFOPLIST_FILE` → `RKMCinema/Info.plist`** (I supply the file; he points the setting at it) | the ATS declaration is a nested dictionary, which `INFOPLIST_KEY_*` build settings **cannot express** — a real Info.plist is required | a user-typed `http://` address is blocked and the app looks broken |
+| **`INFOPLIST_FILE` → `Config/Info.plist`** (I supply the file; he points the setting at it) | the ATS declaration is a nested dictionary, which `INFOPLIST_KEY_*` build settings **cannot express** — a real Info.plist is required. ⚠ And it must live **outside `RKMCinema/`**: a file inside the target's synchronized folder is auto-added as a resource, so the plist was both *copied into the app* and *processed as the Info.plist* → `error: Multiple commands produce …Info.plist` (learned on his first build) | a user-typed `http://` address is blocked and the app looks broken |
 | **File → Add Package Dependencies → Add Local… → `apple/Shared`** (once per project) | links `RKMServerKit` into the target | compile error on the import |
 
 That is the whole list. ⚠ Everything else stays mine, and if project-level changes ever become routine, §2.1 is

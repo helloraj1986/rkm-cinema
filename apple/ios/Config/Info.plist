@@ -3,10 +3,18 @@
 <!--
   RKMCinema — the app's real Info.plist.
 
-  ⚠ POINT `INFOPLIST_FILE` AT THIS FILE (Build Settings → INFOPLIST_FILE = RKMCinema/Info.plist),
-  and set GENERATE_INFOPLIST_FILE = NO. It exists as a file rather than as INFOPLIST_KEY_* build
-  settings for one reason: **App Transport Security is a nested dictionary**, which the
-  INFOPLIST_KEY_* settings cannot express (apple/WORKFLOW.md §2).
+  ⚠ TWO THINGS ABOUT THIS FILE, both learned on the first real build:
+
+  1. POINT `INFOPLIST_FILE` AT IT — Build Settings → Info.plist File = `Config/Info.plist` — and set
+     GENERATE_INFOPLIST_FILE = NO. It is a file rather than INFOPLIST_KEY_* settings for one reason:
+     **App Transport Security is a nested dictionary**, which the INFOPLIST_KEY_* settings cannot
+     express (apple/WORKFLOW.md §2).
+  2. ⚠ **IT MUST LIVE OUTSIDE `RKMCinema/`, the target's synchronized source folder.** A file inside
+     that folder *is* a target member, so this plist was at once **copied into the app as a resource**
+     and **processed as the Info.plist**, and the build died with
+     `error: Multiple commands produce …RKMCinema.app/Info.plist`. `Config/` is referenced only by the
+     build setting and by nothing in the project — which is exactly what keeps it out of that
+     automatic membership. The tvOS app needs the same arrangement.
 
   Skip it and the app appears broken: the address is typed by a human and may be plain
   http:// to a bare LAN IP, which iOS blocks by default (docs/APPLE_CLIENTS_PLAN.md §2.2). The

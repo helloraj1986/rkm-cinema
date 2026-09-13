@@ -729,34 +729,72 @@ export interface AddWatchlistJobResult {
   [key: string]: unknown;
 }
 
-const BASE = "/api";
+export const BASE = "/api" as const;
+
+/** The header the api uses to say WHICH credential a 401 is about (Phase 5, `services/auth.py`). */
+export const AUTH_PROBLEM_HEADER = "X-RKM-Auth-Problem";
+
+/** The value meaning "your session is fine; the PROFILE's media-server credential is not". */
+export const AUTH_PROBLEM_PROFILE_TOKEN = "profile-token";
 
 // ----------------------------------------------------------------- auth plumbing
 // The CLIENT owns exactly one auth rule: "a 401 on an APP call means the session is
 // gone". One handler, fired ONCE per burst — a page that fires six queries on load must
 // not redirect six times.
 let onUnauthorized: (() => void) | null = null;
-let lastUnauthorizedAt = 0;
+let onStaleProfile: ((detail: string) => void) | null = null;
 
 /** A burst of 401s (one dead session, several queries) counts as ONE sign-out. */
 const UNAUTHORIZED_COOLDOWN_MS = 1_500;
+
+/** ...counted PER KIND, so a profile refusal cannot swallow a real sign-out that follows it. */
+const lastFiredAt: Record<string, number> = {};
 
 /** Register the app's sign-out handler (AuthProvider does this; null clears it). */
 export function setUnauthorizedHandler(handler: (() => void) | null): void {
   onUnauthorized = handler;
 }
 
-/** Test/harness seam: forget the cooldown so a sign-out flow can be replayed. */
-export function resetUnauthorizedCooldown(): void {
-  lastUnauthorizedAt = 0;
+/**
+ * Register the OTHER 401's handler (Phase 5): the session is alive and the credential the app was
+ * ACTING as was refused. This is not a sign-out — see `noteUnauthorized`.
+ */
+export function setStaleProfileHandler(handler: ((detail: string) => void) | null): void {
+  onStaleProfile = handler;
 }
 
-function noteUnauthorized(status: number): void {
-  if (status !== 401) return;
+/** Test/harness seam: forget the cooldowns so a sign-out flow can be replayed. */
+export function resetUnauthorizedCooldown(): void {
+  for (const kind of Object.keys(lastFiredAt)) delete lastFiredAt[kind];
+}
+
+function fireOncePerBurst(kind: string, fire: () => void): void {
   const now = Date.now();
-  if (now - lastUnauthorizedAt < UNAUTHORIZED_COOLDOWN_MS) return;
-  lastUnauthorizedAt = now;
-  onUnauthorized?.();
+  if (now - (lastFiredAt[kind] ?? 0) < UNAUTHORIZED_COOLDOWN_MS) return;
+  lastFiredAt[kind] = now;
+  fire();
+}
+
+/**
+ * ⚠ WHICH 401 this is decides the answer, and the two must never be swapped (Phase 5,
+ * AUTH_MULTIUSER_PLAN §6h). The api marks a refusal with `X-RKM-Auth-Problem`:
+ *
+ *   * `session` — or NO header at all, which is an older api — means the cookie is gone: sign out,
+ *     exactly as before.
+ *   * `profile-token` means the cookie is FINE and the selected profile's media-server credential
+ *     was refused (the server can revoke one at any time; a password change does it, and two
+ *     browsers on one device id used to). Signing out here throws away a live session and cannot
+ *     fix anything — only re-authenticating that identity can, which is what the picker does. So
+ *     that handler keeps the session and sends the person to "Who's watching?" with the server's
+ *     own sentence.
+ */
+function noteUnauthorized(status: number, problem: string | null, detail: string): void {
+  if (status !== 401) return;
+  if (problem === AUTH_PROBLEM_PROFILE_TOKEN) {
+    fireOncePerBurst("profile-token", () => onStaleProfile?.(detail));
+    return;
+  }
+  fireOncePerBurst("session", () => onUnauthorized?.());
 }
 
 /**
@@ -776,8 +814,12 @@ async function request<T>(path: string, init: RequestInit, options: RequestOptio
     ...init,
   });
   if (!res.ok) {
-    if (!options.skipAuthRedirect) noteUnauthorized(res.status);
+    // Read the body FIRST: the profile-refusal handler shows the person the server's own sentence,
+    // and the sign-out handler ignores it. Deciding before parsing would throw the words away.
     const failure = await errorDetail(res, `${init.method || "GET"} ${path}`);
+    if (!options.skipAuthRedirect) {
+      noteUnauthorized(res.status, res.headers.get(AUTH_PROBLEM_HEADER), failure.message);
+    }
     throw new ApiError(res.status, failure.message, failure.detail);
   }
   return (await res.json()) as T;

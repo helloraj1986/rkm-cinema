@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
-import { api, ApiError, resetUnauthorizedCooldown, setUnauthorizedHandler } from "./client";
+import {
+  api,
+  ApiError,
+  resetUnauthorizedCooldown,
+  setStaleProfileHandler,
+  setUnauthorizedHandler,
+} from "./client";
 
 describe("frozen /api client surface", () => {
   it("exposes the config/health/library contract methods", () => {
@@ -27,7 +33,7 @@ describe("frozen /api client surface", () => {
 describe("session plumbing", () => {
   let calls: { url: string; init: RequestInit }[];
 
-  function stubFetch(status: number, body?: unknown) {
+  function stubFetch(status: number, body?: unknown, headers: Record<string, string> = {}) {
     calls = [];
     vi.stubGlobal(
       "fetch",
@@ -35,7 +41,7 @@ describe("session plumbing", () => {
         calls.push({ url: String(input), init });
         return new Response(body === undefined ? null : JSON.stringify(body), {
           status,
-          headers: { "content-type": "application/json" },
+          headers: { "content-type": "application/json", ...headers },
         });
       }),
     );
@@ -141,5 +147,93 @@ describe("session plumbing", () => {
     await expect(api.changeMyPassword("new-pw", "right-pw")).rejects.toMatchObject({
       detail: "This profile is no longer signed in to the media server — use Switch profile",
     });
+  });
+});
+
+// ------------------------------------------------- the OTHER 401 (Phase 5)
+// `X-RKM-Auth-Problem` says WHICH credential a 401 is about, and the two answers are opposite. Two
+// browsers on one device id used to rotate each other's media tokens away, and the app could not
+// tell that state apart from a dead session — so it signed the person out, or (worse) silently
+// showed an empty library.
+describe("the api's 401 taxonomy", () => {
+  const api401 = {
+    status: 401,
+    detail: "This profile is no longer signed in to the media server — pick it again to continue.",
+  };
+
+  function stub(status: number, body?: unknown, headers: Record<string, string> = {}) {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(body === undefined ? null : JSON.stringify(body), {
+          status,
+          headers: { "content-type": "application/json", ...headers },
+        }),
+      ),
+    );
+  }
+
+  beforeEach(() => {
+    resetUnauthorizedCooldown();
+    setUnauthorizedHandler(null);
+    setStaleProfileHandler(null);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    setUnauthorizedHandler(null);
+    setStaleProfileHandler(null);
+  });
+
+  it("does NOT sign out when the marker says the PROFILE's credential was refused", async () => {
+    const signOut = vi.fn();
+    const stale = vi.fn();
+    setUnauthorizedHandler(signOut);
+    setStaleProfileHandler(stale);
+    stub(401, api401, { "X-RKM-Auth-Problem": "profile-token" });
+
+    await expect(api.getConfig()).rejects.toThrow(ApiError);
+
+    expect(signOut).not.toHaveBeenCalled();
+    expect(stale).toHaveBeenCalledTimes(1);
+    expect(stale.mock.calls[0][0]).toContain("pick it again"); // the SERVER's sentence, not ours
+  });
+
+  it("still signs out on a 401 with NO marker — an older api behaves exactly as before", async () => {
+    const signOut = vi.fn();
+    const stale = vi.fn();
+    setUnauthorizedHandler(signOut);
+    setStaleProfileHandler(stale);
+    stub(401, { detail: "Sign in to use this app" });
+
+    await expect(api.getConfig()).rejects.toThrow(ApiError);
+
+    expect(signOut).toHaveBeenCalledTimes(1);
+    expect(stale).not.toHaveBeenCalled();
+  });
+
+  it("signs out for a marker that says the SESSION is the problem", async () => {
+    const signOut = vi.fn();
+    setUnauthorizedHandler(signOut);
+    stub(401, { detail: "Your sign-in has ended — sign in again." }, {
+      "X-RKM-Auth-Problem": "session",
+    });
+    await expect(api.getConfig()).rejects.toThrow(ApiError);
+    expect(signOut).toHaveBeenCalledTimes(1);
+  });
+
+  it("fires the profile notice ONCE for a burst (six queries, one detour to the picker)", async () => {
+    const signOut = vi.fn();
+    const stale = vi.fn();
+    setUnauthorizedHandler(signOut);
+    setStaleProfileHandler(stale);
+    stub(401, api401, { "X-RKM-Auth-Problem": "profile-token" });
+
+    await expect(api.getConfig()).rejects.toThrow(ApiError);
+    await expect(api.getHealth()).rejects.toThrow(ApiError);
+    await expect(api.getLibraryFolders()).rejects.toThrow(ApiError);
+
+    expect(stale).toHaveBeenCalledTimes(1);
+    expect(signOut).not.toHaveBeenCalled();
   });
 });

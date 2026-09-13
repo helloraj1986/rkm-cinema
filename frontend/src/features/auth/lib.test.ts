@@ -17,62 +17,86 @@ import {
   accountDestinations,
   accountSubtitle,
   watchingName,
+  type GuardDecision,
+  type GuardInput,
 } from "./lib";
+
+/**
+ * The guard's inputs, with the facts these tests are not about defaulted IN ONE PLACE.
+ *
+ * `profileStale` and `profileSelected` are both REQUIRED in the type on purpose — each can take the
+ * app away, so no caller may inherit a silent default. The defaults for the tests live here, where
+ * every case can see them, instead of inside the rule.
+ */
+function guard(overrides: Partial<GuardInput> = {}): GuardDecision {
+  return guardDecision({
+    status: "signedIn",
+    enforcementSeen: false,
+    profileSelected: true,
+    profileStale: false,
+    ...overrides,
+  });
+}
 
 describe("guardDecision", () => {
   it("shows a skeleton until the session check answers", () => {
-    expect(guardDecision({ status: "loading", enforcementSeen: false, profileSelected: false })).toBe(
-      "skeleton",
-    );
+    expect(guard({ status: "loading", profileSelected: false })).toBe("skeleton");
     // …even when enforcement is already known: the answer may change the screen, and a
     // flash of the wrong one is exactly what the skeleton exists to prevent.
-    expect(guardDecision({ status: "loading", enforcementSeen: true, profileSelected: true })).toBe(
-      "skeleton",
-    );
+    expect(guard({ status: "loading", enforcementSeen: true })).toBe("skeleton");
   });
 
   it("lets a signed-out visitor use the app while nothing is enforced (Phase 1)", () => {
-    expect(guardDecision({ status: "signedOut", enforcementSeen: false, profileSelected: false })).toBe(
-      "app",
-    );
+    expect(guard({ status: "signedOut", profileSelected: false })).toBe("app");
   });
 
   it("forces the login view once the SERVER has refused an app call", () => {
     // This is how Phase 2 arms the frontend without touching it: the 401 is the signal.
-    expect(guardDecision({ status: "signedOut", enforcementSeen: true, profileSelected: false })).toBe(
+    expect(guard({ status: "signedOut", enforcementSeen: true, profileSelected: false })).toBe(
       "login",
     );
   });
 
   it("renders the app for a signed-in session that has CHOSEN a profile", () => {
-    expect(guardDecision({ status: "signedIn", enforcementSeen: false, profileSelected: true })).toBe(
-      "app",
-    );
-    expect(guardDecision({ status: "signedIn", enforcementSeen: true, profileSelected: true })).toBe(
-      "app",
-    );
+    expect(guard({})).toBe("app");
+    expect(guard({ enforcementSeen: true })).toBe("app");
   });
 
   it("sends a signed-in session with NO profile to the picker (Phase B)", () => {
     // The fresh-sign-in state. Nothing else may claim the app in this world: a session with
     // nobody watching is exactly what "Who's watching?" is for.
-    expect(guardDecision({ status: "signedIn", enforcementSeen: false, profileSelected: false })).toBe(
-      "picker",
-    );
-    expect(guardDecision({ status: "signedIn", enforcementSeen: true, profileSelected: false })).toBe(
-      "picker",
-    );
+    expect(guard({ profileSelected: false })).toBe("picker");
+    expect(guard({ enforcementSeen: true, profileSelected: false })).toBe("picker");
+  });
+
+  it("sends a session whose PROFILE credential was refused to the picker, never to login", () => {
+    // Phase 5. The session is ALIVE — the server refused the credential the profile was acting as.
+    // Logging out would throw a working session away and could not fix anything; choosing that
+    // profile again is what re-authenticates it. This is the distinction between the two 401s.
+    expect(guard({ profileStale: true })).toBe("picker");
+    expect(guard({ profileStale: true })).not.toBe("login");
+  });
+
+  it("lets a stale notice out-rank the profile that is already selected", () => {
+    // ⚠ A profile IS selected in exactly the world where its credential can go stale, so the stale
+    // fact has to be read BEFORE `profileSelected` — otherwise the app would render over the notice
+    // and the person would see the same blank library again.
+    expect(guard({ profileSelected: true, profileStale: true })).toBe("picker");
+  });
+
+  it("keeps a signed-OUT session at the login view even with a stale notice lying around", () => {
+    // The stale fact is about a live session; a leftover notice must not redirect a signed-out
+    // visitor to a picker they have no session for.
+    expect(guard({ status: "signedOut", enforcementSeen: true, profileStale: true })).toBe("login");
   });
 
   it("takes the app away for the SERVER's flag, never for a remembered click", () => {
     // The distinction this whole rule turns on: signed OUT with enforcement seen is a login
     // problem; signed IN without a profile is a picker problem. They are different screens.
-    expect(
-      guardDecision({ status: "signedOut", enforcementSeen: true, profileSelected: false }),
-    ).not.toBe("picker");
-    expect(
-      guardDecision({ status: "signedIn", enforcementSeen: false, profileSelected: false }),
-    ).not.toBe("login");
+    expect(guard({ status: "signedOut", enforcementSeen: true, profileSelected: false })).not.toBe(
+      "picker",
+    );
+    expect(guard({ profileSelected: false })).not.toBe("login");
   });
 });
 

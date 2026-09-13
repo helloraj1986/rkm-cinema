@@ -29,7 +29,7 @@ import {
 } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
-import { api, setUnauthorizedHandler, type AuthUser, type ProfileUserShape } from "../../lib/api/client";
+import { api, setStaleProfileHandler, setUnauthorizedHandler, type AuthUser, type ProfileUserShape } from "../../lib/api/client";
 import type { AuthStatus } from "./lib";
 
 interface AuthContextValue {
@@ -41,6 +41,14 @@ interface AuthContextValue {
   profileSelected: boolean;
   /** True once the server has refused an app call for want of a session. */
   enforcementSeen: boolean;
+  /**
+   * Phase 5: the server refused the credential the PROFILE was acting as while the session itself
+   * is fine. The app keeps the session and asks "who's watching?" again — signing out would be the
+   * wrong answer (see `client.ts::noteUnauthorized`).
+   */
+  profileStale: boolean;
+  /** The server's own sentence about that refusal, shown on the picker. */
+  staleReason: string;
   signIn: (username: string, password: string) => Promise<AuthUser>;
   signOut: () => Promise<void>;
   /** Switch who is watching (POST /api/auth/profile). Rejects with the server's refusal. */
@@ -62,6 +70,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<AuthUser | null>(null);
   const [profileSelected, setProfileSelected] = useState(false);
   const [enforcementSeen, setEnforcementSeen] = useState(false);
+  const [profileStale, setProfileStale] = useState(false);
+  const [staleReason, setStaleReason] = useState("");
+
+  /** Any of the events that make a "stale profile" answer obsolete clears it, together. */
+  const clearStale = useCallback(() => {
+    setProfileStale(false);
+    setStaleReason("");
+  }, []);
 
   // Who is this browser — and, if nobody, does the SERVER even want a session?
   //
@@ -77,7 +93,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // server's own definition of "no profile chosen", so the two stay in agreement.
     setProfile(me.profile?.id ? me.profile : me.user);
     setProfileSelected(Boolean(me.profile_selected));
-  }, []);
+    // A fresh answer from the server about who is watching supersedes a stale-profile notice: if
+    // `me()` can be read at all, the credential it authenticated with is not stale any more.
+    clearStale();
+  }, [clearStale]);
 
   useEffect(() => {
     let cancelled = false;
@@ -120,6 +139,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => setUnauthorizedHandler(null);
   }, [queryClient]);
 
+  // The OTHER 401 (Phase 5): the session is alive and the credential the app was ACTING as is not,
+  // so the client does NOT sign out — it calls this instead. A live session is kept, the rows that
+  // came from the dead credential are dropped, and the guard sends the person to the picker (which
+  // is the fix: choosing a profile is what re-authenticates it). The picker shows `staleReason`.
+  useEffect(() => {
+    setStaleProfileHandler((detail: string) => {
+      queryClient.clear();
+      setProfileStale(true);
+      setStaleReason(detail);
+    });
+    return () => setStaleProfileHandler(null);
+  }, [queryClient]);
+
   const signIn = useCallback(
     async (username: string, password: string) => {
       const result = await api.login(username, password);
@@ -130,6 +162,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // and if that call fails, stay with the server's own definition instead of inventing one.
       setProfile(result.user);
       setProfileSelected(false);
+      clearStale();
       try {
         applyMe(await api.me());
       } catch {
@@ -147,11 +180,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       queryClient.clear(); // the next person's rows must not flash
       setProfile(result.profile);
       setProfileSelected(true);
+      // Choosing a profile IS the remedy for a refused credential — the notice has done its job.
+      clearStale();
       // The response IS the server saying "this profile is now in effect", so `me()` need not be
       // asked again here. Keep the owner: only a sign-in may change who holds the session.
       return result.profile;
     },
-    [queryClient],
+    [clearStale, queryClient],
   );
 
   const signOut = useCallback(async () => {
@@ -165,8 +200,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
     setProfile(null);
     setProfileSelected(false);
+    clearStale();
     setStatus("signedOut");
-  }, [queryClient]);
+  }, [clearStale, queryClient]);
 
   // Keep the latest callbacks reachable from the memo without re-creating it every render.
   const value = useMemo<AuthContextValue>(
@@ -176,11 +212,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       profile,
       profileSelected,
       enforcementSeen,
+      profileStale,
+      staleReason,
       signIn,
       signOut,
       selectProfile,
     }),
-    [status, user, profile, profileSelected, enforcementSeen, signIn, signOut, selectProfile],
+    [status, user, profile, profileSelected, enforcementSeen, profileStale, staleReason,
+     signIn, signOut, selectProfile],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

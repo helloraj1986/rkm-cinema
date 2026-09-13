@@ -45,10 +45,20 @@ identity helpers below refuse to fall back when it did. Three states, three answ
   stranger.
 
 The one deliberate exception is :func:`owner_media_token` — see its docstring.
+
+**PHASE 5 — the taxonomy dependency.** :func:`require_live_credential` wraps
+:func:`require_session` and answers the ONE question the sweep above could not (§6h): the session
+may be alive while the credential it ACTS as has been refused by the media server. That state used
+to be invisible — media calls came back empty — and the only available 401 would have signed the
+person out for something *Switch profile* fixes in one tap. It raises a 401 marked with
+``X-RKM-Auth-Problem`` instead, and ``api/main.py`` applies it through the same one line per router
+as ``require_session``. Per-session device ids (``services/auth.py``) remove the most common CAUSE
+of that refusal; this dependency is what makes the remaining ones say what they are.
 """
 from __future__ import annotations
 
 import logging
+import time
 from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from typing import Optional
@@ -56,7 +66,9 @@ from typing import Optional
 from fastapi import HTTPException, Request
 
 from config.settings import get_config
-from services.auth import SESSION_COOKIE, SessionStore, default_session_store
+from services.auth import (AUTH_PROBLEM_HEADER, AUTH_PROBLEM_PROFILE_TOKEN, AUTH_PROBLEM_SESSION,
+                           CREDENTIAL_PROBE_TTL_SECONDS, SESSION_COOKIE, SessionStore,
+                           default_session_store, hash_session_id)
 from services.library.factory import build_library_service
 
 logger = logging.getLogger("rkm.api.session")
@@ -84,6 +96,10 @@ class SessionContext:
     profile_user_id: str = ""
     profile_user_name: str = ""
     profile_token: str = ""
+    #: The media-server device THIS session signs in on (Phase 5, ``new_session_device_id``). A
+    #: profile switch re-authenticates on it so the session stays on one device; ``""`` for a row
+    #: written before per-session device ids existed (the app's shared device, as then).
+    device_id: str = ""
 
     def profile_id(self) -> str:
         """The id of the profile in effect (the owner when none was chosen)."""
@@ -233,6 +249,7 @@ def session_context_from_request(request: Request, *, config=None) -> Optional[S
         profile_user_id=str(record.get("profile_user_id") or ""),
         profile_user_name=str(record.get("profile_user_name") or ""),
         profile_token=str(record.get("profile_token") or ""),
+        device_id=str(record.get("device_id") or ""),
     )
     try:
         set_resolved_session(context, f"{request.method} {request.url.path}")
@@ -369,6 +386,88 @@ async def require_session(request: Request) -> Optional[SessionContext]:
     if context is None and cfg.auth_required():
         raise HTTPException(status_code=401, detail="Sign in to use this app")
     return context
+
+
+#: A "this credential is still accepted" answer, keyed by the sha256 of the credential itself.
+#: In-memory and per-process on purpose: a session store write on every request would defeat the
+#: point of a 20-second cache, and nothing here needs to survive a restart.
+_credential_probe_cache: dict = {}
+
+
+def reset_credential_probe_cache() -> None:
+    """Forget every cached probe answer (tests; also honest after a profile switch)."""
+    _credential_probe_cache.clear()
+
+
+def _probe_answer(token: str) -> Optional[tuple]:
+    """``(when, answer)`` for this credential, or ``None`` when nothing fresh is cached."""
+    key = hash_session_id(token)
+    entry = _credential_probe_cache.get(key)
+    if not entry:
+        return None
+    when, answer = entry
+    if time.monotonic() - when > CREDENTIAL_PROBE_TTL_SECONDS:
+        _credential_probe_cache.pop(key, None)
+        return None
+    return entry
+
+
+def _remember_probe(token: str, answer: Optional[bool]) -> None:
+    _credential_probe_cache[hash_session_id(token)] = (time.monotonic(), answer)
+    # A pathological run of new sessions must not grow this without bound; the values are tiny.
+    if len(_credential_probe_cache) > 500:
+        _credential_probe_cache.clear()
+
+
+async def require_live_credential(request: Request) -> Optional[SessionContext]:
+    """``require_session``, plus: is the credential this request will ACT as still accepted?
+
+    Phase 5 settles the taxonomy AUTH_MULTIUSER_PLAN §6h left open. Two 401s arrive at this app and
+    they need opposite responses:
+
+    * **the cookie is gone or stale** ⇒ the person must sign in again. (``require_session`` already
+      answers that, and the browser's global "a 401 means the session is dead" rule is correct.)
+    * **the cookie is fine, but the credential the app is acting as was refused** ⇒ signing out is
+      the WRONG answer. It throws away a perfectly good session and cannot fix anything: only
+      re-authenticating that identity can, which is what **Switch profile** does. Before this, that
+      state was not even visible — the media calls came back EMPTY, so the app showed "you have no
+      library" and the sidebar went blank (the silent failure mode measured on 2026-09-12).
+
+    So a refusal is reported as a 401 *marked with :data:`AUTH_PROBLEM_HEADER`*, and the client's
+    rule becomes "sign out only when the problem is the session". The probe is cached for
+    :data:`CREDENTIAL_PROBE_TTL_SECONDS` (a page-load burst costs one upstream call).
+
+    ⚠ Three deliberate non-answers, each of which must NOT block the request: no session at all
+    (unenforced, anonymous — today's behaviour unchanged), no credential to probe, and a server that
+    could not be asked. Only a definite "the server refused this credential" raises.
+    """
+    context = await require_session(request)
+    if context is None:
+        return None
+    token = context.acting_token()
+    if not token:
+        return context
+    cached = _probe_answer(token)
+    if cached is not None:
+        accepted = cached[1]
+    else:
+        from services.auth import credential_is_accepted
+        accepted = credential_is_accepted(token, context.profile_id(), config=get_config(),
+                                          device_id=context.device_id)
+        _remember_probe(token, accepted)
+    if accepted is not False:
+        return context
+    profile_problem = not context.on_own_profile()
+    logger.info("credential refused for session profile=%s (profile problem: %s)",
+                context.profile_id(), profile_problem)
+    raise HTTPException(
+        status_code=401,
+        detail=("This profile is no longer signed in to the media server — pick it again to "
+                "continue." if profile_problem
+                else "Your sign-in has ended — sign in again."),
+        headers={AUTH_PROBLEM_HEADER: (AUTH_PROBLEM_PROFILE_TOKEN if profile_problem
+                                       else AUTH_PROBLEM_SESSION)},
+    )
 
 
 def admin_status(cfg, user_id: str) -> Optional[bool]:

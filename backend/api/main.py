@@ -20,7 +20,7 @@ from api.routes import media as media_routes
 from api.routes import watchlist as watchlist_routes
 from api.routes import reconcile as reconcile_routes
 from api.routes import jobs as jobs_routes
-from api.session import require_session
+from api.session import require_live_credential
 
 
 #: Phase C: ONE dependency, applied per ROUTER, publishes the signed-in identity for every app
@@ -28,16 +28,23 @@ from api.session import require_session
 #: at all — ``require_session`` was referenced by no route, so no media call ever saw a profile and
 #: every one of them ran on the administrator's credential.
 #:
+#: **Phase 5** replaced ``require_session`` here with ``require_live_credential``, which is the same
+#: dependency plus the 401 taxonomy (§6h): the session can be alive while the credential it acts as
+#: has been refused, and those two need opposite answers. It raises the marked 401
+#: (``X-RKM-Auth-Problem``) that the browser understands as "switch profile", never "sign out".
+#:
 #: ONE line per router, not a ``Depends`` on ~40 endpoints: a site that forgot it would silently
 #: keep serving the administrator's library and watch state to a household member, which is the
 #: exact failure this workstream exists to prevent.
 #:
 #: Deliberately NOT applied to ``/api/health`` (the Dockerfile HEALTHCHECK calls it — a 401 there
 #: marks the api unhealthy and cascades) or ``/api/auth/*`` (sign-in must be reachable signed out;
-#: those routes read the session directly and a session-less call is not an error for them).
+#: those routes read the session directly and a session-less call is not an error for them — and,
+#: decisively, they are the FIX for a refused credential: a probe in front of them would close the
+#: only door that opens it).
 #: With ``RKM_AUTH_REQUIRED=false`` this changes NOTHING observable — it only publishes the
 #: identity, and a missing session stays a valid anonymous request.
-SESSION_SCOPED = [Depends(require_session)]
+SESSION_SCOPED = [Depends(require_live_credential)]
 
 
 def create_app() -> FastAPI:

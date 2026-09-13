@@ -40,6 +40,12 @@ export interface GuardInput {
    * caller has to supply it rather than inherit a default that silently means "admin".
    */
   profileSelected: boolean;
+  /**
+   * Phase 5: the server has refused the credential the profile IN EFFECT was acting as, while the
+   * session itself is fine (`X-RKM-Auth-Problem: profile-token`). Required for the same reason as
+   * `profileSelected` — it takes the app away, so nobody may inherit a silent default.
+   */
+  profileStale: boolean;
 }
 
 /**
@@ -49,6 +55,9 @@ export interface GuardInput {
  *   form) and never show a login form to someone who is already signed in.
  * - signed out AND the server has refused an app call ⇒ LOGIN. That refusal is the only
  *   evidence enforcement exists.
+ * - signed in but the PROFILE's media credential was refused ⇒ PICKER (Phase 5). The session is
+ *   alive, so the login view would be the wrong screen AND would throw a working session away; the
+ *   picker is the one screen that fixes it, because choosing a profile is what re-authenticates.
  * - signed in but NO PROFILE CHOSEN ⇒ PICKER ("Who's watching?") — Phase B. The fact comes from
  *   the server, not from a click remembered in this browser: the session lives for 30 days and is
  *   the same one every device sees, so a locally-remembered answer would disagree with it after a
@@ -60,9 +69,11 @@ export function guardDecision({
   status,
   enforcementSeen,
   profileSelected,
+  profileStale,
 }: GuardInput): GuardDecision {
   if (status === "loading") return "skeleton";
   if (status === "signedOut") return enforcementSeen ? "login" : "app";
+  if (profileStale) return "picker";
   return profileSelected ? "app" : "picker";
 }
 

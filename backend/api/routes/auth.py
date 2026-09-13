@@ -28,7 +28,8 @@ from api.session import (admin_status, grantable_rows, reset_current_session,
 from config.settings import get_config
 from services.auth import (SESSION_COOKIE, AuthUnavailableError, InvalidCredentialsError,
                            authenticate_jellyfin, default_session_store,
-                           password_change_took_effect, revoke_jellyfin_session)
+                           new_session_device_id, password_change_took_effect,
+                           revoke_jellyfin_session)
 from services.library.factory import build_library_service
 
 router = APIRouter()
@@ -67,9 +68,16 @@ def login(payload: LoginRequest):
     token Jellyfin handed back, behind an opaque id this app invented.
     """
     cfg = get_config()
+    # Phase 5 (§4e): every SESSION signs in on its OWN media-server device. Jellyfin invalidates the
+    # previous token for a (device, user) pair on every login, so with ONE shared app device id a
+    # phone and a laptop signed in as the same account silently killed each other's media calls —
+    # the first session's sidebar went empty and every media call answered 401. A caller that NAMES
+    # a device (the operation tools, on `rkm-tools`) still wins: that is what stops a diagnostic
+    # from rotating the BROWSER's token away.
+    device_id = str(payload.device_id or "").strip() or new_session_device_id()
     try:
         identity = authenticate_jellyfin(payload.username, payload.password, config=cfg,
-                                         device_id=payload.device_id)
+                                         device_id=device_id)
     except InvalidCredentialsError as exc:
         # Never the username, never the password: the log line is the outcome, and
         # the message is deliberately identical for an unknown user and a bad one.
@@ -103,7 +111,10 @@ def login(payload: LoginRequest):
     store = default_session_store(cfg)
     session_id, record = store.create(user_id=identity.user_id,
                                       user_name=identity.user_name,
-                                      token=identity.token)
+                                      token=identity.token,
+                                      # Stored so THIS session re-authenticates on the same device
+                                      # when it switches profile (see select_profile).
+                                      device_id=device_id)
     logger.info("auth.login ok user=%s", identity.user_id)
 
     # Build the response FIRST and set the cookie on it: returning a JSONResponse
@@ -211,7 +222,13 @@ def select_profile(payload: SelectProfileRequest, request: Request):
 
     try:
         identity = authenticate_jellyfin(str(target.get("name") or ""), payload.password or "",
-                                         config=cfg)
+                                         config=cfg,
+                                         # ⚠ This session's OWN device, not the app's shared default
+                                         # (§4e): re-authenticating for a profile must not land on a
+                                         # device another session is using, or the two rotate each
+                                         # other's tokens away. `""` on a row written before Phase 5
+                                         # keeps the old behaviour (the shared device).
+                                         device_id=context.device_id)
     except InvalidCredentialsError:
         # The profile's own password is the only secret here — never echoed, and a blank attempt
         # on a protected profile lands in exactly this branch.

@@ -15,9 +15,9 @@ import { useAuth } from "./AuthProvider";
 import { guardDecision } from "./lib";
 
 export function RequireSession({ children }: { children: React.ReactNode }) {
-  const { status, enforcementSeen, profileSelected } = useAuth();
+  const { status, enforcementSeen, profileSelected, profileStale } = useAuth();
   const location = useLocation();
-  const decision = guardDecision({ status, enforcementSeen, profileSelected });
+  const decision = guardDecision({ status, enforcementSeen, profileSelected, profileStale });
 
   if (decision === "skeleton") return <SessionSkeleton />;
   if (decision === "login") {

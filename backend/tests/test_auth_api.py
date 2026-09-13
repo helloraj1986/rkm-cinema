@@ -24,8 +24,8 @@ import api.routes.auth as auth_route
 import api.session as session_mod
 from api.main import app
 from api.session import current_session, require_session
-from services.auth import (SESSION_COOKIE, AuthUnavailableError, InvalidCredentialsError,
-                           JellyfinIdentity, SessionStore)
+from services.auth import (SESSION_COOKIE, WEB_DEVICE_PREFIX, AuthUnavailableError,
+                           InvalidCredentialsError, JellyfinIdentity, SessionStore)
 
 PASSWORD = "p#ss w0rd"
 TOKEN = "jellyfin-token-9f2b"
@@ -92,19 +92,37 @@ class TestLogin:
 
     def test_credentials_are_passed_through_untouched_and_never_stored(self, api):
         _login(api.client)
-        # `device_id` is "" here because the BROWSER did not ask for one — which is what keeps the
-        # web app's own device (the pair Jellyfin rotates on login) exactly as it was.
-        assert api.seen == {"username": "rajeev", "password": PASSWORD, "device_id": ""}
+        # The username and password reach Jellyfin untouched. `device_id` is no longer "" — the
+        # browser names none, and the route replaces that with THIS session's own id (Phase 5, §4e):
+        # see the test below for why that is the fix, not a regression.
+        assert api.seen["username"] == "rajeev"
+        assert api.seen["password"] == PASSWORD
+        assert api.seen["device_id"].startswith(f"{WEB_DEVICE_PREFIX}-")
         # The display name is kept (the UI shows it); the CREDENTIAL is not stored
         # anywhere — what identifies the session on disk is the sha256 of the id.
         raw = api.store.path.read_text(encoding="utf-8")
         assert PASSWORD not in raw
         assert "Rajeev" in raw
 
-    def test_the_browser_signs_in_on_the_apps_own_device(self, api):
-        """⚠ The default, pinned: the web app must keep using ``rkm-cinema-web``."""
+    def test_the_browser_signs_in_on_its_OWN_device(self, api):
+        """⚠ CHANGED in Phase 5 (§4e), and this is the fix rather than a detail.
+
+        The web app used to sign every session in on ONE device id (``rkm-cinema-web``). Jellyfin
+        invalidates the previous token of a *(device, user)* pair on every login, so two browsers
+        signed in as the same account silently killed each other's media calls — the first one's
+        sidebar went empty and every media call answered 401. Every session gets its own device now,
+        so the rotation can only ever affect the session that logged in.
+        """
         _login(api.client)
-        assert api.seen["device_id"] == ""
+        first = api.seen["device_id"]
+        assert first != WEB_DEVICE_PREFIX, "not the shared app device any more"
+        assert first.startswith(f"{WEB_DEVICE_PREFIX}-")
+
+        api.client.cookies.clear()
+        _login(api.client)
+        assert api.seen["device_id"] != first, (
+            "a second sign-in must NOT land on the first session's device — that is what rotated "
+            "the other session's token away")
 
     def test_a_caller_can_ask_to_sign_in_on_its_OWN_device(self, api):
         """What the operation tools send (``tools/rkm_common.py::App``).

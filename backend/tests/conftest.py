@@ -9,7 +9,9 @@ administrative *in effect* though they were only session-gated.
 So a test that drives one of those routes over real HTTP now needs both halves of the gate:
 a session in a store the test owns, and an answer to *"is this account an administrator?"*.
 
-What this fixture replaces is **only the thing that has to ask the media server** — ``admin_status``.
+What this fixture replaces is **only the thing that has to ask the media server** — ``admin_status``,
+and since Phase 5 ``credential_is_accepted`` (the "is this credential still accepted?" probe that
+``require_live_credential`` runs).
 The dependency itself, the session store, the cookie, the router wiring and the routes are the
 shipped code. The gate's own three answers (401 anonymous · 403 a member · 503 the server could not
 be asked) are proved against a fake PROVIDER in ``tests/test_admin_users_api.py``; the inventory
@@ -21,6 +23,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import api.session as session_mod
+import services.auth as auth_mod
 from services.auth import SESSION_COOKIE, SessionStore
 
 ADMIN_ID = "uid-admin"
@@ -43,6 +46,15 @@ def signed_in(tmp_path, monkeypatch):
         session_id, _ = store.create(user_id=user_id, user_name=user_id, token="jf-token")
         monkeypatch.setattr(session_mod, "session_store", lambda config=None: store)
         monkeypatch.setattr(session_mod, "admin_status", lambda cfg, uid: admin)
+        # ...and Phase 5's other question to the media server: "is the credential this request will
+        # act as still accepted?" (`require_live_credential`). The token this fixture mints,
+        # ``jf-token``, is a string no media server has ever issued, so without this EVERY route
+        # would answer the marked 401 — which is the dependency working correctly against a session
+        # that a real server would refuse. The default here is the honest one for this world ("the
+        # server accepts it"); the taxonomy itself is proved in ``test_credential_taxonomy.py``
+        # against a fake transport, where the answer is False/True/None on purpose.
+        monkeypatch.setattr(auth_mod, "credential_is_accepted",
+                            lambda *a, **kw: True)
         # The real config answers this by reading its own flag; arming it here would turn every
         # other route strict too and hide whatever the test was actually checking.
         monkeypatch.setattr(session_mod.get_config(), "RKM_AUTH_REQUIRED", "false")

@@ -70,8 +70,31 @@ DEFAULT_TIMEOUT = 15.0
 #: the ``rkm-tools`` identity the probe tools use: when a write is later found to
 #: have been dropped, the app name in ``/System/Logs`` is what identifies which
 #: client made the call (that forensics routine is written up in the repo skill).
+#:
+#: ⚠ This is now the FALLBACK for a caller that names no device at all. Every session signs in on
+#: its OWN id (:func:`new_session_device_id`) because Jellyfin invalidates the previous token of a
+#: (device, user) pair on every login: with ONE shared id, a phone and a laptop signed in as the
+#: same account silently killed each other's media calls (PLEX_PROFILE_AUTH_PLAN §4e).
 CLIENT_HEADER = ('MediaBrowser Client="RKM Cinema", Device="RKM Cinema Web", '
                  'DeviceId="rkm-cinema-web", Version="2.0"')
+
+#: Prefix for a browser session's OWN device id.
+WEB_DEVICE_PREFIX = "rkm-cinema-web"
+
+#: How long a "this credential is still accepted" answer is trusted (seconds). Long enough that a
+#: page-load burst costs ONE upstream call rather than one per request, short enough that a token
+#: the server has stopped accepting is reported while the person is still looking at the screen.
+CREDENTIAL_PROBE_TTL_SECONDS = 20
+
+#: The header that tells the browser WHICH credential a 401 is about (AUTH_MULTIUSER_PLAN §6h's
+#: taxonomy, settled in Phase 5). ``session`` ⇒ the cookie is gone/stale, sign in again;
+#: ``profile-token`` ⇒ the cookie is fine but the selected profile's media-server credential was
+#: refused, so the remedy is **Switch profile** — the client's global "a 401 means the session is
+#: dead" rule must NOT fire on that one. Named here rather than in the api layer because the client
+#: and the docs both quote it verbatim.
+AUTH_PROBLEM_HEADER = "X-RKM-Auth-Problem"
+AUTH_PROBLEM_SESSION = "session"
+AUTH_PROBLEM_PROFILE_TOKEN = "profile-token"
 
 #: The device id used ONLY to prove a password change landed. Deliberately not the app's own:
 #: Jellyfin rotates the token of a (device, user) pair on every login, so verifying on the app's
@@ -99,6 +122,17 @@ DEVICE_ID_MAX = 64
 def _safe_device_id(device_id: str) -> str:
     """A device id that is safe to interpolate into the ``X-Emby-Authorization`` header."""
     return _DEVICE_ID_ALLOWED.sub("", str(device_id or "").strip())[:DEVICE_ID_MAX]
+
+
+def new_session_device_id() -> str:
+    """A device id for ONE app session (one browser sign-in): ``rkm-cinema-web-<12 hex>``.
+
+    ⚠ Random rather than derived from the session id, and that is deliberate: the session id is the
+    credential the browser holds (stored only as a sha256 precisely so the file cannot be
+    replayed), and a device id travels to Jellyfin, into its session list and its logs. Composing
+    one out of the other would leak the cookie's secret into a foreign system's log file.
+    """
+    return f"{WEB_DEVICE_PREFIX}-{secrets.token_hex(6)}"
 
 
 def _client_header(device_id: str = "") -> str:
@@ -363,6 +397,64 @@ def revoke_jellyfin_session(token: str, *, config=None, transport=None) -> bool:
         return False
 
 
+# ------------------------------------------------------------------ credential probe
+DEFAULT_PROBE_TIMEOUT = 5.0
+
+
+def credential_is_accepted(token: str, user_id: str, *, device_id: str = "", config=None,
+                           transport=None, timeout: float = DEFAULT_PROBE_TIMEOUT,
+                           ) -> Optional[bool]:
+    """Is this media-server credential still accepted? ``True`` / ``False`` / ``None`` (could not ask).
+
+    The ONE question that separates the two 401s the app must never confuse (Phase 5's taxonomy,
+    AUTH_MULTIUSER_PLAN §6h): the browser's session can be perfectly alive while the **profile** it
+    is acting as is no longer signed in to the media server — the server can revoke a token at any
+    time, and a password change or a manual session revoke both do it. Before this existed, that
+    state was silent: the media calls came back EMPTY (a lie: "you have no library") and the only
+    honest-looking option on the table — a bare 401 — signed the person out of the whole app for
+    something that switching profile fixes in one tap.
+
+    ⚠ **MEASURED on the real bundled Jellyfin 10.11.11 (2026-09-13), because the credential STYLE is
+    the whole function:**
+
+    ====================================  ======
+    ``GET /Users/<id>``                      
+    ``Authorization: <token>``              **401**  ← does NOT authenticate this endpoint
+    ``?api_key=<token>``                    **200**
+    ``?api_key=<a bad token>``              **401**  ← the stale signal, and it is real
+    ``?api_key=<token>`` on an unknown id   **404**  ← NOT a refusal
+    ====================================  ======
+
+    So the query parameter every other call in this repo already uses is the one that works, and a
+    404 must never be read as "refused" — it is a different answer about a different thing.
+
+    ``/Users/<id>`` is the cheapest call that answers it, and a user's own token may read its own
+    record (no administrator rights needed). The timeout is deliberately short: this runs on the
+    request path, and an unreachable server must not hold a page hostage.
+
+    ⚠ ``None`` is a real answer and is never reported as a refusal — a server that cannot be asked
+    has not rejected anybody, and a 5xx is "could not ask", not "no".
+    """
+    cfg = config if config is not None else get_config()
+    base = str(getattr(cfg, "JELLYFIN_URL", "") or "").rstrip("/")
+    if not base or not token or not user_id:
+        return None
+    transport = transport if transport is not None else UrllibTransport(timeout=timeout)
+    try:
+        response = transport.request(
+            "GET", f"{base}/Users/{user_id}?api_key={token}",
+            headers={"X-Emby-Authorization": _client_header(device_id)},
+        )
+    except Exception as exc:  # noqa: BLE001 - "could not ask" is not a refusal
+        logger.info("credential probe could not reach the media server (%s)", type(exc).__name__)
+        return None
+    if response.status == 200:
+        return True
+    if response.status in (401, 403):
+        return False
+    return None
+
+
 # ------------------------------------------------------------------ session store
 class SessionStore:
     """Atomic, corrupt-tolerant sessions.
@@ -462,6 +554,10 @@ class SessionStore:
                 "user_name": str(row.get("user_name") or ""),
                 "profile_user_id": str(row.get("profile_user_id") or ""),
                 "profile_user_name": str(row.get("profile_user_name") or ""),
+                # Which media-server device this session signs in on. Useful diagnostics ("did two
+                # sessions really rotate each other's tokens?") and not a secret: it is a name this
+                # app invented and Jellyfin already lists it against the session.
+                "device_id": str(row.get("device_id") or ""),
                 "created": str(row.get("created") or ""),
                 "expires": str(row.get("expires") or ""),
                 "last_seen": str(row.get("last_seen") or ""),
@@ -571,12 +667,18 @@ class SessionStore:
             self._write(data)
             return result
 
-    def create(self, *, user_id: str, user_name: str, token: str,
+    def create(self, *, user_id: str, user_name: str, token: str, device_id: str = "",
                ttl_seconds: Optional[int] = None) -> Tuple[str, dict]:
         """Start a session; returns ``(session_id, record)``.
 
         ``session_id`` is returned to the CALLER ONLY (it goes into an HttpOnly
         cookie). What is stored is its sha256, so the file on disk cannot be replayed.
+
+        ``device_id`` is the media-server device this session signs in and re-authenticates on
+        (:func:`new_session_device_id`) — stored so that a later **profile switch** in the same
+        session re-uses it, instead of silently moving the session onto a different device and
+        rotating a token that belongs to it. Absent (an old row, or a caller that named none) means
+        the app's own shared device, which is the pre-Phase-5 behaviour.
         """
         user_id = str(user_id or "")
         token = str(token or "")
@@ -593,6 +695,8 @@ class SessionStore:
             "expires": _iso(now + timedelta(seconds=ttl)),
             "last_seen": _iso(now),
         }
+        if str(device_id or "").strip():
+            record["device_id"] = _safe_device_id(device_id)
         key = hash_session_id(session_id)
 
         def mutate(data):

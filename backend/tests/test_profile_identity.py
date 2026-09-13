@@ -635,7 +635,7 @@ class TestEveryAppRouterPublishesTheIdentity:
                 if "require_admin_session" not in deps:
                     missing.append(path)
                 continue
-            if "require_session" not in deps:
+            if "require_session" not in deps and "require_live_credential" not in deps:
                 missing.append(path)
         assert not missing, (
             "these routes do not publish the session identity, so every media call they make runs "

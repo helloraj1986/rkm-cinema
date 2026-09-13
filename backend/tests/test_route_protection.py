@@ -192,11 +192,18 @@ def served_routes() -> dict[str, tuple[set[str], set[str]]]:
     return rows
 
 
+#: The dependency that makes a route publish the session identity. Phase 5 replaced the bare
+#: ``require_session`` with ``require_live_credential`` (the same dependency plus the 401 taxonomy),
+#: so BOTH names mean "this route publishes an identity" — and the test below pins that no route is
+#: left on the older one, so the app cannot drift back into two different session behaviours.
+SESSION_DEPS = {"require_session", "require_live_credential"}
+
+
 def level_of(deps: set[str]) -> str:
     """The level a route's dependencies actually give it — the SAME rule the report uses."""
     if "require_admin_session" in deps:
         return ADMIN
-    if "require_session" in deps:
+    if deps & SESSION_DEPS:
         return SESSION
     return "*** NOTHING ***"
 
@@ -258,11 +265,26 @@ class TestNoRouteShipsWithoutADecision:
         PUBLIC, auth-route and ADMIN are the only acceptable answers, and each is declared above.
         """
         missing = [key for key, (_verbs, deps) in sorted(served_routes().items())
-                   if "require_session" not in deps and "require_admin_session" not in deps
+                   if not (deps & SESSION_DEPS) and "require_admin_session" not in deps
                    and ROUTE_LEVELS.get(key) not in (PUBLIC, AUTH)]
         assert not missing, (
             "these routes publish no session identity, so every media call they make runs on the "
             "ADMINISTRATOR's credential: " + ", ".join(missing))
+
+    def test_every_route_uses_the_ONE_session_dependency(self):
+        """⚠ New in Phase 5: the session dependency is not a per-route choice.
+
+        ``require_live_credential`` is ``require_session`` plus the 401 taxonomy (§6h). A route left
+        on the bare ``require_session`` would still publish an identity — so ``level_of`` cannot
+        tell the difference — but it would be the one route where a refused profile credential goes
+        back to being a silent empty result instead of a "switch profile" answer. Uniform, or the
+        taxonomy is decorative on that route.
+        """
+        stale = [key for key, (_verbs, deps) in sorted(served_routes().items())
+                 if "require_session" in deps and "require_live_credential" not in deps]
+        assert not stale, (
+            "these routes still use the bare `require_session`, so a refused credential degrades "
+            "silently there instead of answering the marked 401: " + ", ".join(stale))
 
     def test_the_four_phase_E_routes_are_the_ones_that_changed(self):
         """Pin the DECISION, not just the mechanism — a later session must not widen or narrow it

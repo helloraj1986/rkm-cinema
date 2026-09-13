@@ -39,7 +39,7 @@ import {
 } from "./lib";
 
 export function ProfilesView() {
-  const { status, user, profileSelected, signOut, selectProfile } = useAuth();
+  const { status, user, profileSelected, profileStale, staleReason, signOut, selectProfile } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -119,6 +119,19 @@ export function ProfilesView() {
             </p>
           </div>
         </div>
+
+        {profileStale ? (
+          <div
+            role="alert"
+            data-testid="stale-profile-notice"
+            className="mb-4 rounded-2xl border border-amber-400/20 bg-amber-400/10 p-4 text-sm text-amber-100"
+          >
+            <p className="font-medium">Your profile&apos;s sign-in has expired.</p>
+            <p className="mt-1 text-amber-200/80">
+              {staleReason || "Pick it again to continue."}
+            </p>
+          </div>
+        ) : null}
 
         {isPending ? (
           <p role="status" className="text-sm text-zinc-400">

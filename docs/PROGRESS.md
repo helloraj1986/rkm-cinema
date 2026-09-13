@@ -1,3 +1,58 @@
+## ▶ 🟡 **CTA ALIGNMENT FIXED — AWAITING HIS RKM-HP EYEBALL** (2026-09-13, later still) · branch **`fix/cta-button-alignment`** (2 commits: plan `c8650c1`, fix `4c1abe3`) · **NOT merged** — his eyeball gates it · gates green (325 vitest · tsc · build · `check_cta_alignment` in BOTH directions) · web-only deploy
+
+**His report, verbatim:** *"for rkm-cinema app fix this"* — a two-bug UX report on the poster CTA
+("Bug 1: Misaligned 'Episodes' button on media card") and the search result row ("Bug 2: 'Resume' and
+'Details' buttons have mismatched sizing in the search result card"). Both were real; both are fixed
+and the fix is measured.
+
+**What was actually wrong** — neither defect was visible by reading the code, which is why the FIRST
+thing built here was the measurement (`frontend/harness/cta-frame.*` mounting the REAL `MediaCard`
+and the REAL `GlobalSearch` over a stubbed api, driven by `tools/check_cta_alignment.py`):
+
+| Defect | Cause | Measured BEFORE |
+|---|---|---|
+| pill stacks glyph above label | `grid place-items-center` with **TWO** children → grid rows | glyph cy **−11.25px**, label ink cy **+10.25px** off the pill's axis (21.5px apart); glyph→label gap **−37.59px** |
+| Resume vs Details mismatch | two hand-rolled class strings — primary `h-8` with **no** vertical padding, secondary `py-1.5` with **no** height | **32.00px vs 30.50px**, padding **0/0px vs 6/6px** |
+
+⚠ **The trap that hid Bug 1**: the pill's height is FIXED (`h-9` = 36px) and the two stacked rows
+(13px icon + 16px line) still FIT inside it, so nothing overflowed — the box was the right size and
+only its insides were wrong. A class-string assertion passes happily on that.
+
+⚠ **The audit his report asked for, answered**: neither button came from a shared component — BOTH
+were inline strings. That is precisely why they drifted, and why the visible difference was whatever
+the font's line-height happened to be (machine-dependent, so it would not have been reproducible by
+eye between his box and this sandbox).
+
+**The fix — removes the possibility, not the instance.**
+`frontend/src/components/ui/Button.tsx` holds every box-deciding class in ONE `SIZE` token
+(`h-8`, `px-3`, `rounded-lg`, `text-[11px]`, `gap-1.5`); variants may change FILL, COLOUR and WEIGHT
+(hierarchy) and nothing else. Applied to the search rows (primary/secondary), the discovery rows
+(primary + ghost) and the decorative "Browse" chip — which was the **third** hand-tuned copy of the
+same chip. `MediaCard`'s pill became a flex row + `leading-none`; the movie CTA (single glyph in a
+circle) is asserted UNCHANGED, since the flex rewrite must not touch what it was not meant to.
+
+**Measured AFTER** (same tool, `--shots`): pill glyph cy **+0.00px**, label ink cy **+0.50px**, gap
+**6.00px**; every row's Resume/Details pair **32.00px** with padding **0/0px** and equal radius and
+font-size, centres within 0.00px, and the same size across both rows. The pill is 13px wider
+(96.0 → 109.2) — that IS the layout becoming a row: glyph + 6px gap + label.
+
+**Both directions are asserted, because this repo has twice shipped a check that could not fail:**
+`python3 tools/check_cta_alignment.py --expect-broken` runs the SAME assertions against the unfixed
+source and REQUIRES them to fail (11 problems, exit 0 only if it failed); the fixed tree exits 0 with
+none. It also re-proves the WIRING (clicking either button still activates the row — a restyle that
+left them inert would be a worse bug than the misalignment), and `Button.test.ts` pins the shared
+token from the other side (falsified: injecting `py-1.5` into ONE variant fails it, naming the token).
+
+**For the next session / him:**
+1. Deploy is **web-only**: `docker compose -p rkm-bundled up -d --build web` (the web image builds
+   `frontend/` inside Docker; nothing in `frontend/dist` is used, but it is rebuilt green).
+2. Eyeball the two surfaces: the **"Recently Added"** rail card's ▶ Episodes pill, and the search
+   dropdown for **sholay** (Resume + Details). Side-by-side evidence saved on his box:
+   `/workspace/rkm-ux-shots/cta-before-*.png` and `cta-after-*.png` (files only, they are not in the repo).
+3. Merge is **his call** — say it, don't assume it: this branch is NOT merged and `main` does not carry it.
+4. Still outstanding from the block below: the **brand-lockup eyeball** (that branch IS merged, so what
+   he sees on his next deploy includes it).
+
 ## ▶ ✅ **BRAND LOCKUP ALIGNMENT FIXED** (2026-09-13, later) · branch **`fix/brand-lockup-alignment`** → **`main` `d9f6e90`** (fast-forward, at his direction — his eyeball of this fix is still pending) · gates green (tsc · 321 vitest · build · `check_brand_lockup` · `check_nav_access`) · web-only deploy
 
 **His report, verbatim:** *"i have the seen the changes it looks good..i just need one more small ux
@@ -3935,5 +3990,6 @@ Endpoint shapes NOT yet live-verified from the sandbox (oEmbed blocked; use `scr
   - **Structured logging** - JSON logs enable log aggregation and debugging
   - **Pydantic models for API** - Type safety, auto-documentation, validation
   - **Tests first** - Writing tests for plex ownership, radarr/sonarr routing, duplicates, trailers, status, e2e, errors caught design issues early
+
 
 

@@ -1,3 +1,43 @@
+## ▶ 📋 **PLAN PARKED — Household page + account menu redesign** (2026-09-13) · scoped and ready in **`docs/HOUSEHOLD_UX_PLAN.md`** · branch **`feat/household-ux`** cut from `main` for the implementation · **NO CODE YET — next session executes it**
+
+**His instruction, verbatim:** *"inside the rkm-cinema app , there is a folder called household_ux, it
+has the ux of the house hold tab and other ux patterns which i need you to implement in next session
+..there is md file goes with it so you can have a look and scope the work for next session ..this has
+to be done in a new branch"*
+
+| | |
+|---|---|
+| The brief | `household_UX/household-redesign-plan.md` (his 7 sections) |
+| The target state | `household_UX/household-redesign.html` — interactive mockup, opened and rendered 2026-09-13; full-page shot at `rkm-ux-shots/household-redesign-full.png` |
+| The wider programme | `RKM-CINEMA_NEW_UX/RKM_Cinema_Premium_Media_Library_Design_Spec.md` + its prototype — whole-app premium redesign, 87 sections, its own 9 phases. **Multi-session**; deliberately NOT this phase (§6 of the plan) |
+| Scope constraint (his) | **Visual/UX only** — no API, route, auth or data-model change; every action calls the endpoint it calls today |
+
+**⚠ §1 and §2 of his brief are ALREADY DONE** (they were written 2026-09-12; the account-menu
+consolidation landed 2026-09-13): the sidebar no longer lists Household/My password, and the avatar's
+one account menu — with outside-click, Escape, `role=menu` and the admin-gated Household entry — is in
+`features/auth/AccountMenu.tsx`. The plan says so explicitly so the next session does not redo it. The
+only remaining menu delta is small: the mockup's order and labels (`Household · Account & password ·
+Switch profile · Settings · Sign out`) plus a `Settings` item the app does not have.
+
+**The work that IS left:** `HouseholdView.tsx` (599 lines, still flat rows with inline
+FolderTicks/Password/Rename/Remove forms) becomes: header + summary stat cards + profile cards
+(badges, library chips, primary actions, `⋮` overflow with no overflow on your own row) + three modals
+reusing the existing `Dialog.tsx` — plus `tools/check_household_ui.py` rewritten to drive the new UI,
+which is where the honesty of the whole change is proved.
+
+**⚠ One decision needed before that session starts (a person's call, not a mechanism's):** the mockup's
+Library-access modal shows per-library item counts (`Movies · 412 items`), and **no existing endpoint
+carries them** (`/api/admin/libraries` has id/name/collection_type/path; `/api/library` has global
+counts only). Option A — ship without counts (no API change, matches his own constraint; recommended).
+Option B — an additive field on `/api/admin/libraries` (allowed by ADR-0001; the provider already has
+`get_library_counts()`), with snapshot + types + tests.
+
+**Tracker:** this is the queue's first item now. Everything else stays as the block below records:
+the fresh-install test on a throwaway stack (his to run), the two recorded findings
+(`revoke_jellyfin_session`; the qBittorrent reporting gaps), and the parked feature plans.
+
+---
+
 ## ▶ ✅ **PHASE 5 COMPLETE — MERGED TO `main`** (2026-09-13) — `ADR-0006`, the docs truth pass, the README rewrite, and the two §6h hardening attachments (`c61d7bb` code + this record) · **the switch is ARMED** · this closes the auth workstream
 
 **His instruction, verbatim:** *"complete the phase 5 and close this after merging to main.. also

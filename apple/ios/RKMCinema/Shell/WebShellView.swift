@@ -96,6 +96,8 @@ struct WebShellView: UIViewRepresentable {
         private weak var model: WebShellModel?
         /// The only host the shell treats as "ours".
         private let host: String
+        /// ⚠ Every host that has already reported a server-trust challenge — see `didReceive`.
+        private var challengedHosts: Set<String> = []
 
         init(model: WebShellModel, address: ServerAddress) {
             self.model = model
@@ -163,8 +165,20 @@ struct WebShellView: UIViewRepresentable {
                      completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
             // Logged, never overridden. A certificate problem has to surface as a failure we can
             // read in the log — silently trusting a bad certificate is not an option.
-            RKMLog.info("auth challenge: \(challenge.protectionSpace.authenticationMethod) host=\(challenge.protectionSpace.host)",
-                        category: .net)
+            //
+            // ⚠ BUT ONCE PER HOST, NOT ONCE PER RESPONSE. The page loads its artwork straight from
+            // the TMDB CDN, so on a browse screen this fires for every poster — around twenty lines
+            // for one screen, which is enough to push the actual request lines out of the 250-entry
+            // ring the HUD reads (and to bury them in the file). The first challenge for a host is
+            // the diagnosis; the next nineteen are noise. Verbose level for the same reason.
+            let key = "\(challenge.protectionSpace.host)|\(challenge.protectionSpace.authenticationMethod)"
+            if challengedHosts.insert(key).inserted {
+                RKMLog.verbose(
+                    "auth challenge: \(challenge.protectionSpace.authenticationMethod)"
+                        + " host=\(challenge.protectionSpace.host) (first for this host)",
+                    category: .net
+                )
+            }
             completionHandler(.performDefaultHandling, nil)
         }
 

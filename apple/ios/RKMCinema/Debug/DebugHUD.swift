@@ -78,7 +78,12 @@ struct DebugHUD: View {
             field("base", addressLine)
             field("web", webLine)
             field("auth", "cookies \(shell?.cookieSummary ?? "—")")
-            field("net", entries.first { $0.category == .net }?.hudText ?? "—")
+            // ⚠ A *request* line, not merely the newest `.net` line. The page loads its artwork
+            // straight from the TMDB CDN, so its server-trust challenges are also `net` — and they
+            // carry no correlation id, so the field read as `[-------] net auth challenge: …` on a
+            // screen where six real requests sat right below it. §4 defines this field as the last
+            // request; a line with no id is not one.
+            field("net", entries.first { $0.category == .net && $0.correlationID != nil }?.hudText ?? "—")
             if let lastError = entries.first(where: { $0.level == .error }) {
                 field("last", "⚠ \(lastError.message)")
             }

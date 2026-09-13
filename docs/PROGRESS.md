@@ -1,3 +1,77 @@
+## ▶ 🟡 **EXTERNAL SEARCH RESULTS FIXED — AWAITING HIS RKM-HP EYEBALL** (2026-09-13, latest) · branch **`feat/search-external-fallback`** (3 commits: plan `2e0976c`, fix `c3b94a5`, harness index `e21b2c0`) · ⚠ **STACKED on the unmerged `fix/cta-button-alignment`** — his tree carries BOTH fixes, so ONE `docker compose -p rkm-bundled up -d --build api web` shows both · gates green (1111 backend · 325 vitest · tsc · build · `check_search_fallback` AND `check_cta_alignment` in both directions)
+
+**His report, verbatim:** *"Search only matches local library, doesn't surface external/metadata
+matches … searching 'sholay' only returns the one local library item that happens to contain that
+string ('Sholay — Special Ops S1E8') … it does not return the actual well-known movie Sholay (1975)"*,
+with the stated root cause *"There's no fallback to an external metadata provider"*.
+
+## ⚠ The stated root cause was wrong — and proving that WAS the fix
+
+The external fallback shipped on 2026-09-09 (`GLOBAL_SEARCH_PLAN` Phases 1–3). A live probe with his own
+key, from this sandbox: **`Sholay` (1975) is result #0 of 13** from TMDB. Most of his "suggested
+implementation" already existed (two sections library-first, posters/year/type, Add→Download, dedupe,
+graceful degradation). What he actually hit was the **gate** at `routes/search_global.py`:
+
+```python
+payload["strong_match"] = owned_strong_match(owned_raw, query) >= 2    # 2 == mere CONTAINMENT
+if cfg.has_tmdb() and not payload["strong_match"]:                     # …so TMDB was never asked
+```
+
+Measured with the real rule: an owned `"Sholay — Special Ops"` scores **2** against the query
+`"sholay"` → `strong_match` true → **the route never called TMDB at all**. His symptom, exactly.
+
+## The fix (one rule, one place — for the third time this session)
+
+| Half | Before | After |
+|---|---|---|
+| the GATE | suppress on score ≥ 2 (containment) | suppress only on an EXACT owned title — `EXACT_TITLE_SCORE`, named in `services/global_search.py` |
+| the DEDUPE | drop a candidate on score ≥ 2 | same constant, so gate and dedupe cannot drift apart again |
+| the UI | `showDiscovery` required `!data.strong_match` — **a second copy of the server's decision** | the server decides; the UI renders what it is sent |
+| the external call | uncached on purpose (`search_multi` serves legacy `/api/search`) | cached **per normalised query, 300s**, on this path only |
+
+⚠ **The landmine behind the gate**: with an owned row carrying **NO year** the remake guard cannot
+fire, so containment ALSO swallowed the candidate — measured `dropped_as_duplicate=True` for
+`Sholay (1975)` vs `"Sholay — Special Ops"` with no year. Fixed by the same constant, and the
+regression test asserts **both** variants (with a year and without).
+
+⚠ **Deliberate collision with an earlier decision**: `GLOBAL_SEARCH_PLAN` Phase 3 chose to hide
+discovery on any strong match *to keep the dropdown calm*. That is intentionally relaxed here — the calm
+case survives (search `"the matrix"` while owning *The Matrix*: exact → nothing extra appears), but a
+containment hit no longer hides the film he asked for. Say it, don't pretend the old rule was a bug.
+
+## Verified in BOTH directions
+
+* `backend/tests/test_global_search.py` — his exact case returns the real film **and** the owned row
+  (both year variants); an exact owned title still suppresses discovery; a title he owns is never
+  offered back to him; the cache serves a repeat from ONE provider call. **Falsified** by re-injecting
+  the old thresholds: **3 failures**, each printing `strong_match=True … discovery=[]`.
+* `tools/check_search_fallback.py` over the new `frontend/harness/search-frame.*` — renders the REAL
+  overlay with `strong_match: true` **and** both kinds of row: the group renders, the owned row is
+  FIRST with its own Resume, external rows offer Add/Download and never an owned action, clicking one
+  opens its metadata modal, and `?tmdbkey=0` shows the "discovery off" reason instead of a smaller
+  silence. **Falsified** by restoring the UI's old gate: **4 failures** — *"the UI showed groups
+  `['In your library']`"*.
+
+**Not done, on purpose** (each with its reason in `docs/SEARCH_FALLBACK_PLAN.md` §2): no TheTVDB
+integration (`TVDB_API_KEY` is unset and `search_multi` already covers TV); no 5–10 min CLIENT cache of
+the merged response (local rows carry playback state — that is what his literal suggestion would have
+stale-dated, so the client `staleTime` stays 15s and only the external half is cached); debounce stays
+200ms (the server cache is the real protection).
+
+⚠ **A pre-existing drift found and NOT touched**: `npm run generate:types` rewrites
+`frontend/src/lib/api/types.ts` with **+219 lines** that are nothing to do with this change (routes
+added since its last regeneration on 2026-09-12, e.g. `/api/auth/profile/password`). Reverted rather
+than smuggled into a fix commit — the next session that regenerates should do it as its own change.
+
+**For the next session / him:**
+1. Deploy is **web-only + api** this time (backend changed): `docker compose -p rkm-bundled up -d --build api web`
+2. Eyeball: search **sholay** → expect *In your library · "Sholay — Special Ops" (Resume)* **and**
+   *Discover · not in your library · "Sholay (1975) · Movie"* with Add to watchlist; clicking it opens
+   the metadata modal. Then search something he simply owns (`matrix`) and confirm the external section
+   stays quiet.
+3. His tree is on **`feat/search-external-fallback`**, which CONTAINS the CTA fix awaiting his eyeball —
+   so this deploy covers both reports. Merge is **his call**; nothing here is on `main` yet.
+
 ## ▶ 🟡 **CTA ALIGNMENT FIXED — AWAITING HIS RKM-HP EYEBALL** (2026-09-13, later still) · branch **`fix/cta-button-alignment`** (2 commits: plan `c8650c1`, fix `4c1abe3`) · **NOT merged** — his eyeball gates it · gates green (325 vitest · tsc · build · `check_cta_alignment` in BOTH directions) · web-only deploy
 
 **His report, verbatim:** *"for rkm-cinema app fix this"* — a two-bug UX report on the poster CTA
@@ -3990,6 +4064,7 @@ Endpoint shapes NOT yet live-verified from the sandbox (oEmbed blocked; use `scr
   - **Structured logging** - JSON logs enable log aggregation and debugging
   - **Pydantic models for API** - Type safety, auto-documentation, validation
   - **Tests first** - Writing tests for plex ownership, radarr/sonarr routing, duplicates, trailers, status, e2e, errors caught design issues early
+
 
 
 

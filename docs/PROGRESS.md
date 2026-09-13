@@ -1,4 +1,64 @@
-## ▶ SAME SESSION (2026-09-13) — **ONE SCRIPT**: `rkm-cinema.ps1` absorbed `bootstrap.ps1` and gained `apply` + `auth on|off`
+## ▶ ✅ MERGED TO `main` (2026-09-13) — **Phase E + the tool sessions + the ONE-SCRIPT consolidation are on `main`** (7 commits) · worktree on `main` · **next = HE runs `.\rkm-cinema.ps1 auth on`**
+
+**His instruction, verbatim:** *"okey git commit and merge to main everything looks good for now and then
+tell me what is left"*.
+
+| | |
+|---|---|
+| `main` | **THIS RECORD** — fast-forwarded from `feat/route-enforcement` (`2e46334`). No merge commit: `main` was an ancestor, so the trees are identical and **no re-gate was needed** |
+| `feat/route-enforcement` | same commit — FF'd to `main` so every branch is level |
+| `experiment/bundled-docker-stack` | FF'd to the same commit (it had been level at `da0a55a`) |
+| Commits merged | **7**, `da0a55a` → `2e46334`; **44 files**, +2897/−241 |
+| Gates on this tree | **1071 backend pytest** · ruff · **tsc** · **287 vitest** · `npm run build` · **6 browser checks** · openapi **53 paths** · docs links · `.ps1` static check |
+| Deploy | **`.\rkm-cinema.ps1 auth on`** — one command: writes the flag, rebuilds + restarts `api`/`web` (so Phase E's code goes in too), then PROVES the result |
+
+### What is now on `main`
+
+* **Phase E** (`§6j`) — the four operational routes (`/api/jobs/{name}/run`, `/api/library/scan`,
+  `/api/reconcile`, `/api/download`) require an administrator; the two member-facing ones stayed open
+  by his decision; the UI stopped offering a control the server refuses; and
+  `tests/test_route_protection.py` fails the suite if a NEW route ships without a decision.
+* **The tool sessions** (`§6k`) — the six operation tools sign in as the administrator **on their own
+  device id** (`rkm-tools`), because signing in on the app's device would rotate the BROWSER's token
+  away. `LoginRequest.device_id` is additive, so the browser is unchanged.
+* **ONE script** — `rkm-cinema.ps1` absorbed `bootstrap.ps1` (now a forwarder) and gained **`apply`**
+  (make the running stack match this folder) and **`auth on|off`** (the switch, applied and proved).
+  `help` explains every command: what it does, when to use it, what it touches.
+
+### ⚠ What is LEFT — in priority order
+
+**1. HE ARMS THE SWITCH.** `RKM_AUTH_REQUIRED` is still `false`. It is the only thing between the app
+and being private, and it is one command (`.\rkm-cinema.ps1 auth on`). Nothing in this repo flips it.
+⚠ Before arming, run `.\rkm-cinema.ps1 status` to confirm the four Phase E routes already answer 401
+signed out — that proves the new api is deployed.
+
+**2. Phase 5 — the last substantial engineering left in this workstream.**
+* `ADR-0006` (the profile/session credential model) has never been written; `docs/adr/` has 0001–0005.
+* The **docs truth pass**: `ARCHITECTURE.md` is 296 lines, mentions identity **zero** times, and its
+  §11 still documents `app.js → api.js` — the legacy frontend that was DELETED. `README.md` and
+  `OPERATIONS.md` are partly trued up (OPERATIONS gained the switch section; README's command table is
+  current).
+* Carrying the two `§6h` hardening items: the **media-call 401 taxonomy** (session-401 vs
+  profile-token-401, so a stale profile token can say "switch profile again" instead of signing the
+  browser out) and **per-session device ids for browsers** (`§4e`) — two browsers signed in as the same
+  account still share `rkm-cinema-web` and rotate each other's tokens. ⚠ The tool half of that item is
+  DONE (`§6k`); the browser half is not.
+
+**3. Phase 1's fresh-install test on a throwaway stack** — the ONE path never executed end to end, and
+**only he can run it** (no Docker in the sandbox). Recipe: `ADMIN_CREDENTIALS_PLAN.md` §7.
+
+**4. XS, still open:** `BROWSER_RADARR_URL` / `BROWSER_SONARR_URL` point at `:7878`/`:8989` while the
+bundled compose publishes **7879**/**8988** (radarr/sonarr are not even running — `.env` sets no
+`COMPOSE_PROFILES` — so the two dashboard links are dead either way).
+
+**5. The `.ps1` scripts have never been EXECUTED anywhere** (no PowerShell in the sandbox). The deploy
+body is the old bootstrap's, moved verbatim; `apply`, `auth` and the new `help` are new code. They are
+statically checked (PS7-only syntax, non-ASCII, brace balance, undefined handlers) and the help text
+was rendered from the script's own strings — but the first real run is his. **If a command errors,
+paste it and it gets fixed.**
+
+
+## ▶ SAME SESSION (2026-09-13) — **ONE SCRIPT**: `rkm-cinema.ps1` absorbed `bootstrap.ps1` and gained `apply` + `auth on|off`  → ✅ **MERGED to `main` 2026-09-13** (`2e46334`, 7 commits) — see the block above
 
 **His instruction, verbatim:** *"why are we running docker compose -p rkm-bundled up -d --force-recreate
 api everytime rather than bootstrap or rkm-cinema.ps1 ... i want you to consolidate to one script for

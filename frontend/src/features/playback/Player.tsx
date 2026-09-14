@@ -857,8 +857,16 @@ export function Player({
       typeof HTMLVideoElement !== "undefined" &&
       typeof (HTMLVideoElement.prototype as WebkitFullscreenVideo).webkitEnterFullscreen === "function",
   });
-  const fullscreenActive = isFs || isVideoFs;
+  // ⚠ ONE deliberate line (2026-09-14): the fullscreen PATH cannot be seen in a screenshot — the
+  // page's shell and iOS's native player both fill the screen and both look like "a video". Page
+  // `console.log` reaches the shell's file log as `RKMLog.verbose(…, category: .web)`.
+  useEffect(() => {
+    console.log(
+      `[rkm] player fullscreen plan=${fsPlan} fit=${fit} elementApi=${document.fullscreenEnabled === true} viewport=${window.innerWidth}x${window.innerHeight}`,
+    );
+  }, [fsPlan, fit]);
 
+  const fullscreenActive = isFs || isVideoFs;
   const toggleFullscreen = () => {
     if (fsPlan === "element") {
       const el = rootRef.current;
@@ -917,6 +925,13 @@ export function Player({
 
     const onMeta = () => {
       if (isFiniteDuration(v.duration)) setMediaDur(v.duration);
+      // ⚠ The video's REAL shape beside the viewport's (2026-09-14) — this turns "sizable space on
+      // the left and right" into arithmetic: a 1.78:1 film on a 2.17:1 screen leaves ≈79pt per side.
+      if (v.videoWidth > 0 && v.videoHeight > 0) {
+        console.log(
+          `[rkm] video ${v.videoWidth}x${v.videoHeight} in ${window.innerWidth}x${window.innerHeight}`,
+        );
+      }
       hasStartedRef.current = true;
       // Direct / native-HLS resume + mid-play reloads: seek once duration is
       // known (hls.js instead consumes startPosition at build time).

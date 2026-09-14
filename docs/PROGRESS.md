@@ -1,6 +1,48 @@
+## ▶ ✅ **MERGED TO `main` — APPLE CLIENTS PHASE 0 (SHARED PACKAGE + iOS SHELL) + THE FOUR UI/SHELL FIXES + THE OFFLINE PLAN** (2026-09-14, latest) · **`main` = `462ef78`** · ⚠ **at HIS direction** — `feat/apple-clients` fast-forwarded into `main`, and `experiment/bundled-docker-stack` fast-forwarded to match · ⚠ **his tree is now ON `main`**
+
+**He asked, verbatim:** *"for rkm-cinema app merge the current branch to main and then pickup the next stuff from progress.md by creating a new branch"*. Nothing was uncommitted; this commit is the whole of the first half.
+
+**Proven, not assumed:**
+* `git merge --ff-only feat/apple-clients` → **Fast-forward `a0072ec..462ef78`** — **27 commits, 65 files, +7,781 / −88**. A fast-forward, so the merged tree is byte-identical to the branch tip that was already gated: **no re-gate is owed**.
+* `git diff --stat main feat/apple-clients` → **EMPTY** — `main` carries every commit of that branch, and nothing else arrived with it.
+* `git merge-base --is-ancestor main feat/apple-clients` → **YES** before the merge, which is why a fast-forward was possible at all rather than a merge vehicle.
+* Both the checkout and the deploy branch were **clean and in sync with `origin` before anything was touched**, and that was read from `git ls-remote` (the authoritative check) rather than from the local `origin/*` refs — **a token-URL push does not update those**, so a stale ref can make a good push look unverified.
+* Pushed and read back: `main`, `feat/apple-clients`, `experiment/bundled-docker-stack`.
+
+**What actually landed (the 27 commits, grouped):**
+
+| Group | Commits | What it is |
+|---|---|---|
+| **Apple — Phase 0** | `4758ae5`, `9d9d5be`, `6ce7888`, `26e7bc1`, `99f7ea6`, `b00e388`, `8e2c945`, `6b3b455`, `b0ac6ae`, `bbf1af6`, `54930ec`, `d2f00a6`, `c6466c6`, `a1a0802` | the shared SPM package `apple/Shared/` **and** the iOS WKWebView shell `apple/ios/` — ATS reduced to ONE key, explicit Combine/UIKit/WebKit imports, `check-imports.py`, the JS-bridge retain fix, the window-gesture HUD toggle, `IPHONEOS_DEPLOYMENT_TARGET` 26.5 → **16.4** |
+| **Shell / UI fixes** | `c6afe89`, `f620ba2` | the bar's tab count is **measured** and a library can no longer be dropped (sidebar and bar share `libraryNavEntries`); `viewport-fit=cover` + the header's safe-area inset + `UIUserInterfaceStyle = Dark` |
+| **Player** | `8e1d9a8`, `3daf2fc` | full screen is the **viewport**, not a measurement, plus **Picture → Fit/Fill**; and his own two diagnostic lines (`[rkm] player fullscreen plan=…`, `[rkm] video WxH in VWxH`) |
+| **Docs / scaffold** | `1230e4b`, `695a709`, `6f97c01`, `6cedf1f`, `9b4e383`, `33899b4`, `462ef78` | the two-machine workflow, the logging spec, the Xcode-vs-XcodeGen revision, the Phase 0 status table, `docs/NATIVE_FEEL_AND_OFFLINE_PLAN.md` (plan only), the RESUME-HERE handoff |
+
+⚠ **`apple/` is 100% NEW FILES — nothing in `frontend/`, `backend/`, `nginx/` or the compose files was replaced by this merge.** ⚠ **And there is NO BACKEND CHANGE in any of the 27 commits** (verified: no path under `backend/` appears in the merge stat), so **a full `bootstrap.ps1` is NOT needed** — `web` alone carries every web-side change. Reaching for bootstrap here would also re-run the provisioner and recreate Jellyfin, which **cancels an in-flight library scan**.
+
+**⚠ WHAT IS LIVE ON HIS STACK RIGHT NOW — MEASURED, NOT ASSUMED** (`curl` to `http://rkm-hp.tail8d5e8.ts.net:8124/`, 2026-09-14):
+
+| Probe | Result | Reading |
+|---|---|---|
+| served bundle | `assets/index-9K9pHiDW.js`, **1,074,168 B** | unchanged since the previous session's measurement |
+| `object-cover` in that bundle | **present (2)** | ✅ `8e1d9a8`'s **Picture → Fit/Fill IS LIVE** |
+| the page's `<meta name="viewport">` | **carries `viewport-fit=cover`** | ✅ `f620ba2`'s **page half IS LIVE** |
+| `[rkm] player fullscreen plan=` in the bundle | ⚠ **ABSENT (0)** | ⚠ **`3daf2fc` is NOT live** — the diagnostic lines are in the repo and not on his phone yet |
+
+**⚠ HIS NEXT WEB-SIDE STEP, only if he wants those diagnostics on the phone (PowerShell 5.1 — no `&&`, one line per command):**
+
+```
+cd D:\hermes_agent\hermes-workspace\projects\rkm-cinema
+.\rkm-cinema.ps1 apply
+```
+
+then **reload the page on the phone**. ⚠ **The app half is separate: `apple/` needs a rebuild on the Mac** — this merge installed nothing on the iPad or the iPhone, and no `apply` or deploy touches them.
+
+⚠ **THE FOUR DECISIONS ARE STILL OPEN — the merge answered none of them:** Fill as the default · the **A0** nginx green light · the **E1** spike green light · **tvOS go/no-go**. The RESUME-HERE block below still holds their full detail; its "branch `feat/apple-clients`, in sync with origin" line is now historical and is annotated in place.
+
 ## ▶▶ RESUME HERE — SESSION HANDOFF (written 2026-09-14, for the next session)
 
-**Where:** `/workspace/projects/rkm-cinema`, branch **`feat/apple-clients`**, working tree clean and **in sync with origin**. ⚠ **The sandbox CAN reach his live stack** — `curl -sI http://rkm-hp.tail8d5e8.ts.net:8124/` answers — which is how the launch cost below was measured and how one plan experiment (E3) was answered without a round trip to him.
+**Where:** `/workspace/projects/rkm-cinema`, branch **`feat/apple-clients`** — ⚠ **HISTORICAL AS OF 2026-09-14: that branch was fast-forwarded into `main` (top block) and the checkout now sits on `main`** (at the time this was written it was clean and **in sync with origin**). ⚠ **The sandbox CAN reach his live stack** — `curl -sI http://rkm-hp.tail8d5e8.ts.net:8124/` answers — which is how the launch cost below was measured and how one plan experiment (E3) was answered without a round trip to him.
 
 **Landed this session — three commits, and only the second needs anything from him:**
 
@@ -4649,6 +4691,7 @@ Endpoint shapes NOT yet live-verified from the sandbox (oEmbed blocked; use `scr
   - **Structured logging** - JSON logs enable log aggregation and debugging
   - **Pydantic models for API** - Type safety, auto-documentation, validation
   - **Tests first** - Writing tests for plex ownership, radarr/sonarr routing, duplicates, trailers, status, e2e, errors caught design issues early
+
 
 
 

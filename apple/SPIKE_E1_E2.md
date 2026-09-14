@@ -58,17 +58,28 @@ reason instead of failing silently):
    web rebuild ever drops it (it lives in `frontend/public/`, which is git-ignored), copy any small
    `.mp4` to that path on the server, or drop one into `frontend/public/` and rebuild.
 
-## Reading the answer
+## Reading the answer — ONE command, and it gives the verdict
 
 ```bash
-# the probe's own report — every step, in order
-grep -E "\[spike\]" "$LOG"
+python3 tools/check_spike_e1_e2.py "$LOG"
+```
 
-# what the SERVER saw: a 206 here is the proof that seeking used a byte range
-grep "loopback request" "$LOG"
+It prints the evidence, then **PASS or FAIL**, and on a FAIL it says which piece is missing and what
+that means for the plan. It exists because the gate is a *specific set of lines*, not a feeling:
+`[spike]` lines are the **page's** account, `loopback request:`/`serving 206` lines are the
+**server's** — and two of them must agree, because `seek -> ok` with a `200` on the wire means the
+whole file was re-read, not a seek. The page cannot tell those apart. The server can.
 
-# E2
-grep "\[rkm-caps\]" "$LOG"
+⚠ Falsified before it was trusted: a passing log, a whole-file-`200` log, a never-reached-the-server
+log and a codec-error log — the last three all FAIL, with the right reason named.
+
+The raw greps, if you would rather read it yourself:
+
+```bash
+grep -E "\[spike\]"         "$LOG"   # the probe's own report, every step in order
+grep "loopback request"     "$LOG"   # what the SERVER saw — a 206 here proves seeking used a range
+grep "\[rkm-caps\]"         "$LOG"   # E2 — ⚠ note this rides the app's OWN page, so it needs the app
+                                     #      loaded, not just the spike sheet
 ```
 
 where `$LOG` is the app's log file (`apple/LOGGING.md` §7 — on a device, Xcode → Devices and

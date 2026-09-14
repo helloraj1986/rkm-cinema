@@ -17,7 +17,9 @@ cd ~/dev/rkm-cinema && git pull --ff-only && git checkout spike/offline-loopback
 ```
 ⚠ The extra arguments **now reach the app** (`mac-round.sh` used to drop them silently, so this exact command would have built and launched *without* the switch and looked like a spike that does nothing — fixed, and **verified by running the script** against stubbed Mac tooling: `launching with: -RKMOfflineSpike YES`, and a bare launch when there are none). ⚠ On a **device**, launch from Xcode instead and set the same switch as a scheme argument.
 
-**Then the answer is three greps** (full table of what each outcome means in `apple/SPIKE_E1_E2.md`):
+**⚠ THE GATE IS NOW A COMMAND — `python3 tools/check_spike_e1_e2.py "$LOG"`** prints the evidence and a **PASS/FAIL** verdict, and on a FAIL names the missing piece and what it means for the plan. It exists because the gate is a *specific set of lines*, and two of them come from different halves of the system that must agree: `[spike]` lines are the **page's** account, `loopback request:` / `serving 206` are the **server's**. ⚠ A page that says `seek -> ok` while the wire shows a whole-file **`200`** has re-read the file rather than seeked — the page cannot tell those apart, the server can, and the tool FAILS that case. **Falsified before it was trusted:** a passing log, a whole-file-`200` log, a never-reached log and a codec-error log all produce the right verdict (last three FAIL, with the right reason named — plus one bug found that way: the parser's own pattern missed the real `loopback: serving 206 …` line shape).
+
+The raw greps, if he would rather read it himself:
 ```bash
 grep -E "\[spike\]"        "$LOG"    # the probe's own report, every step in order
 grep "loopback request"    "$LOG"    # what the SERVER saw — a 206 here proves seeking used a range

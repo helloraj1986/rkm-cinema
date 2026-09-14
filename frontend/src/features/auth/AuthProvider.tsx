@@ -17,6 +17,11 @@
  * Signing in or out PURGES the React Query cache, so one person's rows cannot flash for the
  * next — the plan's §8.8. Switching profile does the same, for the same reason: Continue Watching
  * and resume rows belong to a person, not to the device.
+ *
+ * ⚠ Since A1 (`lib/query/persist.ts`) the cache also exists ON DISK, so every one of those events
+ * goes through `clearCacheForIdentityChange()` — memory AND storage, in one call. A purge that
+ * cleared only memory would leave one person's rows on a shared iPad for the next person's launch,
+ * which is an identity leak rather than a stale render. See `persist-wiring.test.ts`.
  */
 import {
   createContext,
@@ -30,6 +35,7 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 
 import { api, setStaleProfileHandler, setUnauthorizedHandler, type AuthUser, type ProfileUserShape } from "../../lib/api/client";
+import { adoptPersistedCache, clearCacheForIdentityChange, setPersistedCacheOwner } from "../../lib/query/persist";
 import type { AuthStatus } from "./lib";
 
 interface AuthContextValue {
@@ -91,12 +97,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(me.user);
     // Fall back to the owner when the server sent no profile row (an older api): that is the
     // server's own definition of "no profile chosen", so the two stay in agreement.
-    setProfile(me.profile?.id ? me.profile : me.user);
+    const who = me.profile?.id ? me.profile : me.user;
+    setProfile(who);
     setProfileSelected(Boolean(me.profile_selected));
+    // ⚠ THE ONE MOMENT THE DISK CACHE MAY BE ADOPTED (NATIVE_FEEL plan §3.2/A1). The server has just
+    // said who is watching, so a snapshot written FOR THIS PROFILE can be restored; a snapshot
+    // belonging to anybody else (or another server, or an older schema) is dropped on the spot.
+    // This is also the first moment app content can paint, so it costs nothing — `RequireSession`
+    // holds a skeleton until `status` leaves "loading" (see `lib/query/persist.ts`).
+    adoptPersistedCache(queryClient, who.id);
     // A fresh answer from the server about who is watching supersedes a stale-profile notice: if
     // `me()` can be read at all, the credential it authenticated with is not stale any more.
     clearStale();
-  }, [clearStale]);
+  }, [clearStale, queryClient]);
 
   useEffect(() => {
     let cancelled = false;
@@ -134,7 +147,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setProfileSelected(false);
       setStatus("signedOut");
       setEnforcementSeen(true);
-      queryClient.clear(); // the previous session's rows must not linger
+      clearCacheForIdentityChange(queryClient); // the previous session's rows must not linger — memory OR disk
     });
     return () => setUnauthorizedHandler(null);
   }, [queryClient]);
@@ -145,7 +158,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // is the fix: choosing a profile is what re-authenticates it). The picker shows `staleReason`.
   useEffect(() => {
     setStaleProfileHandler((detail: string) => {
-      queryClient.clear();
+      clearCacheForIdentityChange(queryClient);
       setProfileStale(true);
       setStaleReason(detail);
     });
@@ -155,7 +168,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signIn = useCallback(
     async (username: string, password: string) => {
       const result = await api.login(username, password);
-      queryClient.clear(); // a new session never inherits the old cache
+      clearCacheForIdentityChange(queryClient); // a new session never inherits the old cache, memory or disk
       setUser(result.user);
       // A fresh session has NO profile (the server stores none until POST /api/auth/profile), so
       // the honest next screen is the picker. Confirm against `me()` rather than assuming it —
@@ -177,7 +190,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const selectProfile = useCallback(
     async (userId: string, password: string) => {
       const result = await api.selectProfile(userId, password);
-      queryClient.clear(); // the next person's rows must not flash
+      clearCacheForIdentityChange(queryClient); // the next person's rows must not flash (memory or disk)
+      // ⚠ The purge above forgets who was watching, and this is the line that remembers the NEW
+      // person: without it nothing would be written for the rest of the session, and the next
+      // launch would restore nothing at all — a silent no-op, which is this repo's house failure.
+      setPersistedCacheOwner(result.profile.id);
       setProfile(result.profile);
       setProfileSelected(true);
       // Choosing a profile IS the remedy for a refused credential — the notice has done its job.
@@ -196,7 +213,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // The session is revoked server-side; a failed call must not trap the user in a
       // signed-in UI. Clearing locally is the honest fallback.
     }
-    queryClient.clear();
+    clearCacheForIdentityChange(queryClient);
     setUser(null);
     setProfile(null);
     setProfileSelected(false);

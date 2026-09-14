@@ -211,6 +211,29 @@ network call:
 * Data-version stamp: cache `{schemaVersion, serverId}`; a mismatch (new server address, contract
   bump) drops the cache instead of rendering another server's library.
 
+**✅ BUILT 2026-09-14 (phase A1, branch `perf/persistent-query-cache`) — with four decisions the plan
+left open, each of which is worth knowing before touching the code:**
+
+* **localStorage, not IndexedDB.** A synchronous read is what "paint before the network" needs (an
+  async adapter's restore lands a tick late), it is not purgeable by iOS under storage pressure, and
+  it keeps the app at ZERO new dependencies. The whole persisted set is tens of kB on his stack
+  (largest payload: `/api/library/items`, 60.1 KB); a byte cap drops an over-sized snapshot rather
+  than writing a partial one. `src/lib/query/persist.ts` states the trade-off and the migration path.
+* ⚠ **The restore is gated on the PROFILE, and that is free** — measured, not assumed: `RequireSession`
+  holds a skeleton until `me()` answers, so no app content can paint before then anyway. `AuthProvider`
+  adopts the snapshot at that moment, and only when the snapshot's owner matches. A shared iPad cannot
+  flash one person's rows at another.
+* **`staleTime` is deliberately NOT raised** (the bullet above proposed it). Disk-first paint removes
+  the reason: restored entries keep `dataUpdatedAt`, so `staleTime` — not the snapshot's age — bounds
+  freshness, and a longer one would only delay correcting a resume point. `gcTime` IS raised to the
+  snapshot's own lifetime, or a restored entry is garbage-collected out from under the restore.
+* ⚠ **The launch win depends on `RequireSession`.** Its gate is what keeps the library queries from
+  mounting (and fetching) before the restore. Measured: remove the guard in the harness and a cold
+  launch makes **5 library calls** instead of 0 — `tools/check_query_cache.py` fails that way.
+* **Gates:** `vitest 381/381` (30 new) · `tsc --noEmit` · `npm run build` ·
+  `python3 tools/check_query_cache.py` (3 scenarios) — each falsified by reverting the rule it covers
+  (`/root/falsify_a1.py`, `/root/falsify_check_cache.py`).
+
 **Effect:** §1's "usable home ≤ 400 ms" becomes reachable, because the first paint no longer waits for
 Jellyfin at all.
 
@@ -423,7 +446,7 @@ shippable.
 | Phase | Work | Gate | Est. |
 |---|---|---|---|
 | **A0** | A1 cache headers + a `curl` assertion added to `tools/` | Second launch: **no** JS/CSS request in the log; `curl -I` shows `immutable` on `/assets/` and `no-cache` on `/` | 0.5 d |
-| **A1** | A2 persistent query cache + sign-out purge + schema stamp | `vitest` green incl. a "persister cannot survive a profile switch" test; cold launch paints rows with the network blocked in the harness | 1 d |
+| **A1** | A2 persistent query cache + sign-out purge + schema stamp | `vitest` green incl. a "persister cannot survive a profile switch" test; cold launch paints rows with the DATA routes blocked in the harness — ⚠ **the session call is not blocked**: `RequireSession` holds the skeleton until `me()` answers, and that guard is what makes the zero-request result real (drop it and the same launch makes 5 calls) | 1 d |
 | **A2** | A3 `/api/library/home` + memo, contract + route decision | `pytest` green; `check_deployed.py` sees the new route; launch request count ≤ 2 | 0.5 d |
 | **A3** | A5 launch-budget instrument + gate | Baseline printed in the log; gate fails if a warm launch fetches `/assets/` | 0.5 d |
 | **B0** | **E1 + E2 spike build** (throwaway, not merged) | A downloaded file plays from loopback, with seeking, inside the shell — or the design changes before anything else is written | 0.5 d |

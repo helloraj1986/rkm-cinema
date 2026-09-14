@@ -5,6 +5,14 @@
 #   ./apple/scripts/mac-round.sh tvos       # pull · (generate) · build tvOS
 #   ./apple/scripts/mac-round.sh ios --sim  # ...then install+launch on a simulator
 #
+# ⚠ ANY FURTHER ARGUMENTS ARE PASSED TO THE APP AT LAUNCH (simulator only), so a spike or a debug
+# switch can be turned on for one round without editing a scheme:
+#
+#   ./apple/scripts/mac-round.sh ios --sim -RKMOfflineSpike YES
+#
+# A DEVICE build is launched from Xcode instead, where the same switch is set as a scheme argument
+# (Product → Scheme → Edit Scheme → Run → Arguments → *Arguments Passed On Launch*).
+#
 # Works with BOTH project arrangements (apple/WORKFLOW.md §2):
 #   - hand-made project committed in the repo (the default) → no generation step
 #   - XcodeGen                                            → generation runs if project.yml exists
@@ -21,10 +29,19 @@ cd "$REPO_ROOT"
 TARGET="${1:-}"
 WANT_SIM="${2:-}"
 
+# ⚠ Shift by hand rather than `shift 2`: with fewer than two arguments that FAILS under `set -e`, and
+# an empty array expansion (`"${EXTRA[@]}"`) is an error in bash 3.2 — which is what /bin/bash is on
+# macOS. So the count is carried explicitly and the expansion is always guarded.
+EXTRA=()
+if [ $# -gt 2 ]; then
+  shift 2
+  EXTRA=("$@")
+fi
+
 case "$TARGET" in
   ios)  PROJ="apple/ios/RKMCinema.xcodeproj";    SCHEME="RKMCinema";    PLATFORM="iOS";     SIM_DEVICE="iPhone 16"; BUNDLE_SUFFIX="ios" ;;
   tvos) PROJ="apple/tvos/RKMCinemaTV.xcodeproj"; SCHEME="RKMCinemaTV";  PLATFORM="tvOS";    SIM_DEVICE="Apple TV";   BUNDLE_SUFFIX="tvos" ;;
-  *) echo "usage: $0 ios|tvos [--sim]" >&2; exit 2 ;;
+  *) echo "usage: $0 ios|tvos [--sim] [app arguments…]" >&2; exit 2 ;;
 esac
 
 SPEC_DIR="$(dirname "$PROJ")"
@@ -79,13 +96,22 @@ BUILD_LOG="apple/logs/build-${TARGET}-${STAMP}.log"
 
 if [ "$WANT_SIM" = "--sim" ]; then
   # ⚠ A destination that names a device this Xcode does not have fails the BUILD, not just the
-  # install+launch step, and the error says nothing about simulators. Check first;
-  # `generic/platform=iOS Simulator` always resolves.
+  # install+launch step, and the error says nothing about simulators.
+  SIM_MATCH=""
   if xcrun simctl list devices available 2>/dev/null | grep -q "$SIM_DEVICE"; then
-    DEST="platform=${PLATFORM} Simulator,name=${SIM_DEVICE}"
+    SIM_MATCH="$SIM_DEVICE"
   else
-    echo "note: no simulator named '$SIM_DEVICE' on this Mac — building for any iOS Simulator."
-    echo "      (install+launch will be skipped; Xcode > Window > Devices to add one.)"
+    # ⚠ Fall back to the first AVAILABLE iPhone rather than giving up: "the build succeeded but
+    # nothing launched" is indistinguishable from "the change does not work", and that is exactly how
+    # a stale simulator list would read (the committed default is iPhone 16; his Mac has 17 Pro).
+    SIM_MATCH="$(xcrun simctl list devices available 2>/dev/null | grep -E 'iPhone' | head -1 | sed -E 's/^[[:space:]]+//; s/ \(.*//')"
+    echo "note: no simulator named '$SIM_DEVICE' — using '${SIM_MATCH:-none}' instead."
+  fi
+  if [ -n "$SIM_MATCH" ]; then
+    DEST="platform=${PLATFORM} Simulator,name=${SIM_MATCH}"
+  else
+    echo "note: no iPhone-class simulator available — building for any iOS Simulator, and the"
+    echo "      install+launch step will be skipped. Xcode > Window > Devices to add one."
     DEST="generic/platform=${PLATFORM} Simulator"
   fi
 else
@@ -134,16 +160,24 @@ tail -25 "$BUILD_LOG"
 # ---------------------------------------------------------------- 5. optional run
 if [ $RC -eq 0 ] && [ "$WANT_SIM" = "--sim" ]; then
   say "5. installing + launching on the simulator"
-  DEV_ID="$(xcrun simctl list devices available | grep -m1 "$SIM_DEVICE" | grep -oE '[0-9A-F-]{36}' || true)"
+  DEV_ID="$(xcrun simctl list devices available | grep -m1 "${SIM_MATCH:-$SIM_DEVICE}" | grep -oE '[0-9A-F-]{36}' || true)"
   if [ -z "$DEV_ID" ]; then
-    echo "No available simulator matching '$SIM_DEVICE' — open Xcode > Window > Devices and add one." >&2
+    echo "No available simulator matching '${SIM_MATCH:-$SIM_DEVICE}' — open Xcode > Window > Devices and add one." >&2
   else
     xcrun simctl boot "$DEV_ID" 2>/dev/null || true
     open -a Simulator
     APP="$(find ~/Library/Developer/Xcode/DerivedData -name "${SCHEME}.app" -path "*${PLATFORM}*" -newermt '-10 minutes' 2>/dev/null | head -1)"
     if [ -n "$APP" ]; then
       xcrun simctl install "$DEV_ID" "$APP"
-      xcrun simctl launch --console-pty "$DEV_ID" "com.helloraj1986.rkmcinema.${BUNDLE_SUFFIX}"
+      # ⚠ The pass-through, and what it is for: a spike or a debug switch is enabled for ONE round
+      # (`-RKMOfflineSpike YES`) instead of being committed into a scheme. Printed so the log says
+      # which arguments the run actually had.
+      if [ ${#EXTRA[@]} -gt 0 ]; then
+        echo "launching with: ${EXTRA[*]}"
+        xcrun simctl launch --console-pty "$DEV_ID" "com.helloraj1986.rkmcinema.${BUNDLE_SUFFIX}" "${EXTRA[@]}"
+      else
+        xcrun simctl launch --console-pty "$DEV_ID" "com.helloraj1986.rkmcinema.${BUNDLE_SUFFIX}"
+      fi
     else
       echo "Built .app not found in DerivedData — open the project in Xcode and run it there." >&2
     fi

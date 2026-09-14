@@ -1,3 +1,34 @@
+## ▶ 🧪 **B0 SPIKE BUILT — E1 (loopback media) + E2 (service worker) ARE READY FOR ONE MAC ROUND** (2026-09-14, latest) · branch **`spike/offline-loopback`** (cut from the A1 tip `49cb11c`) · **⚠⚠ THROWAWAY — NOT TO BE MERGED** · **NEW** `apple/ios/RKMCinema/Spike/{LoopbackServer,SpikeSchemeHandler,OfflineSpike}.swift`, **NEW** `apple/SPIKE_E1_E2.md` · changed: `AppRootView.swift` (a sheet, opt-in), `WebInstrumentation.swift` (the E2 probe), `apple/scripts/mac-round.sh` (argument pass-through — ⚠ **also cherry-picked to `perf/persistent-query-cache`, because the script fix is worth keeping even though the spike is not**) · ⚠ **no web, no backend, no nginx — and it installs nothing: only a Mac build runs it**
+
+**He chose this alongside A1** (*"a & c"*). It exists because the whole offline-downloads design hangs on **one question only a device can answer**: *does media play from a loopback HTTP server inside this WKWebView, with seeking?* (`NATIVE_FEEL_AND_OFFLINE_PLAN.md` §5, risk #1).
+
+**WHAT IT DOES — and why each piece is shaped that way:**
+* **`LoopbackServer`** — HTTP/1.1 on **127.0.0.1**, OS-assigned port, **loopback interface only**, with real `Range` → **206** and `HEAD`. ⚠ The body is sent **recursively, not with a semaphore**: `connection.send`'s completion is delivered on the connection's own serial queue, which is the queue the code runs on, so blocking for it is a **deadlock** — and it would have read as "the probe hangs".
+* **The probe page is served BY the loopback server**, so page and media share one origin — the architecture §4.4–4.6 proposes, and the reason a `file://` page was rejected in §4.1 (its subresources are cross-origin and blocked).
+* **A `<video>` inside a real `WKWebView`** carrying the app's own configuration (`allowsInlineMediaPlayback`, `isElementFullscreenEnabled`, the real instrumentation + bridge): metadata → **seek to the midpoint** → play. ⚠ **The seek is the real question** — a file can "play" over a bad transport and still be unable to seek, and seeking is what `Range`/206 exists for.
+* **Then the same file through `rkm-offline://`** (`SpikeSchemeHandler`) — the answer the plan *expects* to be "it fails", measured rather than assumed. It serves **without `Range` on purpose**: a handler that faked ranges would turn a seeking failure into a silent whole-file re-read.
+* **E2** rides `WebInstrumentation` on the app's **own** page: `[rkm-caps] sw=… fullscreen=… quota=… persistent=…`. If `sw=false`, **A0's cache headers ARE the offline-shell story** and no service-worker work gets planned.
+* ⚠ **No binary is committed**: the probe file is downloaded from **his own server** (`GET /harness-sample.mp4` — measured 2026-09-14: 200, 1,128,375 B) into `Application Support/Spike/`. `Caches/` is avoided deliberately — iOS may purge it, and the whole point of that directory (and of the real feature) is that a file the user asked for does not vanish.
+
+**⚠ HIS STEP — ONE COMMAND ON THE MAC, and it is the only one:**
+```bash
+cd ~/dev/rkm-cinema && git pull --ff-only && git checkout spike/offline-loopback
+./apple/scripts/mac-round.sh ios --sim -RKMOfflineSpike YES
+```
+⚠ The extra arguments **now reach the app** (`mac-round.sh` used to drop them silently, so this exact command would have built and launched *without* the switch and looked like a spike that does nothing — fixed, and **verified by running the script** against stubbed Mac tooling: `launching with: -RKMOfflineSpike YES`, and a bare launch when there are none). ⚠ On a **device**, launch from Xcode instead and set the same switch as a scheme argument.
+
+**Then the answer is three greps** (full table of what each outcome means in `apple/SPIKE_E1_E2.md`):
+```bash
+grep -E "\[spike\]"        "$LOG"    # the probe's own report, every step in order
+grep "loopback request"    "$LOG"    # what the SERVER saw — a 206 here proves seeking used a range
+grep "\[rkm-caps\]"        "$LOG"    # E2
+```
+⚠ **Two preconditions, and the spike screen names the reason instead of failing silently:** a **stored server address** (the probe file comes from his own server) and the file still being served there. It lives in `frontend/public/`, which is **git-ignored** — if a clean web rebuild ever drops it, put any small `.mp4` at that path and relaunch.
+
+**VERIFIED HERE:** `swiftc -parse` on every changed file · `check-imports.py` clean · both injected scripts pass `node --check` · and **`LoopbackServer.parseRange` was lifted out verbatim and RUN on Linux** (Swift 6.1) against 12 real `Range` headers — suffix ranges, clamping, reversed, garbage, single byte — **12/12, and falsified by removing the clamp** (the clamped-end case fails, exit 1). ⚠ **Everything else is Mac-unverified: not one line of the spike has been compiled, the `NWListener` has never started, and no media has played.** `-parse` proves syntax only — this repo has already shipped an "obviously fine" file that died on an ambiguous `.zero`, which `-parse` cannot see.
+
+⚠ **WHEN THE ANSWER COMES BACK, THE PLAN CHANGES — that is what the spike is for.** If loopback works with seeking, §4.4–4.6 stand and `B1` starts. If neither transport plays media, offline playback goes to **AVPlayer natively** (a small SwiftUI player outside the web UI, driven by the same manifest) — a real but larger piece of work, and the reason nothing in Workstream B gets written first.
+
 ## ▶ ✅ **A1 BUILT — THE HOME SCREEN PAINTS FROM DISK NOW: a cold launch that used to make six API calls makes ZERO library calls** (2026-09-14, latest) · branch **`perf/persistent-query-cache`** (cut from the A0 tip `80339fc`; tip `d3e5704` + this record) · **NEW** `frontend/src/lib/query/persist.ts` + `policy.ts` (+ `persist.test.ts`, `policy.test.ts`, `persist-wiring.test.ts`), **NEW** `frontend/harness/cache-frame.{html,tsx}`, **NEW** `tools/check_query_cache.py` · changed: `frontend/src/main.tsx`, `frontend/src/features/auth/AuthProvider.tsx` · corrected: **`docs/NATIVE_FEEL_AND_OFFLINE_PLAN.md` §3.2 + the §6 A1 gate** · ⚠ **frontend only, NO backend, no nginx — but it is a WEB IMAGE rebuild, so it needs `apply`**
 
 **He asked, verbatim:** *"continue with rkm-cinema from progress.md"* → asked which item it should carry, he chose **A1 (persistent query cache)** and **the B0 spike** (the spike is the block below, on its own throwaway branch).

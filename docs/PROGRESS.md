@@ -1,3 +1,34 @@
+## ▶▶ RESUME HERE — SESSION HANDOFF (written 2026-09-14, for the next session)
+
+**Where:** `/workspace/projects/rkm-cinema`, branch **`feat/apple-clients`**, working tree clean and **in sync with origin**. ⚠ **The sandbox CAN reach his live stack** — `curl -sI http://rkm-hp.tail8d5e8.ts.net:8124/` answers — which is how the launch cost below was measured and how one plan experiment (E3) was answered without a round trip to him.
+
+**Landed this session — three commits, and only the second needs anything from him:**
+
+| Commit | What it is | How he gets it |
+|---|---|---|
+| `8e1d9a8` | **Picture → Fit/Fill**: `PlayerFit` as one CSS class (default `Fit`), pinned by a 5th `shell-contract.test.ts` test; the bars he asked about are the film's 16:9 in a 2.174:1 frame, measured off his screenshot | ✅ **ALREADY LIVE** — the served `/assets/index-9K9pHiDW.js` is byte-identical (SHA-256) to the repo's own build and contains `object-cover`. **A page reload on the phone is enough: no `apply`, no rebuild.** |
+| `3daf2fc` | **his own** two diagnostic lines (`[rkm] player fullscreen plan=… fit=… viewport=WxH`, `[rkm] video WxH in VWxH`) — they answer *"is it our transport or iOS's?"* by grep instead of by screenshot | `.\rkm-cinema.ps1 apply` + reload |
+| `33899b4` | **`docs/NATIVE_FEEL_AND_OFFLINE_PLAN.md`** — native feel + offline downloads, **plan only, no code** | read it in the repo |
+
+**⚠ FOUR DECISIONS WAITING ON HIM — ask, never assume:**
+1. **Fill as the default?** The new Picture setting ships as `Fit` (nothing cropped); `Fill` costs ~9% off the top and bottom of a 16:9 film on his phone.
+2. **A0 green light** (plan §3.1): `gzip on` + `immutable` on `/assets/` + `no-cache` on `/` in `nginx/default.conf`. One file, no rebuild — measured: **1.13 MB re-downloaded on every launch → ~340 kB downloaded once**.
+3. **E1 spike green light** (plan §4.1/§5): **does media play from a loopback HTTP server inside WKWebView, with seeking?** Every offline design choice hangs off that answer. ⚠ Not `WKURLSchemeHandler` — WebKit's media stack does not route media through app scheme handlers. Of E1–E5, **only E3 has been run**.
+4. **tvOS go/no-go** — standing since Phase 0's own instruction: *"Phase 0 only — stop and report before Phase 1."*
+
+**NEXT ACTION — small either way, and only once one of those answers lands:**
+* **A0:** edit `nginx/default.conf` per plan §3.1 → verify with the two `curl -sI` calls in §3.1, then a **second launch on the phone** whose request log must show **no `/assets/` request at all**; add the assertion to `tools/` in the style of `tools/verify_nginx_artwork_cache.py`.
+* **Spike:** build E1 on a throwaway branch per plan §5, on top of the loopback sketch in §4.1.
+
+**⚠ ENVIRONMENT FACTS THAT COST TIME — do not re-learn them:**
+* `/root/push_origin.sh` does **not** survive a sandbox restart. Re-create it from the `rkm-cinema` skill (`scripts/push_origin.sh`), then `bash /root/push_origin.sh feat/apple-clients`. Token-in-URL, because `/tmp` is noexec so `GIT_ASKPASS` cannot exec from there; the script reads the remote back, so "pushed" is verified rather than assumed.
+* ⚠ **This tree is shared with him.** `3daf2fc` was authored by *him* while this session was writing the plan. Always `git log -1 --format=%an` and `git status` before committing, and **never** `git add -A` blind.
+* A frontend change reaches the phone through `.\rkm-cinema.ps1 apply` on the Windows box — unless the live UI already matches the repo build, which is checkable here (fetch the served `/assets/*.js` and compare SHA-256 with `frontend/dist/`).
+* Sandbox has **no Xcode and no iOS SDK**: Swift is written and reviewed here, **building and running on the Mac is his step** (`apple/WORKFLOW.md` §2, `APPLE_CLIENTS_PLAN.md` §7).
+* Sandbox tools that work for this repo: `gzip`/`curl` available, `nginx` binary present, **no docker**.
+
+**Still open from Phase 0 (unchanged — the full table is below):** *sign-in → playback → sign-out on a device*, the `LOGGING.md` §9 file checks, the overlay's corner gesture, and the **landscape left/right safe-area insets** (a recorded limitation, not an oversight).
+
 ## ◆ PLAN, NOTHING BUILT — **NATIVE FEEL + OFFLINE DOWNLOADS**: `docs/NATIVE_FEEL_AND_OFFLINE_PLAN.md` (2026-09-14)
 
 **His ask, verbatim:** *"i want to implement something that would make the apps on ios and ipados very snappy… right now every time i open the app the posters are being downloaded… can we implement some kind of caching so that the user would feel like a native app experience… second off line downloads feature… i just need idea and detailed plan for now"*. **No code was changed for this** — plan only, awaiting his go-ahead.
@@ -52,6 +83,7 @@
 |---|---|
 | Shared package (`apple/Shared/`) + iOS shell (`apple/ios/`) | ✅ built, run, and **used on real hardware** |
 | **On the iPad (iPadOS 27)** | ✅ installed, signed in, browsing the live cinema UI |
+| **On the iPhone 17 Pro (iOS 27)** (2026-09-14) | ✅ installed, signed in, **a film played full screen** — the screenshot is what the Fill/Fit work came from. ⚠ **Whether that full screen was OUR transport or iOS's is still unanswered**, and it is exactly what `3daf2fc`'s `[rkm] player fullscreen plan=…` line now answers by grep (`grep -E "rkm\] (player|video)" "$LOG"`). The device items below were tracked against the iPad and should be **re-run on the phone**, which is now the primary handset. |
 | `LOGGING.md` §9 — the join, the redaction gate, one file with every request | ✅ **demonstrated on real output** (block below) |
 | Deployment target | ✅ `16.4` (was Xcode's own `26.5`) — installable on the iPad, verified |
 | **Playback on the iPad** (the page's own transport, *not* the iOS player) | ⏳ proven on the simulator; **not yet on the device** |

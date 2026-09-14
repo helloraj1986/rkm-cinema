@@ -9,6 +9,11 @@ struct AppRootView: View {
 
     @EnvironmentObject private var app: AppModel
 
+    /// ⚠ **SPIKE ONLY** (`Spike/OfflineSpike.swift`, E1/E2 of `docs/NATIVE_FEEL_AND_OFFLINE_PLAN.md`).
+    /// The sheet opens when the app is launched with `-RKMOfflineSpike YES`; without that argument
+    /// this view is byte-for-byte the app it was, which is the point of an opt-in spike.
+    @State private var spikeVisible = OfflineSpike.startsAtLaunch
+
     var body: some View {
         ZStack {
             content
@@ -43,6 +48,11 @@ struct AppRootView: View {
                 .offset(y: HUDCornerToggle.upwardShift)
         }
         .background(ShakeToToggle { app.toggleHUD() })
+        .sheet(isPresented: $spikeVisible) {
+            // The spike, not the app: its own web view, its own loopback server, and every finding
+            // logged to `rkm-ios.log`. See `apple/SPIKE_E1_E2.md`.
+            OfflineSpikeView(address: app.store.address)
+        }
     }
 
     @ViewBuilder

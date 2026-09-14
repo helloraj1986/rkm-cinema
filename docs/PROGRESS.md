@@ -1,4 +1,28 @@
-## ▶ ✅ **A0 BUILT — THE SHELL IS COMPRESSED AND CACHED NOW: 1,130,022 B re-fetched on every launch becomes 336,414 B fetched once** (2026-09-14, latest) · branch **`perf/nginx-asset-caching`** (cut from `main` `23d97ec`) · changed: **`nginx/default.conf`** (the only production file) · **NEW** `tools/verify_nginx_shell_cache.py` · docs: `docs/NATIVE_FEEL_AND_OFFLINE_PLAN.md` §3.1 (status + a corrected premise) · ⚠ **no frontend change, no backend change, no app change — but it is a WEB IMAGE rebuild, so it needs `apply`**
+## ▶ ✅ **A0 VERIFIED ON THE LIVE CONTAINER — he ran `apply`, and the headers are now the new policy; the deployed bundle is byte-identical to the repo's own build** (2026-09-14, latest) · branch **`perf/nginx-asset-caching`** (tip `3be3473` + this record) · **no code changed by this block — it is the measurement the block below said it could not make**
+
+**He said, verbatim:** *"i have run the application by doing rkm-cinema apply"*. Everything below is `curl` against `http://rkm-hp.tail8d5e8.ts.net:8124/` **after** that rebuild, which is what turns A0's sandbox result into a fact about the stack. ⚠ **The containers run `nginx:alpine` 1.31.3**; the sandbox could only exercise its own `nginx` 1.26.3, and that gap is now closed by measurement rather than by inference.
+
+| Probe | Live result | Reading |
+|---|---|---|
+| `/` | `Cache-Control: no-cache`, `ETag: "6aa789d2-657"` | ✅ was `no-store, no-cache, must-revalidate, max-age=0` |
+| `/` re-sent with `If-None-Match` | **`304 Not Modified`** | ✅ the document is **storable AND still provably fresh** — a 200-byte revalidation, not a 1,623-byte body |
+| `/assets/index-pfOdDNny.js`, `Accept-Encoding: identity` | `Cache-Control: public, max-age=31536000, immutable` + `Vary: Accept-Encoding` | ✅ one year, immutable |
+| `/assets/index-pfOdDNny.js`, `Accept-Encoding: gzip` | `Content-Encoding: gzip` — **331,024 B on the wire for a 1,074,498 B file (3.25×)** | ✅ the change's whole point, measured |
+| `/assets/index-BbzJcPm4.css`, gzip / identity | **10,488 B vs 55,854 B (5.33×)** | ✅ |
+| `/api/health` (GET 200) | `Cache-Control: no-store` | ✅ the api's own policy survived server-level `gzip` — this was the regression worth checking |
+| `/openapi.json` | `Cache-Control: no-store`, `Content-Type: application/json` | ✅ the exact-match rule `tools/check_deployed.py` depends on is intact |
+
+⚠ **AND THE DEPLOY IS THE MERGED SOURCE, PROVEN BY HASH RATHER THAN ASSUMED:** the served bundle **== `frontend/dist/assets/index-pfOdDNny.js`**, `sha256 9e6c4b1a…a897` on both sides, and it **contains `[rkm] player fullscreen plan=`** — so `3daf2fc`'s diagnostic lines, which the last measurement said were NOT live, **are live now**. His tree is on the branch, so this one `apply` carried the whole merge plus A0 at once.
+
+**⚠ WHAT THIS DOES *NOT* PROVE — the gate the plan actually named.** The plan's gate for A0 is behavioural: **a second launch makes no `/assets/` request at all.** Headers and a 304 show the policy is *delivered*; only a browser on his phone shows it being *used*. ⚠ **A hard reload (⇧⌘R / Ctrl-Shift-R) BYPASSES the cache and would make a correct deploy look broken — use a normal reload.** On the phone that means the shell's own request log; on the desktop, DevTools → Network → two reloads → the `.js`/`.css` rows must show **0 B transferred**.
+
+⚠ **Also not verified, and deliberately not attempted: the authenticated half of the policy** (`/api/` JSON gzipped, artwork still cacheable, media still uncompressed on a real stream). The api answers **401** anonymously, so checking them means using his credentials — ⚠ **not a thing this agent does unprompted.** They are covered by `tools/verify_nginx_shell_cache.py` (13/13) against the real config, which is the right place for them; the gate pins the "media is never gzipped" property explicitly, including through the proxy.
+
+⚠ **One unchanged, pre-existing detail noticed while probing — not a regression:** nginx's `add_header` applies to 200/204/301/302/304 by default, so a **401** from `/api/` carries no `Cache-Control` at all (it did before this change too, and per HTTP a 401 is not cacheable without explicit headers). Recorded so nobody reads it as something A0 broke.
+
+⚠ **STILL OPEN, unchanged:** `main` has not moved for A0 (still `23d97ec`) — he asks for the merge; the second-launch check above; Fill-as-default; the **E1** spike; **tvOS go/no-go**; and the Phase 0 device list.
+
+## ▶ ✅ **A0 BUILT — THE SHELL IS COMPRESSED AND CACHED NOW: 1,130,022 B re-fetched on every launch becomes 336,414 B fetched once** (2026-09-14, latest) · branch **`perf/nginx-asset-caching`** (cut from `main` `23d97ec`) · changed: **`nginx/default.conf`** (the only production file) · **NEW** `tools/verify_nginx_shell_cache.py` · docs: `docs/NATIVE_FEEL_AND_OFFLINE_PLAN.md` §3.1 (status + a corrected premise) · ⚠ **no frontend change, no backend change, no app change — but it is a WEB IMAGE rebuild, so it needs `apply`** → ✅ **VERIFIED ON THE LIVE CONTAINER 2026-09-14: he ran `apply` and the headers are the new policy (measurements in the block above). The heading's own "what is NOT verified" paragraph about the container is superseded; the second-launch request-log gate is not.**
 
 **He asked, verbatim:** *"for rkm-cinema app merge the current branch to main and then pickup the next stuff from progress.md by creating a new branch"* — and then, asked which of the four open items that branch should carry, he chose **A0**. So this block is the first half of that instruction landing as work.
 
@@ -4743,6 +4767,7 @@ Endpoint shapes NOT yet live-verified from the sandbox (oEmbed blocked; use `scr
   - **Structured logging** - JSON logs enable log aggregation and debugging
   - **Pydantic models for API** - Type safety, auto-documentation, validation
   - **Tests first** - Writing tests for plex ownership, radarr/sonarr routing, duplicates, trailers, status, e2e, errors caught design issues early
+
 
 
 

@@ -1,3 +1,20 @@
+## ◆ APPLE CLIENTS — PHASE 0, WHERE IT STANDS (read this first · 2026-09-14)
+
+| | |
+|---|---|
+| Shared package (`apple/Shared/`) + iOS shell (`apple/ios/`) | ✅ built, run, and **used on real hardware** |
+| **On the iPad (iPadOS 27)** | ✅ installed, signed in, browsing the live cinema UI |
+| `LOGGING.md` §9 — the join, the redaction gate, one file with every request | ✅ **demonstrated on real output** (block below) |
+| Deployment target | ✅ `16.4` (was Xcode's own `26.5`) — installable on the iPad, verified |
+| **Playback on the iPad** (the page's own transport, *not* the iOS player) | ⏳ proven on the simulator; **not yet on the device** |
+| Sign out → back to the app's own state, on the iPad | ⏳ |
+| The overlay's corner gesture (3 taps / press-and-hold) | ⏳ unverified since its third rewrite — ⚠ **nothing depends on it**: a Debug build opens with the overlay already on |
+| **Phase 1 (tvOS)** | ⛔ not started — **awaits his go-ahead**, per his own instruction *"Phase 0 only — stop and report before Phase 1"* |
+
+⚠ **The plan's own rule for what comes next:** *"Then decide on tvOS on the evidence of Phase 0. If the shell on the iPad satisfies the household, the TV app is a nice-to-have. If it is a need, build the lean SwiftUI client against the frozen contract."* — a decision only he can make, and the fork this project is standing on.
+
+---
+
 ## ▶ 📱 **UI FIX — HIS iPAD REPORT ("only two can be seen at the bottom"): the bar's tab count is MEASURED now, and a library can no longer be dropped** (2026-09-14, latest) · branch **`feat/apple-clients`** · frontend only: `src/app/layout/lib.ts` (+ test), `MobileNav.tsx`, `Sidebar.tsx`, `features/library/lib.ts` (+ test), `harness/nav-frame.tsx`, `tools/check_nav_access.py` · spec **§59 revised** · `docs/MEDIA_LIBRARIES_PLAN.md` Phase 5 · ⚠ **no backend change, no contract change** · ⚠ **he gets it by running `.\rkm-cinema.ps1 apply` on the Windows box and RELOADING the page on the iPad** — the shell loads the live UI, so there is no app rebuild and no store release
 
 **His report, verbatim:** *"even though raj profile have access to all three libraries..only two can be seen at the bottom...the ui needs a bit of work to make sure all the libraries are accessible.. specially for smaller devices like ipad and ios"*. The screenshot he sent shows the bar as `Home · Movies Kids · Movies · More`.

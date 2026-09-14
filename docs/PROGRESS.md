@@ -1,3 +1,46 @@
+## ▶ ✅ **A1 BUILT — THE HOME SCREEN PAINTS FROM DISK NOW: a cold launch that used to make six API calls makes ZERO library calls** (2026-09-14, latest) · branch **`perf/persistent-query-cache`** (cut from the A0 tip `80339fc`; tip `d3e5704` + this record) · **NEW** `frontend/src/lib/query/persist.ts` + `policy.ts` (+ `persist.test.ts`, `policy.test.ts`, `persist-wiring.test.ts`), **NEW** `frontend/harness/cache-frame.{html,tsx}`, **NEW** `tools/check_query_cache.py` · changed: `frontend/src/main.tsx`, `frontend/src/features/auth/AuthProvider.tsx` · corrected: **`docs/NATIVE_FEEL_AND_OFFLINE_PLAN.md` §3.2 + the §6 A1 gate** · ⚠ **frontend only, NO backend, no nginx — but it is a WEB IMAGE rebuild, so it needs `apply`**
+
+**He asked, verbatim:** *"continue with rkm-cinema from progress.md"* → asked which item it should carry, he chose **A1 (persistent query cache)** and **the B0 spike** (the spike is the block below, on its own throwaway branch).
+
+**THE MEASUREMENT — a real cold reload in a real browser, with every LIBRARY ROUTE DEAD** (`tools/check_query_cache.py`, 3 scenarios):
+
+| Probe | Before A1 | After A1 |
+|---|---|---|
+| library calls on a cold launch | `/library/items`, `/library`, `recently-watched`, `continue-watching`, `/folders` — **5 calls**, each ~1 s on his stack | **0 calls**, and the hero/rows are on screen from the previous session's data |
+| the rows | loading skeletons, then network | painted from disk before anything is asked, then revalidated |
+| the snapshot | — | `localStorage["rkm.query-cache.v1"]`: **all 5 library queries, `success`, with their original `dataUpdatedAt`** |
+
+**⚠⚠ THE FINDING THAT MATTERS MORE THAN THE WIN — THE LAUNCH WIN DEPENDS ON `RequireSession`, AND THAT IS NOW PINNED.** My first harness mounted `LibraryHomeView` under a plain `<MemoryRouter>`, with no route guard: the home view's queries mounted during the FIRST render — before `me()` answered — and fired at a dead network. The rows still painted (from the restore), so A1 "passed" while measuring the wrong thing. The real app holds a **skeleton** until the session is known, so the restored rows are in the cache before the first observer exists and nothing is fetched. Falsified: remove the guard from the harness and a cold launch makes **5 library calls** — `check_query_cache.py` goes red with exactly that list. **A future change that renders library views outside the guard silently deletes this whole phase's benefit, and this is where it will be caught.**
+
+**THE FOUR DECISIONS, EACH WITH THE REASON — he can veto any of them:**
+1. **localStorage, not IndexedDB.** A synchronous read is what "paint before the network" needs (an async restore lands a tick late), iOS cannot purge it under storage pressure, and it adds **zero dependencies** to an app that has six. The whole set is tens of kB (largest payload `/api/library/items`, 60.1 KB); a **1.5 MB cap** drops an over-sized snapshot rather than writing a partial one (a half-cache looks like a server fault). Migration path if a library ever outgrows it: one `CacheStorage` implementation, nothing else.
+2. **The restore is gated on the PROFILE — and it is free, MEASURED not assumed.** `RequireSession` holds a skeleton until `me()` answers, so no app content can paint before then; `AuthProvider` adopts the snapshot at that moment and **only when the snapshot's owner is the person now watching**. A shared iPad cannot flash one member's rows at another. Restoring at module scope would have bought exactly nothing and lost that.
+3. **`staleTime` deliberately NOT raised** (the plan's §3.2 proposed it) — **the plan has been corrected**. Disk-first paint removes the reason: restored entries keep `dataUpdatedAt`, so `staleTime` — not the snapshot's age — bounds freshness, and a longer one would only delay correcting a resume point. **`gcTime` IS raised** to the snapshot's lifetime (the 5-minute default would garbage-collect rows kept deliberately for the next launch).
+4. **The policy is ONE fail-closed allow-list** (`policy.ts`): only `library` queries are stored; `auth`, `health`, `config`, `household`, `watchlist`, `search`/`suggest` are refused **by name**, and the rule is applied **on the way IN as well as out** — a hand-edited or older-build snapshot cannot rehydrate a session row. A new query key is NOT persisted until somebody argues for it in that file.
+
+**⚠ HIS IDENTITY RAIL IS NOW TWO-SIDED, AND IT IS ONE CALL.** Sign-in, sign-out, the profile switch and BOTH 401 paths (the forced sign-out and the stale-profile one) each used `queryClient.clear()` — memory only. A purge that clears memory and leaves one person's rows on disk is an **identity leak on a shared iPad**, not a stale render. All five sites now call `clearCacheForIdentityChange()` (memory **and** storage), the profile switch re-stamps the new owner (without it nothing would ever be written again — a silent no-op), and `persist-wiring.test.ts` asserts the count so one cannot quietly go back.
+
+**GATES:** `vitest 381/381` (**30 new**) · `npx tsc --noEmit` · `npm run build` · `python3 tools/check_query_cache.py` → **3/3**, and `python3 tools/check_md_links.py` after the plan edit. ⚠ **Every rule was falsified by REVERTING it, not by asserting it:** `/root/falsify_a1.py` → 6/6 red (allow-list dropped, owner check dropped, disk purge forgotten, header not validated, a FAILED query persisted, and `AuthProvider` back to a bare `clear()`), `/root/falsify_check_cache.py` → 3/3 red (writer never started, owner check dropped, `RequireSession` removed).
+
+**⚠ WHAT IS NOT VERIFIED, stated plainly: the DEVICE, and that is the whole point of the phase.** The gate above is a Chromium cold reload of the same origin; his phone is a WKWebView shell that has been suspended and resumed and whose storage rules are WebKit's. **It also needs `apply` before it can be seen at all** — the web image is rebuilt from source, so nothing has reached his stack yet. And one honest limit: the rows restore only if the snapshot is younger than **24 h** and the launch is on the **same origin** (a different server address is a different library, and is dropped rather than rendered).
+
+**⚠ HIS STEP (PowerShell 5.1 — one command per line):**
+
+```
+cd D:\hermes_agent\hermes-workspace\projects\rkm-cinema
+git pull --ff-only
+.\rkm-cinema.ps1 apply
+```
+
+then **reload the page on the phone** and open it a second time from the home screen. ⚠ **What to look for: the poster rows are there before the network answers** — that is the entire phase. On the desktop the same thing is DevTools → Network → reload twice and watch the `/api/library*` rows: the second launch should ask for **nothing**.
+
+**⚠ ENVIRONMENT FACTS THAT COST TIME HERE — do not re-learn them:**
+* ⚠⚠ **A RUNNING VITE SERVER KEEPS SERVING THE PRE-EDIT MODULE**, and the failure is *silent*: I edited `cache-frame.tsx` while vite was up, measured, and got a page running the OLD harness. Kill the PID that `ss -ltnp | grep 5199` names and start a fresh server, **then compare a hash of the served module before and after the edit** — and ⚠ **never grep the served module for a `// comment` marker: esbuild strips comments, so a marker-based freshness check reports "stale" for a perfectly fresh server** (that mistake aborted all three falsifications once).
+* ⚠ **A WRONG PATH ON THE VITE DEV SERVER DOES NOT 404 — THE SPA FALLBACK ANSWERS `index.html` WITH A 200.** Two hashes of two DIFFERENT files then compare equal, and a freshness check says "unchanged" for a server that is fresh. `falsify_check_cache.py` now refuses an HTML fallback; write the same refusal into any future freshness check.
+* **Two orphan `vite` processes were holding `:5199` at the start of this session** (one IPv4, one IPv6, neither mine — a previous day's). They were killed. Sweep for them *before* starting anything.
+
+⚠ **STILL OPEN, unchanged by this block:** A0 is still **not merged to `main`** (and neither is this) — **he asks for the merge**; the second-launch request-log check on the phone (A0's own gate, still his); **Fill-as-default**; the **E1/E2 spike** → see the block below; **tvOS go/no-go**; the Phase 0 device list. Next in the plan's own order after this: **A2** (`/api/library/home`, one call instead of six) then **A3** (the launch-budget gate).
+
 ## ▶ ✅ **A0 VERIFIED ON THE LIVE CONTAINER — he ran `apply`, and the headers are now the new policy; the deployed bundle is byte-identical to the repo's own build** (2026-09-14, latest) · branch **`perf/nginx-asset-caching`** (tip `3be3473` + this record) · **no code changed by this block — it is the measurement the block below said it could not make**
 
 **He said, verbatim:** *"i have run the application by doing rkm-cinema apply"*. Everything below is `curl` against `http://rkm-hp.tail8d5e8.ts.net:8124/` **after** that rebuild, which is what turns A0's sandbox result into a fact about the stack. ⚠ **The containers run `nginx:alpine` 1.31.3**; the sandbox could only exercise its own `nginx` 1.26.3, and that gap is now closed by measurement rather than by inference.

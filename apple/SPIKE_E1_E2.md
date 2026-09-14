@@ -61,7 +61,19 @@ reason instead of failing silently):
 ## Reading the answer — ONE command, and it gives the verdict
 
 ```bash
-python3 tools/check_spike_e1_e2.py "$LOG"
+python3 tools/check_spike_e1_e2.py
+```
+
+⚠ **No argument needed — it finds the log itself** (the booted simulator's app container, or any
+simulator on the Mac). ⚠ The docs used to say `… "$LOG"`, and `$LOG` was never defined anywhere: the
+empty variable expanded to nothing, `Path("")` became `.`, and the tool died with
+`IsADirectoryError: '.'`. **A placeholder in a command is a command that does not run** — so the path
+is now optional, the tool prints where it read from, and if you do pass one it must be a real file:
+
+```bash
+python3 tools/check_spike_e1_e2.py "/path/to/rkm-ios.log"          # simulator, by hand
+# on a DEVICE the file is not on the Mac: Xcode → Devices and Simulators → Download Container…,
+# then …/<name>.xcappdata/AppData/Library/Application Support/RKMCinema/Logs/rkm-ios.log
 ```
 
 It prints the evidence, then **PASS or FAIL**, and on a FAIL it says which piece is missing and what
@@ -71,7 +83,10 @@ that means for the plan. It exists because the gate is a *specific set of lines*
 whole file was re-read, not a seek. The page cannot tell those apart. The server can.
 
 ⚠ Falsified before it was trusted: a passing log, a whole-file-`200` log, a never-reached-the-server
-log and a codec-error log — the last three all FAIL, with the right reason named.
+log, a codec-error log and a *spike-never-launched* log — the last four all FAIL, with the right
+reason named. That suite also caught two bugs in the tool itself (a pattern that missed the real
+`loopback: serving 206 …` line shape, and a glob that read **zero lines** from a log handed in under
+another name), and the empty-path case that started all of this.
 
 The raw greps, if you would rather read it yourself:
 

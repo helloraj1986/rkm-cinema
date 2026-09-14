@@ -86,11 +86,20 @@ Simulators → **Download Container…**; on the simulator, `simctl get_app_cont
 
 ## What is and is not verified
 
-* ✅ **Verified here:** `swiftc -parse` on every changed file (syntax), `apple/scripts/check-imports.py`
+* ⚠⚠ **THE FIRST MAC BUILD FAILED — one error, and it was exactly the kind `-parse` cannot see.**
+  `OfflineSpike.swift` used `Result<URL, String>`, and **`Result`'s failure type must conform to
+  `Error`** — which `String` does not. His build reported it verbatim (*"type 'String' does not conform
+  to protocol 'Error'"*), and **`swiftc -parse` had passed on every file beforehand**, which is the
+  lesson this repo already had written down: *a check that only proves syntax proves nothing about
+  types.* Fixed with a real failure type (`SpikeFailure: LocalizedError`, so the sentence survives into
+  `localizedDescription`), and the fix was **reproduced and typechecked on Linux** — the failing shape
+  rejected, the new shape accepted — before he was asked to build again.
+* ✅ **Verified here:** `swiftc -parse` on every changed file, `apple/scripts/check-imports.py`
   (no missing framework imports), both injected scripts pass `node --check`, the probe page's HTML/Swift
   raw string is well-formed, and **`LoopbackServer.parseRange` was lifted verbatim and RUN on Linux**
   against 12 real `Range` headers (suffix ranges, clamping, reversed, garbage) — 12/12, falsified by
-  removing the clamp (the clamped-end case fails, exit 1).
+  removing the clamp (the clamped-end case fails, exit 1). The Foundation-only pieces
+  (`SpikeFailure`, `OfflineSpike.directory()`) were **typechecked by a real compiler** too.
 * ✅ **`mac-round.sh`'s new argument pass-through was RUN, end to end, against stubbed Mac tooling**
   (`git`/`xcode-select`/`xcodebuild`/`xcrun`/`open`): with extras it launches
   `…-RKMOfflineSpike YES`, with none it launches bare, and a Mac without the committed default

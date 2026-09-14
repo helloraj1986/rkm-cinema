@@ -175,6 +175,22 @@ enum OfflineSpike {
 """#
 }
 
+/// A failure that carries a sentence, for the shapes that need one.
+///
+/// ⚠⚠ **THIS TYPE EXISTS BECAUSE OF A REAL BUILD FAILURE.** The first version used
+/// `Result<URL, String>`, and `Result`'s failure type must conform to **`Error`** — which `String`
+/// does not. His Mac rejected it with *"type 'String' does not conform to protocol 'Error'"* on this
+/// file's `ensureAsset` signature, and it is precisely the class of fault `swiftc -parse` cannot see:
+/// `-parse` passed on every file before the build. `LocalizedError` is used rather than a bare
+/// `Error` so the sentence survives into `localizedDescription`, which is what the screen and the
+/// log both print.
+struct SpikeFailure: LocalizedError {
+    let errorDescription: String?
+    init(_ message: String) {
+        errorDescription = message
+    }
+}
+
 /// Owns the probe: the file, the server, the web view, and the state the screen shows.
 final class OfflineSpikeModel: ObservableObject {
 
@@ -189,6 +205,11 @@ final class OfflineSpikeModel: ObservableObject {
 
     private let address: ServerAddress?
     private var server: LoopbackServer?
+    /// ⚠ **RETAINED ON PURPOSE.** `WKWebViewConfiguration` does not promise to keep a scheme handler
+    /// alive, and a deallocated one fails *silently* — every request just never arrives. This repo has
+    /// already paid for that exact shape once (`WebBridge` registered through a weak proxy: a film
+    /// played while the request log stayed empty), so the handler is held here for the model's life.
+    private let schemeHandler: SpikeSchemeHandler
 
     init(address: ServerAddress?) {
         self.address = address
@@ -208,6 +229,7 @@ final class OfflineSpikeModel: ObservableObject {
 
         let handler = SpikeSchemeHandler(root: (try? OfflineSpike.directory()) ?? URL(fileURLWithPath: NSTemporaryDirectory()))
         configuration.setURLSchemeHandler(handler, forURLScheme: SpikeSchemeHandler.scheme)
+        self.schemeHandler = handler
 
         let webView = WKWebView(frame: .zero, configuration: configuration)
         if #available(iOS 16.4, *) {
@@ -222,12 +244,12 @@ final class OfflineSpikeModel: ObservableObject {
         ensureAsset { [weak self] result in
             guard let self else { return }
             switch result {
-            case .failure(let message):
+            case .failure(let failure):
                 // ⚠ Loud and specific, because this is the failure that would otherwise read as
                 // "the spike is broken": the asset comes from his own server.
                 self.status = "probe file unavailable"
-                self.detail = message
-                RKMLog.error("offline spike: \(message)", category: .app)
+                self.detail = failure.localizedDescription
+                RKMLog.error("offline spike: \(failure.localizedDescription)", category: .app)
             case .success(let url):
                 self.startServer(root: url.deletingLastPathComponent())
             }
@@ -236,12 +258,12 @@ final class OfflineSpikeModel: ObservableObject {
 
     /// Download `harness-sample.mp4` from the app's own server once. No binary is committed: the
     /// plan's own file is already served there, and a spike should not add weight to the repo.
-    private func ensureAsset(completion: @escaping (Result<URL, String>) -> Void) {
+    private func ensureAsset(completion: @escaping (Result<URL, SpikeFailure>) -> Void) {
         let file: URL
         do {
             file = try OfflineSpike.directory().appendingPathComponent(OfflineSpike.assetName)
         } catch {
-            completion(.failure("could not create the spike directory: \(error.localizedDescription)"))
+            completion(.failure(SpikeFailure("could not create the spike directory: \(error.localizedDescription)")))
             return
         }
         if let size = (try? FileManager.default.attributesOfItem(atPath: file.path))?[.size] as? NSNumber,
@@ -253,8 +275,8 @@ final class OfflineSpikeModel: ObservableObject {
             return
         }
         guard let address else {
-            completion(.failure("no stored server address — connect to the server once, then relaunch with "
-                                + "-\(OfflineSpike.launchKey) YES"))
+            completion(.failure(SpikeFailure("no stored server address — connect to the server once, then relaunch with "
+                                             + "-\(OfflineSpike.launchKey) YES")))
             return
         }
         let remote = address.url.appendingPathComponent(OfflineSpike.assetName)
@@ -269,15 +291,15 @@ final class OfflineSpikeModel: ObservableObject {
             guard let data, error == nil, httpStatus == 200 else {
                 let reason = error?.localizedDescription ?? "HTTP \(httpStatus)"
                 DispatchQueue.main.async {
-                    completion(.failure("GET \(remote.absoluteString) failed — \(reason). "
-                                        + "Put any small .mp4 at that path on the server and relaunch."))
+                    completion(.failure(SpikeFailure("GET \(remote.absoluteString) failed — \(reason). "
+                                                     + "Put any small .mp4 at that path on the server and relaunch.")))
                 }
                 return
             }
             do {
                 try data.write(to: file, options: .atomic)
             } catch {
-                DispatchQueue.main.async { completion(.failure("could not write the probe file: \(error.localizedDescription)")) }
+                DispatchQueue.main.async { completion(.failure(SpikeFailure("could not write the probe file: \(error.localizedDescription)"))) }
                 return
             }
             DispatchQueue.main.async {

@@ -489,6 +489,35 @@ export function playerChromeFor(facts: { vw: number; vh: number }): { compactHea
   return { compactHeader: facts.vh > 0 && facts.vh <= 480 };
 }
 
+/**
+ * How the picture meets the screen.
+ *
+ * `fit` (the default) — the whole frame is visible. The film's own aspect ratio decides the
+ * bars: a 16:9 film on a 2.17:1 phone in landscape leaves ~9% black down each side, and a
+ * taller film on a wide screen leaves them top and bottom. Nothing is cropped.
+ *
+ * `fill` — the picture covers the screen edge to edge and the overflow is cropped (that same
+ * 16:9 film loses ~9% off the top and ~9% off the bottom). A viewer's choice, never a default:
+ * cropping the frame is the one thing a cinema app should not do behind someone's back.
+ *
+ * ⚠ Deliberately a CLASS NAME, not a measured size. `object-fit` is resolved by the browser
+ * against whatever display the app is on, so this stays dynamic and device-independent — no
+ * breakpoints, no pixel arithmetic, no orientation branch, and nothing to re-measure when the
+ * phone rotates or the window resizes. Both values are one CSS rule on every platform, the
+ * iOS shell included.
+ */
+export type PlayerFit = "fit" | "fill";
+
+export const PLAYER_FITS: readonly { value: PlayerFit; label: string; hint: string }[] = [
+  { value: "fit", label: "Fit", hint: "Whole frame — bars where the screen is wider." },
+  { value: "fill", label: "Fill", hint: "Fills the screen — crops the overflow." },
+];
+
+/** The single class the `<video>` needs for a fit choice (see `PlayerFit`). */
+export function videoFitClass(fit: PlayerFit): string {
+  return fit === "fill" ? "object-cover" : "object-contain";
+}
+
 // ------------------------------------------------------------------ warm-start
 /** One warm-cache slot: the in-flight (or resolved) playback-info fetch for an
  *  item, plus an optional HLS master pre-warm. `at` is the stamp used for TTL +
@@ -560,6 +589,7 @@ export interface PlayerPrefs {
   muted: boolean;
   rate: number;
   quality: string; // a QUALITY_OPTIONS label
+  fit: PlayerFit; // whole frame, or filling the screen (crops)
 }
 
 export const PLAYER_PREFS_KEY = "rkm.playerPrefs.v1";
@@ -572,6 +602,7 @@ export function loadPlayerPrefs(get: (key: string) => string | null): PlayerPref
     muted: false,
     rate: 1,
     quality: QUALITY_OPTIONS[0].label,
+    fit: "fit",
   };
   try {
     const raw = get(PLAYER_PREFS_KEY);
@@ -583,6 +614,8 @@ export function loadPlayerPrefs(get: (key: string) => string | null): PlayerPref
       muted: typeof p.muted === "boolean" ? p.muted : dflt.muted,
       rate: typeof p.rate === "number" && rates.includes(p.rate) ? p.rate : dflt.rate,
       quality: QUALITY_OPTIONS.some((q) => q.label === p.quality) ? String(p.quality) : dflt.quality,
+      // Only the two values we actually render — never a value that maps to no class.
+      fit: p.fit === "fill" ? "fill" : "fit",
     };
   } catch {
     return dflt;

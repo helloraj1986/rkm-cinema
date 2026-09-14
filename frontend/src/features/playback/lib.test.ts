@@ -11,7 +11,7 @@ import {
   usesHls, nextHlsMode, hlsEngineFor, hlsModeLabel, HLS_LADDER,
   hlsConfigFor, resolutionLabel, abrBadgeLabel, HLS_MAX_BUFFER_SEC,
   HLS_ABR_DEFAULT_ESTIMATE_BPS, shouldAutoHideChrome, CHROME_HIDE_MS,
-  fullscreenPlan, playerChromeFor,
+  fullscreenPlan, playerChromeFor, videoFitClass, PLAYER_FITS,
   warmGet, warmPut, warmDelete, warmClear, WARM_TTL_MS, WARM_MAX_ITEMS,
   WARM_AHEAD_SEC, type WarmEntry,
   loadPlayerPrefs, savePlayerPrefs, PLAYER_PREFS_KEY, type PlayerPrefs,
@@ -312,6 +312,19 @@ describe("player layout policy (fit / orientation / fullscreen)", () => {
     expect(playerChromeFor({ vw: 1920, vh: 1080 }).compactHeader).toBe(false);
     expect(playerChromeFor({ vw: 0, vh: 0 }).compactHeader).toBe(false); // not measured yet
   });
+
+  it("maps a fit choice onto ONE class — the browser does the fitting, not us", () => {
+    // ⚠ No size, breakpoint or orientation enters here: whichever display the app is on,
+    // `object-fit` resolves against it. That is what makes full screen device-independent.
+    expect(videoFitClass("fit")).toBe("object-contain");
+    expect(videoFitClass("fill")).toBe("object-cover");
+  });
+
+  it("offers exactly the two values the class map can render", () => {
+    expect(PLAYER_FITS.map((f) => f.value)).toEqual(["fit", "fill"]);
+    expect(PLAYER_FITS[0].value).toBe("fit"); // the default: nothing is cropped for him
+    for (const f of PLAYER_FITS) expect(f.hint.length).toBeGreaterThan(10);
+  });
 });
 
 describe("warm-start cache (player tail)", () => {
@@ -356,10 +369,10 @@ describe("player preference persistence (player tail)", () => {
   const set = (k: string, v: string) => {
     store.set(k, v);
   };
-  const defaults = { volume: 1, muted: false, rate: 1, quality: "Original" } as PlayerPrefs;
+  const defaults = { volume: 1, muted: false, rate: 1, quality: "Original", fit: "fit" } as PlayerPrefs;
   beforeEach(() => store.clear());
   it("round-trips a full prefs object through the injected storage", () => {
-    const prefs: PlayerPrefs = { volume: 0.4, muted: false, rate: 1.5, quality: "720p" };
+    const prefs: PlayerPrefs = { volume: 0.4, muted: false, rate: 1.5, quality: "720p", fit: "fill" };
     savePlayerPrefs(prefs, set);
     expect(store.get(PLAYER_PREFS_KEY)).toBe(JSON.stringify(prefs));
     expect(loadPlayerPrefs(get)).toEqual(prefs);
@@ -376,6 +389,16 @@ describe("player preference persistence (player tail)", () => {
     expect(loadPlayerPrefs(get).volume).toBe(0.3);
     expect(loadPlayerPrefs(get).rate).toBe(1); // absent fields default
     expect(loadPlayerPrefs(get).quality).toBe("Original");
+    expect(loadPlayerPrefs(get).fit).toBe("fit"); // absent → nothing cropped
+  });
+  it("only ever restores a fit value that maps to a class", () => {
+    // A stored "stretch"/typo must not reach the <video>: there is no class for it, and the
+    // picture would silently fall back to the browser's default rather than to Fit.
+    store.set(PLAYER_PREFS_KEY, JSON.stringify({ fit: "stretch" }));
+    expect(loadPlayerPrefs(get).fit).toBe("fit");
+    store.set(PLAYER_PREFS_KEY, JSON.stringify({ fit: "fill" }));
+    expect(loadPlayerPrefs(get).fit).toBe("fill");
+    expect(videoFitClass(loadPlayerPrefs(get).fit)).toBe("object-cover");
   });
   it("savePlayerPrefs never throws on storage failure", () => {
     expect(() =>

@@ -14,9 +14,9 @@ import {
   WARM_AHEAD_SEC, loadPlayerPrefs, savePlayerPrefs, PLAYER_PREFS_KEY,
   subtitleRowLabel, resolveActiveSubtitle, rankSubtitleRows,
   activeSubtitleRowKey, localSubtitleRowKey, subtitleRowKey,
-  fullscreenPlan, playerChromeFor,
+  fullscreenPlan, playerChromeFor, videoFitClass, PLAYER_FITS,
   type AbrLevelFacts, type HlsEngine, type PlayerPrefs, type FullscreenPlan,
-  type WebkitFullscreenVideo,
+  type WebkitFullscreenVideo, type PlayerFit,
   parseVtt, activeCueText, type VttCue, type QueueEntry,
   type StreamMode,
 } from "./lib";
@@ -234,6 +234,9 @@ export function Player({
   // iOS native video fullscreen (iPhone has no Element fullscreen at all): tracked so
   // the button flips to "exit" there instead of lying about the state.
   const [isVideoFs, setIsVideoFs] = useState(false);
+  // Fit (whole frame, letterboxed) or Fill (covers the screen, crops) — a persisted preference
+  // rendered as one CSS class, so the browser resolves it against whatever display this is on.
+  const [fit, setFit] = useState<PlayerFit>(prefsRef.current.fit);
   const barRef = useRef<HTMLDivElement>(null);
   const dockRef = useRef<HTMLDivElement>(null);
   const [scrub, setScrub] = useState<number | null>(null);
@@ -1276,7 +1279,7 @@ export function Player({
           autoPlay
           playsInline
           onClick={togglePlay}
-          className={`absolute inset-0 h-full w-full bg-black object-contain ${
+          className={`absolute inset-0 h-full w-full bg-black ${videoFitClass(fit)} ${
             chromeHidden ? "cursor-none" : "cursor-pointer"
           }`}
         />
@@ -1412,6 +1415,29 @@ export function Player({
             </div>
 
             <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4">
+              <section className="space-y-2">
+                <div className={panelLabel}>Picture</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {PLAYER_FITS.map((f) => (
+                    <button
+                      key={f.value}
+                      type="button"
+                      aria-pressed={fit === f.value}
+                      onClick={() => {
+                        setFit(f.value);
+                        persistPrefs({ fit: f.value });
+                      }}
+                      className={chipBtn(fit === f.value)}
+                    >
+                      {f.label}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[10px] font-medium text-zinc-500">
+                  {PLAYER_FITS.find((f) => f.value === fit)?.hint}
+                </p>
+              </section>
+
               <section className="space-y-2">
                 <div className={panelLabel}>Speed</div>
                 <div className="flex flex-wrap gap-1.5">

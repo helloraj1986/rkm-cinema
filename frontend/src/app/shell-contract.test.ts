@@ -54,4 +54,30 @@ describe("the iOS shell's safe-area contract", () => {
     // phone that leaves ~5px for the search field.
     expect(read("layout/Header.tsx")).toContain("min-h-16");
   });
+
+  it("full screen is the viewport itself, at every size — nothing is measured", () => {
+    // ⚠ The player shell IS the screen: `fixed; inset: 0` + `100dvh` stretches it to whatever
+    // display this is, and the safe-area insets come from the browser — so the same CSS is
+    // correct on a phone, an iPad, a laptop and a TV-sized window. A number in here would be a
+    // device the layout is right about and every other device it is wrong about.
+    const css = read("../styles/index.css");
+    expect(css).toContain("height: 100dvh");
+    expect(css).toContain("env(safe-area-inset-top");
+    expect(css).toContain("env(safe-area-inset-bottom");
+    expect(css).toContain("--rkm-safe-left");
+    expect(css).toContain("--rkm-safe-right");
+    // A measured height (px/vh-only) would put the transport band under a browser's toolbar.
+    expect(css).not.toMatch(/\.rkm-player\s*\{[^}]*height:\s*\d+px/);
+
+    // …and the PICTURE is fitted by the browser too: one `object-fit` class, never a size.
+    const player = read("../features/playback/Player.tsx");
+    expect(player).toContain("videoFitClass(fit)");
+    // ⚠ Neither literal may live in the component: the class comes from the choice map, which is
+    // the only place that knows what "fill" costs.
+    expect(player).not.toContain("object-contain");
+    expect(player).not.toContain("object-cover");
+    expect(read("../features/playback/lib.ts")).toContain(
+      'return fit === "fill" ? "object-cover" : "object-contain"',
+    );
+  });
 });

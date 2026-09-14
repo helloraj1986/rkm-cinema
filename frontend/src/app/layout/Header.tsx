@@ -28,7 +28,12 @@ export function Header() {
   const signedIn = status === "signedIn" && !!user;
 
   return (
-    <header className="sticky top-0 z-[var(--z-header)] flex h-16 shrink-0 items-center gap-4 border-b border-white/[.06] bg-canvas/85 px-4 backdrop-blur-xl sm:px-6 xl:px-8">
+    // ⚠ `pt-[env(safe-area-inset-top)]` + `min-h-16` (NOT `h-16`): the bar's BACKGROUND has to
+    // fill the status-bar band while its CONTENT sits below it — with a fixed height the padding
+    // would eat the row instead of adding to it, and a notched phone would leave ~5px for the
+    // search field. The inset is 0px on a desktop browser and in any web view without
+    // `viewport-fit=cover` (see index.html), so this is inert everywhere except where it matters.
+    <header className="sticky top-0 z-[var(--z-header)] flex min-h-16 shrink-0 items-center gap-4 border-b border-white/[.06] bg-canvas/85 px-4 pt-[env(safe-area-inset-top)] backdrop-blur-xl sm:px-6 xl:px-8">
       {/* The one global search (command palette). */}
       <div className="max-w-[430px] min-w-0 flex-1">
         <GlobalSearch />

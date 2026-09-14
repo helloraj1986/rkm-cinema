@@ -51,6 +51,22 @@
 	     and the app is letterboxed on modern devices. -->
 	<key>UILaunchScreen</key>
 	<dict/>
+	<!--
+	  ⚠ Dark, always, and this is what makes the STATUS BAR readable — not a style preference.
+
+	  The web view now fills the display (`AppRootView`: `.ignoresSafeArea()`), so the band behind
+	  the clock is the page's own `#08090b`. Left in light mode, iOS draws DARK status-bar glyphs on
+	  that near-black band: the time and battery become unreadable, which is a worse bug than the
+	  white strip this replaced. Forcing the app's appearance dark makes the system resolve the
+	  status bar to light content everywhere, including over the setup screen (whose colours are all
+	  adaptive: `secondarySystemBackground`, `.secondary`, `.primary`).
+
+	  It also removes the white LAUNCH FLASH: the empty `UILaunchScreen` above renders the window
+	  background, and in light mode that is white — a full-screen white flash on every cold start of
+	  a dark cinema app. (2026-09-14)
+	-->
+	<key>UIUserInterfaceStyle</key>
+	<string>Dark</string>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>

@@ -58,8 +58,20 @@ struct AppRootView: View {
                     // identity SwiftUI would reuse the existing one — still pointed at the old
                     // server — and changing servers would appear to do nothing.
                     .id(shell.address.displayString)
-                    // The keyboard must not resize a page that is meant to be a full-screen shell.
-                    .ignoresSafeArea(.keyboard)
+                    // ⚠⚠ **The page fills the DISPLAY, and the page owns the insets.** Before this
+                    // the web view was inset to the safe area, so the window's own background showed
+                    // in a band behind the status bar — white in light mode, which is the strip he
+                    // reported on the iPad (2026-09-14) — and a `100dvh` page (the player) could not
+                    // reach the top or bottom of the screen at all.
+                    //
+                    // ⚠ The other half of the contract is in `frontend/index.html`: without
+                    // `viewport-fit=cover` there, every `env(safe-area-inset-*)` is 0px and the page
+                    // lays out under the clock instead. The two must move together — that is why
+                    // `frontend/src/app/shell-contract.test.ts` pins both.
+                    //
+                    // ⚠ `.all` covers the keyboard region too: a page that is meant to be a
+                    // full-screen shell must not be resized when a field in it is focused.
+                    .ignoresSafeArea()
             } else {
                 ProgressView()
             }

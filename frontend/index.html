@@ -2,7 +2,17 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      ⚠ `viewport-fit=cover` is NOT decoration — it is what makes `env(safe-area-inset-*)` non-zero
+      inside the iOS shell. The shell's web view fills the whole display (a WKWebView on purpose,
+      see `apple/ios/README.md`), so the PAGE owns the insets: without this, every inset reads 0px,
+      the page lays out under the status bar and the home indicator, and the browser has no way to
+      know the notch is there. Removed on 2026-09-14 to fix a white band behind the status bar —
+      pinned by `src/app/shell-contract.test.ts` because a browser in the sandbox cannot show this
+      and the failure only appears on a device.
+    -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+
     <meta name="color-scheme" content="dark" />
     <meta name="theme-color" content="#08090B" />
     <meta name="description" content="RKM Cinema — your private premium streaming library." />

@@ -1,3 +1,55 @@
+## ▶ ✅ **A0 BUILT — THE SHELL IS COMPRESSED AND CACHED NOW: 1,130,022 B re-fetched on every launch becomes 336,414 B fetched once** (2026-09-14, latest) · branch **`perf/nginx-asset-caching`** (cut from `main` `23d97ec`) · changed: **`nginx/default.conf`** (the only production file) · **NEW** `tools/verify_nginx_shell_cache.py` · docs: `docs/NATIVE_FEEL_AND_OFFLINE_PLAN.md` §3.1 (status + a corrected premise) · ⚠ **no frontend change, no backend change, no app change — but it is a WEB IMAGE rebuild, so it needs `apply`**
+
+**He asked, verbatim:** *"for rkm-cinema app merge the current branch to main and then pickup the next stuff from progress.md by creating a new branch"* — and then, asked which of the four open items that branch should carry, he chose **A0**. So this block is the first half of that instruction landing as work.
+
+**⚠ THE MEASUREMENT IS ON THE SAME BYTES, BEFORE AND AFTER — not Vite's own report.** Fetched from his live stack (`http://rkm-hp.tail8d5e8.ts.net:8124/`, 2026-09-14) and gzipped here with `gzip -9`:
+
+| File | Served today | Gzipped | Factor |
+|---|---|---|---|
+| `assets/index-9K9pHiDW.js` | **1,074,168 B**, `Cache-Control: no-store, no-cache, must-revalidate, max-age=0`, no `Content-Encoding` | **326,111 B** | 3.29× |
+| `assets/index-BbzJcPm4.css` | **55,854 B**, same header | **10,303 B** | 5.4× |
+| **the shell, per launch** | **1,130,022 B, re-downloaded EVERY launch** | **336,414 B, downloaded ONCE** | **−793,608 B, and then zero** |
+
+`index.html` (1,623 B, `ETag: "6aa74580-657"`) was `no-store` too, so the document that names the bundle was re-fetched on every launch as well — it is now `no-cache`, which keeps it provably fresh (a revalidation answering **304** for ~200 bytes) while letting the browser **store** it, which is the precondition for ever launching with no network.
+
+**⚠ THE ONE THING THAT WOULD HAVE SHIPPED SILENTLY — AND THE GATE FOUND IT, NOT A READING OF THE CONFIG.** The first version of the new check failed *every* static-file case while the proxied JSON compressed fine. The asymmetry was the clue: `gzip_types` is matched against the Content-Type **nginx assigned**, and for a static file that comes from `mime.types` — which the harness's own generated `nginx.conf` did not include. **A harness bug wearing the costume of a config bug.** `find_mime_types()` now loads the real one and prints the resolved path. ⚠ And the branch it sent me down first is worth recording *because I nearly wrote it into the config as fact*: I concluded modern nginx maps `.js` to `text/javascript` and added it — then checked upstream (`nginx/nginx` `conf/mime.types`, `master` **and** `release-1.26.3`) and found it maps **`application/javascript`**, so the claim was false and the extra type was removed. **A plausible mechanism is not a measurement.**
+
+**THE CHANGE, in `nginx/default.conf`:**
+* **`gzip on`** + `gzip_types text/css application/javascript application/json image/svg+xml` + `gzip_min_length 1024` + **`gzip_comp_level 5`** + `gzip_vary on` + `gzip_proxied any`.
+* ⚠⚠ **`gzip_types` IS A WHITELIST, AND THAT IS THE SAFETY PROPERTY THE WHOLE CHANGE RESTS ON: media is not in it**, so the stream proxy's `video/mp4` and `video/mp2t` responses are never compressed. The gate **pins that** — compressing video would burn CPU on both ends and save nothing.
+* **`location /`** — `Cache-Control: "no-cache"` (was `no-store, no-cache, must-revalidate, max-age=0`).
+* **NEW `location /assets/`** — `Cache-Control: "public, max-age=31536000, immutable"`, and **`try_files $uri =404`** rather than the SPA fallback: answering `index.html` (200, `text/html`) for a `.js` request is reported by the browser as a **syntax error**, which sends the next session looking at the bundle instead of at the deploy.
+* ⚠ **`gzip_static on` was deliberately NOT added, and the plan has been corrected.** §3.1 said to serve "the .gz Vite/our build already emitted, **where one exists**" — **the build emits none** (`frontend/dist/assets/` holds only the `.js` and `.css`; there is no compression plugin in `vite.config.ts` or `package.json`). So it would be inert today, **and** whether `nginx:alpine` is compiled with `--with-http_gzip_static_module` cannot be verified from this sandbox (no docker daemon) — **an unknown directive makes nginx refuse to start**, i.e. take the whole web container down for no gain. Add it only in the same change as a build step that emits the `.gz` files, and test that build.
+
+**⚠ THE GATE, FALSIFIED BEFORE IT WAS TRUSTED — `tools/verify_nginx_shell_cache.py`.** A stand-in api behind the **REAL** repo config, 13 assertions, and a `--config` flag so the next session can re-prove the check can fail:
+
+| Run | Result |
+|---|---|
+| `--config /tmp/old-default.conf` (the pre-change file, `git show HEAD:nginx/default.conf`) | **9 FAIL**, exit 1 — no-store on `/` and on `/assets/`, the missing bundle serving the shell as 200, neither bundle compressed, the JSON uncompressed |
+| the repo config | **13/13 PASS**, exit 0 |
+
+It also pins the pieces that must NOT change: media through the proxy stays uncompressed, `/api/` JSON stays **`no-store`** (and is now compressed, `3,085 B → 56 B` on the fixture), and the artwork policy is undisturbed. **The sibling `tools/verify_nginx_artwork_cache.py` was re-run and is still 6/6 green** — because server-level `gzip` changes *every* response, including the proxied ones.
+
+**GATES:** `python3 tools/verify_nginx_shell_cache.py` → **13/13** · `python3 tools/verify_nginx_artwork_cache.py` → **6/6** · `pytest tests/test_check_deployed.py tests/test_artwork_cache.py` → **26 passed** (the exact-match `/openapi.json` rule is untouched by the new locations) · `python3 tools/check_md_links.py` → all resolve. ⚠ **No frontend or backend gate is owed: not one line of `frontend/` or `backend/` changed.**
+
+**⚠ WHAT IS NOT VERIFIED — the container, plainly.** nginx's own syntax is checked (`nginx -t` inside the gate, against the real repo config) and the behaviour is checked in the sandbox's **nginx 1.26.3** — but the stack runs **`nginx:alpine` 1.31.3**, and **no docker daemon exists here**, so "these directives behave identically in the image" is an inference from the version, not a measurement. The directives used are all core, long-stable and non-modular (`gzip`, `gzip_types`, `gzip_min_length`, `gzip_comp_level`, `gzip_vary`, `gzip_proxied`) — that is exactly why `gzip_static` was left out.
+
+**⚠ HIS STEP, AND IT IS A REBUILD (PowerShell 5.1 — no `&&`, one command per line):**
+
+```
+cd D:\hermes_agent\hermes-workspace\projects\rkm-cinema
+git pull --ff-only
+.\rkm-cinema.ps1 apply
+```
+
+⚠ `apply` rebuilds **api and web**; the nginx config is the **last** `COPY` in `frontend/Dockerfile`, *after* the Node build stage, so the Vite layer comes from cache and this rebuild is seconds, not a frontend build. Nothing about Jellyfin, its config or the media is touched.
+
+**THEN THE TWO CHECKS, and I can do the first one from here — tell me when it is applied and I will run it:**
+1. ⚠ **From the sandbox, no action from him:** `curl -sI` the served bundle and assert **`Cache-Control: public, max-age=31536000, immutable`** on `/assets/*` and **`no-cache`** on `/`. That is the whole policy, on the real container, in two commands.
+2. **His half — the gate the plan named: a SECOND launch must make no `/assets/` request at all.** On the desktop browser: DevTools → Network → reload twice; the `.js` and `.css` rows must come back **from cache** with **0 B transferred**. On the phone the equivalent is the shell's own log (`grep -E "rkm\] (player|video)"` — no, for this: the app's request lines) — ⚠ the phone is the case this change exists for, so if he only checks one, it should be that one. ⚠ **A hard reload (⇧⌘R / Ctrl-Shift-R) BYPASSES the cache and would make this look broken — use a normal reload.**
+
+⚠ **STILL OPEN, unchanged by this block:** Fill-as-default · the **E1** spike green light · **tvOS go/no-go** · the Phase 0 device list (*sign-in → playback → sign-out* on the phone, and the `LOGGING.md` §9 file greps). ⚠ And **`main` did not move for this**: it is still `23d97ec`, awaiting his eyeball, exactly as the repo's rule requires.
+
 ## ▶ ✅ **MERGED TO `main` — APPLE CLIENTS PHASE 0 (SHARED PACKAGE + iOS SHELL) + THE FOUR UI/SHELL FIXES + THE OFFLINE PLAN** (2026-09-14, latest) · **`main` = `462ef78`** · ⚠ **at HIS direction** — `feat/apple-clients` fast-forwarded into `main`, and `experiment/bundled-docker-stack` fast-forwarded to match · ⚠ **his tree is now ON `main`**
 
 **He asked, verbatim:** *"for rkm-cinema app merge the current branch to main and then pickup the next stuff from progress.md by creating a new branch"*. Nothing was uncommitted; this commit is the whole of the first half.
@@ -4691,6 +4743,7 @@ Endpoint shapes NOT yet live-verified from the sandbox (oEmbed blocked; use `scr
   - **Structured logging** - JSON logs enable log aggregation and debugging
   - **Pydantic models for API** - Type safety, auto-documentation, validation
   - **Tests first** - Writing tests for plex ownership, radarr/sonarr routing, duplicates, trailers, status, e2e, errors caught design issues early
+
 
 
 

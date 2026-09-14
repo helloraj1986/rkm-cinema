@@ -129,6 +129,25 @@ protecting from a cold start.
 
 ### 3.1 A1 · Correct cache headers (the single cheapest win)
 
+> ✅ **BUILT 2026-09-14** on `perf/nginx-asset-caching` — `nginx/default.conf` only, plus the new
+> `tools/verify_nginx_shell_cache.py` gate. **Measured against the live stack, before/after on the
+> same bytes:** the shell's `index-9K9pHiDW.js` is served **1,074,168 B with `Cache-Control: no-store`
+> and no `Content-Encoding`**, and the same bytes gzip to **326,111 B** (3.29×); the CSS is 55,854 B →
+> **10,303 B** (5.4×). So **1,130,022 B re-fetched on every launch becomes 336,414 B fetched once.**
+> **⚠ A CORRECTION TO THIS SECTION'S OWN PREMISE, verified before it was written down:** the snippet
+> below says to serve "the .gz Vite/our build already emitted, **where one exists**" — **the build
+> emits NONE.** `frontend/dist/assets/` holds only the `.js` and the `.css`; there is no compression
+> plugin in `vite.config.ts` or `package.json`. So **`gzip_static on` was NOT added**: it would be
+> inert today, and whether `nginx:alpine` is compiled with `--with-http_gzip_static_module` cannot be
+> verified from the sandbox (no docker daemon) — an unknown directive makes nginx **refuse to start**,
+> i.e. take the web container down for no gain. `gzip on` does the whole job; add `gzip_static` only
+> in the same change as a build step that emits the `.gz` files, and test that build.
+> **⚠ AND THE ONE THING THAT WOULD HAVE SHIPPED SILENTLY:** `gzip_types` is matched against the
+> Content-Type **nginx assigned**, which for a static file comes from `mime.types`. The first version
+> of the new gate omitted that include, so *every* static-file case failed while the proxied JSON
+> still compressed — a harness bug wearing the costume of a config bug. `find_mime_types()` in the
+> tool now loads the real one and prints the resolved path.
+
 `nginx/default.conf`:
 
 ```nginx
@@ -160,7 +179,14 @@ Notes that matter:
 * Keep `/api/` `no-store` for JSON, keep the artwork nested location as is. The existing comment's
   warning applies: **nginx does not inherit `add_header` into a location that defines one**, so each
   block must state its own.
-* `tools/verify_nginx_artwork_cache.py` should grow a sibling — or gain cases — for `/` and `/assets/`.
+* ✅ `tools/verify_nginx_shell_cache.py` — **WRITTEN AND FALSIFIED 2026-09-14.** It runs a stand-in api
+  behind the REAL repo config and asserts 13 cases (document storable-and-revalidated on `/` and on a
+  deep link, hashed bundles immutable, a missing bundle a 404 rather than the shell, both bundles
+  really gzipped and really smaller with `Vary`, **media through the proxy NOT gzipped**, `/api/` JSON
+  still `no-store` **and** compressed, and the artwork policy undisturbed). **Falsified before it was
+  trusted:** run with `--config <the pre-change file>` it reports **9 FAIL**; against the repo config
+  **13/13 PASS**. That `--config` flag is deliberate — it is how the next session re-proves the check
+  can fail.
   A header policy that is only in a config file rots the moment someone edits the file.
 * **[VERIFY]** read from the config, not from a live response: confirm on the box with
   `curl -sI http://<host>:8124/assets/index-<hash>.js | grep -i cache-control` before and after.

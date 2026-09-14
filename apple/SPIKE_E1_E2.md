@@ -112,6 +112,17 @@ Simulators → **Download Container…**; on the simulator, `simctl get_app_cont
 
 ## What is and is not verified
 
+* ⚠⚠ **THE FIRST REAL RUN FAILED, AND IT WAS A BUG IN THE SPIKE, NOT IN WEBKIT — `probe.mp4` vs
+  `harness-sample.mp4`.** The file was downloaded under the name it has on HIS server and the server
+  looked for the name the PAGE asks for, in the same directory. So `/probe.mp4` 404'd, **not one byte of
+  media reached WebKit**, and both transports reported `mediaError=code=4` (src not supported).
+  ⚠ **Both failures had the same mundane cause** — so that round said **nothing** about
+  `WKURLSchemeHandler` either; "the scheme handler failed as expected" was meaningless.
+  The tell was in the log and easy to read past: the request line was there
+  (`loopback request: GET /probe.mp4 · Range: bytes=0-1`) with **no matching `serving` line** — a served
+  response always logs one. Fixed by storing the file under the name the page asks for
+  (`OfflineSpike.servedName`), and the checker now **prints the server's own trace** and reports
+  **INCONCLUSIVE (exit 3)** rather than FAIL when no bytes were sent.
 * ⚠⚠ **THE FIRST MAC BUILD FAILED — one error, and it was exactly the kind `-parse` cannot see.**
   `OfflineSpike.swift` used `Result<URL, String>`, and **`Result`'s failure type must conform to
   `Error`** — which `String` does not. His build reported it verbatim (*"type 'String' does not conform

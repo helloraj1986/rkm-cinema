@@ -170,6 +170,10 @@ def main() -> int:
 
     problems: list[str] = []
     notes: list[str] = []
+    # ⚠ "the experiment did not run" and "the experiment ran and failed" are DIFFERENT ANSWERS, and
+    # conflating them is how a spike bug gets written into the plan as a fact about WebKit. Anything
+    # here means: no evidence was produced, so nothing may be concluded either way.
+    inconclusive: list[str] = []
 
     def evidence(pattern: str) -> str | None:
         import re
@@ -183,14 +187,30 @@ def main() -> int:
     print("\nE1 · does media play from loopback inside the WKWebView, with seeking?")
 
     reached = evidence(r"loopback request: GET /probe\.mp4")
+    page_served = evidence(r"loopback request: GET /probe\.html")
     if reached:
         print(f"  ✅ the web view reached the server — {reached}")
+    elif page_served:
+        # ⚠ THE NARROW, DECISIVE DISTINCTION. The probe page came FROM the loopback origin, so that
+        # origin demonstrably works — and the media element still never asked for the file. That is a
+        # finding about WebKit's media stack (an E1 negative), not a spike bug.
+        problems.append(
+            "the probe PAGE was served from the loopback origin (so the origin works) and the media "
+            "element still never requested /probe.mp4 — the media stack refused the URL without "
+            "requesting it, which is a real E1 result"
+        )
+        print("  ❌ the page loaded from loopback, but the media element never asked for the file")
     else:
+        inconclusive.append(
+            "nothing was requested from the loopback server at all — not even the probe page — so the "
+            "transport was never exercised. This is a spike/plumbing fault (ATS, origin, port), not a "
+            "statement about the media stack"
+        )
         problems.append(
             "no `loopback request:` line at all — the web view never reached 127.0.0.1. "
             "That is NOT a codec answer: it points at ATS/origin, not at the media stack"
         )
-        print("  ❌ the web view never reached the loopback server")
+        print("  ❌ the web view never reached the loopback server (not even for the page)")
 
     partial = evidence(r"serving 206 Partial Content")
     whole = evidence(r"serving 200 OK whole file")
@@ -203,7 +223,22 @@ def main() -> int:
         )
         print(f"  ❌ no 206; the whole file was sent — {whole}")
     else:
-        problems.append("the server logged no served response for probe.mp4")
+        # ⚠ ONLY when a request actually arrived: a request with no matching `serving` line means no
+        # bytes were sent, and that is a spike fault, not a WebKit finding. With no request at all, the
+        # `reached`/`page_served` branch above has already classified it.
+        if reached:
+            inconclusive.append(
+                "a request for probe.mp4 arrived and the server answered NOTHING — no media bytes were "
+                "sent, so the failure the page reports is not about WebKit at all. The server's own "
+                "trace below says why (typically `no such file for /probe.mp4`)"
+            )
+            problems.append(
+                "the server logged no served response for probe.mp4 — ⚠ a request WITHOUT a matching "
+                "`serving` line means no media bytes were sent at all, so whatever the page reports "
+                "next is not a statement about WebKit. The server's own trace is printed below"
+            )
+        else:
+            problems.append("the server logged no served response for probe.mp4 (and no request either)")
         print("  ❌ the server logged no response")
 
     metadata = evidence(r"\[spike\] \[loopback\] metadata ok")
@@ -242,10 +277,28 @@ def main() -> int:
 
     any_spike = evidence(r"\[spike\]")
     if not any_spike:
+        inconclusive.append(
+            "no `[spike]` lines anywhere — the spike never ran. It needs the app launched with "
+            "`-RKMOfflineSpike YES`, and a stored server address (the probe file comes from it)"
+        )
         problems.append(
             "NO `[spike]` lines anywhere in the log — the spike never ran. It needs the app launched "
             "with `-RKMOfflineSpike YES`, and a stored server address (the probe file comes from it)"
         )
+
+    # ------------------------------------------------------------------ the server's own trace
+    # ⚠⚠ ADDED BECAUSE ITS ABSENCE COST A MAC ROUND. The first real run showed a request with no
+    # matching response, and the reason (`no such file for /probe.mp4` — the file was stored under the
+    # name it had on HIS server while the page asked for `/probe.mp4`) was sitting in the log the whole
+    # time, unprinted. A gate that hides the evidence it is judging is half a gate.
+    trace = [ln.strip() for ln in lines
+             if "loopback" in ln.lower() or "offline spike:" in ln.lower()]
+    print("\nThe server's own trace (every loopback / spike line, whether or not a check matched it):")
+    if trace:
+        for line in trace:
+            print(f"  · {line}")
+    else:
+        print("  (none — the loopback server never logged anything)")
 
     # ---------------------------------------------------------------- the bonus
     scheme_meta = evidence(r"\[spike\] \[scheme\] metadata ok")
@@ -286,8 +339,21 @@ def main() -> int:
 
     # ------------------------------------------------------------------ verdict
     print("\n" + "=" * 78)
+    if inconclusive:
+        # ⚠ EXIT 3, NOT 1, ON PURPOSE. A caller (or the next session) must be able to tell "the
+        # experiment says no" from "the experiment did not happen" — the second one is a bug in the
+        # spike, and treating it as a finding about WebKit would rewrite a good plan for a bad reason.
+        print("INCONCLUSIVE — the experiment produced NO evidence, so the plan is neither confirmed nor")
+        print("               contradicted. This is a fault in the SPIKE, not a fact about WebKit:")
+        for reason in inconclusive:
+            print(f"  - {reason}")
+        print("\nFix that and run it again. ⚠ Do NOT read the rows below as a verdict:")
+        for problem in problems:
+            print(f"  (side effect) {problem}")
+        return 3
+
     if problems:
-        print("FAIL — the plan may NOT proceed as written. Missing evidence:")
+        print("FAIL — the experiment RAN and the plan may NOT proceed as written. Missing evidence:")
         for problem in problems:
             print(f"  - {problem}")
         print(

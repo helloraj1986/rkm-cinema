@@ -47,6 +47,12 @@ final class LoopbackServer {
                 case .ready:
                     let assigned = listener.port?.rawValue ?? 0
                     self?.port = assigned
+                    // ⚠ The ROOT is logged at start-up: when a request 404s, the first question is
+                    // "which directory is it even looking in?", and last round it cost a whole Mac
+                    // round to answer because the log never said.
+                    if let root = self?.root.path {
+                        RKMLog.info("loopback: serving files from \(root)", category: .net)
+                    }
                     completion(.success(assigned))
                 case .failed(let error):
                     completion(.failure(error))
@@ -149,6 +155,11 @@ final class LoopbackServer {
         guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
               let size = (attributes[.size] as? NSNumber)?.intValue, size > 0
         else {
+            // ⚠ LOUD, because this is the failure that looks exactly like "WebKit refused the media":
+            // the page reports `mediaError=code=4` either way, and only this line distinguishes
+            // "no bytes were ever sent" from "bytes were sent and the codec was refused".
+            RKMLog.error("loopback: cannot read \(url.path) — sending 404 (no media bytes sent at all)",
+                         category: .net)
             send(status: "404 Not Found", headers: [:], body: Data(), on: connection)
             return
         }

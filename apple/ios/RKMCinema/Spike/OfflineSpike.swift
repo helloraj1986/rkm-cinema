@@ -36,8 +36,21 @@ enum OfflineSpike {
     /// changes behaviour without it — the spike is opt-in and cannot leak into normal use.
     static let launchKey = "RKMOfflineSpike"
 
-    /// The file the server serves, fetched from his own stack once.
-    static let assetName = "harness-sample.mp4"
+    /// ⚠⚠ **TWO NAMES, AND CONFLATING THEM COST A WHOLE MAC ROUND.**
+    ///
+    /// `remoteName` is what the file is called on his server; `servedName` is what the probe page
+    /// ASKS FOR (`/probe.mp4`). The first version downloaded to `remoteName` and the server looked for
+    /// `servedName` in the same directory — so `/probe.mp4` 404'd, **not one byte of media reached
+    /// WebKit**, and BOTH transports reported `mediaError=code=4` (src not supported).
+    ///
+    /// ⚠ The tell was in the log and I nearly read past it: the request line was there
+    /// (`loopback request: GET /probe.mp4 · Range: bytes=0-1`) with **no matching `serving` line** —
+    /// a served response always logs one. ⚠ And the scheme-handler "failure" that round was
+    /// meaningless: it failed for the same missing file, not because WebKit cannot carry media through
+    /// a scheme handler. **A second transport failing for the same mundane reason is not a second
+    /// piece of evidence.** The checker now prints the server's own trace so this cannot hide again.
+    static let remoteName = "harness-sample.mp4"
+    static let servedName = "probe.mp4"
 
     static var startsAtLaunch: Bool {
         UserDefaults.standard.bool(forKey: launchKey)
@@ -261,7 +274,9 @@ final class OfflineSpikeModel: ObservableObject {
     private func ensureAsset(completion: @escaping (Result<URL, SpikeFailure>) -> Void) {
         let file: URL
         do {
-            file = try OfflineSpike.directory().appendingPathComponent(OfflineSpike.assetName)
+            // ⚠ Stored under the name the PAGE asks for (`/probe.mp4`), not the name it has on his
+            // server — that mismatch is what made both transports 404 last round.
+            file = try OfflineSpike.directory().appendingPathComponent(OfflineSpike.servedName)
         } catch {
             completion(.failure(SpikeFailure("could not create the spike directory: \(error.localizedDescription)")))
             return
@@ -270,7 +285,7 @@ final class OfflineSpikeModel: ObservableObject {
            size.intValue > 0 {
             assetBytes = size.intValue
             status = "probe file ready"
-            detail = "\(OfflineSpike.assetName) — \(size.intValue) B (already downloaded)"
+            detail = "\(OfflineSpike.servedName) — \(size.intValue) B (already downloaded)"
             completion(.success(file))
             return
         }
@@ -279,7 +294,7 @@ final class OfflineSpikeModel: ObservableObject {
                                              + "-\(OfflineSpike.launchKey) YES")))
             return
         }
-        let remote = address.url.appendingPathComponent(OfflineSpike.assetName)
+        let remote = address.url.appendingPathComponent(OfflineSpike.remoteName)
         status = "downloading probe file…"
         detail = remote.absoluteString
         RKMLog.info("offline spike: downloading \(remote.absoluteString)", category: .net)
@@ -305,7 +320,7 @@ final class OfflineSpikeModel: ObservableObject {
             DispatchQueue.main.async {
                 self?.assetBytes = data.count
                 self?.status = "probe file ready"
-                self?.detail = "\(OfflineSpike.assetName) — \(data.count) B (downloaded)"
+                self?.detail = "\(OfflineSpike.servedName) — \(data.count) B (downloaded)"
                 RKMLog.info("offline spike: probe file \(data.count) B", category: .net)
                 completion(.success(file))
             }

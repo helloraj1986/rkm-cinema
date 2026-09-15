@@ -88,6 +88,19 @@ reason named. That suite also caught two bugs in the tool itself (a pattern that
 `loopback: serving 206 …` line shape, and a glob that read **zero lines** from a log handed in under
 another name), and the empty-path case that started all of this.
 
+⚠⚠ **AND IT NOW JUDGES ONE RUN, NOT THE WHOLE FILE — the log is APPEND-ONLY ACROSS RUNS** (`rkm-ios.log`
+plus its archives), and this tool used to take the **first** match in all of it. That is fine for a first
+round and wrong for every round after it: once a run had passed, its `seek -> ok` and `RESULT play=ok`
+sat in the file **forever**, so a later round that FAILED still reported **PASS** — a gate that cannot
+fail again after its first success, which is not a gate. ⚠ And the mirror fault: the first round's
+`mediaError=code=4` would be printed as the **new** round's evidence. It now judges **the newest
+`offline spike: starting` run** (matched by *timestamp*, so archive order cannot matter), prints which
+run it read and how many earlier lines it ignored, and falls back to the whole file — saying so — only
+when there is no marker at all. Re-run the falsification with
+`python3 tools/check_spike_e1_e2.py --selftest`: **11 cases**, including both of those bugs, and ⚠
+**the old tool exits 0 on the stale-pass case where this one exits 1 — checked by running both against
+the same two-run log.**
+
 The raw greps, if you would rather read it yourself:
 
 ```bash

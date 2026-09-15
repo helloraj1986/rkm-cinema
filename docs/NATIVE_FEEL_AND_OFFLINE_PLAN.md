@@ -428,7 +428,7 @@ native → page   window.__rkmOffline.emit({ e: "progress" | "state" | "ready",
 | # | Experiment | Decides | Cost |
 |---|---|---|---|
 | **E1** | Add a throwaway loopback server to the shell serving one file from the container; load `http://127.0.0.1:<port>/probe.mp4` in a `<video>` inside the page (a one-line `console.log` of `video.canPlayType` + `onerror` through the existing bridge) | **The single most important unknown**: does media play from loopback inside this WKWebView, with seeking (Range)? Also compare a `WKURLSchemeHandler` URL in the same build — one build answers both. | One Mac round (~1 h) |
-| **E2** | Log `'serviceWorker' in navigator`, `navigator.storage.estimate()`, and `document.fullscreenEnabled` on launch (HUD console line) | Whether a service worker is even available for the offline shell — if not, A1's headers *are* the offline story and no SW work is planned | One `apply` + a screenshot of the HUD |
+| **E2** | Log `'serviceWorker' in navigator`, `navigator.storage.estimate()`, and `document.fullscreenEnabled` on launch (HUD console line) | Whether a service worker is even available for the offline shell — if not, A1's headers *are* the offline story and no SW work is planned | One `apply` + a screenshot of the HUD · ✅ **ANSWERED 2026-09-14 (B0 spike, `spike/offline-loopback`): `sw=false` on BOTH origins** — the app's own plain HTTP origin **and** `http://127.0.0.1` (a *secure* context, proved by `navigator.storage` being exposed there and absent on the HTTP origin) ⇒ **not an HTTP artefact: this WKWebView exposes no `navigator.serviceWorker`** ⇒ A0's cache headers ARE the offline-shell story, no SW work planned |
 | **E3** | `curl -sI` the deployed `/assets/*.js`, `/`, `/api/jellyfin/poster`, `/api/library` | Confirms §2.1 and gives before/after numbers for A1 | ✅ **DONE 2026-09-14 — see §2.4.** `no-store` on the bundle confirmed; a third defect found (no gzip: 1.07 MB uncompressed on the wire) |
 | **E4** | In the shell, cold launch twice with `log stream --device`, counting JS/CSS/API requests | The baseline the ≤400 ms and 0-byte gates are measured against | 10 minutes |
 | **E5** | Time `ffmpeg -c copy` remux of one of his films → MP4 on the server | The real cost of `prepare` for a typical title, and whether 4K titles need a cap | 15 minutes |
@@ -494,7 +494,8 @@ Then **A1 → A2 → A3** (a persistent cache, one home call, and a budget gate)
 Then **B0 (the E1/E2 spike)** — one Mac round that decides whether offline video is a
 three-day job or a different design entirely. Nothing in Workstream B should be written before it.
 
-⚠ Explicitly **not** planned here: a service worker (until E2 says whether WKWebView will even give us
-one), bundling the web app inside the app (it would break the "live UI, no rebuild" property that makes
+⚠ Explicitly **not** planned here: a service worker (**E2 answered 2026-09-14: `sw=false` on a secure origin
+as well as the app's HTTP one — this WKWebView gives us none without an app-bound domain, so A0's headers are
+the offline shell**), bundling the web app inside the app (it would break the "live UI, no rebuild" property that makes
 `apply` enough for a frontend change — `apple/README.md`), and any third-party download or web-server
 dependency in the shell.

@@ -110,6 +110,17 @@ Simulators → **Download Container…**; on the simulator, `simctl get_app_cont
 | `[scheme] RESULT loadedmetadata=TIMEOUT` / error | The expected result — the plan's §4.1 stands, and the loopback server is the design. |
 | `[rkm-caps] sw=false` | A service worker is unavailable ⇒ A0's headers are the offline-shell story; plan no SW work. |
 
+⚠⚠ **IF E1 FAILS ON THE SIMULATOR, CONFIRM THAT ON THE DEVICE BEFORE THE PLAN CHANGES — a PASS, by
+contrast, may be taken at face value.** The Simulator's media pipeline is the Mac's, wired up differently
+from a device's, and the two directions do not cost the same: a **pass** says the transport works and a real
+device is not *less* capable than a Simulator (and the file itself is H.264 High 3.1 + AAC, measured above —
+both play it), while a **fail** sends the whole of Workstream B to a **native `AVPlayer`**, i.e. a different
+and larger piece of work. A negative that expensive does not get to rest on a Simulator: re-run the same
+build on his **iPad** before §4.4–4.6 are rewritten. ⚠ `mac-round.sh --sim` only ever launches a Simulator,
+so a device run is launched from **Xcode** with `-RKMOfflineSpike YES` set as a scheme argument (Product →
+Scheme → Edit Scheme → Run → *Arguments Passed On Launch*), and the log then comes out of the device with
+`Download Container…` (`apple/LOGGING.md` §7) — `tools/check_spike_e1_e2.py <that path>` reads it by hand.
+
 ## What is and is not verified
 
 * ⚠⚠ **THE FIRST REAL RUN FAILED, AND IT WAS A BUG IN THE SPIKE, NOT IN WEBKIT — `probe.mp4` vs
@@ -123,6 +134,26 @@ Simulators → **Download Container…**; on the simulator, `simctl get_app_cont
   response always logs one. Fixed by storing the file under the name the page asks for
   (`OfflineSpike.servedName`), and the checker now **prints the server's own trace** and reports
   **INCONCLUSIVE (exit 3)** rather than FAIL when no bytes were sent.
+* ✅ **THE PROBE FILE WAS MEASURED FROM THIS SIDE (2026-09-15), so a codec refusal cannot be misread as a
+  transport fault.** `harness-sample.mp4` fetched from his own stack (`http://…:8124/harness-sample.mp4` →
+  `200`, `video/mp4`, **1,128,375 B** — the same size the app logged) and its boxes parsed: **H.264 High
+  profile, level 3.1 (`avc1`), AAC audio (`mp4a`/`esds`), `moov` at the front (faststart), 5.05 s.** Both the
+  Simulator and a device play exactly that, so if E1 comes back `mediaError=code=4` **with** `serving 206`
+  in the trace, the finding is about the **transport**, not the file.
+* ✅ **E2 IS ANSWERED (2026-09-14) — and the answer is the strong one, because the probe ran on TWO
+  origins.** The capability line rides `WebInstrumentation`, so the **loopback** page the spike serves got
+  one as well as the app's own page:
+  `[rkm-caps] sw=false fullscreen=true origin=http://rkm-hp.tail8d5e8.ts.net:8124 persist=none` and
+  `[rkm-caps] sw=false fullscreen=true origin=http://127.0.0.1:57949 persist=probe`.
+  ⚠ **`persist=` is the tell that the two origins differ in kind, not merely in address:**
+  `navigator.storage.persisted` **exists** on `127.0.0.1` — a *potentially trustworthy* origin, so the
+  storage API is exposed there — and is **absent** on the plain-HTTP tailnet origin. So `sw=false` is **not**
+  an artefact of serving the app over HTTP: **on a secure origin this WKWebView still exposes no
+  `navigator.serviceWorker`.** ⇒ E2's decision holds — **A0's cache headers ARE the offline-shell story, and
+  no service-worker work is planned.** ⚠ It also corrects a loose first reading of that log: `navigator.storage`
+  is not "absent in WKWebView", it is absent **on an insecure origin** — a distinction that matters for the
+  storage design later (`storage.estimate()` reported `quota=103 GB usage=0`, and `persisted()` → `false`, on
+  the secure loopback origin only).
 * ⚠⚠ **THE FIRST MAC BUILD FAILED — one error, and it was exactly the kind `-parse` cannot see.**
   `OfflineSpike.swift` used `Result<URL, String>`, and **`Result`'s failure type must conform to
   `Error`** — which `String` does not. His build reported it verbatim (*"type 'String' does not conform

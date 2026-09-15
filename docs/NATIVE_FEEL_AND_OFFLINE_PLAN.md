@@ -320,6 +320,18 @@ the player would have streamed**:
 Staging rules: `RKM_OFFLINE_STAGING` dir, one file per (item, rendition), **TTL cleanup** (e.g. 48 h
 after last access) so a cancelled download cannot eat the server's disk, and a size cap.
 
+⚠ **BUILT 2026-09-16 (`feat/offline-api`, phase B1) — and the staging rules are as follows, with the
+reason each one has:** the directory defaults to **`/shared/offline`**, i.e. the api's **own**
+`rkm_shared` volume — deliberately **not** inside a media root, because a folder of downloadable films
+under `D:\RKM_MEDIA` is a folder **Jellyfin scans** and the library would grow phantom items. The
+trade-off is that `/shared` is the Docker host's disk, not the media drive, which is why the cap
+(default **12 GiB**, `RKM_OFFLINE_MAX_BYTES`) exists and is enforced both *before* packaging and
+*mid-transfer*. TTL is **48 h after last access** (`RKM_OFFLINE_TTL_HOURS`, `0` = never) and is swept
+**lazily at `prepare`** rather than by a timer — that is the moment stale bytes can block a new
+download and the app gains no daemon thread. ⚠ **A direct-playable title is NOT copied**: its artefact
+IS the library file (`borrowed` in the manifest), so `delete` and the sweep remove the *record* and
+never the household's media file. Full reasoning: **ADR-0007**.
+
 ### 4.3 Backend contract (additive; ADR + `openapi.v1.json` + a route-protection decision)
 
 ```
@@ -339,11 +351,33 @@ DELETE /api/offline/{id}                                 → drop the staging fi
 * **Auth:** the same session rules as every other route — the route-protection test forces the
   decision to be explicit rather than inheriting one silently (`api/session.py`: a route on the auth
   router is NOT session-scoped; a `_user_id()` fallback silently acts as the first account).
-* **Authorization:** offline downloads are per-profile only in the UI; the media server has one
+  ✅ **DECIDED 2026-09-16 (B1): all six routes are SESSION-scoped** — downloading is a household
+  feature, and promoting them to ADMIN would both hide it from members and break the Phase-E pin.
+* **Authorization:*** offline downloads are per-profile only in the UI; the media server has one
   credential, so the *file* is not per-profile. Record that as a decision, not an accident.
+  ✅ **RECORDED (ADR-0007 D6).** What is per-profile is *which titles a member may ask for*: the
+  packaging call runs as the acting profile (`acting_media_token`), so Jellyfin refuses a library the
+  member may not watch.
 * **Idempotent `prepare`**: asking twice returns the same job/file.
+  ✅ **BUILT — and proved by counting upstream calls**, not by comparing states: a second call that
+  quietly re-transcoded the same film would also read `state: ready`.
 * Direct play needs no prepare step at all (`mode=direct` → serve `Static=true` through the existing
   stream proxy, which already passes `Content-Range`/`Accept-Ranges` through).
+  ⚠ **AMENDED (B1).** Decided otherwise, deliberately: `/api/offline/file/{id}` is **ONE endpoint with
+  one behaviour** — a real `Content-Length`, a real `206`, a strong ETag — and a direct rendition is
+  served from the **library file itself** (`borrowed`), not through the stream proxy. Two serving
+  paths would mean two sets of length/range semantics to get right, and the proxy deliberately drops
+  `Content-Length` (it streams chunked for the player). No copy is made; see ADR-0007 D2.
+
+⚠ **AND THE ROUTES ARE KEYED BY ITEM, NOT BY THE `{job_id}` SKETCH ABOVE (deviation, ADR-0007 D5).**
+Both the page and the native side know the *title* they are asking about, a download must be
+addressable after an api restart, and a job id would be a mapping with no user:
+`/api/offline/status/{item_id}`, `/api/offline/file/{item_id}`, `/api/offline/bundle/{item_id}`,
+`DELETE /api/offline/{item_id}`, with `mode` as an optional query parameter that defaults to the
+newest rendition. ⚠ **`GET /api/offline/subtitles/{id}?lang=` is DEFERRED, not forgotten:** the
+device can already fetch a text track as WebVTT from the existing `/api/jellyfin/subtitle` proxy at
+download time, so a second route would duplicate it — it lands in B4 only if the bundle needs a stable
+per-language URL.
 
 ### 4.4 Native side (the shell)
 
@@ -451,7 +485,7 @@ shippable.
 | **A2** | A3 `/api/library/home` + memo, contract + route decision | `pytest` green; `check_deployed.py` sees the new route; launch request count ≤ 2 | 0.5 d |
 | **A3** | A5 launch-budget instrument + gate | Baseline printed in the log; gate fails if a warm launch fetches `/assets/` | 0.5 d |
 | **B0** | **E1 + E2 spike build** (throwaway, not merged) | A downloaded file plays from loopback, with seeking, inside the shell — or the design changes before anything else is written | 0.5 d |
-| **B1** | Backend offline API + staging + packaging + TTL, tests, contract | pytest + a `curl` proof: `HEAD` gives the size, a `Range` request returns 206 + `Content-Range`, `prepare` is idempotent | 1 d |
+| **B1** | Backend offline API + staging + packaging + TTL, tests, contract | pytest + a `curl` proof: `HEAD` gives the size, a `Range` request returns 206 + `Content-Range`, `prepare` is idempotent | 1 d · ✅ **BUILT 2026-09-16 (`feat/offline-api`)** — `services/offline.py` (staging store + packager + range parser) + `api/routes/offline.py` (6 routes) + **ADR-0007**; `pytest` green and **15/15 falsifications red**. The `curl` half is the live-stack step of the handover runbook (needs `apply` on RKM-HP) |
 | **B2** | Native: `OfflineStore` + `OfflineDownloader` + background-session delegate + cookie mirroring | Downloads complete with the app backgrounded, resume after a forced failure, and appear in the manifest after a relaunch | 2–3 d |
 | **B3** | Native: `OfflineServer` + `OfflineBridge` (both directions) | Loopback server passes a Range test suite; page round-trips a command and a progress event | 1–2 d |
 | **B4** | Page: download affordances, Downloads screen, offline player path, progress spool | A film downloads, plays offline with Wi-Fi off, and its position lands in Continue Watching after reconnect | 1–2 d |

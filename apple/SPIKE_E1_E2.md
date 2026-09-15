@@ -9,6 +9,34 @@ questions **on a device**, because every choice in the offline-downloads design
 | **E1** | Does media play in a `<video>` **inside a WKWebView** from a **loopback HTTP server**, *with seeking* — and does the same file work through a `WKURLSchemeHandler`? | **Everything.** If loopback HTTP works, the design in §4.4–4.6 stands. If neither works, offline playback has to be handed to **AVPlayer natively** (a SwiftUI player outside the web UI) — a different, larger piece of work, and the plan's ranked risk #1. |
 | **E2** | Is a service worker available at all (`sw=`) and what does storage look like (`quota=`, `persistent=`) | Whether a service worker is worth planning for. If `sw=false`, A0's cache headers **are** the offline-shell story and nothing more is designed. |
 
+## ✅ ANSWERED — 2026-09-16, and it is a PASS
+
+`python3 tools/check_spike_e1_e2.py` on the **iPhone 17 Pro** simulator, exit **0**:
+
+| Evidence | Line |
+|---|---|
+| the media element asked for the file | `loopback request: GET /probe.mp4 · Range: bytes=0-1` |
+| …and got a **byte range**, not the whole file | `loopback: serving 206 Partial Content bytes 0-1/1128375`, then `bytes 0-1128374/1128375` |
+| WebKit parsed the container | `[spike] [loopback] metadata ok 960x540 duration=5.01` |
+| **the seek — the real question — completed** | `[spike] [loopback] seek to 2.51 -> ok at 2.51` |
+| playback started, no media error | `[spike] [loopback] RESULT play=ok mediaError=none` |
+
+⇒ **§4.4–4.6 stand as written and Workstream B is unblocked: `B1` (the server-side offline API) is the
+next phase.** ⚠ The `WKURLSchemeHandler` failed **for real this time** — `[scheme] RESULT
+loadedmetadata=TIMEOUT mediaError=code=4` *while bytes were being served over loopback in the same run* —
+so §4.1's rejection of a custom scheme for media is **measured**, not assumed. (Round 1's "it failed as
+expected" was meaningless: it failed for a missing file.)
+
+⚠⚠ **THE TWO LEGS ARE DIFFERENT NETWORKS, AND THE SPIKE MEASURED LOCAL PLAYBACK ON PURPOSE.** The probe
+file is fetched from his own server over **Tailscale** (`http://rkm-hp.tail8d5e8.ts.net:8124` → `200`,
+1,128,375 B in **0.29 s ≈ 3.8 MB/s**), while *playback* is served from **127.0.0.1 inside the device**.
+That split is the design: a film you have downloaded must play **with the tailnet down**, which is the
+whole point of Workstream B. ⚠ What that means for `B1`/`B2`: download time is a **tailnet** property
+(~9 minutes for a 2 GB film at the measured rate, worse if Tailscale relays via DERP instead of a direct
+path), so the staging TTL, the progress bar and any ETA must assume it; and the device must keep
+Tailscale connected — which the app already requires today. The **simulator inherits the Mac's**
+network stack, which is why the tailnet leg worked there without any Tailscale inside the simulator.
+
 ## What it does
 
 * Downloads `harness-sample.mp4` **from the app's own server** into

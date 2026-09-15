@@ -325,8 +325,19 @@ def analyse(lines: list[str], everything: list[str], out=print) -> dict:
     # web shell loads, which can be before the spike starts. The line that decides E2 is the loopback
     # page's, and that one can only come from the newest run.
     out("\nE2 · is a service worker available, and what does storage look like?")
-    caps = every(r"\[rkm-caps\]", everything)
+    # ⚠ THIS RUN's caps first; the whole file only as a LABELLED fallback. The line that decides E2 is
+    # the LOOPBACK page's, and that one always belongs to this run — while reading every line in the
+    # file (what this did until now) printed yesterday's origins beside today's and said
+    # "3 origins measured", quoting evidence from a run that had already been superseded.
+    caps = every(r"\[rkm-caps\]", lines)
+    stale = False
+    if not caps:
+        caps = every(r"\[rkm-caps\]", everything)
+        stale = bool(caps)
     if caps:
+        if stale:
+            out("  (✓ no `[rkm-caps]` in this run — showing the newest earlier one, because E2 rides the "
+                "app's OWN page, which can load before the spike starts)")
         for line in caps:
             out(f"  {line}")
         match = re.search(r"sw=(true|false)", " ".join(caps))
@@ -414,7 +425,7 @@ def _run_of(text: str) -> str:
 
 # -------------------------------------------------------------------------------------------- selftest
 
-def _fixture_pass(stamp: str) -> str:
+def _fixture_pass(stamp: str, port: int = 57949) -> str:
     return (
         f"[{stamp} 21:00:00.000] I [----] app offline spike: starting (E1 loopback + E2 caps)\n"
         f"[{stamp} 21:00:00.100] I [----] net offline spike: probe file 1128375 B\n"
@@ -427,8 +438,14 @@ def _fixture_pass(stamp: str) -> str:
         f"[{stamp} 21:00:01.400] V [----] web console.log: [spike] [loopback] seek to 2.52 -> ok at 2.52\n"
         f"[{stamp} 21:00:01.600] V [----] web console.log: [spike] [loopback] RESULT play=ok mediaError=none\n"
         f"[{stamp} 21:00:01.700] V [----] web console.log: [rkm-caps] sw=false fullscreen=true "
-        f"origin=http://127.0.0.1:57949 persist=probe\n"
+        f"origin=http://127.0.0.1:{port} persist=probe\n"
     )
+
+
+def _fixture_pass_without_caps(stamp: str) -> str:
+    """A passing run whose own log carries no `[rkm-caps]` — the E2 fallback has to speak up."""
+    return "\n".join(line for line in _fixture_pass(stamp).splitlines()
+                     if "[rkm-caps]" not in line) + "\n"
 
 
 def _fixture_codec_error(stamp: str) -> str:
@@ -457,8 +474,9 @@ def selftest() -> int:
     """⚠ FALSIFY THE TOOL, NOT THE SPIKE. Each case asserts the EXIT CODE, and two of them only exist
     because this tool once got the answer wrong."""
     cases: list[tuple[str, str, int, str]] = [
-        # 1. the happy path
-        ("a passing run", _fixture_pass("2026-09-14"), 0, "PASS"),
+        # 1. the happy path — ⚠ "" means "no reason to look for": a PASS has no failing sentence, and
+        #    an exit code of 0 with no complaint IS the assertion.
+        ("a passing run", _fixture_pass("2026-09-14"), 0, ""),
         # 2. ⚠ THE REGRESSION THAT MADE THE RUN WINDOW NECESSARY: a pass EARLIER in the same file must
         #    not carry a later failing run. Before the window, every `evidence()` took the first match,
         #    so this returned 0 (PASS) — a gate that can never fail again after its first success.
@@ -485,7 +503,7 @@ def selftest() -> int:
         ("no timestamps — the fallback must still judge the file",
          "\n".join(line.split("] ", 1)[1] if "] " in line else line
                    for line in _fixture_pass("2026-09-14").splitlines()
-                   if "[" in line and "]" in line), 0, "PASS"),
+                   if "[" in line and "]" in line), 0, ""),
         # 8. a media element that never asked for the file, while the PAGE was served — a real E1
         #    negative, not a spike fault
         ("the page loaded but the media stack never requested the file",
@@ -501,19 +519,49 @@ def selftest() -> int:
     for name, text, expected, expected_reason in cases:
         window, scope = newest_run(text.splitlines())
         buffer = io.StringIO()
-        with redirect_stdout(buffer):
-            result = analyse(window, text.splitlines(), out=lambda *a, **k: None)
-            code = verdict_code(result)
+        # ⚠ The OUTPUT is captured, not just the verdict: some of what must be true is a sentence the
+        # tool prints (the run it judged, the E2 origin it read), and a gate is judged on those too.
+        result = analyse(window, text.splitlines(),
+                         # ⚠ `_buf=buffer` binds the CURRENT buffer: the lambda is defined in a loop,
+                         # and a late-bound closure would write every run's output into the last one.
+                         out=lambda *parts, _buf=buffer, **_: _buf.write(
+                             " ".join(str(p) for p in parts) + "\n"))
+        code = verdict_code(result)
         shown = buffer.getvalue()
         detail = " ".join(result["inconclusive"] + result["problems"])
-        ok = code == expected and (expected == 0 or expected_reason.lower() in detail.lower())
+        haystack = (detail + "\n" + shown).lower()
+        ok = code == expected and (not expected_reason or expected_reason.lower() in haystack)
         print(f"  {'PASS' if ok else 'FAIL'}  exit={code} (want {expected})  {name}")
         if not ok:
             failures += 1
-            print(f"        expected {expected_reason!r} in the reasons, got: {detail[:220]!r}")
+            print(f"        expected {expected_reason!r} in the reasons/output, got: {haystack[:220]!r}")
         del shown, scope
 
-    # 9. the arg cases that each cost a round trip: an unset `$LOG` arrives as an empty string
+    # 9. ⚠ THE STALE-EVIDENCE BUG, ASSERTED DIRECTLY: yesterday's E2 origin must not appear in today's
+    #    report. Before the run window, every line in the file was fair game, so a two-run log printed
+    #    BOTH ports and called it "3 origins measured".
+    two_runs = _fixture_pass("2026-09-14", port=57949) + _fixture_pass("2026-09-15", port=50943)
+    window, _ = newest_run(two_runs.splitlines())
+    buffer = io.StringIO()
+    analyse(window, two_runs.splitlines(),
+            out=lambda *parts, **_: buffer.write(" ".join(str(p) for p in parts) + "\n"))
+    shown = buffer.getvalue()
+    ok = "50943" in shown and "57949" not in shown
+    print(f"  {'PASS' if ok else 'FAIL'}  E2 shows THIS run's origin only (50943, not yesterday's 57949)")
+    if not ok:
+        failures += 1
+
+    # 10. a run that logged no caps of its own: the labelled fallback must still report E2
+    fallback = _fixture_pass("2026-09-14") + _fixture_pass_without_caps("2026-09-15")
+    window, _ = newest_run(fallback.splitlines())
+    buffer = io.StringIO()
+    result = analyse(window, fallback.splitlines(),
+                     out=lambda *parts, **_: buffer.write(" ".join(str(p) for p in parts) + "\n"))
+    shown = buffer.getvalue()
+    ok = verdict_code(result) == 0 and "no `[rkm-caps]` in this run" in shown
+    print(f"  {'PASS' if ok else 'FAIL'}  a run with no caps of its own falls back and says so")
+    if not ok:
+        failures += 1
     for argv, want, label in (
         ([""], 2, "an EMPTY path argument (what `\"$LOG\"` expands to)"),
         (["."], 2, "a DIRECTORY-ish argument instead of a file"),

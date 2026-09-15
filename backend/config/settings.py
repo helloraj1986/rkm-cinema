@@ -137,6 +137,18 @@ class Config:
     # RKM_MEDIA_PATH bug, which greyed out every library).
     RKM_AUTH_REQUIRED: str
 
+    # --- Offline downloads (NATIVE_FEEL_AND_OFFLINE_PLAN §4.2/§4.3, phase B1) ---
+    # Where packaged renditions are staged (`/shared/offline` = the api's OWN
+    # persistent volume), how long an untouched one survives, and the cap on staged
+    # bytes. All three are OPTIONAL and annotated HERE so the real-env passthrough
+    # carries them (an undeclared key is dropped silently — the 2026-09-10
+    # RKM_MEDIA_PATH bug). The staging directory is deliberately NOT inside a media
+    # root: a folder of downloadable films under D:\RKM_MEDIA is a folder Jellyfin
+    # would scan, and the library would grow phantom items (ADR-0007 D1).
+    RKM_OFFLINE_STAGING: str
+    RKM_OFFLINE_TTL_HOURS: str      # hours after last access; '0' = never sweep
+    RKM_OFFLINE_MAX_BYTES: str      # cap on staged bytes; '0' = no cap
+
     # --- Media libraries (MEDIA_LIBRARIES_PLAN) ---
     # Parsed from MEDIA_LIBRARY_N_NAME/PATH .env keys. Empty when the user has
     # not configured any — the UI then falls back to the server's own folders.
@@ -254,6 +266,16 @@ class Config:
         # enforced until the login UI has shipped (Phase 2 arms it), so an
         # un-updated `.env` keeps working exactly as before.
         self.RKM_AUTH_REQUIRED = (env.get("RKM_AUTH_REQUIRED") or "false").strip().lower()
+
+        # Offline downloads (B1). The defaults ARE the shipped behaviour, so an
+        # un-updated .env deploys unchanged: staging on the api's own /shared volume
+        # (persistent across every rebuild), 48 h after last access, 12 GiB cap —
+        # because the staging volume is the Docker host's disk and NOT the media
+        # drive, and a household download must never be able to fill it.
+        self.RKM_OFFLINE_STAGING = (env.get("RKM_OFFLINE_STAGING") or "").strip() or "/shared/offline"
+        self.RKM_OFFLINE_TTL_HOURS = (env.get("RKM_OFFLINE_TTL_HOURS") or "").strip() or "48"
+        self.RKM_OFFLINE_MAX_BYTES = (env.get("RKM_OFFLINE_MAX_BYTES") or "").strip() \
+            or str(12 * 1024 ** 3)
 
         # Media libraries (MEDIA_LIBRARIES_PLAN Phase 1): parsed here in the
         # dedicated settings layer — never read MEDIA_LIBRARY_* anywhere else.

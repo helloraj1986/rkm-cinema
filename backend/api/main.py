@@ -17,6 +17,7 @@ from api.routes import jellyfin_subtitles as jellyfin_subtitles_routes
 from api.routes import jellyfin_detail as jellyfin_detail_routes
 from api.routes import jellyfin_similar as jellyfin_similar_routes
 from api.routes import media as media_routes
+from api.routes import offline as offline_routes
 from api.routes import watchlist as watchlist_routes
 from api.routes import reconcile as reconcile_routes
 from api.routes import jobs as jobs_routes
@@ -99,6 +100,13 @@ def create_app() -> FastAPI:
     app.include_router(watchlist_routes.router, prefix="/api", dependencies=SESSION_SCOPED)
     app.include_router(reconcile_routes.router, prefix="/api", dependencies=SESSION_SCOPED)
     app.include_router(jobs_routes.router, prefix="/api", dependencies=SESSION_SCOPED)
+    # Offline downloads (NATIVE_FEEL_AND_OFFLINE_PLAN §4.3, phase B1): staging +
+    # packaging + byte-ranged serving. SESSION-scoped, like `POST /api/media/{id}/request`
+    # — downloading a title is a HOUSEHOLD feature, not an administrator action, so
+    # both the household member and the administrator reach it and no new
+    # administrator-gated route is added outside /api/admin/* (ADR-0007 D6; the pin in
+    # tests/test_route_protection.py would otherwise fail, correctly).
+    app.include_router(offline_routes.router, prefix="/api", dependencies=SESSION_SCOPED)
 
     @app.on_event("startup")
     async def startup():

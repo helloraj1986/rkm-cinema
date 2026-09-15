@@ -122,6 +122,22 @@ ROUTE_LEVELS: dict[str, str] = {
     "GET /api/search": SESSION,
     "GET /api/search/global": SESSION,
     "GET /api/status": SESSION,
+    #    OFFLINE DOWNLOADS (plan §4.3, phase B1) — SESSION, and that is a decision:
+    #    downloading a film to the iPad is a HOUSEHOLD feature, exactly like
+    #    `POST /api/media/{id}/request` below. Promoting them to ADMIN would hide the
+    #    feature from every member, and would also break the Phase-E pin (the
+    #    admin-gated set outside /api/admin/* is those four routes and nothing else).
+    #    ⚠ The media server has ONE credential, so the staged FILE is not
+    #    per-profile; what is per-profile is which titles a member may ask for, which
+    #    the media call itself enforces (ADR-0007 D6/§4.3).
+    "POST /api/offline/prepare": SESSION,
+    "GET /api/offline/status/{item_id}": SESSION,
+    "GET /api/offline/bundle/{item_id}": SESSION,
+    #    ⚠ HEAD is declared EXPLICITLY because a GET-only FastAPI route answers HEAD
+    #    with 405 (measured 2026-09-14) — the device's size probe is this route.
+    "HEAD /api/offline/file/{item_id}": SESSION,
+    "GET /api/offline/file/{item_id}": SESSION,
+    "DELETE /api/offline/{item_id}": SESSION,
     "POST /api/suggest": SESSION,
     #    MEMBER-FACING, same decision: adding to the household suggestion list is a member feature.
     "POST /api/suggest/add": SESSION,

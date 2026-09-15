@@ -2036,6 +2036,309 @@
           }
         }
       }
+    },
+    "/api/offline/prepare": {
+      "post": {
+        "summary": "Offline Prepare",
+        "description": "Package one title for download \u2014 idempotent, and it never blocks on the work.\n\nCalling it twice for the same title returns the SAME artefact: a finished one is\nreturned untouched (``reused: true``) and one still being built returns\n``state: \"packaging\"`` instead of starting a second writer for the same file.",
+        "operationId": "offline_prepare_api_offline_prepare_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OfflinePrepareRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/offline/status/{item_id}": {
+      "get": {
+        "summary": "Offline Status",
+        "description": "Where this download is \u2014 answered from DISK, so it survives an api restart.",
+        "operationId": "offline_status_api_offline_status__item_id__get",
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Item Id"
+            }
+          },
+          {
+            "name": "mode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "which rendition; default = the newest",
+              "title": "Mode"
+            },
+            "description": "which rendition; default = the newest"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/offline/bundle/{item_id}": {
+      "get": {
+        "summary": "Offline Bundle",
+        "description": "Everything the device needs to write its own manifest \u2014 and to decide first.\n\n\u26a0 This call does NOT package anything, and the size it reports is an ESTIMATE\n(``estimate_bytes``) taken from the library file. \u00a74.2 asks for it before the\ndownload is committed to: \"this is 2.1 GB, you have 41 GB free\". The real size\nis only known once ``prepare`` has finished, and then it is ``size`` on\n``prepare``/``status``.",
+        "operationId": "offline_bundle_api_offline_bundle__item_id__get",
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Item Id"
+            }
+          },
+          {
+            "name": "mode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "auto | direct | remux | transcode_audio | transcode",
+              "default": "auto",
+              "title": "Mode"
+            },
+            "description": "auto | direct | remux | transcode_audio | transcode"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/offline/file/{item_id}": {
+      "head": {
+        "summary": "Offline File Head",
+        "description": "The artefact's size, without its body \u2014 what a downloader asks FIRST.\n\nA ``GET``-only FastAPI route answers HEAD with 405 (measured, \u00a74.3), which would\nturn \"how big is this?\" into a silent failure. This is that route.",
+        "operationId": "offline_file_head_api_offline_file__item_id__head",
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Item Id"
+            }
+          },
+          {
+            "name": "mode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Mode"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "Offline File",
+        "description": "The artefact's bytes: ``200`` whole, ``206`` for a range, ``416`` when impossible.\n\nThe device downloads this once and afterwards serves the SAME bytes from its own\nloopback server (that split is the whole point of the spike's two-network result:\na downloaded film must play with the tailnet down).",
+        "operationId": "offline_file_api_offline_file__item_id__get",
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Item Id"
+            }
+          },
+          {
+            "name": "mode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Mode"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/offline/{item_id}": {
+      "delete": {
+        "summary": "Offline Delete",
+        "description": "Drop the staged copy. A ``direct`` (borrowed) rendition removes the RECORD only.\n\n\u26a0 \"Delete this download\" must never delete the household's media file \u2014 for a\ndirect-playable title the artefact IS the library file, so this route unlinks it\nonly when the manifest says we own it (``borrowed: false``).",
+        "operationId": "offline_delete_api_offline__item_id__delete",
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Item Id"
+            }
+          },
+          {
+            "name": "mode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Mode"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -3176,6 +3479,23 @@
         ],
         "title": "MediaResponse",
         "description": "The canonical single-item object the frontend renders from (\u00a718).\n\nThe frontend must NOT reconstruct status/capabilities from scattered\nfields \u2014 this is one complete, backend-derived resource."
+      },
+      "OfflinePrepareRequest": {
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "title": "Item Id",
+            "default": ""
+          },
+          "mode": {
+            "type": "string",
+            "title": "Mode",
+            "default": "auto"
+          }
+        },
+        "type": "object",
+        "title": "OfflinePrepareRequest",
+        "description": "Ask the server to package one title for offline download (plan \u00a74.3, phase B1).\n\n``mode`` defaults to ``auto``: the SERVER resolves the cheapest rendition that\nwill actually play (direct \u2192 remux \u2192 transcode_audio \u2192 transcode), because the\ndecision needs the media source's container/codecs and the device should not have\nto guess. An explicit mode is honoured \u2014 the UI shows the cost of each."
       },
       "ProfileUser": {
         "properties": {

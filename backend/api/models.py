@@ -36,6 +36,19 @@ class ConfigResponse(BaseModel):
     services: Dict[str, bool]
 
 
+class OfflinePrepareRequest(BaseModel):
+    """Ask the server to package one title for offline download (plan §4.3, phase B1).
+
+    ``mode`` defaults to ``auto``: the SERVER resolves the cheapest rendition that
+    will actually play (direct → remux → transcode_audio → transcode), because the
+    decision needs the media source's container/codecs and the device should not have
+    to guess. An explicit mode is honoured — the UI shows the cost of each.
+    """
+
+    item_id: str = ""
+    mode: str = "auto"
+
+
 class SubtitleSelectRequest(BaseModel):
     """Choose a subtitle for an item (spec §3: discovery → apply → persist).
 

@@ -18,7 +18,33 @@
 set -uo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-STUB="$(mktemp -d "${TMPDIR:-/tmp}/rkm-macround-stub.XXXXXX")"
+
+# ⚠⚠ **A STUB THAT CANNOT BE EXECUTED IS NOT A STUB.** When bash's PATH search hits a file it cannot
+# exec (EACCES) it **continues searching** — so a stub in a `noexec` directory is silently skipped and
+# the REAL `git`/`xcrun`/`xcodebuild` runs instead. That is exactly what happened here: `/tmp` is
+# `noexec` on this host, and this harness reported "6/6 PASS" only because a stale stub directory was
+# still on PATH from an earlier run. So the root is chosen by PROBING executability, and the PATH is
+# then ASSERTED before a single case is believed.
+pick_stub_root() {
+  local candidate probe
+  for candidate in "${TMPDIR:-}" /root/tmp /var/tmp "$HOME" "$REPO"; do
+    [ -n "$candidate" ] || continue
+    mkdir -p "$candidate" 2>/dev/null || continue
+    probe="$candidate/.rkm-exec-probe.$$"
+    printf '#!/bin/sh\nexit 0\n' > "$probe" 2>/dev/null || continue
+    chmod +x "$probe" 2>/dev/null
+    if "$probe" >/dev/null 2>&1; then rm -f "$probe"; echo "$candidate"; return 0; fi
+    rm -f "$probe"
+  done
+  return 1
+}
+
+STUB_ROOT="$(pick_stub_root)" || {
+  echo "no dir where a stub can be EXECUTED (tried \$TMPDIR, /root/tmp, /var/tmp, \$HOME, the repo)" >&2
+  exit 2
+}
+echo "stub root: $STUB_ROOT"
+STUB="$(mktemp -d "$STUB_ROOT/rkm-macround-stub.XXXXXX")"
 trap 'rm -rf "$STUB"' EXIT
 BIN="$STUB/bin"
 STATE="$STUB/state"
@@ -87,6 +113,18 @@ chmod +x "$BIN"/*
 export STUB_STATE="$STATE"
 export PATH="$BIN:$PATH"
 export HOME="$HOME_DIR"
+
+# ⚠ PROVE THE STUBS WIN BEFORE BELIEVING ANYTHING THEY SAY. A stub that is skipped (noexec, a bad
+# PATH, an overridden command) hands the case to the REAL tool, and every assertion below then
+# describes a machine the test does not control.
+for tool in git xcrun xcodebuild open xcode-select; do
+  resolved="$(command -v "$tool" || true)"
+  if [ "$resolved" != "$BIN/$tool" ]; then
+    echo "FATAL: '$tool' resolves to '${resolved:-<nothing>}', not the stub at '$BIN/$tool'" >&2
+    echo "       — the harness would be testing the real toolchain. Aborting." >&2
+    exit 2
+  fi
+done
 
 devices() {  # $1 = booted lines, $2 = available lines
   { echo ""; echo "== Devices =="; echo "-- iOS 26.5 --"; } > "$STATE/devices_booted"

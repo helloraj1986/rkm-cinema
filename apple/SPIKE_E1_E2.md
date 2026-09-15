@@ -40,6 +40,15 @@ git checkout spike/offline-loopback
 ./apple/scripts/mac-round.sh ios --sim -RKMOfflineSpike YES
 ```
 
+⚠⚠ **BOOT THE SIMULATOR YOU WANT FIRST (`open -a Simulator`) — the script now uses the device that is
+already booted**, because on 2026-09-16 the fallback picked `iPhone 17` while the app and its stored
+server address were on `iPhone 17 Pro`; the spike would have reported `no stored server address`.
+⚠ Until `b05b68a` this script's step 5 had **never run**: it looked for `*iOS*` in a DerivedData path
+that says `Debug-iphonesimulator`, printed *"Built .app not found in DerivedData"*, and left the
+build+launch to Xcode by hand. It now asks Xcode where the product is, waits for the device with
+`simctl bootstatus -b`, and prints the device and the app path it used. `bash
+apple/scripts/test-mac-round.sh` (6/6, stubbed tooling, no Mac needed) is the check for that.
+
 ⚠ `mac-round.sh` takes the extra arguments and passes them to the launch; if its flags have drifted,
 the equivalent by hand is:
 

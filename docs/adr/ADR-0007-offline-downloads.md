@@ -63,6 +63,27 @@ refuses. The plan's own objection — "Jellyfin's transcode pipe is tied to a pl
 is the wrong lifetime for a download" — is exactly why the pipe **fills a file** rather than being
 relayed: the pipe is transient, the file is not.
 
+⚠⚠ **AND THE MIRRORED LADDER WAS WRONG IN TWO PLACES — FOUND BY THE LIVE GATE, NOT BY READING**
+(2026-09-16, the deployed api, 15 real library items; the phase's step-5 `curl` gate):
+
+| Live facts (Jellyfin's own values) | Mirrored rule said | Correct | Titles affected |
+|---|---|---|---|
+| `Container = "mov,mp4,m4a,3gp,3g2,mj2"`, h264, aac — **an ordinary MP4** | `remux` | **`direct`** | 13 of 13 MP4s sampled |
+| `Container = "mkv"`, codec `av1`, opus | `transcode` (a full re-encode) | **`remux`** | 1 |
+
+**Jellyfin's `Container` is ffprobe's `format_name`: a COMMA-SEPARATED DEMUXER LIST, not an
+extension.** An MP4 arrives as `"mov,mp4,m4a,3gp,3g2,mj2"` and an MKV as plain `"mkv"`, so a
+direct-play check against bare extensions (`{mp4, m4v, mov}`) **never matches a real MP4** — every MP4
+took the remux rung, i.e. a **full re-copy of the film through Jellyfin plus a full-size staging
+file**, for a file the device could hold and play as-is. And ffprobe spells the codec **`av1`** where
+the ladder's safe set says **`av01`**, so one real title was being re-encoded instead of copied.
+B1 therefore matches the container by **FAMILY** (mp4-family list first, then Matroska — ⚠ the WebM and
+MKV demuxers share `"matroska,webm"`, so the codec decides which is direct) and normalises the codec
+spelling. ⚠⚠ **The same container mismatch exists in the PLAYER's own `DIRECT_CONTAINERS`
+(`frontend/src/features/playback/lib.ts`), which is where this list came from** — reported to the user
+and NOT changed here: altering player routing changes live playback for every film, which is a
+separate decision from this phase.
+
 **D4 — publish atomically: `.part` → `os.replace`.** The final path exists only when the transfer
 finished, so `ready` and `Content-Length` cannot describe half a film. A crash leaves a `.part`,
 never a serveable fragment, and a download pointed at an unfinished rendition is answered **409
@@ -111,6 +132,17 @@ refusal is **507** with a sentence naming the knob.
   silently exactly when the device has committed to a download), `Range` gives `206`+
   `Content-Range`, `416` carries `bytes */size`, and the ETag is strong because the artefact only
   ever changes by being replaced whole. B2/B3 are written against this.
+* ✅ **VERIFIED LIVE 2026-09-16** (the phase's step-5 gate, against the deployed container through
+  nginx, on a real 1,795 MB library film): `HEAD` → `200` + `Content-Length: 1882377499` + `Accept-Ranges: bytes`
+  + a strong ETag + no body · `Range: bytes=0-99` → `206` + `Content-Range: bytes 0-99/1882377499` and
+  exactly 100 bytes · a suffix range at EOF → `206` + 10 bytes · `bytes=<size+500>-` → `416` +
+  `bytes */1882377499` · the whole file → `200` with all 1,882,377,499 bytes, and the payload really is
+  an MP4 (`ftypisom` at offset 4) · `prepare` twice → `reused`, nothing re-packaged · `DELETE` →
+  `removed_file: false` and the library file still intact behind a 404.
+* **The scale of the ladder defect, in the owner's own numbers:** 13 of the 13 MP4s sampled were being
+  routed to `remux`. At the measured tailnet rate (≈3.8 MB/s) that is roughly **8 minutes and a
+  full-size staging file per film** that the fix removes entirely for the household's most common
+  format.
 * **Idempotency is a property, not a hope**: (item, rendition) names one artefact, a finished one is
   returned untouched, and a second `prepare` while the first is running starts no competing writer.
   The test proves it by counting upstream calls — a re-transcode would also return `state: ready`.
@@ -118,7 +150,8 @@ refusal is **507** with a sentence naming the knob.
   screen (B4), no eviction/pin/delete-after-watch (B5), no server-side resume of a *packaging* job
   (a retry restarts from zero — the resumable leg is the device's download, which is the leg that
   crosses a network), and no per-profile file isolation (D6).
-* **Unverified until it runs on the stack:** the ladder's transcode rungs, real packaging throughput,
-  and `HEAD`/`Range` through nginx (step 5 of the runbook: the same `curl` proof against
-  `host.docker.internal:8124`). The gate here is `pytest` + the ledger of 15 falsifications in
-  `docs/PROGRESS.md`.
+* **Still unverified after B1, and this is the honest list:** a **packaged** rendition (the remux /
+  transcode_audio / transcode rungs) has never run against a real film — every live check above used a
+  *borrowed* (direct) artefact, which packages nothing. ⚠ So the modes the ladder picks for the
+  household's MKVs are reasoned and unit-tested but not yet measured end to end. The rest is
+  pytest + the 17 falsifications recorded in `docs/PROGRESS.md`.

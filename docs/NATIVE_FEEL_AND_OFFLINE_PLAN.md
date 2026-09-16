@@ -320,6 +320,18 @@ the player would have streamed**:
 Staging rules: `RKM_OFFLINE_STAGING` dir, one file per (item, rendition), **TTL cleanup** (e.g. 48 h
 after last access) so a cancelled download cannot eat the server's disk, and a size cap.
 
+⚠⚠ **AND THE "DIRECT-PLAYABLE" ROW ABOVE HAS A TRAP IN IT, MEASURED 2026-09-16 — the whole reason the
+ladder must match the container by FAMILY.** Jellyfin's `Container` is **ffprobe's `format_name`: a
+comma-separated DEMUXER LIST, not an extension.** Live values from his own library: an ordinary MP4
+arrives as **`"mov,mp4,m4a,3gp,3g2,mj2"`**, an MKV as plain **`"mkv"`**, and ⚠ the WebM and MKV
+demuxers BOTH report **`"matroska,webm"`** (so the codec, not the container string, decides which of
+those two is direct). The codec spelling has the same problem: ffprobe writes **`av1`** where the
+ISO/RFC tag — and the player's own safe set — says **`av01`**. A ladder built on tidy extensions
+routes **every MP4 on the stack to `remux`** (13 of 13 titles sampled), i.e. a full re-copy of the film
+plus a full-size staging file, for a file the device can hold and play as-is. ⚠ The same mismatch is
+still in the PLAYER's `DIRECT_CONTAINERS` (`frontend/src/features/playback/lib.ts`) — reported, not
+changed here. B1's fix and the full table: **ADR-0007 (D3)**.
+
 ⚠ **BUILT 2026-09-16 (`feat/offline-api`, phase B1) — and the staging rules are as follows, with the
 reason each one has:** the directory defaults to **`/shared/offline`**, i.e. the api's **own**
 `rkm_shared` volume — deliberately **not** inside a media root, because a folder of downloadable films
@@ -485,7 +497,7 @@ shippable.
 | **A2** | A3 `/api/library/home` + memo, contract + route decision | `pytest` green; `check_deployed.py` sees the new route; launch request count ≤ 2 | 0.5 d |
 | **A3** | A5 launch-budget instrument + gate | Baseline printed in the log; gate fails if a warm launch fetches `/assets/` | 0.5 d |
 | **B0** | **E1 + E2 spike build** (throwaway, not merged) | A downloaded file plays from loopback, with seeking, inside the shell — or the design changes before anything else is written | 0.5 d |
-| **B1** | Backend offline API + staging + packaging + TTL, tests, contract | pytest + a `curl` proof: `HEAD` gives the size, a `Range` request returns 206 + `Content-Range`, `prepare` is idempotent | 1 d · ✅ **BUILT 2026-09-16 (`feat/offline-api`)** — `services/offline.py` (staging store + packager + range parser) + `api/routes/offline.py` (6 routes) + **ADR-0007**; `pytest` green and **15/15 falsifications red**. The `curl` half is the live-stack step of the handover runbook (needs `apply` on RKM-HP) |
+| **B1** | Backend offline API + staging + packaging + TTL, tests, contract | pytest + a `curl` proof: `HEAD` gives the size, a `Range` request returns 206 + `Content-Range`, `prepare` is idempotent | 1 d · ✅ **BUILT 2026-09-16 (`feat/offline-api`)** — `services/offline.py` (staging store + packager + range parser) + `api/routes/offline.py` (6 routes) + **ADR-0007**; `pytest` green, **17/17 falsifications red**, and ⚠⚠ **the `curl` gate RAN AGAINST THE DEPLOYED CONTAINER: 20/20 PASSED** on a real 1,795 MB film (`HEAD` → 200 + `Content-Length: 1882377499`; `Range` → 206 + `Content-Range`; past EOF → 416; whole file → 200 with an `ftypisom` payload; `prepare` twice → `reused`; `DELETE` → the library file intact). ⚠ **The live gate ALSO found the ladder defect below** (`d741a56`), which is fixed in the repo and reaches the container on the next `apply` |
 | **B2** | Native: `OfflineStore` + `OfflineDownloader` + background-session delegate + cookie mirroring | Downloads complete with the app backgrounded, resume after a forced failure, and appear in the manifest after a relaunch | 2–3 d |
 | **B3** | Native: `OfflineServer` + `OfflineBridge` (both directions) | Loopback server passes a Range test suite; page round-trips a command and a progress event | 1–2 d |
 | **B4** | Page: download affordances, Downloads screen, offline player path, progress spool | A film downloads, plays offline with Wi-Fi off, and its position lands in Continue Watching after reconnect | 1–2 d |

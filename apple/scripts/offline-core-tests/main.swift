@@ -919,6 +919,19 @@ checkEqual(Set(suiteCases.map { $0.id }).count, suiteCases.count,
            "every probe case has a unique id")
 check(suiteCases.count >= 16, "the suite has \(suiteCases.count) cases")
 
+// ⚠⚠ A CASE ID IS LOGGED, AND THE LOG HAS A SAFETY SWEEP. `LogRedactor`'s last line of defence rewrites the
+// words `LOGGING.md` §9 greps for — inside ANY message — so an id containing one arrives in the log as
+// `offline probe case cred PASS`, and a gate cannot say WHICH case failed. ⚠ The words are declared here
+// rather than imported: the harness compiles only the pure Offline sources, so a rule that depends on a
+// module it cannot see would not run at all.
+let redactorForbiddenWords = ["password", "token", "api_key", "rkm_session"]
+for probeCase in suiteCases {
+    for word in redactorForbiddenWords {
+        checkEqual(probeCase.id.lowercased().contains(word), false,
+                   "[\(probeCase.id)] the id does not contain `\(word)` — the log's safety sweep rewrites it")
+    }
+}
+
 for probeCase in suiteCases {
     let head = probeCase.headBytes(token: probeTokenValue, fileExtension: "mp4", host: "127.0.0.1")
     // ⚠ Through `plan(requestData:)`, the same entry point the socket uses: a case whose head is refused

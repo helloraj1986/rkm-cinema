@@ -79,6 +79,9 @@ final class WebShellModel: ObservableObject {
     func didStartProvisionalNavigation(url: URL?) {
         state = .loading
         RKMLog.verbose("didStartProvisionalNavigation \(describe(url))", category: .nav)
+        // ⚠ Phase B3: the document that is on screen is being replaced, so the bridge must stop emitting into
+        // it (an emit against a torn-down document is a JavaScript exception). `didFinish` re-opens it.
+        OfflineBridge.shared.pageWillNavigate()
     }
 
     func didFinish(url: URL?) {

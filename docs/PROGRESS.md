@@ -19,6 +19,25 @@
 * ⚠ **an `evaluateJavaScript` failure now prints the whole `userInfo`** (the JS message, line and source URL live there; `localizedDescription` says only "an exception occurred");
 * ⚠ **the checker judges the two halves separately** — a probe failure fails the COMMAND question, never the suite — surfaces EVERY `offline bridge ·` line instead of a curated list, and grew **`--grep REGEX`**, because diagnosing this meant reading log lines the report does not print at a container path that changes on every rebuild.
 
+⚠⚠ **THE THIRD FINDING, AND IT IS A REAL BRIDGE BUG: A WEB VIEW WITH A SOCKET IS NOT A PAGE.** `--grep` on the second round's log gave the whole story in eight lines:
+
+```
+48.791  offline bridge attached to a web view
+48.793  nav  load #1 → http://rkm-hp…:8124          ← the load STARTS
+48.933  offline probe · rows 1 total, 1 ready       ← the ready row's hook fires…
+48.946  offline probe · real-film-head PASS
+49.084  E offline bridge · could not deliver an event to the page: A JavaScript exception occurred
+49.084  E offline bridge probe FAIL — the page could not ask: A JavaScript exception occurred
+49.210  nav  didFinish / · title "RKM Cinema"       ← …and the page only finishes loading HERE
+49.210  offline probe · starting (server=true bridge=true)
+```
+
+⚠ **The probe's `rowsDidChange` hook had no `didStart` guard**, and the app's rows change during startup — a rebuilt container reconciles, a launch argument starts a download — so part two fired **277 ms before any document existed**: two `evaluateJavaScript` calls against a document-less web view, each throwing, plus a real-film check run twice. ⇒ Guarded (a title is not enough; the page must have finished loading).
+
+⚠⚠ **AND THE SAME RACE IS A PRODUCTION BUG IN THE BRIDGE, WHICH IS THE PART WORTH KEEPING.** `webView` is non-nil from `attach` onwards, so ANY publish between `attach` and the first `didFinish` emitted into a document-less web view — one `RKMLog.error` per event. A launch-argument download does exactly that (its progress ticks publish rows), and so would a download in flight across a navigation. ⇒ The bridge now tracks `pageIsReady` (set at `pageDidLoad`, cleared at `attach` AND at `didStartProvisionalNavigation`), and `emitRaw` refuses to evaluate JavaScript without it. ⚠ Skipping those emits loses nothing: the page did not exist, and `pageDidLoad` re-announces every title for precisely that reason.
+
+⚠ **AND `LogRedactor`'S SAFETY SWEEP ATE TWO CASE NAMES.** The log showed `offline probe case cred PASS` **twice** — the §9 sweep rewrites the word `token` inside ANY message, so `get-unknown-token` and `get-uppercase-token` both arrived as `cred` and the gate could not say **which** case had failed. ⇒ Renamed to `get-unknown-handle` / `get-uppercase-handle`, ⚠ **and the rule is now pinned in the harness** (*no case id may contain a §9 word*, 64 new checks), because the next case name will be written by someone who has not read this paragraph. ⚠ The wording gave way, not the sweep — an over-applied sweep costs a word, a missed one costs the account.
+
 **WHAT B3 IS, in one sentence:** B2 gave the device the file; this is the device **serving it back to the page that has to play it** — from `127.0.0.1`, over real HTTP, with real byte ranges, addressed by a handle that dies with the process.
 
 **WHY THE SHAPE IS WHAT IT IS — nine decisions, each with the alternative it beat (`docs/adr/ADR-0009-offline-loopback-server.md`).** The four worth knowing before touching this code:

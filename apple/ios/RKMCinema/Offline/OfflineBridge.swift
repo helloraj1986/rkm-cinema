@@ -178,6 +178,14 @@ final class OfflineBridge: NSObject, WKScriptMessageHandlerWithReply {
     private var snapshots: [String: OfflineEventSnapshot] = [:]
     private var knownItemIds: [String] = []
 
+    /// ⚠⚠ **A WEB VIEW WITH A SOCKET IS NOT A PAGE.** Between `attach` and the page's `didFinish` there is a
+    /// document-less web view, and `evaluateJavaScript` against it THROWS ("A JavaScript exception occurred").
+    /// That is not hypothetical: a launch-argument download starts a transfer during startup, its progress
+    /// ticks publish rows, and every one of those events was an ERROR in the log on the round of 2026-09-16.
+    /// ⚠ Skipping the emit here loses nothing — the page did not exist, and `pageDidLoad` re-announces every
+    /// title for exactly this reason.
+    private var pageIsReady = false
+
     private var relay: AnyCancellable?
     private var publishScheduled = false
     private var currentAddress: String?
@@ -192,9 +200,17 @@ final class OfflineBridge: NSObject, WKScriptMessageHandlerWithReply {
     /// bridge outlives both the web view and the model.
     func attach(webView: WKWebView) {
         self.webView = webView
+        pageIsReady = false
         RKMLog.info("offline bridge attached to a web view (handler \(Self.handlerName))", category: .offline)
         // ⚠ NOT published here: a web view with no page loaded has no `window.__rkmOffline` to receive
         // anything. `pageDidLoad()` is the moment to talk.
+    }
+
+    /// ⚠ A NAVIGATION IS A NEW DOCUMENT IN PROGRESS. The old one is being torn down, so an emit during it is
+    /// the same throw as emitting into a socket with no page — the flag closes that window too (the SPA's own
+    /// client-side routing does NOT fire this, which is correct: that document is alive).
+    func pageWillNavigate() {
+        pageIsReady = false
     }
 
     /// ⚠ Called when a page has FINISHED loading, and it is the whole reason `snapshots` is cleared here.
@@ -206,6 +222,7 @@ final class OfflineBridge: NSObject, WKScriptMessageHandlerWithReply {
     /// (This is the same rule the pure planner starts from: `previous == nil → a state event`. A new page is
     /// exactly `previous == nil`.)
     func pageDidLoad() {
+        pageIsReady = true
         snapshots.removeAll()
         knownItemIds = []
         schedulePublish()
@@ -567,7 +584,9 @@ final class OfflineBridge: NSObject, WKScriptMessageHandlerWithReply {
 
     /// ⚠ The one place a JS call is made, so the payload can never be built by hand in two different ways.
     private func emitRaw(_ object: [String: Any]) {
-        guard let webView else { return }
+        // ⚠ The `pageIsReady` half is not belt-and-braces: `webView` is non-nil from `attach` onwards, and
+        // the gap between that and the first `didFinish` is exactly where the events used to throw.
+        guard pageIsReady, let webView else { return }
         guard let data = try? JSONSerialization.data(withJSONObject: object),
               let json = String(data: data, encoding: .utf8)
         else { return }

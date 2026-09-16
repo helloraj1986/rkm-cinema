@@ -264,6 +264,10 @@ MUTATIONS: list[tuple[str, str, str, str, str]] = [
      "    func entry(for token: String) -> Entry? { entryByToken[token] }",
      "    func entry(for token: String) -> Entry? { entryByToken[token.lowercased()] }",
      "⚠ a token lookup does not case-fold: there is exactly one spelling"),
+    ("an id the log's safety sweep would rewrite", "OfflineProbeCases.swift",
+     'id: "get-uppercase-handle", method: "GET", target: .uppercaseToken, range: nil,',
+     'id: "get-uppercase-token", method: "GET", target: .uppercaseToken, range: nil,',
+     "the id does not contain `token`"),
     ("the canonical (lowercase-only) token spelling", "OfflineHTTP.swift",
      '            character.isASCII && (character.isNumber || ("a"..."f").contains(character))',
      '            character.isASCII && (character.isNumber || ("a"..."f").contains(character)\n'

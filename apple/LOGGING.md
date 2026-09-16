@@ -192,7 +192,13 @@ He volunteered screenshots; they are genuinely useful, but only if they carry st
    exceptions is a security grep that gets weakened. (The domain word for that value is still *token* in the
    code and in every doc; only the strings that reach a log say *handle*.)
 4. The redactor's unit tests pass in the sandbox (`swift test`, no Mac needed — see `WORKFLOW.md` §5).
-5. ⚠ **A loopback URL never reaches the log.** With B3's server running, a real log must contain exactly ONE
+5. ⚠ **NO LOGGED IDENTIFIER CONTAINS ONE OF THE WORDS ABOVE — INCLUDING AN ID MADE OF THEM.** The safety
+   sweep rewrites those words in *any* message, so a probe case named `get-unknown-token` reaches the log as
+   `offline probe case cred PASS`: the id is gone, and with two such cases in one suite the gate cannot say
+   which one failed (measured 2026-09-16, from `check_offline_server.py --grep`). ⚠ `apple/scripts/check-offline-core.py`
+   now pins the rule — no probe case id may contain a §9 word — because the next case name will be written by
+   someone who has not read this line.
+6. ⚠ **A loopback URL never reaches the log.** With B3's server running, a real log must contain exactly ONE
    line with `127.0.0.1` — the listener announcement (`offline server listening on 127.0.0.1:<port>
    (loopback only)`) — and no `http://127.0.0.1:<port>/offline/<32 hex>` anywhere. The port alone is not a
    capability; the full URL is, for as long as the process lives.

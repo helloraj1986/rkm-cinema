@@ -81,6 +81,13 @@ enum OfflineServerProbe {
     /// cases green, both commands answered, and `count=0` for the events because there was nothing to
     /// announce. The bridge calls this from its own publish, so it fires the moment a title is playable.
     static func rowsDidChange() {
+        // ⚠⚠ TWO GUARDS, AND THE FIRST ONE COST A ROUND (2026-09-16). A TITLE IS NOT ENOUGH: the app's rows
+        // change during startup (a rebuilt container reconciles, a launch argument starts a download), which
+        // happens BEFORE the page has finished loading. Firing here then means emitting into a web view that
+        // has a socket and NO DOCUMENT — two `A JavaScript exception occurred` errors, a real-film check run
+        // twice, and a probe that reported the failure of the page half it had not reached yet. `didStart` is
+        // set by `startIfRequested`, i.e. by the page's own `didFinish`.
+        guard didStart else { return }
         guard !didAnnounce else { return }
         guard serverProbeRequested() || bridgeProbeRequested() else { return }
         guard OfflineDownloads.shared.rows.contains(where: { $0.state.isPlayable }) else { return }

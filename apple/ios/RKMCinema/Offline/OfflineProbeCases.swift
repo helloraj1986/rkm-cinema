@@ -22,9 +22,9 @@ import Foundation
 enum OfflineProbeTarget: Equatable {
     /// `/offline/<token>.<ext>` — the real thing.
     case valid
-    /// A well-formed token that was never minted. ⚠ Must be 404, and must never fall back to another title.
+    /// A well-formed handle that was never minted. ⚠ Must be 404, and must never fall back to another title.
     case otherToken
-    /// The real token, upper-cased. ⚠ Refused: one canonical spelling, so equality can never be accidental.
+    /// The real handle, upper-cased. ⚠ Refused: one canonical spelling, so equality can never be accidental.
     case uppercaseToken
     /// `../../etc/passwd`, sent raw so no client library can normalise it away first.
     case traversal
@@ -169,7 +169,13 @@ enum OfflineProbeCases {
                 note: "'bytes=-N' means the LAST N bytes, not the first"),
 
             OfflineProbeCase(
-                id: "get-unknown-token", method: "GET", target: .otherToken, range: nil, extraHeaderLines: [],
+                // ⚠⚠ THE ID MUST NOT CONTAIN THE WORD `token`. `LogRedactor`'s safety sweep is the last line
+                // of defence for `LOGGING.md` §9's `token` grep, so it rewrites that word inside ANY log
+                // message — which turned this case and the next one into two lines both reading
+                // `offline probe case cred PASS`, i.e. the gate could not say WHICH case had failed. ⚠ The
+                // wording gave way, not the sweep (an over-applied sweep costs a word; a missed one costs the
+                // account). Found on the Mac 2026-09-16, from `--grep`.
+                id: "get-unknown-handle", method: "GET", target: .otherToken, range: nil, extraHeaderLines: [],
                 expectStatus: 404, expectContentLength: 0, expectContentRange: nil,
                 expectBodyBytes: 0, expectBytesFromFile: false, mirrorWithURLSession: false,
                 note: "a well-formed token nobody minted must NOT fall back to another title"),
@@ -181,7 +187,7 @@ enum OfflineProbeCases {
                 note: "405 with Allow — the path is fine, the verb is not"),
 
             OfflineProbeCase(
-                id: "get-uppercase-token", method: "GET", target: .uppercaseToken, range: nil,
+                id: "get-uppercase-handle", method: "GET", target: .uppercaseToken, range: nil,
                 extraHeaderLines: [],
                 expectStatus: 400, expectContentLength: 0, expectContentRange: nil,
                 expectBodyBytes: 0, expectBytesFromFile: false, mirrorWithURLSession: false,

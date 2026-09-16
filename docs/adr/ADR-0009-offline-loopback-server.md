@@ -132,6 +132,32 @@ Page→native: `{v:1, c:"list"|"download"|"cancel"|"delete"|"play"|"ping", …}`
   `NSAllowsLocalNetworking` *disables* `NSAllowsArbitraryLoads` on iOS 10+, which would break the loopback
   server outright.
 
+### D7a — ⚠ "A web view with a socket" is not a page, and the bridge must know the difference
+
+`webView` is non-nil from `attach` onwards, and `evaluateJavaScript` against a document-less (or
+mid-navigation) web view **throws**. That is not a corner case: a launch-argument download starts a transfer
+during startup and its progress ticks publish rows, so every one of those events was an `RKMLog.error` on the
+round of 2026-09-16 — and a download in flight across a navigation would do the same.
+
+* `pageIsReady` is set at `pageDidLoad` (the page's `didFinish`) and cleared at `attach` **and** at
+  `didStartProvisionalNavigation` (a document being replaced);
+* `emitRaw` refuses to evaluate JavaScript without it;
+* ⚠ **nothing is lost by skipping**: the page did not exist to receive the event, and `pageDidLoad` clears
+  what the page has been told and re-announces every title. The queue in the injected script covers a
+  *listener* that does not exist yet, not a *document* that does not exist yet — two different gaps, one
+  mechanism each.
+* ⚠ The SPA's own client-side routing does NOT fire `didStartProvisionalNavigation`, which is correct: that
+  document is alive and must keep receiving events.
+
+### D7b — ⚠ A logged identifier must survive `LogRedactor`'s safety sweep
+
+`LogRedactor`'s last line of defence rewrites the words `LOGGING.md` §9 greps for — inside ANY message — so a
+probe case named `get-unknown-token` arrives in the log as **`offline probe case cred PASS`**: two cases
+became one indistinguishable name, and a gate that cannot say which case failed is barely a gate.
+⚠ **The wording gives way, not the sweep** (an over-applied sweep costs a word from a log line; a missed one
+costs the account), so the ids are `get-unknown-handle` / `get-uppercase-handle` — and the rule is **pinned in
+the harness**: no probe case id may contain a §9 word. The next person to add a case has not read this ADR.
+
 ### D8 — What the page is told, and how often: a pure event planner
 
 `OfflineEventPlanner` (pure, falsified) decides whether a change is worth waking the page for:

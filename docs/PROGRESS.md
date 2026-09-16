@@ -1,3 +1,56 @@
+## ▶ 🔎 **M3 PART 1 — THE MOVIES TAB IS SLOW BECAUSE OF THE RENDER, PAID ON EVERY TAP (MEASURED, NOT GUESSED); AND THE PHASE'S FOUR EXTRACTIONS LAND GREEN** (2026-09-17) · branch **`feat/mobile-m3-library`** (cut from `dev`) · commits `192996e` (E3) · `8d63795` (E5) · `54f4198` (E8) · `861e26e` (E4) · NEW **`tools/measure_library_latency.py`** · ⚠ **`feat/mobile-first-ui` IS NOW MERGED INTO `dev`** (fast-forward, no merge commit — `dev` carries M0 + M1 + the bar-clearance fix) · ⚠ **the working tree is on `feat/mobile-m3-library`, so THAT is what `.\rkm-cinema.ps1 apply` builds** — the command for each is at the bottom
+
+**THE QUESTION THE LAST SESSION LEFT OPEN, ANSWERED WITH NUMBERS.** It left two candidates that look identical from the sofa — the **FETCH** of 713 rows of JSON, or the **RENDER** of 713 unbounded `MediaCard`s — and said to measure before changing anything. Method: a real browser at **390×844** against the **LIVE stack** (`host.docker.internal:8124`, the deployed build), signed in with a real session on the **`rkm-tools` device** (⚠ never the app's own device id — `services/auth.py` rotates the previous token of a `(device, user)` pair on login, so measuring on the browser's device would leave his phone answering 401), tapping `/library/folder/<Movies>` **inside the SPA** (`pushState` + `popstate`, same document throughout — asserted, because a reload would destroy the query cache and answer a different question). ⚠ **The method is now a tool so it can be re-run after the fix: `tools/measure_library_latency.py`** (read-only; `--folder`, `--viewport`, `--repeat`, `--stale-wait`, `--json`).
+
+| run | cold tap | of which FETCH | of which RENDER | ⚠ **cached tap (ZERO items requests)** | DOM nodes |
+|---|---|---|---|---|---|
+| session run | 1009 ms | 341 ms | ≈632 ms | **1844 ms** · 7 long tasks / 3158 ms | 22,240 |
+| tool run A (3 taps) | 2515 ms | 1769 ms | ≈616 ms | **1697 ms** · 9 / 3838 ms | 22,240 |
+| tool run B (2 taps) | 4057 ms | 2745 ms | ≈1261 ms | **1984 ms** · 9 / 4098 ms | 22,240 |
+| control: **Movies Kids** (140 titles) | 582 ms | 424 ms | ≈150 ms | — | 4,462 |
+
+⚠ **FINDING 1 — THE RENDER IS A PER-TAP COST, AND THAT IS THE COMPLAINT.** The cached tap issues **no request at all** (React Query answers from cache inside its 30 s `staleTime`) and still takes **1.7–2.0 s**, with **3.2–4.1 s of long tasks** over **22,240 DOM nodes**. `t_first == t_all` in every run: all 713 cards land in **one synchronous commit**, so the main thread is held for the whole of it. The 140-title control builds **4,462** nodes and renders in ≈150 ms — the cost scales with the row count, which is the whole argument for windowing. ⇒ **It happens EVERY time, not once, so the fix belongs inside M3 (plan §11: "virtualise any list that can exceed ~200 rows") — no backend phase, nothing to approve under §14.** ⚠ And the same shape is in **Search results and the Watchlist**, both of which can exceed 200 rows.
+
+⚠⚠ **FINDING 2 — NEW, AND REPORTED RATHER THAN FOLDED INTO A CONCLUSION: THE FETCH IS *NOT* CONSTANT.** The same folder's items route measured **341 ms, 1769 ms and 2745 ms** across runs — but **~345–378 ms three times in a row** from Python when the stack was warm, straight after a sign-in. So a cold tap can be MOSTLY fetch, and the honest table above keeps the two halves apart instead of declaring one winner. **296,336 bytes / 713 rows** is a normal-looking payload; the variance looks like a cold media-server query, not a wrong route. ⚠ **That is a backend observation — server-side caching or pagination of `/api/library/folders/{id}/items` — which is his call under §14, and it is NOT on this phase's critical path**, because the query cache absorbs the fetch for 30 s while the render is paid on every single tap. **Flagged, not silently fixed, and not silently ignored.**
+
+⚠ **Two more stories this rules OUT, so nobody re-runs them:** the poster images are already `loading="lazy"` (`MediaCard.tsx:114`), so a phone viewport pulls **~22–26 images / ~2.2 MB**, not 713; and the nginx artwork-cache question (`tools/verify_nginx_artwork_cache.py`) **stays open but off the critical path** — one folder view asks for ~26 images. (The `posters=205/23 MB` figures in the raw tap data are the whole SPA session, Home rows included — that is why they sit in the JSON and not in the verdict.)
+
+⚠ **What this measurement is NOT:** one sandbox CPU, not his iPhone. The render is a main-thread cost, so a slower device makes the number BIGGER, never smaller — but the absolute milliseconds on his phone are his to confirm, not mine.
+
+**AND THE FOUR EXTRACTIONS THE PHASE ASKS FOR LANDED FIRST, EACH ITS OWN BEHAVIOUR-PRESERVING COMMIT**, because M3 rebuilds Home, Browse and Search for the phone and every rule it touches must have exactly ONE copy before a second screen reads it:
+
+| # | commit | what moved | why the behaviour is identical |
+|---|---|---|---|
+| **E3** | `192996e` | `(cw?.items ?? []).filter(isContinueWatching)` was written out in **`LibraryHomeView` AND `DiscoverView`** → `library/lib.ts::continueWatchingItems()` | the helper's body IS the expression both callers had |
+| **E5** | `8d63795` | `WatchlistView`'s module-scope `const PAGE = 36` + `list.slice(0, shown)` → `watchlist/lib.ts::PAGE` + `paginate(list, shown)` | identical for every `shown` the view can produce ⚠ and `shown` of 0/negative now clamps to EMPTY instead of `slice(0, -3)` quietly returning all-but-the-last-three rows |
+| **E8** | `54f4198` | `MediaCard`'s inline meta line → `library/lib.ts::cardMetaLine()` | the body is the card's expression, moved — ⚠ so M3's mobile `PosterCard` cannot drift from the desktop card |
+| **E4** | `861e26e` | Home's four queries + rows + the hard-coded rail slices `14`/`16` → `features/library/useHomeRows.ts` (+ `lib.ts::recentlyAddedItems()`) | the two `has…` flags are the view's OWN conditions (`recent.data && items.length > 0`), not new ones ⚠ and the hook returns the items QUERY whole rather than flags, because the view's skeleton / unavailable / dashboard branches are decided by loading + error + data + the server's `provider` field |
+
+⚠ **EVERY NEW TEST WAS FALSIFIED BEFORE IT WAS TRUSTED** — the mobile gates' discipline, applied to unit tests, each falsification naming the rule it broke: removing the CW filter → **RED** (`continueWatchingItems (M3 · E3) > keeps only the in-progress/watched titles`), dropping the pager's clamp → **RED** (`never slices from the END for a zero or negative page`), letting a play count of `1` through → **RED** (`play count only when it says something`). Restored, green.
+
+**GATES ON THIS BRANCH:** `npx tsc --noEmit` ✅ clean · `npx vitest run` ✅ **510 passed / 20 files** (library `lib.test.ts` 74, watchlist 46) · `npm run build` ✅ · `check_library_scan` ✅ (the REAL `LibraryHomeView` + `LibraryFolderView` through `library-frame`, all seven scenarios) · `check_cta_alignment` ✅ (the poster CTA is unchanged) · `check_query_cache` ✅ · `check_md_links` ✅ (60 files, 21 links) · ⚠ **`check_nav_access` fails scenario F, and it is NOT this phase** — see below.
+
+⚠⚠ **`check_nav_access` SCENARIO F FAILS HERE, AND THE EVIDENCE IT IS NOT THIS PHASE IS THE FRAME'S OWN IMPORT LIST.** Scenario F dies when the **`broken-phone`** frame never renders a `header` (`wait_for_selector` times out) — the same scenario the last session reproduced **3/3 on this branch's predecessor AND 3/3 on `dev`**, with the cause measured as `net::ERR_INSUFFICIENT_RESOURCES` (the tool loads nine frames into ONE Chromium; a five-frame replication passes 5/5). ⚠ **`harness/nav-frame.tsx` imports exactly four modules — `AuthProvider`, `Header`, `Sidebar`, `MobileNav` — and this phase changed NONE of them**: it changed the library lib/views, `MediaCard`, `DiscoverView` and the watchlist pager, and `nav-frame` mounts none of those. Scenarios A–E pass. ⇒ **Reported, not fixed:** the brief's §14 says the honest fix (a fresh page per scenario — which both new mobile tools already do) is a change to the check, not something to do inside a mobile phase.
+
+⚠ **WHAT IS NOT DONE, stated plainly:** the windowed grid and the mobile screens themselves — `HomeScreen`, `BrowseScreen`, `SearchScreen`, and the phone `PosterCard` whose actions are visible without a hover. **§7.3's defect — every poster action on a phone living behind `group-hover` — is still unfixed.** The rules those screens need are now in one copy each, and the measurement above is the evidence that windowing is the right cure.
+
+**⚠ THE TWO ROUNDS HE CAN RUN, and his checkout builds whichever branch it is on:**
+
+```
+cd D:\hermes_agent\hermes-workspace\projects\rkm-cinema
+git fetch origin
+git checkout dev && git pull --ff-only        # <- M0 + M1 + the bar fix, for the M1 phone re-test
+.\rkm-cinema.ps1 apply
+```
+```
+cd D:\hermes_agent\hermes-workspace\projects\rkm-cinema
+git fetch origin
+git checkout feat/mobile-m3-library && git pull --ff-only
+.\rkm-cinema.ps1 apply                        # <- what THIS record built: refactors only
+```
+
+⚠ **And the M3 round would show him NOTHING NEW on screen** — the extractions are invisible by design, and the phone should look exactly as it did after the M1 fix. That is precisely what makes them safe to land before the screens are rebuilt.
+
 ## ▶ ✅ **M0 + M1 BUILT — THE MOBILE SHELL EXISTS: one app, two layout modes, and the boundary moved from 768px to 1024px** (2026-09-16) · branch **`feat/mobile-first-ui`** (cut from `dev`) · ⚠ **the brief's `docs/plans/MOBILE_FIRST_UI_PLAN.md` path became `docs/MOBILE_FIRST_UI_PLAN.md`** — see the plan's §9 Q2 · commits: `43e7a16` (the brief + the plan) · `00cbf58` (M0, the switch + tokens) · `48de90c` (M0's browser gate) · `eb18703` (M1, the shell + the sheet) · `f0a5a0b` (M1's browser gate) · **NEW** `frontend/src/layouts/{LayoutMode,LayoutDebug,Screen?}.tsx` + `importRule.ts`, `layouts/desktop/index.ts`, `layouts/mobile/index.ts`, `components/ui/{Sheet.tsx,sheetRules.ts}`, `frontend/harness/mobile-frame.{html,tsx}`, `tools/check_mobile_layout_switch.py`, `tools/check_mobile_shell.py`, **NEW** `docs/adr/ADR-0011-mobile-layout-shells.md`, `docs/MOBILE_FIRST_UI_PLAN.md` · changed: `styles/index.css`, `main.tsx`, `app/router.tsx`, `app/layout/{AppShell,Sidebar,MobileNav}.tsx` · ⚠ **WEB ONLY: `docker compose -p rkm-bundled up -d --build web` is the entire deploy — no Mac build, no backend, no `apple/` change, bridge untouched at `v1`**
 
 **WHAT THIS IS, in one sentence:** the same React app now presents a layout designed for a phone when the viewport is under 1024px — a thumb-zone nav bar, tokens that reflow for a phone and a tablet, and a bottom-sheet primitive — with the desktop layout at 1024px and above **untouched**, and the page in the middle never remounting when the viewport crosses the line.

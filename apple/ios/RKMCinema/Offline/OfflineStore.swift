@@ -45,7 +45,11 @@ final class OfflineStore {
         var root = layout.root
         try root.setResourceValues(values)
 
-        try queue.sync {
+        // ⚠ NOT `try queue.sync { … }`: this closure cannot throw — every throwing call inside it is
+        // either handled by the `do/catch` below or is a deliberate `try?`. A `try` with nothing to
+        // throw is a warning in the Mac's build log, and warnings he has to read past are how a real
+        // one gets missed.
+        queue.sync {
             if let data = try? Data(contentsOf: layout.manifestURL) {
                 do {
                     manifest = try OfflineManifest.decode(data)
@@ -139,8 +143,11 @@ final class OfflineStore {
         return value.int64Value
     }
 
+    /// ⚠ `?? 0` and not `?? nil`-style cleverness: `nil` here means "the `.part` file is not there at
+    /// all", which for a RESUME is exactly "start from zero" — the two are the same answer to the only
+    /// question this is asked. (It is `diskState` that keeps them apart, for the log line that cares.)
     func partialSize(_ itemId: String, container: String?) -> Int64 {
-        diskState(itemId, container: container).partialBytes
+        diskState(itemId, container: container).partialBytes ?? 0
     }
 
     /// Throw the partial away — used by a restart, and by a cancel that the user asked for.

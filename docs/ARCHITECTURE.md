@@ -387,6 +387,22 @@ queue), subtitle **usage** counts (they rank one download quota), and the server
   `tools/check_*.py` drive them headless (login flow, picker, nav access, household, password,
   library scan, subtitle panel). Run them against `npx vite --port 5199`.
 
+**One app, two layout shells (ADR-0011, 2026-09-16).** The shell above presents **one of two
+arrangements** chosen by the viewport alone: `mobile` below 1024px (**phone AND tablet**) and
+`desktop` at 1024px and above — the layout described in this section, untouched. `layouts/LayoutMode.tsx`
+holds the switch (`MOBILE_MAX_PX = 1023`, one `useSyncExternalStore` on a shared `MediaQueryList`, and the
+one hook `useLayoutMode()`), mounted once in `main.tsx` **above the router and below the query/auth
+providers** so crossing the boundary re-renders the routed element without remounting the cache or the
+session; the provider publishes `document.documentElement.dataset.layout`, which is how the scoped CSS in
+`styles/index.css` reaches the `html`/`body` rules a shell needs but does not own. Inside the mobile mode
+the phone/tablet difference is **CSS only** (`--m-grid-cols` 3 → 4 → 5 at 600px and 834px) — there is no
+`isTablet` anywhere, and `LayoutMode.test.tsx` reads Tailwind's own resolved `lg` so the JS boundary and
+the CSS boundary cannot drift apart. ⚠ **`layouts/mobile/**` may hold layout, markup, styling,
+interaction and local UI state — nothing else**: no `fetch`, no second formatter, no second viewport
+source, no re-derived rule. `layouts/importRule.ts` + `imports.test.ts` enforce exactly that, because a
+mobile view is the easiest place in the app to quietly create the second copy of a rule this whole
+architecture exists to prevent. ⚠ `layouts/desktop/index.ts` is a **thin re-export** — no view moved.
+
 ---
 
 ## 13. Deployment

@@ -1,3 +1,48 @@
+## ▶ ✅ **M0 + M1 BUILT — THE MOBILE SHELL EXISTS: one app, two layout modes, and the boundary moved from 768px to 1024px** (2026-09-16) · branch **`feat/mobile-first-ui`** (cut from `dev`) · ⚠ **the brief's `docs/plans/MOBILE_FIRST_UI_PLAN.md` path became `docs/MOBILE_FIRST_UI_PLAN.md`** — see the plan's §9 Q2 · commits: `43e7a16` (the brief + the plan) · `00cbf58` (M0, the switch + tokens) · `48de90c` (M0's browser gate) · `eb18703` (M1, the shell + the sheet) · `f0a5a0b` (M1's browser gate) · **NEW** `frontend/src/layouts/{LayoutMode,LayoutDebug,Screen?}.tsx` + `importRule.ts`, `layouts/desktop/index.ts`, `layouts/mobile/index.ts`, `components/ui/{Sheet.tsx,sheetRules.ts}`, `frontend/harness/mobile-frame.{html,tsx}`, `tools/check_mobile_layout_switch.py`, `tools/check_mobile_shell.py`, **NEW** `docs/adr/ADR-0011-mobile-layout-shells.md`, `docs/MOBILE_FIRST_UI_PLAN.md` · changed: `styles/index.css`, `main.tsx`, `app/router.tsx`, `app/layout/{AppShell,Sidebar,MobileNav}.tsx` · ⚠ **WEB ONLY: `docker compose -p rkm-bundled up -d --build web` is the entire deploy — no Mac build, no backend, no `apple/` change, bridge untouched at `v1`**
+
+**WHAT THIS IS, in one sentence:** the same React app now presents a layout designed for a phone when the viewport is under 1024px — a thumb-zone nav bar, tokens that reflow for a phone and a tablet, and a bottom-sheet primitive — with the desktop layout at 1024px and above **untouched**, and the page in the middle never remounting when the viewport crosses the line.
+
+⚠ **TWO MODES, NOT THREE.** `mobile` (< 1024px) covers the phone AND the tablet — a held tablet belongs in a thumb-zone shell, and the 76px icon rail the app used to show at 768px was a worse answer for a held device. Inside the mobile mode the phone/tablet difference is **CSS only**: `--m-grid-cols` reflows 3 → 4 → 5 at 600px and 834px. ⚠ **There is no `isTablet` anywhere in the app**, and adding one is the single change that would turn one shell into three things to maintain.
+
+**THE DECISION THAT SHAPES THE CODE — the page never remounts.** `AppShell` chooses its chrome from `useLayoutMode()` instead of rendering `{mobile ? <MobileShell/> : <DesktopShell/>}`. The latter would move `<Outlet/>` to a new position, so React would unmount the routed view on every rotation — the film you were browsing refetches and a half-typed form is lost. The conditionals are SIBLINGS of the Outlet's ancestors, so crossing 1024px changes the chrome around the page and leaves the page alone. ⚠ **Measured, not asserted:** scenario C resizes 1280 → 390 → 834 → 1280 on ONE page and requires zero remounts, zero requests and no sign-out. ⚠ And `OfflineWiring` sits **outside** the mode conditional, so a rotation cannot restart the progress spool's replay loop.
+
+**⚠ THE BOUNDARY LIVES IN TWO LANGUAGES, and the test that keeps them together.** `MOBILE_MAX_PX = 1023` (JS, decides which tree renders) and Tailwind's `lg` = 1024 (CSS, decides which chrome is visible). `LayoutMode.test.tsx` reads Tailwind's OWN resolved breakpoint via `tailwindcss/defaultTheme` and fails if the two ever disagree — a copy of the number in the test would have proved nothing.
+
+**⚠ THE 768–1023px BAND IS THE ONE VISIBLE CHANGE, and it is why M0 and M1 ship together.** M0 was deliberately kept **invisible** (provider, tokens, scoped base styles) and the boundary flip landed in M1 with the shell, so no phase leaves that band worse than it found it. The band is now: tablet portrait gets the thumb-zone bar rather than the icon rail. ⚠ **Audited against every existing gate** (`MOBILE_FIRST_UI_PLAN` §8.2): no tool or vitest test changes its verdict. The only checks in that band are `check_nav_access`'s iPad at 744×1024 and `measure_player_layout`'s 820 / 844 / 915 — all four already assert the MOBILE surface, and `measure_player_layout`'s own table already encodes 1024 as the line.
+
+**NEW GATES, EACH FALSIFIED BEFORE TRUSTED:**
+
+| Gate | Result |
+|---|---|
+| `python3 tools/check_mobile_layout_switch.py` | ✅ **PASS — 9 scenarios, 0 problems** (320 · 390 · 600 · 834 · 1023 · 1024 · 1280 · 1440 + the crossing) |
+| its `--selftest` | ✅ **23/23** — every assertion fed a probe it must REJECT |
+| `python3 tools/check_mobile_shell.py` | ✅ **PASS — 5 scenarios, 0 problems** (tab bar in the thumb zone, ≥44px targets, thumb navigation, the sheet's lock/scroll/dismiss) |
+| its `--selftest` | ✅ **26/26** |
+| ⚠ **falsification, both mobile gates** | ✅ **RED, each naming its rule** — the boundary reverted to `md` (1023px: *"there is no tab bar on screen at a mobile width"*), the lock downgraded to `overflow: hidden` (*"the body is not locked: position is ''"*), and the tab icon shrunk (*"tab 'Home' is 16px tall, under the 44px floor"*) |
+| `npx tsc --noEmit` / `npx vitest run` / `npm run build` | ✅ clean / ✅ **496 tests, 20 files** (was 450/17) / ✅ built |
+
+**⚠ FOUR MEASUREMENT TRAPS THIS PHASE COST — all in the "the assertion passes and the feature is broken" class:**
+1. ⚠ **Playwright's `.click()` SCROLLS ITS TARGET INTO VIEW.** The sheet trigger sits at the top of the frame, so a locator click silently reset the page to scrollY 0 — and the scroll lock was then measured against 0, which EVERY implementation passes. It is a JS click now, with a hard check that the page really is held at 400px before the sheet opens.
+2. ⚠ **`window.scrollY` reads 0 while a scroll lock is on, and that is CORRECT** — the body is `position: fixed`, so the position now lives in the body's negative `top`. Reading it after opening reports a leak on a lock that works.
+3. ⚠ **Appending a spacer and scrolling in ONE `evaluate` scrolls against the OLD document height**, so `scrollTo(0, 400)` clamps to 0. Two steps, each with a wait that proves it took.
+4. ⚠ **A `.ts` and a `.tsx` may not share a base name.** The sheet's pure rules were `sheet.ts`; Vite's extension order puts `.ts` before `.tsx`, so `import { Sheet } from "./Sheet"` resolved to the RULES file and the render died with *"does not provide an export named 'Sheet'"* — an error that reads like a typo, not a file-naming collision. Hence `sheetRules.ts`.
+
+⚠⚠ **AND A GATE FAILED ON AN UNTOUCHED `dev`, WHICH IS WHY IT IS REPORTED AND NOT FIXED.** `python3 tools/check_nav_access.py` now fails scenario F **3 times out of 3 on this branch AND 3 out of 3 on `dev` at `5c59b0b`** — so it is not attributable to this phase. The cause is measured, not guessed: `net::ERR_INSUFFICIENT_RESOURCES`. The tool loads **nine frames into one Chromium instance**, and by the eighth the browser can no longer fetch the unbundled dev modules (`FAILED lib.ts`, `FAILED Dialog.tsx`); a second page in the same browser then fails on its FIRST frame. A five-frame replication of the same sequence passes 5/5 in isolation, and the box is healthy (7.4 GB free, no stray Chromium, load 1.08). It is the multi-frame problem `ARCHITECTURE.md` §18.7 already names, and the cure is a fresh page per scenario — which both new mobile tools implement. ⚠ **The honest fix is to change that check, and the brief's §14 says report that rather than do it inside a mobile phase.**
+
+**⚠ WHAT IS NOT VERIFIED, stated plainly:** **no device has seen any of it.** `env(safe-area-inset-*)` resolves to **0px** in every sandbox browser, so the notched-phone geometry is pinned by `shell-contract.test.ts` reading the source, **not measured**. And ⚠ **the routes still render the existing desktop views inside the new shell** — M2–M9 (phone-shaped Home, detail, request sheet, player, subtitles, downloads, admin) do not exist yet. That is what M1's done-when asks for (*"every route renders something correct"*), and the reason it ships on its own.
+
+**⚠ THE MOBILE SCREEN ROUND — one command, and what to look for:**
+
+```
+cd D:\hermes_agent\hermes-workspace\projects\rkm-cinema
+git fetch origin
+git checkout feat/mobile-first-ui
+git pull --ff-only
+.\rkm-cinema.ps1 apply
+```
+
+⚠ Then on the **phone** (and on the **iPad**, which is the interesting one): the **bottom bar** is the navigation, it sits above the home indicator, every tab is comfortably tappable, and nothing scrolls sideways at any width. Append **`?layout=debug`** to the URL and a corner readout says `mobile` on the phone and `desktop` on the laptop — rotating the iPad flips the word with no reload and no visible change to the page. ⚠ **What has deliberately NOT changed: any screen's content.** This phase moved the chrome and nothing else.
+
 ## ▶ 🔀 **BRANCH STRATEGY IS NOW `dev`-FIRST, AND `main` CARRIES ONLY WORK THAT IS UNIT TESTED *AND* TESTED BY HIM ON THE UI** (2026-09-16, his instruction) · created: **`dev`** — cut from `main` (`c5bb919`) with the **whole offline workstream merged in** (fast-forward, no merge commit) ⇒ **`dev` = `e0f5b31`, 23 commits ahead of `main`, pushed and the remote ref verified** · ⚠ **`main` is UNTOUCHED at `c5bb919`** · ⚠ `experiment/bundled-docker-stack` is 9 behind and is **no longer part of the flow** · ⚠ `spike/offline-loopback` stays a throwaway
 
 **⚠⚠ THE RULE — his words, then what they mean in commands (`docs/ARCHITECTURE.md` §13/§14 carry the short form):**

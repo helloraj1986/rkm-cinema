@@ -1,9 +1,17 @@
 # RKM Cinema — Mobile-First UI: the plan
 
-> **Deliverable #1 of `MOBILE_FIRST_UI_BRIEF.md` §0/§12.** Written before a single line of mobile UI.
-> ⚠ **Nothing has been built.** No branch exists, no code has changed. This document is for approval.
+> **Deliverable #1 of `MOBILE_FIRST_UI_BRIEF.md` §0/§12.** Written before a single line of mobile UI had
+> been written, then executed phase by phase — ⚠ **M0 and M1 are built; M2–M9 are not.** The phases'
+> own records live in `PROGRESS.md` and `adr/ADR-0011-mobile-layout-shells.md`; this document stays the
+> plan, with a ✅ on the phases that landed.
 
-- **Status:** DRAFT — awaiting his approval. No phase has started.
+- **Status:** ✅ **M0 AND M1 BUILT AND GREEN** (2026-09-16). Approved by him as "m0+m1 together".
+  ⚠ **M2–M9 are planned, NOT built.** Commits: `43e7a16` (brief + plan) · `00cbf58` (M0) ·
+  `48de90c` (M0 gate) · `eb18703` (M1) · `f0a5a0b` (M1 gate).
+  ⚠ Phase records: `PROGRESS.md`'s top block, `adr/ADR-0011-mobile-layout-shells.md`.
+- **His answers to §9, recorded:** Q1 — **cut from `dev`** (the repo rule won over brief §11) ·
+  Q2 — **`docs/MOBILE_FIRST_UI_PLAN.md`**, not `docs/plans/` (this file's location) · Q3/Q4 — the
+  defaults were accepted · Q5 — ⚠ **the desktop baselines were NOT committed**; see the note under §9 Q5.
 - **Source brief:** [`MOBILE_FIRST_UI_BRIEF.md`](MOBILE_FIRST_UI_BRIEF.md) (untracked — see §9 Q1)
 - **Branch (proposed):** `feat/mobile-first-ui`, cut from **`dev`** — ⚠ **not** "fresh from mainline"
   as brief §11 says; see §9 Q1, which is a real conflict with `ARCHITECTURE.md` §13/§14.
@@ -653,11 +661,13 @@ media-query inside `DetailScreen` and one extra wireframe — cheap, but it shou
 **Q5 — desktop screenshot baselines: may I commit ~5 PNGs?**
 Brief §9.4 requires before/after desktop screenshots attached to each phase report. The repo has exactly
 **one** committed image (`apple/ios/.../AppIcon-1024.png`) and no screenshot directory.
-**Recommendation: capture the M0 baseline now into `docs/mobile-ui-baseline/` and commit them** (~1 MB,
-five viewports: 1280, 1440, 2560 wide plus the phone-shell route at desktop width). They are the entire
-regression evidence for §9, and without a committed baseline "the desktop did not move" is an assertion.
-Cost of changing later: `git rm -r`. **Tell me if you would rather they stayed out of git** — then the
-baseline lives outside the repo and every phase report attaches images instead.
+**Recommendation was: commit them. ⚠ I did not, and here is why.** The screenshots the sandbox can
+produce are of the **harness frame** (`frontend/harness/mobile-frame.html` — the real `AppShell` over a
+stubbed api), not of the deployed app: there is no Docker in this sandbox (`docker: command not found`)
+and the real stack runs on his RKM-HP box. Committing those as "the desktop baseline" would claim
+something they are not. They were produced at eight widths
+(`--shots` on `check_mobile_layout_switch.py`) and are the phase's evidence; **say the word and I will
+either commit them as clearly-labelled harness screenshots or capture the real pages on his stack.**
 
 **Q6 — the brief itself is untracked.**
 `MOBILE_FIRST_UI_BRIEF.md` has never been committed (it was deliberately left out of the merge).
@@ -712,29 +722,43 @@ Four independent pieces of evidence, in increasing strength:
 
 Ordering is the brief's, with one change justified in §2.5 (M1 owns the CSS boundary flip).
 
-### M0 — Foundation · no visible change
-**Scope.** `LayoutMode.tsx` (provider + `useLayoutMode` + the pure `layoutModeFor`), `Screen.tsx`,
-`layouts/desktop/index.ts` and `layouts/mobile/index.ts` re-export indexes, the token additions (§5.2),
-the **scoped** mobile base styles (§5.3), the additive `:root` safe-area hoist, the `?layout=debug`
-readout, `layouts/mobile/imports.test.ts`, `LayoutMode.test.tsx`, `tools/check_mobile_layout_switch.py`,
-and the committed desktop baseline screenshots.
-⚠ **The 768px→1024px CSS boundary is NOT flipped here** (§2.5).
+### ✅ M0 — Foundation · no visible change · **BUILT** (`00cbf58`, `48de90c`)
+**As planned, except one deliberate deviation:** `layouts/Screen.tsx` (the per-route chooser) was **not**
+written here. It lands with the first route that has a mobile counterpart (M3) rather than sitting unused
+for three phases — dead code in a phase whose whole claim is "nothing changed".
+**Delivered.** `LayoutMode.tsx` (provider + `useLayoutMode` + the pure `layoutModeFor`), `LayoutDebug.tsx`
+(`?layout=debug`, inert without the param), `layouts/desktop/index.ts` and `layouts/mobile/index.ts`
+re-export indexes, the token additions (§5.2), the **scoped** mobile base styles (§5.3), the additive
+`:root` safe-area hoist, `LayoutMode.test.tsx` (which reads Tailwind's own resolved `lg`),
+`importRule.ts` + `imports.test.ts` (28 checks), `tools/check_mobile_layout_switch.py` (9 scenarios,
+`--selftest` 23/23), and `router.tsx` re-pointed through `layouts/desktop` (a runtime no-op).
+⚠ **The 768px→1024px CSS boundary was NOT flipped here** (§2.5) — M1 owns it, so no phase leaves the
+768–1023px band worse than it found it.
 
 **Done when (phone, < 1 min):** open the app — **it looks and behaves exactly as it does today at every
 size**; append `?layout=debug` and a corner readout says `mobile` on the phone and `desktop` on the
 laptop, and rotating/reshaping the window flips the word with no reload and no visible change to the
-page.
+page. ✅ **Measured:** `--m-grid-cols` is `''` and `.m-grid` computes `display:block` at 1024, 1280 and
+1440px — the mobile rules do not *apply*, which is a stronger claim than "it looks the same".
 
-### M1 — Shell & navigation · the boundary flips
-**Scope.** `MobileShell` (condensed header + tab bar + sheet host), `Sheet.tsx` + its scroll-lock and
-swipe-dismiss, `MobileScreen.tsx`, the skeleton/banner primitives matching `guardDecision`'s skeleton
-state, sheet motion, and ⚠ **the boundary flip**: `Sidebar` `md:flex`→`lg:flex` (and its `md:` inner
-rules), `MobileNav` `md:hidden`→`lg:hidden`, `AppShell`'s gutter/padding. `MobileNav` gains the
-thumb-zone shape but keeps its file, its exports and the `libraryNavEntries`/`libraryTabsThatFit` rules
-(§2.4).
+### ✅ M1 — Shell & navigation · the boundary flips · **BUILT** (`eb18703`, `f0a5a0b`)
+**Deviation, reported (§14, ADR-0011): there is NO `MobileHeader`.** It would be a second `Header`, which
+means a second `GlobalSearch` and a second `AccountMenu` — two copies of the interaction wiring
+`check_nav_access` exists to keep in one place. `Header` already carries the safe-area inset, the 64px
+minimum and both controls, so the mobile shell uses it as-is and **the tab bar is the whole of the new
+chrome**.
+**Delivered.** The boundary flip (`Sidebar` `md:flex`→`lg:flex`, `MobileNav` `md:hidden`→`lg:hidden`,
+`AppShell` `md:pb-12`→`lg:pb-12`), `AppShell` choosing its chrome without moving `<Outlet/>`, the 44px
+token floor on tabs and sheet rows, `components/ui/Sheet.tsx` + `sheetRules.ts` (11 pure tests), and
+`tools/check_mobile_shell.py` (5 scenarios, `--selftest` 26/26). Also: `MobileNav` keeps its **file, its
+exports and its rules** (`libraryNavEntries`, `libraryTabsThatFit`) — §2.4 explains why moving it would
+have broken two existing gates.
+
 **Done when (phone, < 1 min):** every route reachable with the thumb from the tab bar and the More sheet;
 no route renders a broken screen; **iPad portrait (744–1023px) now gets the same bar**; the page never
-scrolls sideways.
+scrolls sideways. ✅ **Measured** at 320 / 390 / 1023, plus the sheet's lock, scroll, drag and Escape.
+⚠ **The routes still render the existing desktop views inside the shell** — that is what this phase's
+done-when asks for, and M3 onwards replaces them one at a time.
 
 ### M2 — Identity screens
 **Scope.** E1 + E2 extractions (separate commits), `LoginScreen`, `PickerScreen`, the account menu as a

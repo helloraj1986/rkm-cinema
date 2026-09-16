@@ -255,3 +255,168 @@
     padding-right: max(0.75rem, var(--rkm-safe-right));
   }
 }
+
+/* ===========================================================================
+ * MOBILE LAYOUT SHELL — tokens and base styles (MOBILE_FIRST_UI_PLAN §5).
+ *
+ * The mobile presentation is the same product viewed from a sofa: same palette,
+ * same type, same radii. What changes is the ARRANGEMENT, and the handful of
+ * facts a phone needs that a desktop never does (the safe areas, the tap
+ * target, the input size that must not trigger a zoom).
+ *
+ * ⚠ EVERY rule below is scoped to `[data-layout="mobile"]`. The attribute is set
+ * on `documentElement` by `layouts/LayoutMode.tsx` and is absent in desktop mode,
+ * so a desktop pixel cannot be moved by this block. That is not a convention to
+ * be remembered — it is the selector, and `tools/check_mobile_layout_switch.py`
+ * measures both facts (the attribute is absent at 1024px, and the app's
+ * screenshots are unchanged there).
+ *
+ * ⚠ They also live OUTSIDE every `@layer`, deliberately. `@layer utilities`
+ * beats `@layer base` and `@layer components` regardless of specificity, so a
+ * rule that MUST win over a utility — `font-size: 16px` on an input, over some
+ * component's `text-sm` — has to be unlayered. Layered, the 16px would be an
+ * intention rather than a rule, and iOS would zoom the page on focus anyway.
+ * --------------------------------------------------------------------------- */
+
+/* ---------------------------------------------------------------------------
+ * 1. The safe-area insets, hoisted to the root.
+ *
+ * These four lived only inside `.rkm-player` (below). The player can keep its
+ * own copy — they resolve to the same values — but the mobile shell needs them
+ * on `:root`: the tab bar, the sheet and the page gutter all read them, and a
+ * second definition per component is how one of them drifts.
+ *
+ * ⚠ Additive and INERT until something reads them: a desktop browser resolves
+ * every one to 0px, and `viewport-fit=cover` (frontend/index.html) is what makes
+ * them non-zero at all inside the iOS shell.
+ * --------------------------------------------------------------------------- */
+:root {
+  --rkm-safe-top: env(safe-area-inset-top, 0px);
+  --rkm-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --rkm-safe-left: env(safe-area-inset-left, 0px);
+  --rkm-safe-right: env(safe-area-inset-right, 0px);
+}
+
+/* ---------------------------------------------------------------------------
+ * 2. The mobile tokens.
+ *
+ * ⚠ Only ONE of these is a design choice: `--m-input`. Everything else is a
+ * measurement the layout has to agree with itself about, which is exactly why
+ * it is a token and not a repeatable utility.
+ * --------------------------------------------------------------------------- */
+[data-layout="mobile"] {
+  /* The thumb-zone bar's CONTENT height. The scroll padding and the last row's
+     bottom inset are computed from it, so a taller bar cannot leave a row hiding
+     underneath it. */
+  --m-nav-h: 56px;
+  /* ⚠ The quality floor, not a preference: 44px is the smallest target a thumb
+     hits reliably, and every interactive element in the shell is measured
+     against it (`tools/check_mobile_shell.py`). */
+  --m-tap: 44px;
+  --m-gutter: 16px;
+  /* Poster columns. ⚠ THE place a phone and a tablet differ — in CSS, and in one
+     fact several components share (the grid, its skeleton, the rail's maths).
+     There is no `isTablet` in the app, and this is why there does not need to
+     be. See the two media queries below. */
+  --m-grid-cols: 3;
+  /* A snap rail's card width: a bit over a third of the viewport, so the next
+     card is visibly peeking — which is the whole affordance of a rail. */
+  --m-rail-w: clamp(132px, 38vw, 180px);
+  --m-sheet-max: 92dvh;
+  --m-sheet-radius: var(--radius-xl);
+
+  /* The mobile type ramp (§5.1a: the desktop tree has no scale, and is NOT
+     retrofitted — these are used by `layouts/mobile/**` only). */
+  --m-text-hero: 34px;
+  --m-text-title: 22px;
+  --m-text-body: 15px;
+  --m-text-label: 13px;
+  --m-text-meta: 11px;
+
+  /* ⚠ NOT a design choice. Anything under 16px makes iOS zoom the page on focus,
+     and it never zooms back — the layout stays broken until a reload. */
+  --m-input: 16px;
+}
+
+@media (min-width: 600px) {
+  [data-layout="mobile"] {
+    --m-gutter: 20px;
+    --m-grid-cols: 4;
+  }
+}
+
+@media (min-width: 834px) {
+  [data-layout="mobile"] {
+    --m-grid-cols: 5;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * 3. Base styles — each one closes a row of the brief's §5 trap table.
+ * --------------------------------------------------------------------------- */
+
+/* ⚠ The background goes on `html`, not only on `body`. A rubber-band scroll on
+   iOS reveals whatever is BEHIND the body, and behind the body is the html
+   element — white by default. `body` already carries `var(--bg)`; this is the
+   half that stops a dark app flashing a white band at the top and bottom. */
+[data-layout="mobile"] {
+  background: var(--bg);
+}
+
+[data-layout="mobile"] body {
+  /* The page itself must not bounce; sheets scroll instead (`overscroll-behavior`
+     on `.m-sheet` below is the other half). */
+  overscroll-behavior-y: none;
+}
+
+/* ⚠ The grey tap flash. Removing it WITHOUT replacing it is the classic mistake:
+   the app stops feeling like it responded to anything. `:active` below is the
+   replacement, and it is why the two rules are adjacent. */
+[data-layout="mobile"] * {
+  -webkit-tap-highlight-color: transparent;
+}
+
+[data-layout="mobile"] a:active,
+[data-layout="mobile"] button:active,
+[data-layout="mobile"] [role="button"]:active {
+  opacity: 0.72;
+}
+
+/* The 300ms delay and the double-tap zoom on a control. */
+[data-layout="mobile"] a,
+[data-layout="mobile"] button,
+[data-layout="mobile"] [role="button"],
+[data-layout="mobile"] input,
+[data-layout="mobile"] select,
+[data-layout="mobile"] textarea {
+  touch-action: manipulation;
+}
+
+/* ⚠ The iOS zoom-on-focus, closed for good. See `--m-input` above and the note
+   about `@layer` at the top of this block — this rule only works unlayered. */
+[data-layout="mobile"] input,
+[data-layout="mobile"] select,
+[data-layout="mobile"] textarea {
+  font-size: var(--m-input);
+}
+
+/* ⚠ Poster ART only — never on text the user might want to copy. A long press on
+   a card should open the card, not iOS's callout menu. */
+[data-layout="mobile"] .m-art {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* A sheet scrolls ITSELF, never the page behind it. */
+[data-layout="mobile"] .m-sheet {
+  overscroll-behavior: contain;
+}
+
+/* The poster grid — one shared fact, read from the token, so the real grid and
+   the skeleton that stands in for it can never disagree about the column count. */
+[data-layout="mobile"] .m-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--m-grid-cols), minmax(0, 1fr));
+  gap: var(--space-5) var(--space-3);
+}

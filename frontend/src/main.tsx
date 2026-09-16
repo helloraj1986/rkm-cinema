@@ -4,6 +4,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "react-router-dom";
 import { router } from "./app/router";
 import { AuthProvider } from "./features/auth/AuthProvider";
+import { LayoutModeProvider } from "./layouts/LayoutMode";
+import { LayoutDebugReadout } from "./layouts/LayoutDebug";
 import { CACHE_GC_TIME_MS, startQueryCachePersistence } from "./lib/query/persist";
 import "./styles/index.css";
 
@@ -36,11 +38,24 @@ startQueryCachePersistence(queryClient);
 
 // AuthProvider sits ABOVE the router: the sign-in route lives outside the app shell, so
 // the session state cannot live inside it (AUTH_MULTIUSER_PLAN Phase 1).
+//
+// ⚠ LayoutModeProvider sits between them, and THAT POSITION IS LOAD-BEARING (MOBILE_FIRST_UI_PLAN §3.2):
+// above the router, so crossing 1024px re-renders the routed element without remounting the app; and
+// BELOW QueryClientProvider and AuthProvider, so the React Query cache and the session survive the
+// swap. That is what makes "rotating an iPad does not refetch and does not sign you out" a measured
+// fact rather than a hope — `tools/check_mobile_layout_switch.py` asserts both.
+//
+// `LayoutDebugReadout` renders nothing unless `?layout=debug` is in the URL. It lives inside the
+// provider so that what it reports is the PROVIDER's answer — the value the app is actually building
+// from — and not a second opinion from its own `matchMedia` call.
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <RouterProvider router={router} />
+        <LayoutModeProvider>
+          <RouterProvider router={router} />
+          <LayoutDebugReadout />
+        </LayoutModeProvider>
       </AuthProvider>
     </QueryClientProvider>
   </React.StrictMode>,

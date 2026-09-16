@@ -485,6 +485,16 @@ export function resumePercent(item: MediaItem): number {
 }
 
 /**
+ * The Recently Added set (M3 · extraction E4): the server's recent list, minus any row without
+ * an id — a row with no id cannot be opened or played, so it is dropped rather than rendered as
+ * a dead poster. Named here (rather than filtered inline in the view) because the Home rows and
+ * any future screen showing "recently added" must drop exactly the same rows.
+ */
+export function recentlyAddedItems(items: MediaItem[] | null | undefined): MediaItem[] {
+  return (items ?? []).filter((i) => Boolean(i.item_id));
+}
+
+/**
  * The one meta line that sits under a card's title (M3 · extraction E8).
  *
  * ⚠ Extracted because M3 builds a SECOND card (the mobile `PosterCard`) that must show the

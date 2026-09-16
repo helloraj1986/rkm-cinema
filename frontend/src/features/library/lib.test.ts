@@ -27,6 +27,7 @@ import {
   pickHomeHero,
   playbackMarker,
   posterUrl,
+  recentlyAddedItems,
   ratingText,
   resumePercent,
   scanFailure,
@@ -616,5 +617,25 @@ describe("cardMetaLine (M3 · E8)", () => {
   });
   it("a title with nothing known is empty, not a separator", () => {
     expect(cardMetaLine({ title: "T", item_id: "i1" })).toBe("");
+  });
+});
+
+/**
+ * M3 · extraction E4 — the pure half of the Home view model. The rail LENGTHS are named in
+ * `useHomeRows` (they are a presentation decision); what belongs here is the row's own rule:
+ * a recently-added row with no id is not a title you can open, so it is dropped.
+ */
+describe("recentlyAddedItems (M3 · E4)", () => {
+  it("keeps the rows you can open, in the server's order", () => {
+    const rows: MediaItem[] = [
+      { ...base, title: "kept", item_id: "a" },
+      { ...base, title: "dead row", item_id: "" },
+      { ...base, title: "kept too", item_id: "b" },
+    ];
+    expect(recentlyAddedItems(rows).map((i) => i.title)).toEqual(["kept", "kept too"]);
+  });
+  it("answers [] before the query has data", () => {
+    expect(recentlyAddedItems(undefined)).toEqual([]);
+    expect(recentlyAddedItems(null)).toEqual([]);
   });
 });

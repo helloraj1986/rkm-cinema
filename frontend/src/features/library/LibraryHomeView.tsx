@@ -1,10 +1,5 @@
-import {
-  useContinueWatching,
-  useLibraryItems,
-  useLibraryRecent,
-  useRecentlyWatched,
-  useScanLibrary,
-} from "./api";
+import { useScanLibrary } from "./api";
+import { useHomeRows } from "./useHomeRows";
 import { ContinueWatchingRow } from "./ContinueWatchingRow";
 import { MediaCard } from "./MediaCard";
 import { useLibraryOutlet } from "./LibraryLayout";
@@ -15,12 +10,10 @@ import { Icon } from "../../components/ui/Icon";
 import { api } from "../../lib/api/client";
 import {
   artTone,
-  continueWatchingItems,
   episodeItemCode,
   fmtRuntime,
   isEpisodeItem,
   isSeries,
-  pickHomeHero,
   posterUrl,
   resumePercent,
   scanFailure,
@@ -88,21 +81,24 @@ function RailSkeletons() {
  * source labels (provider names) are gone from the primary UX.
  */
 export function LibraryHomeView() {
-  const items = useLibraryItems();
-  const continueWatching = useContinueWatching();
-  const recentlyWatched = useRecentlyWatched();
-  const recent = useLibraryRecent();
+  // The four queries and every row derived from them live in `useHomeRows` (M3 · E4), so the
+  // rail lengths and the Continue-Watching rule are named once instead of being literals here.
+  const {
+    items,
+    all,
+    cwItems,
+    hero,
+    heroIsCw,
+    recentlyPlayed,
+    hasRecentlyPlayed,
+    recentlyAdded,
+    hasRecentlyAdded,
+  } = useHomeRows();
   const scan = useScanLibrary();
   const { quickPlay, openItem, toggleWatched } = useLibraryOutlet();
   // Phase E: the scan route is administrators-only and strict in every world, so the control is
   // only OFFERED to an administrator. Signed out (or before the profiles answer) is not one.
   const mayScan = mayScanLibrary(useCurrentProfile()?.is_admin);
-
-  const all = items.data?.items ?? [];
-  const cwItems = continueWatchingItems(continueWatching.data?.items);
-  const recentlyAdded = (recent.data?.recent ?? []).filter((i) => Boolean(i.item_id));
-  const hero = pickHomeHero(cwItems, recentlyAdded, all);
-  const heroIsCw = Boolean(hero && cwItems.some((i) => i.item_id === hero.item_id));
 
   const cardProps: CardHandlers = {
     onQuickPlay: quickPlay,
@@ -205,17 +201,17 @@ export function LibraryHomeView() {
         />
       )}
 
-      {recentlyWatched.data && recentlyWatched.data.items.length > 0 && (
+      {hasRecentlyPlayed && (
         <section aria-label="Recently played">
           <SectionHeader title="Recently Played" />
-          <PosterRail items={recentlyWatched.data.items.slice(0, 14)} handlers={cardProps} />
+          <PosterRail items={recentlyPlayed} handlers={cardProps} />
         </section>
       )}
 
-      {recentlyAdded.length > 0 && (
+      {hasRecentlyAdded && (
         <section aria-label="Recently added">
           <SectionHeader title="Recently Added" seeAllLabel="See library" />
-          <PosterRail items={recentlyAdded.slice(0, 16)} handlers={cardProps} />
+          <PosterRail items={recentlyAdded} handlers={cardProps} />
         </section>
       )}
 

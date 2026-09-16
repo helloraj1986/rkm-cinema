@@ -1,4 +1,61 @@
-## ▶ ✅ **B1 BUILT — THE SERVER CAN HAND THE DEVICE A FILM: `prepare` packages one title, `HEAD` gives its size, a `Range` request returns `206` + `Content-Range`, and asking twice packages it ONCE** (2026-09-16) · branch **`feat/offline-api`** (cut from `main` @ `c5bb919`; commits `ca053e6` → `a04672a`, then the live-gate ladder fix `d741a56` + this record) · **NEW** `backend/services/offline.py`, `backend/api/routes/offline.py`, `backend/tests/test_offline_api.py`, **NEW** `docs/adr/ADR-0007-offline-downloads.md` · changed: `api/main.py` (router wired SESSION-scoped), `api/models.py` (`OfflinePrepareRequest`), `config/settings.py` (3 knobs), `tests/test_route_protection.py` (6 rows declared), `docs/api/openapi.v1.json` (58 paths), corrected: **`NATIVE_FEEL_AND_OFFLINE_PLAN.md` §4.2/§4.3/§6** · ⚠ **backend only, NO frontend, no native — but it IS an api image rebuild, so it needs `apply`**
+## ▶ ✅ **B2 BUILT — THE DEVICE CAN HOLD A FILM: a BACKGROUND session downloads it, a `.part` file it never trusts is resumed by `Range`, and the manifest survives a relaunch — ⚠ but NOT ONE LINE OF IT HAS RUN ON THE MAC YET** (2026-09-16) · branch **`feat/offline-downloads`** (cut from the B1 tip `1b71fce`; commits `34e3359` (the feature) → `a59eac3` (the two errors a Linux typecheck found + the gate tool) + this record) · **NEW** `apple/ios/RKMCinema/Offline/{OfflineManifest,OfflinePlan,CookieHeader,OfflineStore,OfflineAPI,CookieMirror,OfflineDownloads}.swift`, `apple/ios/RKMCinema/App/AppDelegate.swift`, `apple/ios/RKMCinema/Debug/OfflineDebugPanel.swift`, **NEW** `apple/scripts/check-offline-core.py` + `apple/scripts/offline-core-tests/main.swift` (**194 checks, all 31 rules falsified**), **NEW** `tools/check_offline_download.py` (**the gate, 9 selftests**), **NEW** `docs/adr/ADR-0008-offline-downloader.md` · changed: `RKMCinemaApp.swift` (⚠ `@UIApplicationDelegateAdaptor` — the app has a delegate for the first time), `App/AppModel.swift`, `App/AppRootView.swift`, `Debug/DebugHUD.swift`, `apple/Shared/Sources/RKMServerKit/LogEntry.swift` (a `LogCategory` for downloads), `apple/scripts/check-imports.py` (the new WebKit/UIKit members + one documented exception), corrected: **`NATIVE_FEEL_AND_OFFLINE_PLAN.md` §4.4/§6** · ⚠ **iOS ONLY: no web, no backend, no nginx — so this needs NO `apply`, and it CANNOT BE SEEN until it is built on the Mac**
+
+**WHAT B2 IS, in one sentence:** B1 made the *server* able to hand a film over (package it, report its size, serve it byte-ranged); this is the *device* acquiring it — a background `URLSession`, one task per title, and an honest answer to "do I have the whole thing?" that never depends on a manifest being right.
+
+**WHY THE SHAPE IS WHAT IT IS — seven decisions, each with the alternative it beat (`docs/adr/ADR-0008-offline-downloader.md`).** The four worth knowing before touching this code:
+
+1. **A BACKGROUND session, and therefore the app's first `AppDelegate`.** Only a background session keeps transferring while the app is suspended, and iOS delivers its events to the **application delegate** — which a SwiftUI `@main` app does not have. ⚠ `handleEventsForBackgroundURLSession` must STORE the completion handler and `urlSessionDidFinishEvents` must CALL it; while it is outstanding the system treats the app as busy. Apple's own guide for background downloads is exactly this flow, and it asks for **no `UIBackgroundModes` entry** (if the relaunch does not happen on the Mac round, that is the first thing to try — a one-line change in a file we already own).
+2. **The cookie is an EXPLICIT `Cookie:` header, and the session is told to touch no cookies at all.** ⚠ `RKM_AUTH_REQUIRED=true` made this a hard prerequisite: a native `URLSession` has no jar of its own. The plan's "copy WebKit's cookies into `HTTPCookieStorage.shared`" was rejected because a background session's own cookie handling is documented to lose cookies on redirects (Apple r.16,852,027) — and a silently missing cookie is a mystery `401` at the moment the user committed to a 2 GB download. `CookieMirror` observes the jar, so **signing in inside the page reaches the native side with no page change**.
+3. **Resume by `Range`, then VERIFY THE SPLICE.** All the arithmetic is in `OfflinePlan.swift`, which is compiled and falsified on Linux, because a wrong resume produces a film that **plays** and is wrong for the rest of its length. Completion needs **size AND ETag** (a re-packaged rendition can land on the same size); a changed ETag **restarts**; a partial with no recorded ETag **restarts**; a `206` whose `Content-Range` start ≠ the requested offset is **refused**, not written; a `200` to a ranged request **replaces** the partial and says how much it discarded; a zero-byte artefact is refused before "0 of 0" can read as complete.
+4. **The manifest is an index; the FILESYSTEM is the truth.** Every launch re-derives `bytes`/`ready` from the two files that can hold them. Progress is not persisted at all — it is re-derivable, which is why only *states* are written often. (Same rule as ADR-0007 D7, seen from the device.)
+
+**THE PHASE WAS NOT TESTABLE WITHOUT A TRIGGER, SO B2 SHIPS ONE — and it is debug-only.** The page affordances are **B4** and the loopback player is **B3**, so `Debug/OfflineDebugPanel.swift` (compiled only into a Debug build, deleted when B4 lands) lists real library titles, starts a download **through the same API the page will call**, and shows state/percent/ETA/errors with Cancel / Resume / Retry / Delete. Two launch arguments make the round scriptable: `-RKMOfflineItem <item-id>` and `-RKMOfflinePick YES`.
+
+**THE GATE IS NOW A COMMAND — `python3 tools/check_offline_download.py`** (⚠ **no argument**: it finds the simulator's app container itself, reads the app's file log **and its `manifest.json`**, scopes itself to the NEWEST run — the log is append-only, so a gate that cannot fail after its first success is not a gate — and answers the three questions separately, with `NOT EXERCISED` as its own verdict because "we did not test it" and "it did not work" are different answers). ⚠ **`--selftest` = 9/9**: a passing run, a stale pass (an older run's success must NOT pass), a 401, a stop-and-retry, a stop with nothing retrying it, a resume from an offset, a manifest whose `ready` record has the wrong size, and no log at all.
+
+**GATES RUN HERE — everything that can be run without a Mac, and the honest split:**
+
+| Gate | Result |
+|---|---|
+| `python3 apple/scripts/check-offline-core.py` | ✅ **PASS — 194 checks, 0 failures** on the three Foundation-only sources |
+| `python3 apple/scripts/check-offline-core.py --falsify` | ✅ **31/31 rules reverted one at a time, every one went RED on the check it protects** |
+| `python3 tools/check_offline_download.py --selftest` | ✅ **9/9** — the tool can fail, and can say "not exercised" |
+| `swift test` in `apple/Shared` | ✅ **66/66** (the new `LogCategory` included) |
+| `python3 apple/scripts/check-imports.py` | ✅ clean, 23 files — ⚠ **and it FOUND one real false positive**: `isHTTPOnly` is OUR property name as well as WebKit's, and the rule would have forced a WebKit import into a Foundation-only file. The rule is removed, with the reason written next to it |
+| `swiftc -parse` on every changed file | ✅ clean |
+| **`swiftc -typecheck` with a STUB SCAFFOLD (new technique)** | ✅ **0 unexpected errors** — the Foundation half of `OfflineDownloads`/`OfflineAPI`/`OfflineStore` typechecked **on Linux** against stand-ins for UIKit/Combine/WebKit, per `WORKFLOW.md` §5's "a semantic error CAN be reproduced here". ⚠⚠ **IT EARNED ITS KEEP: it caught two errors that would have cost a Mac round** — `private(set)` on a computed property, and `store.newestFirst` (the accessor is on the manifest, not the store). Both were only visible to a *type*-checker; `-parse` passes them happily |
+| `python3 tools/check_md_links.py` | ✅ clean, 55 files |
+
+⚠ **TWO THINGS THIS PHASE DID NOT DO, stated plainly, because "built" is not "working":**
+* ⚠⚠ **NOTHING Apple-SDK-shaped has RUN.** The delegate callbacks, the background session, the cookie mirror, the SwiftUI panel and the URL construction are **written, import-checked, syntax-checked and partly typechecked — and unverified** until the Mac round. That is what the round below is for.
+* ⚠ **A packaging wait needs the app awake.** The *transfer* survives backgrounding (a background session lives in a system process), but polling for a `remux`/`transcode` job runs in our process and an assertion buys only the standard grace period. And ⚠ **a packaged rendition has STILL never been measured end to end** (B1's open item) — the first download of an MKV is that measurement, and the log is built to show it.
+
+**⚠ HIS STEP — the Mac round. PowerShell 5.1 on Windows is not involved: this is the MAC's terminal** (all five lines, in order — the first three are because the Mac clone is on a different branch than the sandbox):
+
+```
+cd ~/dev/rkm-cinema
+git fetch origin
+git checkout feat/offline-downloads
+git pull --ff-only
+./apple/scripts/mac-round.sh ios --sim
+```
+
+⚠ **Then, in the app on the simulator (this is the gate, and it is the FIRST run of this code anywhere):**
+1. **Sign in** — the shell loads the live web UI; the download uses the page's own session, so sign in before downloading anything (that is what the cookie mirror is watching for).
+2. **The debug HUD opens ON in a Debug build.** Tap **offline (B2)** in the overlay → **Load titles** → **Download** on a SMALL title first (a 2 GB film is ~9 minutes on the tailnet).
+3. **Background it** — simulator: **Device ▸ Home** (or ⌘⇧H) — and wait. Bring it back. The log should show the transfer finishing and, if the app was suspended, `offline background events incoming`.
+4. **Force the failure:** with a download running, turn the **Mac's Wi-Fi off for ~10 seconds and back on**. The row should say "retrying in 3s" and the next attempt should **resume from the bytes already on disk** (`offline resuming from …`).
+5. **Force-quit and reopen** the app (simulator: **Device ▸ … stop the app**, or the app switcher). On the next launch the log should show `offline RELAUNCH: one interrupted download found …` and the row should continue from where it stopped.
+
+Then hand me the verdict — **one command, no arguments** (either machine that can see the simulator):
+
+```
+python3 tools/check_offline_download.py
+```
+
+⚠ **What I need back is its output, verbatim** — it prints which run it read, the three answers with the log lines behind them, and the manifest's records. If it says `NOT EXERCISED`, the checklist above was not fully hit; if it says `FAIL`, the sentence names the line.
+
+## ▶ ✅ **B1 BUILT — THE SERVER CAN HAND THE DEVICE A FILM: `prepare` packages one title, `HEAD` gives its size, a `Range` request returns `206` + `Content-Range`, and asking twice packages it ONCE** (2026-09-16) · branch **`feat/offline-api`** (cut from `main` @ `c5bb919`; commits `ca053e6` → `a04672a`, then the live-gate ladder fix `d741a56` + this record) · **NEW** `backend/services/offline.py`, `backend/api/routes/offline.py`, `backend/tests/test_offline_api.py`, **NEW** `docs/adr/ADR-0007-offline-downloads.md` · changed: `api/main.py` (router wired SESSION-scoped), `api/models.py` (`OfflinePrepareRequest`), `config/settings.py` (3 knobs), `tests/test_route_protection.py` (6 rows declared), `docs/api/openapi.v1.json` (58 paths), corrected: **`NATIVE_FEEL_AND_OFFLINE_PLAN.md` §4.2/§4.3/§6** · ⚠ **backend only, NO frontend, no native — but it IS an api image rebuild, so it needs `apply`**  -> ✅ SUPERSEDED BY **B2** (2026-09-16, `feat/offline-downloads`): the DEVICE half now exists — the server's `Range`/`206`/`ETag` contract is being consumed. ⚠ B1's own open items still stand: a PACKAGED rendition has still never been measured end to end, and the step-5 `curl` gate has not been re-run since the ladder fix. ⚠ And B1's ladder fix is in the REPO, not in the running container — it reaches the deployed stack on the next `apply` (nothing you can click depends on it yet).
 
 ⚠⚠ **THIS SESSION OPENED WITH TWO STEPS THE LAST ONE WROTE DOWN, and both are now on `main`:** (1) `perf/nginx-asset-caching` + `perf/persistent-query-cache` were **fast-forwarded into `main`** (`main` `23d97ec` → `af633b9`, pushed); (2) the **E1/E2 record was PORTED off the throwaway `spike/offline-loopback` branch** — `docs/PROGRESS.md` (the block spliced on top of main's own A1 record, not a wholesale copy, which would have reverted `840d21f`), the plan's §5/§8, `apple/SPIKE_E1_E2.md`, and `tools/check_spike_e1_e2.py` (⚠ included deliberately: the ported block names that command, and a record citing a command that does not exist gets half-trusted; its `--selftest` = 11 cases, PASSES). **The spike's app code was deliberately NOT ported**, so ⚠ **`spike/offline-loopback` can now be deleted without losing the answer** — that was the whole point of step 2: otherwise the next session reads `main`, sees E1 unanswered, and spends another two Mac rounds.
 
@@ -4897,6 +4954,7 @@ Endpoint shapes NOT yet live-verified from the sandbox (oEmbed blocked; use `scr
   - **Structured logging** - JSON logs enable log aggregation and debugging
   - **Pydantic models for API** - Type safety, auto-documentation, validation
   - **Tests first** - Writing tests for plex ownership, radarr/sonarr routing, duplicates, trailers, status, e2e, errors caught design issues early
+
 
 
 

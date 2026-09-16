@@ -17,14 +17,15 @@
  * `current` IS the profile's own row with `is_admin`, because a stub that invents one hides the
  * bug it is supposed to catch (the same lesson as `nav-frame`).
  */
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import ReactDOM from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { Outlet, RouterProvider, createMemoryRouter } from "react-router-dom";
+import { RouterProvider, createMemoryRouter } from "react-router-dom";
 
 import { AuthProvider } from "../src/features/auth/AuthProvider";
 import { LayoutModeProvider } from "../src/layouts/LayoutMode";
 import { AppShell } from "../src/app/layout/AppShell";
+import { Sheet } from "../src/components/ui/Sheet";
 import "../src/styles/index.css";
 
 const PARAMS = new URLSearchParams(location.search);
@@ -93,15 +94,55 @@ window.fetch = (async (input: RequestInfo | URL, init: RequestInit = {}) => {
  * --------------------------------------------------------------------------- */
 const mounts = { shell: 0, route: 0, renders: 0 };
 
+/** Live state the route fixture publishes so the check can read it (see `sheetOpen` in the probe). */
+const live = { sheetOpen: false };
+
 function RouteFixture() {
   mounts.route += 1;
   mounts.renders += 1;
-  useEffect(() => {
-    return () => {};
-  }, []);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  // The sheet's state is published so the check can watch it CLOSE, not merely stop rendering.
+  live.sheetOpen = sheetOpen;
   return (
     <div data-testid="route-fixture" className="p-4">
       <h1 className="text-xl font-bold">Fixture route</h1>
+
+      {/* A real trigger for the real `Sheet`. The sheet itself is NOT a fixture: it is the production
+          component, portalled to `body` exactly as it is in the app, so what the check drives is the
+          gesture and the lock rather than a mock of them. */}
+      <button
+        type="button"
+        data-testid="open-sheet"
+        onClick={() => setSheetOpen(true)}
+        className="mt-3 rounded-[10px] bg-accent px-4 py-2 text-sm font-bold text-black"
+      >
+        Open sheet
+      </button>
+
+      {sheetOpen && (
+        <Sheet labelledBy="fixture-sheet-title" onClose={() => setSheetOpen(false)}>
+          <div className="px-5 pb-5 pt-1">
+            <h2 id="fixture-sheet-title" className="text-base font-semibold">
+              Fixture sheet
+            </h2>
+            <p className="mt-1 text-sm text-zinc-400">
+              A sheet is dismissed by dragging it down, not by hunting for an X.
+            </p>
+            {/* Enough rows to make the sheet scroll, so the lock and overscroll can be measured. */}
+            {Array.from({ length: 14 }, (_, i) => (
+              <button
+                key={i}
+                type="button"
+                data-testid="sheet-row"
+                className="mt-2 block w-full rounded-lg bg-white/[.04] px-3 py-3 text-left text-sm"
+              >
+                Row {i + 1}
+              </button>
+            ))}
+          </div>
+        </Sheet>
+      )}
+
       {/* The grid fixture: `.m-grid` is the REAL shared class from `styles/index.css`, so this
           measures the token's reflow rather than a copy of it. Inert in desktop mode — which is
           itself an assertion (the mobile CSS must not reach a desktop viewport). */}
@@ -129,7 +170,14 @@ const router = createMemoryRouter(
     {
       path: "/",
       element: <ShellWithCounter />,
-      children: [{ index: true, element: <RouteFixture /> }],
+      children: [
+        { index: true, element: <RouteFixture /> },
+        // A catch-all inside the shell, so a tab tap actually navigates and the check can watch the
+        // location change. ⚠ Without it, tapping a library tab would navigate to a route with no
+        // element and the frame would render an empty page — which is indistinguishable from "the
+        // tap did nothing", the very thing the assertion is for.
+        { path: "*", element: <RouteFixture /> },
+      ],
     },
   ],
   { initialEntries: ["/"] },
@@ -206,10 +254,55 @@ interface ProbeWindow extends Window {
       (a) => a.textContent ?? "",
     ),
     header: rectOf("header"),
-    // The input-size rule, measured on a real input rather than read as a declaration.
+    // The tab bar's own geometry — the thumb-zone question, as numbers.
+    tabBar: rectOf('nav[aria-label="Mobile"]'),
+    tabRects: [...document.querySelectorAll('nav[aria-label="Mobile"] > div:last-child > *')].map(
+      (el) => {
+        const r = el.getBoundingClientRect();
+        return {
+          label: (el.textContent ?? "").trim().slice(0, 20),
+          w: +r.width.toFixed(1),
+          h: +r.height.toFixed(1),
+        };
+      },
+    ),
+    tabBarBottomGap: (() => {
+      const r = document.querySelector('nav[aria-label="Mobile"]')?.getBoundingClientRect();
+      return r ? +(window.innerHeight - r.bottom).toFixed(1) : null;
+    })(),
+    tabHrefs: [...document.querySelectorAll<HTMLAnchorElement>('nav[aria-label="Mobile"] a')].map(
+      (a) => a.getAttribute("href") ?? "",
+    ),
+    // ⚠ The measured font-size of a real input, not a declaration: the 16px rule is invisible in
+    // every screenshot and is the difference between a usable form and one that zooms the page.
     inputFontSize: (() => {
       const el = document.querySelector("input");
       return el ? getComputedStyle(el as HTMLElement).fontSize : null;
+    })(),
+    // The sheet, as the check sees it: open, where it sits, whether the body is locked, and whether
+    // the rows really scroll.
+    sheetOpen: live.sheetOpen,
+    sheetPanel: rectOf('[data-testid="sheet-panel"]'),
+    sheetRadius: (() => {
+      const el = document.querySelector<HTMLElement>('[data-testid="sheet-panel"]');
+      return el ? getComputedStyle(el).borderTopLeftRadius : null;
+    })(),
+    sheetScrollable: (() => {
+      const el = document.querySelector<HTMLElement>('[data-testid="sheet-panel"]');
+      return el ? el.scrollHeight > el.clientHeight + 1 : null;
+    })(),
+    sheetOverscroll: (() => {
+      const el = document.querySelector<HTMLElement>('[data-testid="sheet-panel"]');
+      return el ? getComputedStyle(el).overscrollBehaviorY : null;
+    })(),
+    bodyLock: {
+      position: document.body.style.position,
+      top: document.body.style.top,
+      overflow: document.body.style.overflow,
+    },
+    focusInSheet: (() => {
+      const panel = document.querySelector('[data-testid="sheet-panel"]');
+      return !!panel && !!document.activeElement && panel.contains(document.activeElement);
     })(),
     mounts: { ...mounts },
     calls: [...calls],
@@ -228,9 +321,6 @@ function Frame() {
         defaultOptions: { queries: { retry: false, staleTime: 30_000, refetchOnWindowFocus: false } },
       }),
   );
-  const counted = useRef(false);
-  if (!counted.current) counted.current = true;
-
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>

@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useConfig } from "../settings/api";
 import { useContinueWatching, useLibraryRecent } from "../library/api";
-import { isContinueWatching } from "../library/lib";
+import { continueWatchingItems } from "../library/lib";
 import { MediaCard } from "../library/MediaCard";
 import { Icon } from "../../components/ui/Icon";
 import { EmptyState, CardRow } from "../watchlist/CardRow";
@@ -51,7 +51,7 @@ export function DiscoverView() {
   const rows = useMemo(() => buildWatchlistRows(entries), [entries]);
 
   const openEntry = (entry: WatchlistEntry, trailer = false) => setDetail({ entry, trailer });
-  const continueItems = (cw?.items ?? []).filter(isContinueWatching);
+  const continueItems = continueWatchingItems(cw?.items);
   const recentItems = lib?.recent ?? [];
 
   if (isLoading && !entries.length) {

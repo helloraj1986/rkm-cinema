@@ -3,6 +3,7 @@ import type { ConfiguredLibraryShape, DetailPlay, MediaItem } from "../../lib/ap
 import {
   addedTime,
   artTone,
+  continueWatchingItems,
   detailInProgress,
   detailPrimaryLabel,
   detailResumePercent,
@@ -70,6 +71,29 @@ describe("isContinueWatching (legacy parity)", () => {
   it("false when no id or no progress", () => {
     expect(isContinueWatching({ ...base, item_id: "" })).toBe(false);
     expect(isContinueWatching(base)).toBe(false);
+  });
+});
+
+/**
+ * M3 · extraction E3. The row's rule used to be spelled out at each call site
+ * (`LibraryHomeView` and `DiscoverView`). This pins the ONE copy both now call, and pins
+ * the two things a caller can get wrong by hand: order (the row keeps the server's order)
+ * and the missing-answer case (a pending query is `undefined`, not an empty array).
+ */
+describe("continueWatchingItems (M3 · E3)", () => {
+  it("keeps only the in-progress/watched titles, in the order the server gave them", () => {
+    const items: MediaItem[] = [
+      { ...base, title: "watched", played: true },
+      { ...base, title: "idle" },
+      { ...base, title: "in progress", playback_position: 120 },
+      { ...base, title: "no id", item_id: "", played: true },
+    ];
+    expect(continueWatchingItems(items).map((i) => i.title)).toEqual(["watched", "in progress"]);
+  });
+  it("answers [] for the shapes a query has before it has data", () => {
+    expect(continueWatchingItems(undefined)).toEqual([]);
+    expect(continueWatchingItems(null)).toEqual([]);
+    expect(continueWatchingItems([])).toEqual([]);
   });
 });
 

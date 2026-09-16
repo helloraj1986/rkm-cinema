@@ -47,6 +47,19 @@ export function isContinueWatching(item: MediaItem): boolean {
   return Boolean(item.item_id) && (pos > 0 || Boolean(item.played));
 }
 
+/**
+ * The Continue Watching SET — one rule, one copy (M3 · extraction E3).
+ *
+ * ⚠ Until M3 this was written out twice: `(cw?.items ?? []).filter(isContinueWatching)` in
+ * `LibraryHomeView` (the hero and the row) AND in `DiscoverView` (the same row, on another
+ * screen). Two copies of one rule is exactly the drift this architecture exists to prevent —
+ * the next change to what "continue watching" means would land in one screen and silently
+ * leave the other behind. Callers hand over the raw items; the filtering happens HERE.
+ */
+export function continueWatchingItems(items: MediaItem[] | null | undefined): MediaItem[] {
+  return (items ?? []).filter(isContinueWatching);
+}
+
 /** Is this a show/series (drives Play vs Episodes primary action). */
 export function isSeries(item: MediaItem): boolean {
   return item.type === "tv" || item.type === "show" || item.type === "series";

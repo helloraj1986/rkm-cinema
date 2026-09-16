@@ -15,9 +15,9 @@ import { Icon } from "../../components/ui/Icon";
 import { api } from "../../lib/api/client";
 import {
   artTone,
+  continueWatchingItems,
   episodeItemCode,
   fmtRuntime,
-  isContinueWatching,
   isEpisodeItem,
   isSeries,
   pickHomeHero,
@@ -99,7 +99,7 @@ export function LibraryHomeView() {
   const mayScan = mayScanLibrary(useCurrentProfile()?.is_admin);
 
   const all = items.data?.items ?? [];
-  const cwItems = (continueWatching.data?.items ?? []).filter(isContinueWatching);
+  const cwItems = continueWatchingItems(continueWatching.data?.items);
   const recentlyAdded = (recent.data?.recent ?? []).filter((i) => Boolean(i.item_id));
   const hero = pickHomeHero(cwItems, recentlyAdded, all);
   const heroIsCw = Boolean(hero && cwItems.some((i) => i.item_id === hero.item_id));

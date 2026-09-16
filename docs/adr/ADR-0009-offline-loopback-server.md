@@ -1,6 +1,10 @@
 # ADR-0009: the device's loopback server is a token, a byte range, and a decision made in pure code
 
-- **Status:** Accepted (phase B3 built; the Mac round is outstanding — see *What is NOT verified*)
+- **Status:** Accepted · ✅ **phase B3 built and its Mac round PASSED** (2026-09-16 —
+  `python3 tools/check_offline_server.py`: all four questions YES — the 16-case Range suite over a real
+  socket with the byte-at-offset comparison, `ping`/`list` answered in both directions, `probe`+`state`
+  events received by the page, and the app's own rows agreeing with the manifest) · ⚠ the limits below that
+  the round could *not* close still stand — see *What is NOT verified*
 - **Context superseded in part:** ADR-0008's own Mac round **PASSED** on 2026-09-16, so the file this server
   serves is a file the device has actually produced — not one taken on trust
 - **Date:** 2026-09-16

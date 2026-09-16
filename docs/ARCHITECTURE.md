@@ -391,6 +391,12 @@ queue), subtitle **usage** counts (they rank one download quota), and the server
 
 ## 13. Deployment
 
+- ⚠ **Branch strategy (2026-09-16): `dev`-first.** Every new branch is cut from **`dev`**; **`dev` is what
+  he deploys and tests**; and **`main` advances only for work that is BOTH unit tested (the repo gates)
+  AND accepted by him on the UI** — `dev` first, then `main` fast-forwards to `dev`. ⚠ The invariant that
+  keeps that always possible: **`main` only ever moves by fast-forwarding to `dev`** (`git merge-base
+  --is-ancestor main dev` — silence means yes). ⚠ `experiment/bundled-docker-stack` and `spike/*` are out
+  of the flow. The full rule + the commands live at the top of `PROGRESS.md`.
 - Deploy (RKM-HP / Windows): **`.\\rkm-cinema.ps1`** — one script, every verb. `apply` (make the running stack match this folder: re-render `.env`, rebuild + restart `api`/`web`), `deploy` (`apply` + the Jellyfin provisioner), `auth on|off`, `status`, `logs`, `backup`/`restore`, `schedule`, `diagnose`, `reset-admin-password`. `bootstrap.ps1` and `rkm.ps1` are one-line forwarders to it, kept so older notes still work.
 - Three containers: `api` (FastAPI modular, holds secrets) + `web` (nginx :8124, the built React shell + `/api` proxy, **including `location = /openapi.json`** so `tools/check_deployed.py` can compare the running api's contract), plus the bundled `jellyfin` media server.
 - ⚠ **Editing `.env` alone changes nothing** — a container reads its environment when it STARTS. `apply` (or `auth on|off`) is what applies it.
@@ -400,6 +406,9 @@ queue), subtitle **usage** counts (they rank one download quota), and the server
 
 ## 14. Adding a feature (recommended path)
 
+0. ⚠ **Branch from `dev`** (`git checkout dev && git pull --ff-only && git checkout -b feat/<name>`), and
+   land it back on **`dev`** first — `main` only receives work that is unit tested *and* tested by him on
+   the UI (§13).
 1. **Business rule (status/movie-tv)?** → put it in `backend/domain/` (state machine or resolver). Wire service gatherers in `backend/services/`.
 2. **External integration?** → add a method on the relevant `backend/services/*` client; never in a route.
 3. **Route?** → add a thin handler in `backend/api/routes/`, reuse a service, return a typed Pydantic model.

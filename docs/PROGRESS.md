@@ -1,3 +1,34 @@
+## ▶ 🔀 **BRANCH STRATEGY IS NOW `dev`-FIRST, AND `main` CARRIES ONLY WORK THAT IS UNIT TESTED *AND* TESTED BY HIM ON THE UI** (2026-09-16, his instruction) · created: **`dev`** — cut from `main` (`c5bb919`) with the **whole offline workstream merged in** (fast-forward, no merge commit) ⇒ **`dev` = `e0f5b31`, 23 commits ahead of `main`, pushed and the remote ref verified** · ⚠ **`main` is UNTOUCHED at `c5bb919`** · ⚠ `experiment/bundled-docker-stack` is 9 behind and is **no longer part of the flow** · ⚠ `spike/offline-loopback` stays a throwaway
+
+**⚠⚠ THE RULE — his words, then what they mean in commands (`docs/ARCHITECTURE.md` §13/§14 carry the short form):**
+
+> "all new branches should be created from dev… once its successful… both dev and main has to be updated… main will be updated only with verified jobs that are unit tested and tested by me on the ui"
+
+1. **Every new branch is cut from `dev`.** Never from `main`, never from another feature branch.
+2. **`dev` is the integration branch AND the thing he deploys.** His Windows checkout (`D:\hermes_agent\hermes-workspace\projects\rkm-cinema`) is this folder, so it now sits on `dev` and `docker compose -p rkm-bundled up -d --build web` builds what `dev` holds. ⚠ **A sandbox branch switch changes what he builds** — that is why the branch is part of the handover, not an implementation detail.
+3. ⚠⚠ **`main` moves ONLY for verified work, and "verified" has two halves that are BOTH required:**
+   * **unit tested** — the repo's own gates green for the surface touched (`pytest`; `vitest` + `tsc --noEmit` + `npm run build`; the relevant `tools/check_*.py`), and the *falsification* run where the phase has one;
+   * **tested by HIM on the UI** — his acceptance on the phone or the desktop, in his own words.
+   ⚠ A green suite is NOT sufficient on its own (the 204 bug shipped through six green scenarios), and neither is a good eyeball without the gates.
+4. **On acceptance, BOTH move: `dev` first, then `main` fast-forwards to `dev`.** ⚠ The INVARIANT that keeps that always possible: **`main` only ever advances by fast-forwarding to `dev`**, so `main` is permanently an ancestor of `dev`. Prove it before merging — `git merge-base --is-ancestor main dev`, silence means yes. ⚠ If that ever FAILS, somebody pushed to `main` directly: raise it, do not "fix" it with a merge commit that buries the divergence.
+5. **Fixes to work already on `dev` go straight onto `dev`** — no branch per one-line fix (that is ceremony); one branch per PHASE, as before.
+6. ⚠ **`experiment/bundled-docker-stack` is out of the flow.** Its content has been in `main` for weeks, and keeping a third long-lived bookmark in sync was one more thing to get wrong. ⚠ `spike/*` branches are throwaway by design and must never be merged.
+
+**THE COMMANDS, exactly as they run from now on — start from `dev`, land on both:**
+
+```
+git checkout dev && git pull --ff-only
+git checkout -b feat/<name>                            # cut from dev
+#   …work · gates · then HIS UI test…
+git checkout dev  && git merge --ff-only feat/<name>   # accepted → dev (what he deploys)
+git checkout main && git merge --ff-only dev           # verified only → main
+git push origin dev main feat/<name>
+```
+
+⚠ **WHAT THIS RECORD IS *NOT*:** a claim that the offline workstream is verified. Every green gate in the B4 blocks above is a SANDBOX gate; the phone test is his and it is still running ("i think download is working i will keep on testing"). ⇒ ⚠ **`main` stays at `c5bb919` until he says it works on his devices** — that is rule 3 applied to the work in front of us.
+
+⚠ **Open item, not a decision:** `docs/MOBILE_FIRST_UI_BRIEF.md` (379 lines, addressed to the implementing agent, written against `ARCHITECTURE.md` §2/§11/§12/§17) is **untracked** — left out of the merge deliberately rather than committing somebody else's brief onto `dev` unasked. It is still in the working tree; committing it is a one-line ask away.
+
 ## ▶ 📘 **DOCS: the client-integration architecture is written down — `ARCHITECTURE.md` §2 (the picture with the shell in it), §17 (the app + the two seams) and §18 (ten ranked design improvements)** (2026-09-16) · his ask: *"what is the basic architecture of this app in terms of how the backend, web and mobile app parts are integrated … update the architecture.md file so anyone can understand this part and advise on further design improvements"* · changed: **`docs/ARCHITECTURE.md`** (+280/−21) and **`docs/ARCHITECTURE_AUDIT.md`** (a banner: it is a PHASE-1 audit of the LEGACY app, so several of its "gaps" have since shipped) · ⚠ **no code changed** — this is the documentation of what B1–B4 built
 
 **WHAT IS NOW WRITTEN DOWN, in one line each:**

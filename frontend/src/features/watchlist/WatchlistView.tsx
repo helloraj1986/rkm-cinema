@@ -8,14 +8,14 @@ import { useCardActions } from "./actions";
 import { useWatchlist } from "./api";
 import {
   filterWatchlist,
+  PAGE,
+  paginate,
   WATCHLIST_CHIPS,
   WATCHLIST_SORTS,
   type WatchlistChip,
   type WatchlistEntry,
   type WatchlistSort,
 } from "./lib";
-
-const PAGE = 36;
 
 /**
  * Watchlist (LEGACY_PARITY_PLAN): chips (All/Movies/TV Shows/Downloaded/Not
@@ -36,7 +36,7 @@ export function WatchlistView() {
     () => filterWatchlist(entries, stateFor, { type, sort }),
     [entries, stateFor, type, sort],
   );
-  const page = list.slice(0, shown);
+  const page = paginate(list, shown);
   const openEntry = (entry: WatchlistEntry, trailer = false) => setDetail({ entry, trailer });
 
   const sub =

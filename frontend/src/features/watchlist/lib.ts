@@ -405,6 +405,24 @@ export function filterWatchlist(
   return [...list].sort(cmpRecentDesc);
 }
 
+/**
+ * How many watchlist cards one page adds (LEGACY_PARITY_PLAN: "page-in after 36").
+ * ⚠ Exported rather than left in the view because the number is used in three places — the
+ * initial page, the "Load more" step AND the reset when a chip changes — and three literals
+ * that must agree is how a pager ends up showing 36 rows then jumping by a different amount.
+ */
+export const PAGE = 36;
+
+/**
+ * The visible page of a filtered list (M3 · extraction E5). Pure, so the pager's arithmetic
+ * is testable without a DOM — including the case the view's own `shown < list.length` guard
+ * only half-covers: a `shown` that is zero or negative. `Math.max` keeps such a page EMPTY
+ * instead of slicing from the end (`slice(0, -3)` silently drops the last three rows).
+ */
+export function paginate<T>(list: readonly T[], shown: number): T[] {
+  return list.slice(0, Math.max(0, shown));
+}
+
 /** Build a media_id → resource map for O(1) lookups. */
 export function resourceMap(resources: MediaResource[] | null | undefined): Record<string, MediaResource> {
   const out: Record<string, MediaResource> = {};

@@ -13,6 +13,8 @@ import {
   upsertWatchlistEntries,
   jellyfinMarker,
   mediaIdOf,
+  PAGE,
+  paginate,
   persistedToEntry,
   pickHero,
   resolveState,
@@ -390,5 +392,39 @@ describe("suggest history (legacy parity)", () => {
   it("label joins readable parts", () => {
     expect(suggestHistoryLabel({ ...base, media_type: "movie", genres: ["Action", "Sci-Fi", "Drama"], year_from: 2020, min_rating: 7, count: 20 })).toContain("Movies");
     expect(suggestHistoryLabel({ ...base, media_type: "tv" })).toContain("TV");
+  });
+});
+
+/**
+ * M3 · extraction E5. The view used to hold the page size and the slice itself. What the
+ * pager has to get right is not "36" — it is that page 2 continues page 1 without a gap or a
+ * repeat, and that a bad `shown` cannot quietly return the WRONG rows (`slice(0, -3)` drops
+ * the last three and still looks like a page).
+ */
+describe("paginate + PAGE (M3 · E5)", () => {
+  const rows = Array.from({ length: 100 }, (_, i) => `row-${i}`);
+
+  it("page 1 is the first PAGE rows", () => {
+    expect(paginate(rows, PAGE)).toEqual(rows.slice(0, PAGE));
+    expect(paginate(rows, PAGE)).toHaveLength(PAGE);
+  });
+
+  it("page 2 continues page 1 — no gap, no repeat", () => {
+    const first = paginate(rows, PAGE);
+    const second = paginate(rows, PAGE * 2);
+    expect(second.slice(PAGE)).toEqual(first.map((_, i) => `row-${PAGE + i}`).slice(0, PAGE));
+    expect(new Set(second).size).toBe(second.length);
+  });
+
+  it("a list shorter than a page comes back whole, and the Load-more guard agrees", () => {
+    const short = rows.slice(0, 5);
+    expect(paginate(short, PAGE)).toEqual(short);
+    expect(PAGE < short.length).toBe(false);
+    expect(PAGE < rows.length).toBe(true);
+  });
+
+  it("never slices from the END for a zero or negative page", () => {
+    expect(paginate(rows, 0)).toEqual([]);
+    expect(paginate(rows, -3)).toEqual([]);
   });
 });

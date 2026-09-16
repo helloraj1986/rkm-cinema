@@ -225,9 +225,13 @@ def analyse(lines: list[str], manifest: dict | None = None) -> dict:
                  "to emit — see the note below", [])
 
     # ---- 4. do the app's own rows agree with what is on disk?
-    rows = P_ROWS.search(text)
+    # ⚠ THE **LAST** ROW SUMMARY, NOT THE FIRST — and this is a real trap, not tidiness: the probe logs one
+    # at page load (usually `0 ready`, because a fresh install has nothing) and another the moment a title
+    # becomes playable. Reading the first would call a perfectly good round a STALE ROW.
+    rows_found = P_ROWS.findall(text)
+    rows = rows_found[-1] if rows_found else None
     if rows:
-        total, ready, downloading, failed = (int(value) for value in rows.groups())
+        total, ready, downloading, failed = (int(value) for value in rows)
         result["evidence"].append(f"the app's rows: {total} total, {ready} ready, {downloading} downloading, "
                                   f"{failed} failed")
         if ready > 0:
@@ -245,12 +249,12 @@ def analyse(lines: list[str], manifest: dict | None = None) -> dict:
                          f"the manifest holds {len(ready_records)} ready record(s) but the app's rows show "
                          f"{ready} ready — the row is STALE. The download finished and the UI still says "
                          f"`downloading`, which is a bug in the completion path, not a test setup problem",
-                         [rows.group(0)])
+                         [line for line in lines if P_ROWS.search(line)])
                 result["fatal"] = "a ready file whose row never changed"
             else:
                 question("the app's own rows agree with the manifest", "NOT EXERCISED",
                          "no title is ready yet — nothing to agree or disagree about",
-                         [rows.group(0)])
+                         [line for line in lines if P_ROWS.search(line)])
     else:
         question("the app's own rows agree with the manifest", "NOT EXERCISED",
                  "the probe did not report the app's rows (an older build?)", [])
@@ -401,6 +405,22 @@ FIXTURE_NOT_RUN = _run(
 
 #: ⚠ A finished download whose row never changed: the server suite is green, the commands answer, and the
 #: app's OWN rows say `downloading` — while the file sits on disk.
+#: ⚠ A real round logs TWO row summaries: one at page load (`0 ready` — a fresh install after the rebuild put
+#: the film in a new container) and one when the download lands. The checker must read the LAST one.
+FIXTURE_TWO_SUMMARIES = _run(
+    "offline probe · starting (server=true bridge=true)",
+    "offline server listening on 127.0.0.1:51234 (loopback only)",
+    "offline probe · rows 0 total, 0 ready, 0 downloading, 0 failed",
+    *_case_lines(),
+    "offline bridge · the page sees the bridge: true v1",
+    "offline READY · 1.54 GB · mode remux · verified size+ETag · took 190s (8.1 MB/s)",
+    "offline probe · rows 1 total, 1 ready, 0 downloading, 0 failed",
+    "offline probe · real-film-head PASS — 1.54 GB, video/mp4",
+    "offline bridge · page received event=state item=abc123 carriesUrl=true",
+    "offline bridge · command ping ok=true count=0",
+    "offline bridge · command list ok=true count=1",
+)
+
 FIXTURE_STALE_ROW = _run(
     "offline probe · starting (server=true bridge=true)",
     "offline server listening on 127.0.0.1:51234 (loopback only)",
@@ -438,6 +458,8 @@ def selftest() -> int:
         # so) and the app's own row still says `downloading`. It must NOT be reported as "not exercised".
         ("⚠ a STALE ROW: the manifest says ready and the app's rows say downloading",
          FIXTURE_STALE_ROW, MANIFEST_READY, 1, "the row is STALE"),
+        ("⚠ the real order: nothing downloaded at page load, then a film lands", FIXTURE_TWO_SUMMARIES,
+         MANIFEST_READY, 0, "all 16/16 cases passed"),
         ("the same suite with no manifest to compare against",
          FIXTURE_STALE_ROW, None, 3, "nothing to agree or disagree about"),
     ]

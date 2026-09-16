@@ -560,7 +560,7 @@ final class OfflineDownloads: NSObject, ObservableObject {
     }
 
     /// For the HUD's own field — the same one-line-per-item text the file log carries.
-    private(set) var hudRows: [String] {
+    var hudRows: [String] {
         if let storeProblem { return ["⚠ \(storeProblem)"] }
         guard store != nil else { return ["offline store unavailable"] }
         let ordered = store?.newestFirst ?? []
@@ -1135,28 +1135,47 @@ struct OfflinePreparationPolicy: Equatable {
 ///
 /// ⚠ A CLASS, not a struct: the expiration handler must be able to end the assertion it belongs to, and a
 /// struct captured in its own initialiser's closure would capture a *copy*.
+///
+/// ⚠⚠ **Everything here happens on the MAIN THREAD, and that is not decoration.** `beginBackgroundTask`
+/// is a UIKit call, and this object is created inside the downloader's `Task` — which runs on a
+/// cooperative thread, NOT main. Calling it from there is undefined behaviour that would show up as an
+/// assertion that never fires (or a crash nobody can place). So both the entry points hop to main and
+/// wait, and the expiration handler is main-only by definition.
 final class BackgroundAssertion {
     private var identifier: UIBackgroundTaskIdentifier = .invalid
     private let name: String
 
     init(name: String) {
         self.name = name
-        identifier = UIApplication.shared.beginBackgroundTask(withName: name) { [weak self] in
-            guard let self else { return }
-            RKMLog.error("offline the background assertion for \(self.name) expired — iOS is about to "
-                         + "suspend the app; an in-flight packaging wait stops here", category: .offline)
-            self.end()
-        }
-        if identifier == .invalid {
-            RKMLog.verbose("offline could not take a background assertion for \(name)", category: .offline)
+        Self.onMain { [self] in
+            identifier = UIApplication.shared.beginBackgroundTask(withName: name) { [weak self] in
+                guard let self else { return }
+                RKMLog.error("offline the background assertion for \(self.name) expired — iOS is about to "
+                             + "suspend the app; an in-flight packaging wait stops here", category: .offline)
+                self.end()
+            }
+            if identifier == .invalid {
+                RKMLog.verbose("offline could not take a background assertion for \(name)", category: .offline)
+            }
         }
     }
 
     func end() {
-        guard identifier != .invalid else { return }
-        UIApplication.shared.endBackgroundTask(identifier)
+        let token = identifier
+        guard token != .invalid else { return }
         identifier = .invalid
+        Self.onMain { UIApplication.shared.endBackgroundTask(token) }
     }
 
     deinit { end() }
+
+    /// ⚠ `sync`, not `async`: the identifier must exist before the downloader uses the assertion, and an
+    /// `async` hop would leave it `.invalid` for the whole preparation phase.
+    private static func onMain(_ work: @escaping () -> Void) {
+        if Thread.isMainThread {
+            work()
+        } else {
+            DispatchQueue.main.sync(execute: work)
+        }
+    }
 }

@@ -77,6 +77,10 @@ final class OfflineStore {
 
     var totalBytesOnDisk: Int64 { queue.sync { manifest.totalBytesOnDisk } }
 
+    /// Newest first, from the manifest — the order the HUD reads today and the Downloads screen (B4) and
+    /// the eviction order (B5) will read later.
+    var newestFirst: [OfflineRecord] { queue.sync { manifest.newestFirst } }
+
     // MARK: - Writing
 
     /// Insert or replace, then persist. Throws only if the manifest could not be written — in which

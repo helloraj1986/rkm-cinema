@@ -1,6 +1,9 @@
 # ADR-0008: the device's half of offline downloads is a background session, an explicit Cookie header, and a `.part` file it never trusts
 
-- **Status:** Accepted (phase B2 built; the Mac round is outstanding — see *What is NOT verified*)
+- **Status:** Accepted · ✅ **phase B2 built and its Mac round PASSED** (2026-09-16 —
+  `python3 tools/check_offline_download.py`: the download completed, a forced failure was survived and
+  resumed, and the manifest survived a relaunch) · ⚠ the limits below that the round could *not* close still
+  stand — see *What is NOT verified*
 - **Date:** 2026-09-16
 - **Phase:** `feat/offline-downloads` (`NATIVE_FEEL_AND_OFFLINE_PLAN.md` §4.4/§6, phase **B2**)
 - **Depends on:** ADR-0007 (B1 — the server contract this consumes), `apple/SPIKE_E1_E2.md` (B0 — the

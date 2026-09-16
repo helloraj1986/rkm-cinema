@@ -1,6 +1,8 @@
 # ADR-0009: the device's loopback server is a token, a byte range, and a decision made in pure code
 
 - **Status:** Accepted (phase B3 built; the Mac round is outstanding — see *What is NOT verified*)
+- **Context superseded in part:** ADR-0008's own Mac round **PASSED** on 2026-09-16, so the file this server
+  serves is a file the device has actually produced — not one taken on trust
 - **Date:** 2026-09-16
 - **Phase:** `feat/offline-downloads` (`NATIVE_FEEL_AND_OFFLINE_PLAN.md` §4.4/§4.5/§6, phase **B3**)
 - **Depends on:** ADR-0008 (B2 — the device has the file), `apple/SPIKE_E1_E2.md` (B0 — the measurement

@@ -44,24 +44,47 @@ if [ ! -d "$MODULES" ]; then
   ( cd "$REPO/apple/Shared" && TMPDIR="${RKM_TYPECHECK_TMP:-$HOME/tmp}" swift build ) || exit 3
 fi
 
-# The files the app target compiles, in the order they are checked.
+# The files the app target compiles, in the order they are checked. ⚠ Phase B3 added the loopback server,
+# the bridge and the live probe, and the debug probe lives in another directory — both are listed, because a
+# file nobody typechecks is a file the Mac finds out about.
 WORK=()
-for name in OfflineManifest OfflinePlan CookieHeader OfflineStore OfflineAPI OfflineDownloads; do
+for name in OfflineManifest OfflinePlan CookieHeader OfflineHTTP OfflineBridgeContract OfflineProbeCases \
+            OfflineStore OfflineAPI OfflineDownloads OfflineServer OfflineBridge; do
   if [ ! -f "$SRC/$name.swift" ]; then
     echo "missing source: $SRC/$name.swift"; exit 3
   fi
-  # A copy, because the two files that call Apple networking get a synthetic import and their framework
-  # imports stripped — the real sources must stay exactly as Xcode sees them.
-  if [ "$name" = "OfflineAPI" ] || [ "$name" = "OfflineDownloads" ]; then
-    {
-      printf '#if canImport(FoundationNetworking)\nimport FoundationNetworking\n#endif\n'
-      cat "$SRC/$name.swift"
-    } | sed -E '/^import (UIKit|Combine|WebKit)$/d' > "$TMP/$name.swift"
-  else
-    cp "$SRC/$name.swift" "$TMP/$name.swift"
-  fi
+  # A copy, because the files that call Apple frameworks get a synthetic import and their framework imports
+  # stripped — the real sources must stay exactly as Xcode sees them.
+  case "$name" in
+    # The files that call Apple networking (and, for the bridge and the probe, WebKit).
+    OfflineAPI|OfflineDownloads|OfflineServer|OfflineBridge)
+      {
+        printf '#if canImport(FoundationNetworking)\nimport FoundationNetworking\n#endif\n'
+        cat "$SRC/$name.swift"
+      } | sed -E '/^import (UIKit|Combine|WebKit|Network)$/d' > "$TMP/$name.swift"
+      ;;
+    *)
+      cp "$SRC/$name.swift" "$TMP/$name.swift"
+      ;;
+  esac
   WORK+=("$TMP/$name.swift")
 done
+
+# ⚠ The DEBUG probe is `#if DEBUG`, so without `-D DEBUG` the whole file would be SKIPPED and this gate would
+# silently check nothing in it. With the flag, the bridge's own DEBUG block (`debugWebView`,
+# `forcePublishAll`) is checked too — which is exactly the code the Mac round depends on.
+DEBUG_SRC="$REPO/apple/ios/RKMCinema/Debug"
+for name in OfflineServerProbe; do
+  if [ ! -f "$DEBUG_SRC/$name.swift" ]; then
+    echo "missing source: $DEBUG_SRC/$name.swift"; exit 3
+  fi
+  {
+    printf '#if canImport(FoundationNetworking)\nimport FoundationNetworking\n#endif\n'
+    cat "$DEBUG_SRC/$name.swift"
+  } | sed -E '/^import (UIKit|Combine|WebKit|Network)$/d' > "$TMP/$name.swift"
+  WORK+=("$TMP/$name.swift")
+done
+
 cp "$STUBS" "$TMP/Stubs.swift"
 ALL=("${WORK[@]}" "$TMP/Stubs.swift")
 
@@ -79,7 +102,7 @@ for primary in "${WORK[@]}"; do
   # -primary-file …` mis-parses and dies with `error opening input file
   # '-in-process-plugin-server-path'` — which the first version of this script reported as six REAL type
   # errors, i.e. a gate that cries wolf on everything.
-  output="$(swiftc -frontend -typecheck -module-name RKMCinema -I "$MODULES" -primary-file "$primary" "${others[@]}" 2>&1)"
+  output="$(swiftc -frontend -typecheck -module-name RKMCinema -D DEBUG -I "$MODULES" -primary-file "$primary" "${others[@]}" 2>&1)"
   unexpected="$(printf '%s\n' "$output" | grep -E ': error:' | grep -v '^ *|' || true)"
   if [ -n "$unexpected" ]; then
     filtered="$(printf '%s\n' "$unexpected" | grep -vE "$FILTER" || true)"

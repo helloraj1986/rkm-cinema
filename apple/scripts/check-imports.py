@@ -44,6 +44,9 @@ RULES = {
     # SwiftUI's own representable protocols start with "UI" but live in SwiftUI.
     "UIKit": r"\b(?!UIViewRepresentable\b|UIViewControllerRepresentable\b|UIHostingController\b)UI[A-Z]\w*",
     "AVFoundation": r"\bAV[A-Z]\w*",
+    # Phase B3's loopback server and the probe's client both speak Network.framework. ⚠ It is easy to miss
+    # because every type it contributes is `NW`-prefixed but the file often looks Foundation-only.
+    "Network": r"\bNW[A-Z]\w*",
 }
 
 # ⚠ Members with no prefix, reached through an instance — invisible to `RULES`.
@@ -85,6 +88,17 @@ MEMBER_RULES = {
         "beginBackgroundTask",
         "endBackgroundTask",
         "backgroundTimeRemaining",
+    ],
+    # ⚠ Only the DISTINCTIVE members: a word like `maximumLength` or `isComplete` appears in ordinary
+    # parsing code too, and a false positive here forces a wrong framework import into a file that must stay
+    # Foundation-only (the lesson `isHTTPOnly` already taught).
+    "Network": [
+        "allowLocalEndpointReuse",
+        "requiredLocalEndpoint",
+        "stateUpdateHandler",
+        "newConnectionHandler",
+        "contentProcessed",
+        "minimumIncompleteLength",
     ],
 }
 

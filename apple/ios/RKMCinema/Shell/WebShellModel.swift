@@ -87,6 +87,16 @@ final class WebShellModel: ObservableObject {
         pagePath = describe(url)
         RKMLog.info("didFinish \(pagePath) · title \"\(pageTitle)\"", category: .nav)
         refreshCookies(verbose: false)
+        // ⚠ Phase B3: a loaded page is a page that knows nothing. This is what makes the downloads it
+        // already has appear on screen the moment it can draw them — and it is production behaviour, not
+        // probe scaffolding.
+        OfflineBridge.shared.pageDidLoad()
+        #if DEBUG
+        // ⚠ Phase B3's live probe hangs off this: its bridge half needs a LIVE page (it installs a listener
+        // in it), and the page is only live once a navigation has finished. No-op without the launch
+        // argument — see `Debug/OfflineServerProbe.swift`.
+        OfflineServerProbe.startIfRequested()
+        #endif
     }
 
     func didFail(error: Error, isMainFrame: Bool) {

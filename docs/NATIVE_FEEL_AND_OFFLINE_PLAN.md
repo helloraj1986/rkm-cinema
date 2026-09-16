@@ -406,10 +406,14 @@ per-language URL.
 | `Offline/OfflineDownloads.swift` | The **background** `URLSession`, one task per item, progress, retries, launch restore, the delegate | iOS |
 | `App/AppDelegate.swift` | ⚠ `handleEventsForBackgroundURLSession` + the completion handler — the reason B2 needs a delegate at all | iOS |
 | `Debug/OfflineDebugPanel.swift` | ⚠ DEBUG-only: the trigger that makes this phase testable before B4's page buttons exist | iOS |
-| `Offline/OfflineServer.swift` · `Offline/OfflineBridge.swift` | loopback HTTP server + the page↔native contract | **B3 — not built** |
+| `Offline/OfflineHTTP.swift` · `Offline/OfflineBridgeContract.swift` · `Offline/OfflineProbeCases.swift` | ⚠ **B3**: the loopback server's every decision — request-head parsing, the route and its handle, the `Range` arithmetic → status/`Content-Range`/offset/length, the whole response head, the token book; and the page↔native contract (commands, refusals, reply payloads, the event planner) | ⚠ **Foundation-only — compiled, RUN and falsified on Linux** |
+| `Offline/OfflineServer.swift` | ⚠ **B3**: `NWListener` bound to `127.0.0.1` on an ephemeral port, the byte accumulator, the `FileHandle` stream. ⚠ It decides **nothing** — it asks `OfflineServerCore.plan(requestData:)` and carries out the answer | iOS — the socket |
+| `Offline/OfflineBridge.swift` | ⚠ **B3**: the reply-capable `WKScriptMessageHandlerWithReply`, the injected `window.__rkmOffline`, and the subscription that turns the downloader's state into events | iOS — WebKit |
+| `Debug/OfflineServerProbe.swift` | ⚠ **B3**, DEBUG-only: the 16-case Range suite over a real socket + the byte-at-offset comparison + the bridge round trip. Deleted when B4's page affordances land | iOS — DEBUG only |
 
 ⚠ **Everything Apple-SDK-shaped is unverified until the Mac round** (`WORKFLOW.md` §5): written,
-import-checked, syntax-checked, and its rules executed and falsified on Linux, but not *run*.
+import-checked, typechecked per file against a committed stub scaffold
+(`apple/scripts/check-apple-typecheck.sh`), and its rules executed and falsified on Linux, but not *run*.
 
 ⚠ **Auth for native fetches:** a native `URLSession` does **not** share the web view's cookie jar. Two
 options, in order of preference:
@@ -444,15 +448,36 @@ Today `WebBridge` is **one-way** (page → native) for instrumentation
 (`Shell/WebBridge.swift`, `WebInstrumentation`). Offline needs both directions:
 
 ```
-page → native   rkm-offline { c: "download" | "cancel" | "delete" | "list" | "play",
-                              itemId, mode }        → reply via WKScriptMessageHandlerWithReply
-native → page   window.__rkmOffline.emit({ e: "progress" | "state" | "ready",
+page → native   rkm-offline { c: "list" | "download" | "cancel" | "delete" | "play" | "ping",
+                              itemId, title, mode }    → reply via WKScriptMessageHandlerWithReply
+native → page   window.__rkmOffline.emit({ e: "state" | "progress" | "ready" | "removed",
                                            itemId, state, bytes, total, url })
 ```
 
-* Versioned and additive (`{v:1}`), the same discipline as the HTTP contract.
+✅ **BUILT in B3** (`feat/offline-downloads`, ADR-0009) — the contract as it actually landed, and the four
+places it is stricter than the sketch above:
+
+```
+page → native   { v:1, c:"list"|"download"|"cancel"|"delete"|"play"|"ping", itemId?, title?, mode? }
+                → { v:1, ok:true,  result:{ items[], bytes, count, play?, accepted? } }
+                → { v:1, ok:false, error:{ code, message } }
+native → page   window.__rkmOffline.emit({ v:1, e:"state"|"progress"|"ready"|"removed", … })
+native → page   window.__rkmOffline.request({c:…}) → a Promise, `.list()/.play()/.download()/…` wrappers
+```
+
+* ⚠ **`v` is REQUIRED and exact.** A missing version is refused, and a *newer* page is refused with a
+  sentence ("update the app") rather than guessed at — the payload shape may have changed.
+* ⚠ **Every refusal is a reply**, with a stable `code` (what the page switches on) and a `message` (what a
+  human can act on): `notReadable`, `unsupportedVersion`, `unknownCommand`, `missingItemId`, `invalidItemId`,
+  `missingTitle`, `badMode`, `unknownItem`, `notReady`, `unavailable`. ⚠ An unknown command is refused **by
+  name** — ignoring it would leave the page waiting on a promise that never settles.
+* ⚠ **`mode` is validated against the server's own five** (`auto|direct|remux|transcode_audio|transcode`),
+  so a typo cannot quietly become `auto` and download something other than what was asked for.
+* ⚠ **The event side is throttled by a PURE planner** (`OfflineEventPlanner`): state changes are never
+  throttled, progress is emitted at whole-percent steps, a rewind is a state change that also resets the
+  throttle, an unknown total is never a percentage, and the URL *appearing* is its own `ready` event.
 * The **loopback URL never appears in a manifest on disk**, only in a live message: a stale port must
-  not be cached anywhere.
+  not be cached anywhere. ⚠ It also never reaches the log — see ADR-0009 D7.
 * The page still works with no bridge (desktop browser): every offline affordance is hidden unless
   `window.__rkmOffline` exists — the same rule as the fullscreen button (never render a control that
   cannot work).
@@ -517,7 +542,7 @@ shippable.
 | **B0** | **E1 + E2 spike build** (throwaway, not merged) | A downloaded file plays from loopback, with seeking, inside the shell — or the design changes before anything else is written | 0.5 d |
 | **B1** | Backend offline API + staging + packaging + TTL, tests, contract | pytest + a `curl` proof: `HEAD` gives the size, a `Range` request returns 206 + `Content-Range`, `prepare` is idempotent | 1 d · ✅ **BUILT 2026-09-16 (`feat/offline-api`)** — `services/offline.py` (staging store + packager + range parser) + `api/routes/offline.py` (6 routes) + **ADR-0007**; `pytest` green, **17/17 falsifications red**, and ⚠⚠ **the `curl` gate RAN AGAINST THE DEPLOYED CONTAINER: 20/20 PASSED** on a real 1,795 MB film (`HEAD` → 200 + `Content-Length: 1882377499`; `Range` → 206 + `Content-Range`; past EOF → 416; whole file → 200 with an `ftypisom` payload; `prepare` twice → `reused`; `DELETE` → the library file intact). ⚠ **The live gate ALSO found the ladder defect below** (`d741a56`), which is fixed in the repo and reaches the container on the next `apply` |
 | **B2** | Native: `OfflineStore` + `OfflineDownloader` + background-session delegate + cookie mirroring | Downloads complete with the app backgrounded, resume after a forced failure, and appear in the manifest after a relaunch | 2–3 d · ✅ **BUILT 2026-09-16** (`feat/offline-downloads`, ADR-0008) — `OfflineManifest` + `OfflinePlan` + `CookieHeader` are Foundation-only and **executed + falsified on Linux** (194 checks, 30 rules reverted one at a time); the Apple-SDK half is written but **unverified until the Mac round**. ⚠ Two shape changes from the plan's sketch, both in ADR-0008: the cookie is an explicit `Cookie:` header (not a copy into `HTTPCookieStorage.shared`), and a DEBUG-only HUD panel + two launch arguments exist so this gate can be exercised before B4's page buttons |
-| **B3** | Native: `OfflineServer` + `OfflineBridge` (both directions) | Loopback server passes a Range test suite; page round-trips a command and a progress event | 1–2 d |
+| **B3** | Native: `OfflineServer` + `OfflineBridge` (both directions) | Loopback server passes a Range test suite; page round-trips a command and a progress event | 1–2 d · ✅ **BUILT 2026-09-16** (`feat/offline-downloads`, ADR-0009): the 16-case suite runs on **Linux** (pure planner + a response-head round trip) **and** over a real loopback socket on the Mac (`Debug/OfflineServerProbe.swift`, byte-at-offset compared), and the bridge round-trips in both directions with the page as the witness. ⚠ The Mac round is outstanding: gate = `python3 tools/check_offline_server.py` |
 | **B4** | Page: download affordances, Downloads screen, offline player path, progress spool | A film downloads, plays offline with Wi-Fi off, and its position lands in Continue Watching after reconnect | 1–2 d |
 | **B5** | Lifecycle: cap, eviction, keep/pin, delete-after-watch, disk meter, error states | Cap enforced; nothing pinned is ever evicted; storage-full path pauses cleanly | 1 d |
 

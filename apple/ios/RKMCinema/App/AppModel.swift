@@ -92,6 +92,10 @@ final class AppModel: ObservableObject {
         // ⚠ The downloader needs the address the shell is loading from — it is a native client of the
         // same server, and there is no second place that knows it.
         offline.configure(address: address)
+        // ⚠ And the loopback bridge needs the downloader: a token names a file this device holds, so the
+        // bridge can only mint one for a title the downloader knows about. A new address drops every token
+        // (a URL from the previous server is a film from another library under this one's title).
+        OfflineBridge.shared.configure(downloads: offline, address: address)
     }
 
     // MARK: - Screen #0

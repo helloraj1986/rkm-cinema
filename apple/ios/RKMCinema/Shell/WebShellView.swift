@@ -46,6 +46,16 @@ struct WebShellView: UIViewRepresentable {
         controller.add(bridge, name: WebInstrumentation.handlerName)
         controller.addUserScript(WebInstrumentation.userScript())
 
+        // ⚠ Phase B3 — the offline bridge, and the ONE detail that matters here: it is registered with
+        // `addScriptMessageHandler(_:contentWorld:name:)`, NOT `add(_:name:)`. Only the reply-capable form
+        // makes `postMessage` return a Promise in the page, and a command that cannot be answered is a
+        // button that does nothing with no error anywhere. `OfflineBridge` decides nothing about the
+        // contract — `OfflineBridgeContract.swift` (pure, Linux-executed) does.
+        controller.addScriptMessageHandler(OfflineBridge.shared,
+                                          contentWorld: .page,
+                                          name: OfflineBridge.handlerName)
+        controller.addUserScript(OfflineBridgeScript.userScript())
+
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
@@ -59,6 +69,10 @@ struct WebShellView: UIViewRepresentable {
         }
 
         logConfiguration(configuration, webView: webView)
+
+        // ⚠ The offline bridge outlives the web view (a new address rebuilds this one), so it is told about
+        // each web view rather than owning one.
+        OfflineBridge.shared.attach(webView: webView)
 
         // Attaches and starts the first load, so the model's state and the view's lifetime are the
         // same story rather than two.

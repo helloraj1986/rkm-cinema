@@ -95,6 +95,11 @@ struct DebugHUD: View {
             // of the collapsed overlay is the cheapest evidence a Mac round can produce — and the full
             // interactive panel is one tap below it.
             field("off", offline.hudRows.first ?? "—")
+            // ⚠ Phase B3: the loopback server's state in the compact view. A screenshot that shows
+            // `loopback 127.0.0.1:51234 (listening)` is the cheapest possible evidence that the socket came
+            // up — and when it has NOT, the same line says why in words (`loopback FAILED — …`) instead of
+            // leaving a blank where a value should be.
+            field("lpb", OfflineBridge.shared.hudLines.first ?? "—")
             if let lastError = entries.first(where: { $0.level == .error }) {
                 field("last", "⚠ \(lastError.message)")
             }

@@ -185,4 +185,14 @@ He volunteered screenshots; they are genuinely useful, but only if they carry st
 2. Given only a HUD correlation id from a screenshot, the matching log lines can be found — **demonstrated, not
    assumed**, before Phase 0 is called done.
 3. `grep -iE "password|token|api_key|rkm_session" apple/logs/*.log` returns **nothing** on a real run.
+   ⚠ **Phase B3 kept this gate absolute instead of widening it.** The loopback server's log line names the
+   path **by shape** (`/offline/<handle>.mp4`) and the bridge's page-side probe report carries the *shape* of
+   an event (`{e, itemId, state, percent, hasUrl}`) rather than its payload — so the word in this grep is
+   never a thing the code needs to log, and **the wording gave way, not the grep**: a security grep with
+   exceptions is a security grep that gets weakened. (The domain word for that value is still *token* in the
+   code and in every doc; only the strings that reach a log say *handle*.)
 4. The redactor's unit tests pass in the sandbox (`swift test`, no Mac needed — see `WORKFLOW.md` §5).
+5. ⚠ **A loopback URL never reaches the log.** With B3's server running, a real log must contain exactly ONE
+   line with `127.0.0.1` — the listener announcement (`offline server listening on 127.0.0.1:<port>
+   (loopback only)`) — and no `http://127.0.0.1:<port>/offline/<32 hex>` anywhere. The port alone is not a
+   capability; the full URL is, for as long as the process lives.

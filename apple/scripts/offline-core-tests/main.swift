@@ -614,6 +614,547 @@ checkEqual(OfflineFormat.eta(remainingBytes: 100, bytesPerSecond: 0), nil, "no r
 checkEqual(OfflineFormat.eta(remainingBytes: 100, bytesPerSecond: 10), "10s", "a short ETA")
 checkEqual(OfflineFormat.eta(remainingBytes: 600, bytesPerSecond: 1), "10m 0s", "a long ETA")
 
+// MARK: - B3 · the loopback route (a token, and nothing else)
+
+section("B3 · the loopback route")
+
+let probeToken = "0123456789abcdef0123456789abcdef"
+
+func routeExtension(_ target: String) -> String {
+    switch OfflineRoute.parse(target) {
+    case .success(let route): return route.fileExtension
+    case .failure(.notOurPath): return "notOurPath"
+    case .failure(.malformed(let reason)): return "malformed: \(reason)"
+    }
+}
+
+checkEqual(OfflineToken.isValid(probeToken), true, "32 lowercase hex characters is a token")
+checkEqual(OfflineToken.isValid(probeToken.uppercased()), false, "uppercase hex is NOT a token")
+checkEqual(OfflineToken.isValid(String(probeToken.dropLast())), false, "31 characters is not a token")
+checkEqual(OfflineToken.isValid(probeToken.replacingOccurrences(of: "0", with: "g")), false,
+           "a non-hex character is not a token")
+checkEqual(OfflineToken.isValid(OfflineToken.randomHex()), true, "a minted token validates")
+checkEqual(OfflineToken.randomHex().count, 32, "a minted token is 32 characters")
+
+checkEqual(routeExtension("/offline/\(probeToken).mp4"), "mp4", "the one path shape that is served")
+checkEqual(routeExtension("/offline/\(probeToken).mp4?cache=1"), "mp4",
+           "a query string is ignored, not refused")
+checkEqual(routeExtension("/offline/\(probeToken).MP4"), "notOurPath",
+           "an uppercase extension is refused: the path has one spelling")
+checkEqual(routeExtension("/offline/\(probeToken.uppercased()).mp4").hasPrefix("malformed"), true,
+           "an uppercase token is refused at the route as well as at the token")
+checkEqual(routeExtension("/offline/%2e%2e%2fetc/passwd"), "notOurPath",
+           "a percent-encoded name is not a route: nothing is decoded")
+checkEqual(routeExtension("/offline/../../etc/passwd"), "notOurPath", "a traversing path is not a route")
+checkEqual(routeExtension("/offline/\(probeToken)"), "notOurPath", "a missing extension is not a route")
+checkEqual(routeExtension("/offline/\(probeToken).mp4.extra"), "notOurPath",
+           "a second dot is not a route")
+checkEqual(routeExtension("/offline/\(probeToken).txt"), "notOurPath", "an unknown extension is not a route")
+checkEqual(routeExtension("/media/\(probeToken).mp4"), "notOurPath", "another prefix is not a route")
+checkEqual(routeExtension("/"), "notOurPath", "the root is not a route")
+
+// MARK: - B3 · reading a request head
+
+section("B3 · reading a request head")
+
+func headRead(_ text: String) -> OfflineHeadRead { OfflineHTTPRequest.readHead(Data(text.utf8)) }
+
+func parsedHead(_ text: String) -> OfflineHTTPRequest? {
+    if case .head(let request) = headRead(text) { return request }
+    return nil
+}
+
+func headRefusal(_ text: String) -> OfflineHTTPRefusal? {
+    if case .refused(let why) = headRead(text) { return why }
+    return nil
+}
+
+func refusalReason(_ text: String) -> String { headRefusal(text)?.reason ?? "accepted" }
+
+checkEqual(headRead("GET /offline/x.mp4 HTTP/1.1\r\nHost: h\r\n"), .needMore,
+           "a head without its terminator needs more bytes, and is NOT an error")
+checkEqual(parsedHead("GET /offline/\(probeToken).mp4 HTTP/1.1\r\nHost: h\r\n\r\n")?.method, "GET",
+           "the method is read verbatim")
+checkEqual(parsedHead("get /offline/\(probeToken).mp4 HTTP/1.1\r\n\r\n")?.knownMethod, nil,
+           "a lowercase method is NOT silently accepted as GET")
+checkEqual(parsedHead("HEAD /offline/\(probeToken).mp4 HTTP/1.0\r\n\r\n")?.knownMethod, .head,
+           "HTTP/1.0 is answered too")
+checkEqual(parsedHead("GET /offline/\(probeToken).mp4 HTTP/1.1\r\nRANGE: bytes=0-\r\n\r\n")?.header("range"),
+           "bytes=0-", "header names are case-insensitive")
+checkEqual(headRefusal("GET /offline/\(probeToken).mp4 HTTP/1.1\r\nHost\r\n\r\n") != nil, true,
+           "a header line with no colon is malformed")
+checkEqual(headRefusal("GET /offline/\(probeToken).mp4  HTTP/1.1\r\n\r\n") != nil, true,
+           "two spaces in the request line is malformed, not tolerated")
+checkEqual(headRefusal("GET /offline/\(probeToken).mp4\r\n\r\n") != nil, true,
+           "a missing version is malformed")
+checkEqual(headRefusal("GET /offline/\(probeToken).mp4 HTTP/2\r\n\r\n") != nil, true,
+           "an unsupported version is refused")
+checkEqual(headRefusal("GET http://127.0.0.1/offline/\(probeToken).mp4 HTTP/1.1\r\n\r\n") != nil, true,
+           "a proxy-style absolute-form target is refused")
+checkEqual(headRefusal("GET /offline/\(probeToken).mp4 HTTP/1.1\r\n Host: folded\r\n\r\n") != nil, true,
+           "a folded header line is refused, never unfolded")
+checkEqual(refusalReason("GET /offline/\(probeToken).mp4 HTTP/1.1\r\nRange: bytes=0-1\r\nRange: bytes=5-6\r\n\r\n"),
+           "the Range header was sent 2 times — one unambiguous range is required",
+           "⚠ a duplicated Range is refused rather than resolved")
+
+if let duplicate = parsedHead("GET /offline/\(probeToken).mp4 HTTP/1.1\r\nHost: one\r\nHost: two\r\n\r\n") {
+    checkEqual(duplicate.header("host"), "one", "the FIRST occurrence of a duplicated header wins")
+    checkEqual(duplicate.isDuplicate("host"), true, "and the duplication is recorded")
+} else {
+    check(false, "a duplicated non-Range header still parses")
+}
+
+let oversized = String(repeating: "X", count: OfflineHTTPLimits.maximumHeadBytes + 64)
+checkEqual(headRefusal(oversized)?.status, 431, "a head larger than the limit is refused with 431")
+
+// MARK: - B3 · what a Range asks for
+
+section("B3 · what a Range asks for")
+
+func resolved(_ raw: String?, size: Int64) -> OfflineRangeOutcome {
+    OfflineRangeOutcome.resolve(OfflineRangeRequest.parse(raw), size: size)
+}
+
+let rangeSize: Int64 = 1000
+
+checkEqual(resolved(nil, size: rangeSize), .wholeFile(reason: nil), "no Range at all is the whole file")
+checkEqual(resolved("", size: rangeSize), .wholeFile(reason: nil), "an empty Range header is no Range")
+checkEqual(resolved("bytes=0-", size: rangeSize), .partial(start: 0, end: 999),
+           "an open-ended range ends at the last byte")
+checkEqual(resolved("bytes=0-0", size: rangeSize), .partial(start: 0, end: 0), "one byte is one byte")
+checkEqual(resolved("bytes=500-", size: rangeSize), .partial(start: 500, end: 999),
+           "a mid-file open range starts where it says")
+checkEqual(resolved("bytes=999-", size: rangeSize), .partial(start: 999, end: 999),
+           "the last byte is satisfiable")
+checkEqual(resolved("bytes=1000-", size: rangeSize), .unsatisfiable(reason: "the asked-for offset is past the end of the file"),
+           "⚠ an offset AT the end is 416, never a clamp")
+checkEqual(resolved("bytes=5000-", size: rangeSize), .unsatisfiable(reason: "the asked-for offset is past the end of the file"),
+           "an offset past the end is 416")
+checkEqual(resolved("bytes=500-2000", size: rangeSize), .partial(start: 500, end: 999),
+           "⚠ a last-byte-pos past the end IS clamped — the start names a real byte")
+checkEqual(resolved("bytes=-100", size: rangeSize), .partial(start: 900, end: 999),
+           "a suffix range is the LAST n bytes, not the first")
+checkEqual(resolved("bytes=-1000", size: rangeSize), .partial(start: 0, end: 999),
+           "a suffix longer than the file is the whole file")
+checkEqual(resolved("bytes=-0", size: rangeSize), .unsatisfiable(reason: "a zero-length suffix names no bytes"),
+           "a zero-length suffix names no bytes")
+checkEqual(resolved("bytes=0-1, 5-6", size: rangeSize),
+           .wholeFile(reason: "2 ranges were asked for; one file is sent instead"),
+           "multiple ranges are answered with the whole file, never multipart")
+checkEqual(resolved("items=0-1", size: rangeSize),
+           .wholeFile(reason: "the Range unit \"items\" is not bytes"),
+           "another unit is ignored rather than refused")
+checkEqual(resolved("garbage", size: rangeSize),
+           .wholeFile(reason: "the Range unit \"garbage\" is not bytes"),
+           "a Range header with no unit is ignored")
+checkEqual(resolved("bytes=abc", size: rangeSize),
+           .wholeFile(reason: "the Range header could not be read"),
+           "an unreadable range sends the whole file — the recoverable answer")
+checkEqual(resolved("bytes=", size: rangeSize),
+           .wholeFile(reason: "the Range header could not be read"),
+           "an empty range list sends the whole file")
+checkEqual(resolved("bytes=5-2", size: rangeSize),
+           .wholeFile(reason: "the Range header could not be read"),
+           "a reversed range is unreadable, not clamped to something else")
+checkEqual(resolved("bytes=99999999999999999999-", size: rangeSize),
+           .wholeFile(reason: "the Range header could not be read"),
+           "an offset too large for Int64 is unreadable rather than a trap")
+checkEqual(resolved("bytes=0-", size: 0), .unsatisfiable(reason: "the file on disk is empty"),
+           "⚠ zero bytes can never satisfy a range")
+
+// MARK: - B3 · the plan, and the head it becomes
+
+section("B3 · the plan")
+
+let tokenBook = OfflineTokenBook()
+let probeEntry = OfflineTokenBook.Entry(itemId: "item-1", container: "mp4", fileExtension: "mp4")
+let probeTokenValue = tokenBook.token(for: probeEntry) { "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }
+let probeResource = OfflineServeResource(url: URL(fileURLWithPath: "/tmp/rkm-probe.mp4"),
+                                         size: 1000, etag: "1000-1758000000000000000",
+                                         contentType: "video/mp4")
+
+func plannedPlan(_ method: String, _ target: String, range: String? = nil) -> OfflineHTTPPlan? {
+    var lines = ["\(method) \(target) HTTP/1.1", "Host: 127.0.0.1"]
+    if let range { lines.append("Range: \(range)") }
+    let head = Data((lines.joined(separator: "\r\n") + "\r\n\r\n").utf8)
+    guard case .head(let request) = OfflineHTTPRequest.readHead(head) else { return nil }
+    return OfflineServerCore.plan(request, tokens: tokenBook) { _ in probeResource }
+}
+
+func planStatus(_ method: String, _ target: String, range: String? = nil) -> Int {
+    plannedPlan(method, target, range: range)?.response.status ?? -1
+}
+
+func planLogLine(_ method: String, _ target: String, range: String? = nil) -> String {
+    plannedPlan(method, target, range: range)?.logLine ?? "<no plan>"
+}
+
+checkEqual(planStatus("GET", "/offline/\(probeTokenValue).mp4"), 200, "a plain GET is 200")
+checkEqual(planStatus("HEAD", "/offline/\(probeTokenValue).mp4"), 200, "a HEAD is 200")
+checkEqual(planStatus("GET", "/offline/\(probeTokenValue).mp4", range: "bytes=0-"), 206, "a range is 206")
+checkEqual(planStatus("HEAD", "/offline/\(probeTokenValue).mp4", range: "bytes=0-"), 206,
+           "a HEAD with a range is 206 too — the status describes the resource, not the body")
+checkEqual(planStatus("GET", "/offline/\(probeTokenValue).mp4", range: "bytes=1000-"), 416,
+           "an unsatisfiable range is 416")
+checkEqual(planStatus("GET", "/offline/\(OfflineProbeTarget.unknownToken).mp4"), 404,
+           "a token nobody minted is 404")
+checkEqual(planStatus("POST", "/offline/\(probeTokenValue).mp4"), 405, "an unknown method is 405")
+checkEqual(planStatus("GET", "/offline/../../etc/passwd"), 400, "a traversing path is 400")
+
+let wholePlan = plannedPlan("GET", "/offline/\(probeTokenValue).mp4")
+checkEqual(wholePlan?.response.contentLength, 1000, "a whole-file 200 declares the file's length")
+checkEqual(wholePlan?.response.headerValue("content-range"), nil, "a 200 carries NO Content-Range")
+checkEqual(wholePlan?.response.headerValue("accept-ranges"), "bytes", "a 200 advertises byte ranges")
+checkEqual(wholePlan?.response.headerValue("cache-control"), "no-store",
+           "⚠ a loopback URL may never be cached: the port dies with the process")
+checkEqual(wholePlan?.response.headerValue("connection"), "close", "one request per connection")
+checkEqual(wholePlan?.response.headerValue("etag"), "\"1000-1758000000000000000\"",
+           "the ETag is quoted, as the header requires")
+checkEqual(wholePlan?.fileURL, probeResource.url, "a 200 GET streams the file")
+checkEqual(wholePlan?.offset, 0, "a 200 starts at zero")
+checkEqual(wholePlan?.length, 1000, "a 200 sends the whole file")
+
+let headPlan = plannedPlan("HEAD", "/offline/\(probeTokenValue).mp4")
+checkEqual(headPlan?.response.contentLength, 1000,
+           "⚠ a HEAD declares the length it will NOT send")
+checkEqual(headPlan?.fileURL, nil, "⚠ a HEAD sends no body — and the plan is where that is decided")
+checkEqual(headPlan?.length, 0, "a HEAD has no body length")
+
+let rangedPlan = plannedPlan("GET", "/offline/\(probeTokenValue).mp4", range: "bytes=500-")
+checkEqual(rangedPlan?.response.headerValue("content-range"), "bytes 500-999/1000",
+           "a 206 states exactly which bytes these are, out of the whole")
+checkEqual(rangedPlan?.response.contentLength, 500, "a 206 declares the length of the range")
+checkEqual(rangedPlan?.offset, 500, "a 206 streams from the asked-for offset")
+checkEqual(rangedPlan?.length, 500, "a 206 streams the asked-for length")
+
+let rangedHeadPlan = plannedPlan("HEAD", "/offline/\(probeTokenValue).mp4", range: "bytes=500-")
+checkEqual(rangedHeadPlan?.response.contentLength, 500,
+           "⚠ a ranged HEAD declares the RANGE's length")
+checkEqual(rangedHeadPlan?.fileURL, nil, "and still sends nothing")
+
+let unsatisfiablePlan = plannedPlan("GET", "/offline/\(probeTokenValue).mp4", range: "bytes=1000-")
+checkEqual(unsatisfiablePlan?.response.headerValue("content-range"), "bytes */1000",
+           "⚠ a 416 states the real size, which is how a player recovers")
+checkEqual(unsatisfiablePlan?.response.contentLength, 0, "a 416 has an empty body")
+checkEqual(unsatisfiablePlan?.fileURL, nil, "a 416 streams nothing")
+checkEqual(unsatisfiablePlan?.response.headerValue("accept-ranges"), nil,
+           "a 416 does not advertise a capability it just refused")
+
+// ⚠ A token that resolves to a file of ZERO bytes: the token book cannot tell 0 bytes from a film, so the
+// planner must. A 200 with Content-Length 0 is a download that reports success and plays as nothing.
+if let validHead = plannedPlan("GET", "/offline/\(probeTokenValue).mp4") {
+    _ = validHead
+    let emptyResource = OfflineServeResource(url: URL(fileURLWithPath: "/tmp/rkm-probe.mp4"),
+                                             size: 0, etag: "0-x", contentType: "video/mp4")
+    let emptyPlan = OfflineServerCore.plan(requestData:
+        OfflineProbeCase(id: "empty", method: "GET", target: .valid, range: nil, extraHeaderLines: [],
+                         expectStatus: 200, expectContentLength: nil, expectContentRange: nil,
+                         expectBodyBytes: 0, expectBytesFromFile: false, mirrorWithURLSession: false,
+                         note: "an empty artefact").headBytes(token: probeTokenValue, fileExtension: "mp4",
+                                                             host: "127.0.0.1"),
+        tokens: tokenBook) { _ in emptyResource }
+    checkEqual(emptyPlan.response.status, 404,
+               "⚠ a zero-byte file is 404, never an empty 200 that plays as nothing")
+    checkEqual(emptyPlan.fileURL, nil, "and nothing is streamed for it")
+} else {
+    check(false, "the empty-artefact case could be planned")
+}
+
+let methodPlan = plannedPlan("POST", "/offline/\(probeTokenValue).mp4")
+checkEqual(methodPlan?.response.headerValue("allow"), "GET, HEAD", "a 405 says what IS allowed")
+
+// ⚠⚠ The header-injection guard, and it needs its own case: an ETag is echoed from the server's own
+// response headers, so a value carrying a CRLF would end this response and begin another one.
+let evilResource = OfflineServeResource(url: URL(fileURLWithPath: "/tmp/rkm-probe.mp4"),
+                                        size: 1000, etag: "1000\r\nX-Evil: yes",
+                                        contentType: "video/mp4")
+if let evilPlan = plannedPlan("GET", "/offline/\(probeTokenValue).mp4") {
+    let evilActual = OfflineServerCore.plan(requestData:
+        OfflineProbeCase(id: "evil", method: "GET", target: .valid, range: nil, extraHeaderLines: [],
+                         expectStatus: 200, expectContentLength: nil, expectContentRange: nil,
+                         expectBodyBytes: 0, expectBytesFromFile: false, mirrorWithURLSession: false,
+                         note: "an ETag carrying CRLF").headBytes(token: probeTokenValue, fileExtension: "mp4",
+                                                                 host: "127.0.0.1"),
+        tokens: tokenBook) { _ in evilResource }
+    checkEqual(evilActual.response.status, 500,
+               "⚠ a header value carrying CRLF is refused, never written")
+    checkEqual(evilActual.response.headBytes.contains(Data("X-Evil".utf8)), false,
+               "⚠ and no second header can be smuggled into the response")
+    _ = evilPlan
+} else {
+    check(false, "the header-injection case could be planned")
+}
+
+checkEqual(planLogLine("GET", "/offline/\(probeTokenValue).mp4", range: "bytes=500-").contains(probeTokenValue),
+           false, "⚠ the log line never contains the token — a token is a capability")
+checkEqual(planLogLine("GET", "/offline/\(probeTokenValue).mp4", range: "bytes=500-")
+           .contains("/offline/<handle>.mp4"), true,
+           "the log line names the path by shape — and by `handle`, which is what keeps LOGGING.md §9's "
+           + "`token` grep clean")
+checkEqual(planLogLine("GET", "/offline/\(probeTokenValue).mp4", range: "bytes=500-")
+           .contains("range bytes 500-999/1000"), true, "⚠ the log line carries the Content-Range")
+
+checkEqual(wholePlan?.response.headBytes.starts(with: Data("HTTP/1.1 200 OK\r\n".utf8)), true,
+           "the head starts with a real status line")
+
+if let head = wholePlan?.response.headBytes {
+    switch OfflineProbeWire.parseHead(head) {
+    case .head(let wire):
+        checkEqual(wire.status, 200, "the response head parses back to its status")
+        checkEqual(wire.contentLength, 1000, "and back to its Content-Length")
+    case .needMore:
+        check(false, "the response head the planner produced was not readable")
+    }
+} else {
+    check(false, "a plan with a body has head bytes")
+}
+
+// MARK: - B3 · the Range suite itself, executed on Linux
+
+section("B3 · the Range suite (the same cases the Mac probe sends)")
+
+let suiteSize: Int64 = 1000
+let suiteCases = OfflineProbeCases.cases(size: suiteSize)
+checkEqual(Set(suiteCases.map { $0.id }).count, suiteCases.count,
+           "every probe case has a unique id")
+check(suiteCases.count >= 16, "the suite has \(suiteCases.count) cases")
+
+for probeCase in suiteCases {
+    let head = probeCase.headBytes(token: probeTokenValue, fileExtension: "mp4", host: "127.0.0.1")
+    // ⚠ Through `plan(requestData:)`, the same entry point the socket uses: a case whose head is refused
+    // BEFORE it becomes a request (a proxy-style target, a duplicate Range) is still a case the suite
+    // answers, rather than a case the harness quietly skips.
+    let plan = OfflineServerCore.plan(requestData: head, tokens: tokenBook) { _ in probeResource }
+    let response = plan.response
+
+    checkEqual(response.status, probeCase.expectStatus, "[\(probeCase.id)] status")
+    if let expected = probeCase.expectContentLength {
+        checkEqual(response.contentLength, expected, "[\(probeCase.id)] Content-Length")
+    } else {
+        checkEqual(response.headerValue("content-length"), nil, "[\(probeCase.id)] no Content-Length")
+    }
+    if let expected = probeCase.expectContentRange {
+        checkEqual(response.headerValue("content-range"), expected, "[\(probeCase.id)] Content-Range")
+    } else {
+        checkEqual(response.headerValue("content-range"), nil, "[\(probeCase.id)] no Content-Range")
+    }
+
+    let plannedBody: Int64 = probeCase.expectStatus == 206 || response.status == 200
+        ? plan.length : 0
+    checkEqual(plannedBody, probeCase.expectBodyBytes, "[\(probeCase.id)] the body length planned")
+
+    // ⚠ And the round trip: what the planner WOULD write must read back as the same document.
+    if case .head(let wire) = OfflineProbeWire.parseHead(response.headBytes) {
+        checkEqual(wire.status, probeCase.expectStatus, "[\(probeCase.id)] the head parses back")
+        checkEqual(wire.contentLength, response.contentLength,
+                   "[\(probeCase.id)] the head's own Content-Length agrees")
+    } else {
+        check(false, "[\(probeCase.id)] the response head is readable")
+    }
+}
+
+// MARK: - B3 · the token book
+
+section("B3 · the token book")
+
+let bookA = OfflineTokenBook()
+let entryOne = OfflineTokenBook.Entry(itemId: "item-1", container: "mp4", fileExtension: "mp4")
+let entryOneOther = OfflineTokenBook.Entry(itemId: "item-1", container: "mkv", fileExtension: "mkv")
+let entryTwo = OfflineTokenBook.Entry(itemId: "item-2", container: "mp4", fileExtension: "mp4")
+
+let firstMint = bookA.token(for: entryOne) { "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }
+checkEqual(bookA.token(for: entryOne) { "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" }, firstMint,
+           "⚠ asking twice returns the SAME token — a playing <video> must not have its URL moved")
+checkEqual(bookA.entry(for: firstMint), entryOne, "the token resolves to what it was minted for")
+checkEqual(firstMint.uppercased() != firstMint, true,
+           "the fixture token has letters, or a case check below would prove nothing")
+checkEqual(bookA.entry(for: firstMint.uppercased()), nil,
+           "⚠ a token lookup does not case-fold: there is exactly one spelling")
+checkEqual(bookA.entry(for: OfflineProbeTarget.unknownToken), nil,
+           "an unknown token resolves to nothing — there is no fallback to another title")
+checkEqual(bookA.count, 1, "one token on the book")
+
+let secondMint = bookA.token(for: entryOneOther) { "cccccccccccccccccccccccccccccccc" }
+checkEqual(secondMint != firstMint, true, "a different rendition mints a different token")
+checkEqual(bookA.entry(for: firstMint), nil, "⚠ and the old token stops working entirely")
+checkEqual(bookA.tokenCount(for: "item-1"), 1, "a title holds exactly ONE live token")
+
+let thirdMint = bookA.token(for: entryTwo) { "dddddddddddddddddddddddddddddddd" }
+checkEqual(bookA.count, 2, "a second title gets its own token")
+checkEqual(bookA.entry(for: thirdMint), entryTwo, "and it resolves to that title")
+
+checkEqual(bookA.forget(itemId: "item-2"), true, "forgetting a title drops its token")
+checkEqual(bookA.entry(for: thirdMint), nil, "and the token stops resolving")
+checkEqual(bookA.forget(itemId: "never-seen"), false, "forgetting an unknown title is not an error")
+checkEqual(bookA.forgetAll(), 1, "forgetAll reports how many it dropped")
+checkEqual(bookA.isEmpty, true, "⚠ a new server address or a sign-out leaves NO usable token")
+
+var mintCalls = 0
+let bookB = OfflineTokenBook()
+let collidesWith = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+_ = bookB.token(for: entryOne) { collidesWith }
+let collided = bookB.token(for: entryTwo) {
+    mintCalls += 1
+    return mintCalls < 3 ? collidesWith : "ffffffffffffffffffffffffffffffff"
+}
+checkEqual(collided == collidesWith, false, "⚠ a mint that collides is not handed to a second title")
+checkEqual(bookB.entry(for: collidesWith), entryOne, "the first title keeps the token it was given")
+
+// MARK: - B3 · the page ↔ native contract
+
+section("B3 · the bridge contract")
+
+func bridgeParse(_ body: Any) -> Result<OfflineBridgeRequest, OfflineBridgeError> {
+    OfflineBridgeRequest.parse(body)
+}
+
+func bridgeError(_ body: Any) -> OfflineBridgeError? {
+    if case .failure(let error) = OfflineBridgeRequest.parse(body) { return error }
+    return nil
+}
+
+func bridgeCommand(_ body: Any) -> OfflineBridgeCommand? {
+    if case .success(let request) = OfflineBridgeRequest.parse(body) { return request.command }
+    return nil
+}
+
+func json(_ value: Any) -> String {
+    guard JSONSerialization.isValidJSONObject(value),
+          let data = try? JSONSerialization.data(withJSONObject: value, options: [.sortedKeys]),
+          let text = String(data: data, encoding: .utf8)
+    else { return "<unserialisable>" }
+    return text
+}
+
+checkEqual(bridgeCommand(["v": 1, "c": "list"]), .list, "a v1 list message is accepted")
+checkEqual(bridgeCommand("{\"v\":1,\"c\":\"ping\"}"), .ping,
+           "a JSON STRING body is accepted as well as a dictionary — both spellings arrive in practice")
+
+if case .success(let request) = bridgeParse(["v": 1, "c": "download", "itemId": "abc123", "title": "Heat"]) {
+    checkEqual(request.mode, "auto", "an absent mode defaults to auto")
+    checkEqual(request.title, "Heat", "the title is carried through")
+} else {
+    check(false, "a download message parses")
+}
+
+if case .success(let request) = bridgeParse(["v": 1, "c": "download", "itemId": "abc123",
+                                             "title": "Heat", "mode": "REMUX"]) {
+    checkEqual(request.mode, "remux", "⚠ a mode is canonicalised, and a known one is accepted")
+} else {
+    check(false, "an uppercase known mode is accepted")
+}
+
+checkEqual(bridgeError(["c": "list"]), .unsupportedVersion(found: 0, supported: 1),
+           "⚠ a message with no version is refused, never assumed to be v1")
+checkEqual(bridgeError(["v": 2, "c": "list"]), .unsupportedVersion(found: 2, supported: 1),
+           "⚠ a NEWER page is refused with a sentence, not guessed at")
+checkEqual(bridgeError(["v": 1, "c": "explode"]), .unknownCommand("explode"),
+           "⚠ an unknown command is refused BY NAME — ignoring it would leave the page waiting")
+checkEqual(bridgeError(["v": 1, "c": "play"]), .missingItemId(command: "play"),
+           "play without an item is refused")
+checkEqual(bridgeError(["v": 1, "c": "download", "itemId": "abc123"]), .missingTitle,
+           "a download without a title is refused — the Downloads screen has to name it")
+if case .invalidItemId(let badId, let reason)? = bridgeError(["v": 1, "c": "download",
+                                                             "itemId": "../../etc", "title": "x"]) {
+    checkEqual(badId, "../../etc", "⚠ an unusable item id is refused, never rewritten")
+    checkEqual(reason.isEmpty, false, "and the refusal carries the reason the server side gave")
+} else {
+    check(false, "a traversing item id is refused as an invalid item id")
+}
+checkEqual(bridgeError(["v": 1, "c": "download", "itemId": "abc123", "title": "x", "mode": "1080p"]),
+           .badMode("1080p", allowed: ["auto", "direct", "remux", "transcode_audio", "transcode"]),
+           "an unknown mode is refused with the list, not defaulted")
+checkEqual(bridgeError("not json"), .notReadable(reason: "a String body was not a JSON object"),
+           "an unreadable body is named as such")
+checkEqual(bridgeError(42), .notReadable(reason: "the message is neither a dictionary nor a JSON string"),
+           "a body that is neither shape is refused")
+
+checkEqual(json(OfflineBridgeReply.failure(.unknownItem(itemId: "abc")).jsonObject).contains("\"ok\":false"),
+           true, "a failed reply says so")
+checkEqual(json(OfflineBridgeReply.failure(.unknownItem(itemId: "abc")).jsonObject)
+           .contains("\"code\":\"unknownItem\""), true, "and names its code")
+checkEqual(json(OfflineBridgeReply.listed([]).jsonObject).contains("\"count\":0"), true,
+           "an empty list reply is a valid reply")
+checkEqual(json(OfflineBridgeReply.accepted(.download).jsonObject).contains("\"accepted\":\"download\""),
+           true, "⚠ an accepted command says ACCEPTED, never done")
+
+let playReply = OfflineBridgeReply.playable(OfflineBridgePlay(
+    itemId: "abc", url: "http://127.0.0.1:50123/offline/\(probeTokenValue).mp4",
+    contentType: "video/mp4", size: 1000))
+checkEqual(json(playReply.jsonObject).contains("\"contentType\""), true,
+           "the play reply carries the content type as well as the URL")
+checkEqual(json(playReply.jsonObject).contains("\"size\":1000"), true,
+           "and the size, so the page can show it without asking again")
+checkEqual(json(playReply.jsonObject).contains("\"ok\":true"), true, "a playable reply says so")
+
+// MARK: - B3 · what the page is told, and how often
+
+section("B3 · the event planner")
+
+func snapshot(_ itemId: String = "i1", title: String = "Heat", state: OfflineState = .downloading,
+              bytes: Int64 = 0, total: Int64 = 1000, mode: String = "auto",
+              url: String? = nil, error: String? = nil, step: Int = -1) -> OfflineEventSnapshot {
+    OfflineEventSnapshot(itemId: itemId, title: title, state: state, bytes: bytes, totalBytes: total,
+                         mode: mode, url: url, error: error, emittedStep: step)
+}
+
+let baseSnapshot = snapshot(bytes: 100, step: 10)
+checkEqual(OfflineEventPlanner.decide(previous: nil, current: baseSnapshot), .state,
+           "⚠ the page is never assumed to know anything — every title is announced once")
+checkEqual(OfflineEventPlanner.decide(previous: baseSnapshot, current: baseSnapshot), .nothing,
+           "nothing changed means nothing is sent")
+checkEqual(OfflineEventPlanner.decide(previous: snapshot(bytes: 100, step: -1),
+                                      current: snapshot(bytes: 100)),
+           .progress(step: 10), "a step that was never sent is sent, even at the same byte count")
+checkEqual(OfflineEventPlanner.decide(previous: baseSnapshot, current: snapshot(state: .ready, bytes: 100)),
+           .state, "a state change is always sent")
+checkEqual(OfflineEventPlanner.decide(previous: baseSnapshot, current: snapshot(bytes: 100, total: 2000)),
+           .state, "a changed total is a state change, not progress")
+checkEqual(OfflineEventPlanner.decide(previous: baseSnapshot, current: snapshot(bytes: 100, error: "lost")),
+           .state, "a new error is always sent")
+checkEqual(OfflineEventPlanner.decide(previous: baseSnapshot, current: snapshot(bytes: 100, mode: "direct")),
+           .state, "a changed rendition is a state change")
+checkEqual(OfflineEventPlanner.decide(previous: baseSnapshot,
+                                      current: snapshot(bytes: 100, url: "http://127.0.0.1:1/offline/x.mp4")),
+           .ready, "⚠ the URL APPEARING is its own event: that is the moment it plays offline")
+checkEqual(OfflineEventPlanner.decide(previous: snapshot(bytes: 100, url: "http://127.0.0.1:1/offline/x.mp4"),
+                                      current: snapshot(bytes: 100)),
+           .state, "⚠ a URL DISAPPEARING is a state change — the page must stop offering it")
+checkEqual(OfflineEventPlanner.decide(previous: snapshot(bytes: 100, url: "http://127.0.0.1:1/offline/x.mp4"),
+                                      current: snapshot(bytes: 100, url: "http://127.0.0.1:2/offline/y.mp4")),
+           .state, "a changed URL is a state change")
+
+checkEqual(OfflineEventPlanner.decide(previous: snapshot(bytes: 100, total: 0),
+                                      current: snapshot(bytes: 200, total: 0)),
+           .nothing, "⚠ an unknown total never becomes a percentage")
+checkEqual(OfflineEventPlanner.decide(previous: snapshot(bytes: 100, step: -1),
+                                      current: snapshot(bytes: 500)),
+           .progress(step: 50), "progress is reported at whole percent steps")
+checkEqual(OfflineEventPlanner.decide(previous: snapshot(bytes: 500, step: 50),
+                                      current: snapshot(bytes: 505)),
+           .nothing, "⚠ a step already sent is not sent again — progress is throttled, state is not")
+checkEqual(OfflineEventPlanner.decide(previous: snapshot(bytes: 100, step: 60),
+                                      current: snapshot(bytes: 300)),
+           .state, "⚠ progress that goes BACKWARDS is a restart, and a restart is seen")
+checkEqual(OfflineEventPlanner.decide(previous: snapshot(state: .paused, bytes: 100, step: -1),
+                                      current: snapshot(state: .paused, bytes: 400, step: -1)),
+           .nothing, "a paused download reports no progress")
+checkEqual(OfflineEventPlanner.decide(previous: snapshot(state: .ready, bytes: 1000, total: 1000),
+                                      current: snapshot(state: .ready, bytes: 1000, total: 1000)),
+           .nothing, "a ready title that has not changed says nothing")
+checkEqual(OfflineEventPlanner.vanished(previous: ["b", "a", "c"], current: ["a"]), ["b", "c"],
+           "⚠ a deleted title is announced, and in a deterministic order")
+
+checkEqual(json(OfflineEventPayload.progress(itemId: "i1", bytes: 500, totalBytes: 1000, percent: 50)
+                .jsonObject).contains("\"percent\":50"), true, "a progress event carries its percent")
+checkEqual(json(OfflineEventPayload.ready(itemId: "i1", url: "http://127.0.0.1:1/offline/x.mp4",
+                                          contentType: "video/mp4", bytes: 1000).jsonObject)
+           .contains("\"e\":\"ready\""), true, "a ready event names itself")
+checkEqual(json(OfflineEventPayload.state(itemId: "i1", title: "Heat", state: "failed", bytes: 0,
+                                          totalBytes: 1000, mode: "auto", error: "gone", url: nil)
+                .jsonObject).contains("\"error\":\"gone\""), true,
+           "a state event carries the reason the user needs")
+
 // MARK: - Verdict
 
 print("")

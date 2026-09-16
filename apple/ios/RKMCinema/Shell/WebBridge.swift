@@ -76,6 +76,38 @@ final class WebBridge: NSObject, WKScriptMessageHandler {
                         category: .web)
             model?.refreshCookies()
 
+        case "offline":
+            // ⚠ PHASE B3'S ONLY WITNESS FOR THE NATIVE→PAGE DIRECTION. The offline bridge can be *told* to
+            // send an event and it can fail silently (a global that was never installed, a page that
+            // reloaded) — so the page reports what it actually received, back through this same redacting
+            // channel. One redaction call site (`LOGGING.md` §6), and the report carries the SHAPE of the
+            // event, never the loopback URL the event contains.
+            switch payload["k"] as? String ?? "?" {
+            case "page-received":
+                let name = payload["e"] as? String ?? "?"
+                let itemId = payload["itemId"] as? String ?? "-"
+                let percent = payload["percent"] as? Int
+                let hasUrl = payload["hasUrl"] as? Bool ?? false
+                RKMLog.info("offline bridge · page received event=\(name) item=\(itemId)"
+                            + (percent.map { " percent=\($0)" } ?? "")
+                            + " carriesUrl=\(hasUrl)", category: .offline)
+            case "command":
+                let command = payload["cmd"] as? String ?? "?"
+                let ok = payload["ok"] as? Bool ?? false
+                let count = payload["count"] as? Int
+                let detail = payload["detail"] as? String
+                RKMLog.info("offline bridge · command \(command) ok=\(ok)"
+                            + (count.map { " count=\($0)" } ?? "")
+                            + (detail.map { " — \($0)" } ?? ""), category: .offline)
+            case "availability":
+                let present = payload["present"] as? Bool ?? false
+                let version = payload["version"] as? Int
+                RKMLog.info("offline bridge · the page sees the bridge: \(present)"
+                            + (version.map { " v\($0)" } ?? ""), category: .offline)
+            default:
+                RKMLog.verbose("offline bridge · unhandled page report", category: .offline)
+            }
+
         default:
             RKMLog.verbose("unhandled bridge event: \(kind)", category: .web, correlation: identifier)
         }

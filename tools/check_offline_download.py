@@ -44,8 +44,19 @@ BUNDLE_ID = "com.helloraj1986.rkmcinema.ios"
 #: Where `RollingFileLog.defaultDirectory(appFolder: "RKMCinema")` puts it, inside the app container.
 LOG_SUFFIX = Path("Library/Application Support/RKMCinema/Logs")
 LOG_NAME = "rkm-ios.log"
-#: The offline store's root (`OfflineLayout.defaultRoot`).
-MANIFEST_SUFFIX = Path("Library/Application Support/RKMCinema/Offline/manifest.json")
+#: The offline store's root. ⚠ `OfflineLayout.defaultRoot()` appends `Offline` DIRECTLY to Application
+#: Support — it is NOT under the `RKMCinema/` folder the LOG lives in (`RollingFileLog.defaultDirectory`
+#: adds that one). The first version of this tool looked inside `RKMCinema/Offline/`, found nothing, and
+#: reported "no manifest was read" while the app was holding a finished film — a wrong path is a gate that
+#: silently judges nothing. Both are tried now, and the one that was NOT found is printed.
+MANIFEST_CANDIDATES = [
+    Path("Library/Application Support/Offline/manifest.json"),
+    Path("Library/Application Support/RKMCinema/Offline/manifest.json"),
+]
+#: How many of the newest app runs the three questions may draw on. ⚠ The gate is a STORY — start, a
+#: dropped connection, a force-quit, a relaunch — and one run cannot contain it: the resume happens in the
+#: run AFTER the one that started the download. Three covers start → interrupted → resumed.
+DEFAULT_RUNS = 3
 
 #: The app's own launch line — the ONLY per-run boundary in the file.
 RUN_MARKER = "offline session ready"
@@ -77,51 +88,44 @@ def _stamp(line: str) -> str | None:
     return match.group(1) if match else None
 
 
-def newest_run(lines: list[str]) -> tuple[list[str], str]:
-    """The lines of the newest app run, plus a sentence naming which run that was.
+def runs(lines: list[str]) -> list[tuple[str, int]]:
+    """Every app run in the file, oldest first: `(timestamp, index of its first line)`."""
+    found: list[tuple[str, int]] = []
+    for index, line in enumerate(lines):
+        if RUN_MARKER in line and (stamp := _stamp(line)):
+            found.append((stamp, index))
+    return found
 
-    Timestamp-matched, not positional: the checker concatenates the live log with its archives and
-    archive order is not chronological.
+
+def window(lines: list[str], count: int) -> tuple[list[str], str]:
+    """The lines of the newest `count` runs, plus a sentence naming the window.
+
+    ⚠⚠ WHY A WINDOW OF RUNS AND NOT ONE RUN. Every question this tool asks is behavioural and the behaviour
+    takes MORE THAN ONE LAUNCH: a download starts in one run, the network drops, the retry resumes, the app
+    is force-quit and the next launch continues the transfer. Judging only the newest run reported
+    "no download was started" on a round where the film had downloaded, dropped, resumed and survived a
+    relaunch — while two old runs sat right there in the file with the evidence in them.
+
+    ⚠ The stale-pass protection is the WINDOW, not "one run": an old success outside the last `count`
+    launches is still ignored, and that is the case the selftest pins.
     """
-    marks = [stamp for line in lines if RUN_MARKER in line and (stamp := _stamp(line))]
+    marks = runs(lines)
     if not marks:
-        return lines, ("no `" + RUN_MARKER + "` line — analysing EVERY line (an older build, or a log "
-                       "copied out of something else)")
-    latest = max(marks)
-    start = next(index for index, line in enumerate(lines)
-                 if RUN_MARKER in line and _stamp(line) == latest)
+        return lines, (f"no `{RUN_MARKER}` line — analysing EVERY line (an older build, or a log copied "
+                       f"out of something else)")
+    kept = marks[-count:]
+    start = kept[0][1]
     ignored = sum(1 for line in lines[:start] if _stamp(line))
-    return lines[start:], (f"run starting at {latest} — {ignored} earlier line(s) ignored "
-                           f"(this is the {len(marks)}×th launch in the file)")
+    if len(kept) == 1:
+        return lines[start:], (f"run starting at {kept[0][0]} — {ignored} earlier line(s) ignored "
+                               f"(the 1st of {len(marks)} launches in the file)")
+    return lines[start:], (f"the last {len(kept)} runs, {kept[0][0]} → {kept[-1][0]} — {ignored} earlier "
+                           f"line(s) ignored (of {len(marks)} launches in the file)")
 
 
 # ------------------------------------------------------------------ finding the evidence
 
-def find_log() -> tuple[Path | None, str]:
-    container = _simulator_container()
-    if container is None:
-        return None, ("the booted simulator's app container could not be found — pass --log PATH, or run "
-                      "the app on the simulator first")
-    directory = container / LOG_SUFFIX
-    if not directory.exists():
-        return None, f"no log directory at {directory} — has the app run at least once?"
-    files = sorted(directory.glob(f"{LOG_NAME}*"), key=lambda path: path.stat().st_mtime, reverse=True)
-    if not files:
-        return None, f"no {LOG_NAME}* in {directory}"
-    return files[0], f"read from {files[0]}"
-
-
-def find_manifest() -> tuple[Path | None, str]:
-    container = _simulator_container()
-    if container is None:
-        return None, "no booted simulator container"
-    path = container / MANIFEST_SUFFIX
-    if not path.exists():
-        return None, f"no manifest at {path} (nothing has ever been downloaded)"
-    return path, f"read from {path}"
-
-
-def _simulator_container() -> Path | None:
+def _booted_container() -> Path | None:
     try:
         out = subprocess.run(
             ["xcrun", "simctl", "get_app_container", "booted", BUNDLE_ID, "data"],
@@ -135,10 +139,89 @@ def _simulator_container() -> Path | None:
     return path if path.exists() else None
 
 
-def collect_log(path: Path) -> list[str]:
-    """The live log plus any rotated archives — one run can span a rotation."""
-    directory = path.parent
-    files = sorted(directory.glob(f"{path.name}*"), key=lambda item: item.name)
+def _all_containers() -> list[Path]:
+    """Every RKMCinema data container on this Mac, newest first.
+
+    ⚠⚠ **A REINSTALL MOVES THE CONTAINER, AND THE OLD ONE STAYS ON DISK.** iOS gives an app a new Data
+    container when it is installed again — which every `mac-round.sh --sim` run does — so a manifest
+    written before a rebuild is still readable here while it is *not* the app's current state, and a
+    downloaded film is stranded in it. That is why this returns the container itself and why the caller
+    compares it against the one the LOG came from: a record from a different container is evidence of what
+    happened, never of what the app has now.
+    """
+    root = Path.home() / "Library/Developer/CoreSimulator/Devices"
+    if not root.is_dir():
+        return []
+    found: list[Path] = []
+    for candidate in root.glob("*/data/Containers/Data/Application/*"):
+        if (candidate / "Library/Application Support").is_dir():
+            found.append(candidate)
+    found.sort(key=lambda path: (path / "Library/Application Support").stat().st_mtime, reverse=True)
+    return found
+
+
+def find_log(container: Path | None = None) -> tuple[Path | None, str, Path | None]:
+    """The newest log directory, which container it came from, and how we looked."""
+    # 1. The booted simulator — authoritative, because that IS the app that is running.
+    if container is None:
+        container = _booted_container()
+    if container is not None:
+        directory = container / LOG_SUFFIX
+        if (directory / LOG_NAME).exists():
+            return directory, f"booted simulator app container ({container.name[:8]}…)", container
+        # Fall through: the container exists but has never logged.
+    # 2. Any simulator on this Mac, without needing one booted (or after a reinstall).
+    for candidate in _all_containers():
+        directory = candidate / LOG_SUFFIX
+        if (directory / LOG_NAME).exists():
+            return (directory,
+                    f"an app container on this Mac ({candidate.name[:8]}… — NOT the booted one; a rebuild "
+                    f"moves the container)", candidate)
+    if container is not None:
+        return container / LOG_SUFFIX, "the booted container — the app has not written a log yet", container
+    return None, "no simulator container found — is a simulator installed and the app run at least once?", None
+
+
+def find_manifest(container: Path | None) -> tuple[Path | None, str, Path | None]:
+    """The manifest for the container the log came from — and only that one.
+
+    ⚠⚠ **IT IS DELIBERATELY NOT "the newest manifest anywhere".** An older install's manifest can look
+    like a pass while the app the user is actually running has nothing — so a record from another container
+    is printed as EVIDENCE and never counted as an answer. (The first version of this tool got the path
+    wrong as well: `OfflineLayout.defaultRoot()` appends `Offline` straight to Application Support, not
+    under the `RKMCinema/` folder the log lives in.)
+    """
+    if container is None:
+        return None, "no app container to look in", None
+    tried = [container / candidate for candidate in MANIFEST_CANDIDATES]
+    for path in tried:
+        if path.exists():
+            return path, f"read from {path}", container
+    stranded = []
+    for other in _all_containers():
+        if other == container:
+            continue
+        for candidate in MANIFEST_CANDIDATES:
+            path = other / candidate
+            if path.exists():
+                stranded.append(path)
+    note = ""
+    if stranded:
+        note = (" · ⚠ an OLDER install's container holds a manifest ("
+                + ", ".join(str(path.parent.parent.parent.name)[:8] + "…" for path in stranded[:2])
+                + ") — stranded data, not the running app's")
+    return None, ("no manifest at " + " nor ".join(str(path) for path in tried) + note), None
+
+
+def collect_log(directory: Path) -> list[str]:
+    """Every line from the log directory — the live file plus any rotated archives.
+
+    ⚠ Rotation can move a run out of the live file, and a gate that reads only the newest 2 MB would
+    report "nothing happened" for a round that happened just before a rotate.
+    """
+    if directory.is_file():
+        directory = directory.parent
+    files = sorted(directory.glob(f"{LOG_NAME}*"), key=lambda item: item.name)
     lines: list[str] = []
     for file in files:
         try:
@@ -419,6 +502,38 @@ FIXTURE_INCOMPLETE = _run(
     "offline incomplete · 900.00 MB of 1.88 GB bytes on this device · 900.00 MB kept",
 )
 
+# ⚠ THE REAL ROUND, as it actually happened on the Mac (2026-09-16): the gate is a STORY across launches,
+# and the first version of this tool judged only the NEWEST run — so it reported "no download was started"
+# on a round where the film downloaded, the network dropped, the retry resumed it, and a force-quit
+# resumed it again. These three fixtures are that story.
+STORY_RUN_1 = _run(
+    'offline download requested · "Aladdin" · mode direct · attempt 1',
+    "offline plan · mode direct (direct-playable) · estimate 1.20 GB · server state ready",
+    'offline artefact · 1.20 GB · etag "1200000000-1" · video/mp4',
+    "offline task started · task 3 · from byte 0 · 1.20 GB total · wifiOnly=false",
+    "offline 10% · 120.00 MB of 1.20 GB · 3.8 MB/s · eta 5m 0s",
+    stamp="2026-09-16 17:32:00.000",
+)
+STORY_RUN_2 = _run(
+    "scene background — flushing the file log",
+    "offline task failed · NSURLErrorDomain -1005 — The network connection was lost.",
+    "offline download will retry in 3s (attempt 1 of 4) · The connection dropped partway through",
+    "offline resuming from 400.00 MB of 1.20 GB",
+    "offline task started · task 5 · resuming at 400.00 MB · 1.20 GB total · wifiOnly=false",
+    "offline fragment · HTTP 206 · 800.00 MB · Content-Range bytes 419430400-1258291199/1258291200 · "
+    "asked from 400.00 MB · append at 400.00 MB",
+    stamp="2026-09-16 17:40:00.000",
+)
+STORY_RUN_3 = _run(
+    "offline RELAUNCH: one interrupted download found (900.00 MB on disk, state paused, attempts 2)",
+    "offline resuming from 900.00 MB of 1.20 GB",
+    "offline task started · task 9 · resuming at 900.00 MB · 1.20 GB total · wifiOnly=false",
+    "offline READY · 1.20 GB · mode direct · verified size+ETag · took 420s (3.6 MB/s)",
+    stamp="2026-09-16 17:44:00.000",
+)
+STORY_MANIFEST = {"items": [{"item_id": "aladdin", "title": "Aladdin", "state": "ready", "bytes": 1200000000,
+                             "total_bytes": 1200000000, "verification": "size_etag"}]}
+
 
 def selftest() -> int:
     cases: list[tuple[str, list[str], dict | None, int, str]] = [
@@ -434,6 +549,11 @@ def selftest() -> int:
          {"items": [{"item_id": "abc", "title": "Heat", "state": "ready", "bytes": 10, "total_bytes": 10,
                     "verification": "size_etag"}]},
          0, "PASS"),
+        ("⭐ the REAL round: start → a dropped connection → a force-quit, across THREE runs",
+         STORY_RUN_1 + STORY_RUN_2 + STORY_RUN_3, STORY_MANIFEST, 0, "PASS"),
+        ("a FOUR-launch-old success must NOT carry the newest window",
+         FIXTURE_PASS_FULL + _run(stamp="2026-09-16 18:00:00.000") + _run(stamp="2026-09-16 18:10:00.000")
+         + _run(stamp="2026-09-16 18:20:00.000"), None, 3, "NOT EXERCISED"),
         ("a dropped connection, retried from the bytes on disk",
          FIXTURE_RETRY, None, 3, "resume"),
         ("a 401 — the session cookie never reached the request",
@@ -453,7 +573,7 @@ def selftest() -> int:
 
     failures = 0
     for index, (label, lines, manifest, expected_code, expected_text) in enumerate(cases, start=1):
-        run, _where = newest_run(lines)
+        run, _where = window(lines, DEFAULT_RUNS)
         result = analyse(run, manifest)
         code = verdict_code(result)
         body = json.dumps(result)
@@ -481,46 +601,52 @@ def main(argv: list[str] | None = None) -> int:
                         help="run the fixture cases that falsify the tool itself (no Mac needed)")
     parser.add_argument("--log", type=Path, default=None, help="the log file to read (default: find it)")
     parser.add_argument("--manifest", type=Path, default=None, help="manifest.json (default: find it)")
+    parser.add_argument("--runs", type=int, default=DEFAULT_RUNS,
+                        help=f"how many of the newest app runs to judge (default {DEFAULT_RUNS}) — the gate "
+                             f"is a story that spans launches")
     parser.add_argument("--sim", action="store_true", help="use the booted simulator (the default)")
     args = parser.parse_args(argv)
 
     if args.selftest:
         return selftest()
 
+    manifest: dict | None = None
+    container: Path | None = None
     if args.log is not None:
         if not args.log.exists():
             print(f"no such log file: {args.log}", file=sys.stderr)
             return 3
+        container = _booted_container()
         lines = collect_log(args.log)
         where = f"{args.log} ({len(lines)} lines)"
     else:
-        path, why = find_log()
+        container = _booted_container()
+        path, why, container = find_log(container)
         if path is None:
             print(f"cannot read the app's log: {why}", file=sys.stderr)
             return 3
         lines = collect_log(path)
         where = f"{why} ({len(lines)} lines)"
 
-    manifest: dict | None = None
     if args.manifest is not None:
         if args.manifest.exists():
             try:
                 manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError) as error:
                 print(f"manifest could not be parsed: {error}", file=sys.stderr)
+        manifest_note = f"read from {args.manifest}"
     else:
-        path, why = find_manifest()
+        path, manifest_note, _ = find_manifest(container)
         if path is not None:
             try:
                 manifest = json.loads(path.read_text(encoding="utf-8"))
-                where += f" · {why}"
             except (OSError, json.JSONDecodeError) as error:
                 print(f"manifest could not be parsed: {error}", file=sys.stderr)
-
-    run, run_note = newest_run(lines)
+    run, run_note = window(lines, max(1, args.runs))
     print(f"offline download gate — {run_note}")
+    print(f"manifest: {manifest_note}")
     if manifest is None:
-        print("⚠ no manifest was read — the relaunch question cannot be judged from the log alone")
+        print("⚠ without a manifest the relaunch question can only be judged from the log")
     return report(analyse(run, manifest), where)
 
 

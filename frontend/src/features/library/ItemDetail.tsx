@@ -33,6 +33,7 @@ import {
 } from "./lib";
 import { Icon } from "../../components/ui/Icon";
 import { PopupMenu } from "../../components/ui/PopupMenu";
+import { DownloadButton } from "../offline/DownloadButton";
 
 function EpisodeRow({
   ep,
@@ -498,6 +499,14 @@ export function ItemDetailContent({
                     <Icon name="more" size={16} />
                   </PopupMenu>
                 </div>
+
+                {/* Offline download (B4, NATIVE_FEEL plan §4.6). ⚠ It renders NOTHING in a browser:
+                    `window.__rkmOffline` exists only inside the iOS shell, and a Download button with
+                    nowhere to put a film is a control that cannot work. It reads the app's own row for
+                    this title (`list` + events) plus the server's estimate, so the two facts the button
+                    needs — what is ON the device and what fetching it costs — both come from the side
+                    that owns them. Movies and episodes alike: the app addresses anything by item id. */}
+                <DownloadButton itemId={itemId} title={title} />
 
                 {/* Resume progress under the actions when mid-play */}
                 {!tv && detailInProgress(d?.play) && percent > 0 ? (

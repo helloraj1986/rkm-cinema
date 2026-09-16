@@ -61,6 +61,16 @@ interface AuthContextValue {
   selectProfile: (userId: string, password: string) => Promise<ProfileUserShape>;
 }
 
+/**
+ * Did this failure come from the SERVER (it answered, whatever it said) or from the NETWORK (nothing
+ * answered)? The client's own `ApiError` carries the status; a `fetch` that never connected throws a
+ * `TypeError` with none. ⚠ The check is `typeof status === "number"`, not truthiness: a 0 or a `null`
+ * from some future wrapper must not be read as "the server answered".
+ */
+function answered(error: unknown): boolean {
+  return typeof (error as { status?: unknown } | null)?.status === "number";
+}
+
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function useAuth(): AuthContextValue {
@@ -114,24 +124,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
+      // ⚠ TWO FACTS, NEVER ONE (B4, 2026-09-16). "The server refused this session" and "we could not
+      // reach the server" used to arrive as the same answer — both fell out of the `catch` and became
+      // `signedOut` — so a phone with the Wi-Fi off showed the SIGN-IN screen to somebody who is
+      // signed in, with a form that cannot even be submitted (the server that would accept it is the
+      // unreachable thing). `reachable` is set by any answer that carries an HTTP status; a 401 IS an
+      // answer, a dropped connection is not.
+      let reachable = false;
       try {
         const me = await api.me();
         if (cancelled) return;
         applyMe(me);
         setStatus("signedIn");
         return;
-      } catch {
-        // 401 from /api/auth/me is the ordinary signed-out answer, not an error.
+      } catch (error) {
+        // 401 from /api/auth/me is the ordinary signed-out answer, not an error — but it is still an
+        // ANSWER, and that is the difference that matters here.
+        reachable = answered(error);
       }
       let enforced = false;
       try {
         await api.getConfig();
+        reachable = true;
       } catch (err) {
         enforced = (err as { status?: number } | null)?.status === 401;
+        if (answered(err)) reachable = true;
       }
       if (cancelled) return;
       if (enforced) setEnforcementSeen(true);
-      setStatus("signedOut");
+      setStatus(reachable ? "signedOut" : "unreachable");
     })();
     return () => {
       cancelled = true;

@@ -4,6 +4,13 @@ import { useLibraryFolders } from "../../features/library/api";
 import { libraryNavEntries } from "../../features/library/lib";
 import { useAuth } from "../../features/auth/AuthProvider";
 import { AccountMenu } from "../../features/auth/AccountMenu";
+// ⚠ `bridge.ts`, NOT `session.ts`. Whether this web view can hold downloads is a property of the
+// GLOBAL (`window.__rkmOffline`, injected by the app or absent in a browser) and never changes during
+// a page's life, so the nav asks the cheap question directly instead of subscribing to the whole
+// offline session — which would drag the api client, the spool and zustand into every screen's module
+// graph for one boolean. (Measured: that import alone was enough to push `tools/check_nav_access.py`
+// over its ten-second wait on a loaded dev server.)
+import { bridgeAvailable } from "../../features/offline/bridge";
 
 /**
  * Premium sidebar (design spec §5–6): brand lockup, grouped navigation,
@@ -37,6 +44,14 @@ const COLLECTIONS: { title: string; items: NavItem[] } = {
     { to: "/suggest", label: "Suggest", icon: "sparkles" },
   ],
 };
+
+/**
+ * ⚠ **OFFERED ONLY WHERE IT CAN WORK (B4, §4.5).** Downloads live in the app's own container and the
+ * page reaches them through `window.__rkmOffline`, which exists only inside the iOS shell. On the
+ * desktop the entry is not shown at all — a link to a screen whose every control must be refused is
+ * worse than no link, and the rule is the same one the fullscreen button follows.
+ */
+const DOWNLOADS: NavItem = { to: "/downloads", label: "Downloads", icon: "download" };
 
 function BrandLockup() {
   return (
@@ -131,6 +146,7 @@ export function Sidebar() {
   const libraries = libraryNavEntries(data?.libraries ?? []);
   const { status, user } = useAuth();
   const signedIn = status === "signedIn" && !!user;
+  const collections = bridgeAvailable() ? [...COLLECTIONS.items, DOWNLOADS] : COLLECTIONS.items;
 
   return (
     <aside className="sticky top-0 hidden h-dvh w-[76px] shrink-0 flex-col self-start border-r border-white/[.06] bg-[#0B0C0F] py-5 md:flex xl:w-60">
@@ -179,7 +195,7 @@ export function Sidebar() {
           </div>
         )}
 
-        <GroupNav title={COLLECTIONS.title} items={COLLECTIONS.items} />
+        <GroupNav title={COLLECTIONS.title} items={collections} />
       </nav>
 
       <div className="px-2.5 pt-2">

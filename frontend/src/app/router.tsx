@@ -14,6 +14,7 @@ import { ItemDetailPage } from "../features/library/ItemDetailPage";
 import { DiscoverView } from "../features/discover/DiscoverView";
 import { WatchlistView } from "../features/watchlist/WatchlistView";
 import { SuggestView } from "../features/suggest/SuggestView";
+import { DownloadsView } from "../features/offline/DownloadsView";
 
 /**
  * One router for the React shell (the legacy vanilla app was removed).
@@ -65,6 +66,14 @@ export const router = createBrowserRouter([
       },
       { path: "discover", element: <DiscoverView /> },
       { path: "watchlist", element: <WatchlistView /> },
+      // Downloads (B4, NATIVE_FEEL plan §4.6): what THIS DEVICE is holding. It is mounted by
+      // `LibraryLayout` — the same element the library routes use — because it starts films itself,
+      // and offline is exactly when the item's detail page cannot fetch what it needs to render.
+      {
+        path: "downloads",
+        element: <LibraryLayout />,
+        children: [{ index: true, element: <DownloadsView /> }],
+      },
       { path: "suggest", element: <SuggestView /> },
       // Global search lives in the top bar (GLOBAL_SEARCH_PLAN) — the old
       // standalone /search results page was removed; deep links land Home.

@@ -500,6 +500,31 @@ native → page   window.__rkmOffline.request({c:…}) → a Promise, `.list()/.
   (posters via the existing `width`-parameterised proxy; subtitles as `.vtt` sidecars, so the existing
   overlay renderer works unchanged).
 
+✅ **BUILT 2026-09-16 (`feat/offline-downloads`, phase B4, ADR-0010)** — and the four places it differs from
+the sketch above, each for a reason the code or a measurement gave:
+
+* ⚠ **`pause` does not exist.** The bridge has `cancel`, which leaves a resumable `.part`, so a stopped
+  download reads "paused — resumable" and **Resume re-sends `download`** — the app decides whether that
+  means carry on or "already whole", because it is the side that can see the filesystem. There is no
+  second command, so the page does not offer one.
+* ⚠ **The detail page has no "Play offline" but the LIBRARY detail page's own Play already prefers the
+  local file** (via the player), so a second button would be a second path to the same film — the one that
+  forgot to prefer the phone's copy is the one that would be pressed. The **Downloads screen** carries the
+  Play-this-device action, because it has no other way to start a film.
+* ⚠ **The label is the server's words, not the plan's example.** There is no resolution in
+  `GET /api/offline/bundle/{id}` (only container + codecs) and a "1080p" derived from a byte count is a
+  confident guess; the button reads `Remux · MKV · H264 · about 2.10 GB`, and "about" is there because the
+  backend's own docstring says `estimate_bytes` is an estimate.
+* ⚠ **Artwork and subtitles at download time are DEFERRED to the next phase.** The film plays without them;
+  capturing them needs the downloader to fetch two more artefacts and the loopback server to grow a route
+  for them (native work with no page-side decision in it), and the phase's own gate does not mention them.
+  ⚠ Recorded rather than silently dropped: a downloaded film currently shows the seeded art and no subtitle
+  track (ADR-0010, limit 1).
+
+⚠ **And the page half is INVISIBLE outside the app**, which is not a limitation but the rule: without
+`window.__rkmOffline` there is no offline store to put a film in, so the nav entry and the Download button
+do not render at all — proven by `tools/check_offline_page.py` scenario 1 with `?bridge=0`.
+
 ### 4.7 Failure modes the design must state up front
 
 | Situation | Behaviour |
@@ -543,8 +568,8 @@ shippable.
 | **B1** | Backend offline API + staging + packaging + TTL, tests, contract | pytest + a `curl` proof: `HEAD` gives the size, a `Range` request returns 206 + `Content-Range`, `prepare` is idempotent | 1 d · ✅ **BUILT 2026-09-16 (`feat/offline-api`)** — `services/offline.py` (staging store + packager + range parser) + `api/routes/offline.py` (6 routes) + **ADR-0007**; `pytest` green, **17/17 falsifications red**, and ⚠⚠ **the `curl` gate RAN AGAINST THE DEPLOYED CONTAINER: 20/20 PASSED** on a real 1,795 MB film (`HEAD` → 200 + `Content-Length: 1882377499`; `Range` → 206 + `Content-Range`; past EOF → 416; whole file → 200 with an `ftypisom` payload; `prepare` twice → `reused`; `DELETE` → the library file intact). ⚠ **The live gate ALSO found the ladder defect below** (`d741a56`), which is fixed in the repo and reaches the container on the next `apply` |
 | **B2** | Native: `OfflineStore` + `OfflineDownloader` + background-session delegate + cookie mirroring | Downloads complete with the app backgrounded, resume after a forced failure, and appear in the manifest after a relaunch | 2–3 d · ✅ **BUILT 2026-09-16** (`feat/offline-downloads`, ADR-0008) — `OfflineManifest` + `OfflinePlan` + `CookieHeader` are Foundation-only and **executed + falsified on Linux** (194 checks, 30 rules reverted one at a time); the Apple-SDK half is written but **unverified until the Mac round**. ⚠ Two shape changes from the plan's sketch, both in ADR-0008: the cookie is an explicit `Cookie:` header (not a copy into `HTTPCookieStorage.shared`), and a DEBUG-only HUD panel + two launch arguments exist so this gate can be exercised before B4's page buttons |
 | **B3** | Native: `OfflineServer` + `OfflineBridge` (both directions) | Loopback server passes a Range test suite; page round-trips a command and a progress event | 1–2 d · ✅ **BUILT 2026-09-16** (`feat/offline-downloads`, ADR-0009): the 16-case suite runs on **Linux** (pure planner + a response-head round trip) **and** over a real loopback socket on the Mac (`Debug/OfflineServerProbe.swift`, byte-at-offset compared), and the bridge round-trips in both directions with the page as the witness. ⚠ The Mac round is outstanding: gate = `python3 tools/check_offline_server.py` |
-| **B4** | Page: download affordances, Downloads screen, offline player path, progress spool | A film downloads, plays offline with Wi-Fi off, and its position lands in Continue Watching after reconnect | 1–2 d |
-| **B5** | Lifecycle: cap, eviction, keep/pin, delete-after-watch, disk meter, error states | Cap enforced; nothing pinned is ever evicted; storage-full path pauses cleanly | 1 d |
+| **B4** | Page: download affordances, Downloads screen, offline player path, progress spool | A film downloads, plays offline with Wi-Fi off, and its position lands in Continue Watching after reconnect | 1–2 d · ✅ **BUILT 2026-09-16** (`feat/offline-downloads`, ADR-0010) — `features/offline/{lib,spool}.ts` are pure and **falsified on Linux (62 checks)**; `bridge.ts`/`session.ts`/`DownloadButton`/`DownloadsView` and the player's local-file path are covered by a **browser gate** (`tools/check_offline_page.py`, 6 scenarios) against a scriptable fake bridge, and three of its rules were reverted and watched go red. ⚠ **Web only — `apply` is the whole deploy, no Mac build** — and ⚠ **the phase also fixed the auth guard**, which read "the server is unreachable" as "you are signed out" and so showed a sign-in form to somebody offline, with the downloads behind it |
+| **B5** | Lifecycle: cap, eviction, keep/pin, delete-after-watch, disk meter, error states | Cap enforced; nothing pinned is ever evicted; storage-full path pauses cleanly | 1 d · ⚠ **B4 deliberately left these here**: the Downloads screen shows what is held (and a "no longer on the server" note for a title the server no longer knows) but manages nothing — no pin, no cap, no eviction, and nothing is ever deleted without a press. ⚠ `downloaded-at` per row also waits on a bridge payload field (ADR-0010, limit 2) |
 
 **Total: ~9–12 evenings.** A0–A3 alone (~2.5 days) deliver most of the perceived "native" win and carry
 almost none of the risk.

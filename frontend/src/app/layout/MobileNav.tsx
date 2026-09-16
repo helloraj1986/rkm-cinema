@@ -4,6 +4,7 @@ import { Icon, type IconName } from "../../components/ui/Icon";
 import { useLibraryFolders } from "../../features/library/api";
 import { libraryNavEntries, type LibraryNavEntry } from "../../features/library/lib";
 import { librariesBehindMore, libraryTabsThatFit } from "./lib";
+import { bridgeAvailable } from "../../features/offline/bridge";
 
 /**
  * Mobile navigation (design spec §38/§59): the sidebar disappears below md and
@@ -43,6 +44,9 @@ const MORE: { to: string; label: string; icon: IconName }[] = [
   { to: "/settings", label: "Settings", icon: "settings" },
 ];
 
+/** ⚠ The same rule as the sidebar's: shown only where it can work (B4, §4.5). */
+const DOWNLOADS: Tab = { to: "/downloads", label: "Downloads", icon: "download" };
+
 function tabCls(active: boolean) {
   return `flex min-w-0 flex-1 flex-col items-center gap-1 rounded-lg py-1.5 text-[10px] font-medium transition-colors ${
     active ? "text-accent" : "text-zinc-500 hover:text-zinc-200"
@@ -71,7 +75,9 @@ export function MobileNav() {
   const buttonRef = useRef<HTMLButtonElement>(null);
   const barRef = useRef<HTMLDivElement>(null);
   const [barWidth, setBarWidth] = useState(0);
-  const destinations = MORE;
+  // ⚠ Downloads is offered only inside the app — see `DOWNLOADS` above, and the note in `Sidebar`
+  // about asking the global directly rather than subscribing to the offline session.
+  const destinations = bridgeAvailable() ? [...MORE, DOWNLOADS] : MORE;
 
   // Close the More sheet on navigation.
   useEffect(() => {
@@ -132,7 +138,7 @@ export function MobileNav() {
   const hiddenLibraryCount = librariesBehind.length + unavailable.length;
 
   const moreActive =
-    MORE.some((m) => activeFor(location.pathname, m.to)) ||
+    destinations.some((m) => activeFor(location.pathname, m.to)) ||
     entries.some((e) => e.to !== null && activeFor(location.pathname, e.to));
 
   return (

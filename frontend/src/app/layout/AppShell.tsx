@@ -3,6 +3,7 @@ import { Sidebar } from "./Sidebar";
 import { Header } from "./Header";
 import { MobileNav } from "./MobileNav";
 import { Toaster } from "../../features/watchlist/Toaster";
+import { OfflineWiring } from "../../features/offline/OfflineWiring";
 
 /**
  * App shell (design spec §4/§38/§76): the sidebar is sticky with its own fixed
@@ -30,6 +31,11 @@ export function AppShell() {
         </div>
       </div>
       <MobileNav />
+      {/* ⚠ Renders nothing. It starts the offline session (the bridge subscription and the progress
+          spool's replay loop), which has to be running when no offline screen is on screen: a film
+          watched with the Wi-Fi off must reach Continue Watching without anyone opening Downloads
+          first. Mounted HERE, once, so it is bound to the session rather than to a route. */}
+      <OfflineWiring />
       <Toaster />
     </div>
   );

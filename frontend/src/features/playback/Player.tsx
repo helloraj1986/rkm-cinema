@@ -6,6 +6,13 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { Icon } from "../../components/ui/Icon";
 import {
+  offlineAvailable,
+  playLocal,
+  reportProgressFromPlayer,
+  spooledResumeSeconds,
+  useOffline,
+} from "../offline/session";
+import {
   nextEpisode, prevEpisode, queueEntryCode, qualityFor, AUTOPLAY_DELAY_MS,
   QUALITY_OPTIONS, PLAYBACK_RATES,
   fmtTime, isFiniteDuration, clampSeek, pickStreamMode, hlsModeLabel,
@@ -223,6 +230,17 @@ export function Player({
   // here; only playback essentials stay on the transport bar.
   const [showSettings, setShowSettings] = useState(false);
   const showSettingsRef = useRef(false);
+  // Offline playback (B4, plan §4.6). `localChecked` is a THIRD state on purpose: before the app has
+  // answered, "is this film on the device?" is unknown, and treating unknown as "no" is how the player
+  // starts a server stream for a film it is about to be told it already holds.
+  const [localPlayback, setLocalPlayback] = useState<{ url: string; contentType: string } | null>(null);
+  const [localChecked, setLocalChecked] = useState(false);
+  // ⚠ A REF as well as the state, because `reportNow` is captured by an effect that does NOT re-run
+  // when the source changes: reading the state directly there would report to the server for the whole
+  // of an offline film — each report waiting out its twenty-second timeout — which is precisely the
+  // cost this phase exists to remove.
+  const localPlaybackRef = useRef(false);
+  localPlaybackRef.current = localPlayback !== null;
 
   // Custom control bar state.
   const [playing, setPlaying] = useState(false);
@@ -308,7 +326,21 @@ export function Player({
         ...(bitrate && mode !== "remux" ? { max_bitrate: bitrate } : {}),
       })
     : "";
-  const engineKey = usesHls(mode) ? hlsSrc : directSrc;
+  /**
+   * ⚠ **A film on the device is played FROM the device, and nothing else is considered.**
+   *
+   * The empty string until the app has answered is deliberate: with `localChecked` false the build
+   * effect below finds no key and does nothing, so there is no instant where a server stream is
+   * started for a film that is about to turn out to be local. (A blank player for one frame, against a
+   * stream request to the server — the first is invisible, the second is the bug.)
+   */
+  const engineKey = !localChecked
+    ? ""
+    : localPlayback
+      ? localPlayback.url
+      : usesHls(mode)
+        ? hlsSrc
+        : directSrc;
   const backdrop = api.backdropUrl(item.item_id);
   // Display total: the API runtime (scan metadata) is authoritative; fall back
   // to the resolved stream duration. HLS VOD durations resolve to ~runtime.
@@ -318,6 +350,10 @@ export function Player({
       : isFiniteDuration(mediaDur)
         ? mediaDur
         : 0;
+
+  /** How many positions this device is holding for a server (shown as a hint — `DownloadsView` says
+   *  it in full). Subscribed so the player's own chrome can mention it without polling. */
+  const queuedReports = useOffline((state) => state.queuedReports);
 
   const posNow = () => (videoRef.current ? videoRef.current.currentTime || 0 : 0);
   totalRef.current = total;
@@ -449,9 +485,60 @@ export function Player({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [engineKey, item.item_id]);
 
+  /**
+   * ⚠ **ASK THE DEVICE BEFORE THE SERVER (B4, §4.6).** A downloaded film is played from the app's own
+   * loopback server; asking `/api/jellyfin/playback-info` for it would be a request that is pointless
+   * online and impossible offline — and offline is the whole reason the file is there.
+   *
+   * ⚠ `playLocal` returns null for a title that is NOT ready rather than an error, so "not
+   * downloaded" never reaches the screen as a failure. It also starts the loopback server on demand,
+   * so a film whose URL has not been announced yet still plays.
+   */
+  useEffect(() => {
+    let alive = true;
+    setLocalPlayback(null);
+    setLocalChecked(false);
+    if (!offlineAvailable()) {
+      // A browser/desktop shell with no bridge: there is nothing to ask, and the answer is final.
+      setLocalChecked(true);
+      return;
+    }
+    void playLocal(item.item_id)
+      .then((target) => {
+        if (!alive) return;
+        setLocalPlayback(target ? { url: target.url, contentType: target.contentType } : null);
+        setLocalChecked(true);
+      })
+      .catch(() => {
+        if (alive) setLocalChecked(true);
+      });
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [item.item_id]);
+
   // Load track info once per item (audio/subtitle pickers + routing facts).
   useEffect(() => {
     let alive = true;
+    // ⚠ WAIT for the device's answer (see the effect above): the point of that check is to avoid the
+    // server entirely when it is not needed, and racing it here would make the request anyway.
+    if (!localChecked) return;
+    // ⚠ A LOCAL FILE NEEDS NO TRACK INFO AT ALL. There is no `playback-info` call to make offline, no
+    // audio/subtitle picker to populate (a downloaded rendition is one video + one audio track, and
+    // its subtitles are not captured yet — §4.6's artwork/subtitle half), and no mode to choose.
+    // The position comes from THIS DEVICE's own queue (`spooledResumeSeconds`), because the server's
+    // resume point is exactly the fact that stopped updating when the Wi-Fi went off.
+    if (localPlayback) {
+      const start = spooledResumeSeconds(item.item_id, resumeRef.current, Number(runtime) || 0);
+      resumeRef.current = start;
+      engineStartRef.current = start;
+      hasStartedRef.current = false;
+      pendingSeekRef.current = start > 0 ? start : null;
+      warmDelete(item.item_id);
+      setInfo(null);
+      return;
+    }
     setInfo(null);
     setAudioIndex(0);
     setSubIndex(null);
@@ -498,7 +585,7 @@ export function Player({
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [item.item_id]);
+  }, [item.item_id, localChecked, localPlayback]);
 
   // Apply persisted preferences once per Player mount (volume/mute/speed/
   // quality cap carry across episodes AND browser sessions).
@@ -905,16 +992,22 @@ export function Player({
     // Runtime lets the api treat a report near the end as "finished" (mark the
     // item watched) instead of storing a resume point at the credits.
     const runtime = Number(totalRef.current) || 0;
-    void api
-      .reportProgress({
+    // ⚠ ONE call for both worlds (B4, §4.6). Playing a LOOPBACK url means the server is not assumed to
+    // be reachable at all, so the position goes into the local queue instead of at an address that
+    // will not answer. Online, the report is sent exactly as it always was — and a FAILED send is
+    // queued rather than swallowed, which is the case that makes a film watched on a plane reach
+    // Continue Watching when the Wi-Fi comes back.
+    reportProgressFromPlayer(
+      {
         item_id: item.item_id,
         position_ticks: ticks,
         is_paused: false,
         event,
         play_method: playMethodForMode(modeRef.current),
         runtime_ticks: runtime > 0 ? Math.round(runtime * 1e7) : 0,
-      })
-      .catch(() => {});
+      },
+      localPlaybackRef.current,
+    );
   };
 
   useEffect(() => {
@@ -1755,13 +1848,26 @@ export function Player({
               aria-label="Volume"
               className="hidden h-1 w-16 cursor-pointer accent-[var(--accent)] sm:block sm:w-20"
             />
-            {desiredMode ? (
+            {/* ⚠ **A film playing off the device SAYS SO (B4).** The chip used to be the HLS mode;
+                when the source is the app's own copy there is no mode to report, and the fact that
+                matters is that this is not the server's stream — nothing here depends on the Wi-Fi,
+                and (per `title`) any position reached is waiting locally to be synced. */}
+            {localPlayback || desiredMode ? (
               <span
+                title={
+                  localPlayback && queuedReports > 0
+                    ? `${queuedReports} watching position${queuedReports === 1 ? "" : "s"} will sync when this server is reachable`
+                    : undefined
+                }
                 className={`hidden rounded-full px-2 py-0.5 text-[10px] font-semibold tracking-wide sm:inline ${
-                  mode !== "direct" ? "bg-accent/15 text-accent" : "bg-white/[.07] text-zinc-400"
+                  localPlayback
+                    ? "bg-emerald-500/15 text-emerald-300"
+                    : mode !== "direct"
+                      ? "bg-accent/15 text-accent"
+                      : "bg-white/[.07] text-zinc-400"
                 }`}
               >
-                {hlsModeLabel(mode)}
+                {localPlayback ? "On this device" : hlsModeLabel(mode)}
               </span>
             ) : null}
             <button

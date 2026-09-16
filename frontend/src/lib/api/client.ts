@@ -895,6 +895,34 @@ export interface ProgressPayload {
   runtime_ticks?: number;
 }
 
+/**
+ * `GET /api/offline/bundle/{item_id}` — what a download WILL cost, before anything is packaged
+ * (ADR-0007, `backend/api/routes/offline.py`).
+ *
+ * ⚠ The two sizes mean different things and the page must not confuse them: `estimate_bytes` is the
+ * backend's own estimate taken from the library file, while `size` is the REAL artefact and stays 0
+ * until a staging file is `ready`. A Download button that shows `size` before the first download
+ * would promise 0 bytes.
+ */
+export interface OfflineBundleShape {
+  item_id: string;
+  title: string;
+  mode: string;
+  needs_transcode: boolean;
+  container: string | null;
+  video_codec: string | null;
+  audio_codecs: string[];
+  duration_s: number;
+  estimate_bytes: number;
+  /** The STAGING record's state: `missing` · `packaging` · `ready` (the backend's own words). */
+  state: string;
+  bytes: number;
+  size: number;
+  borrowed: boolean;
+  downloaded_at?: string;
+  expires_at?: string;
+}
+
 export const api = {
   // ------------------------------------------------------------------ auth
   /** Sign in as a Jellyfin user; the session is an HttpOnly cookie, never a token here. */
@@ -1011,6 +1039,17 @@ export const api = {
     postJson<ItemStateResult>(`/library/${encodeURIComponent(itemId)}/state`, { watched }),
   /** Fire-and-forget playback position report (soft no when backend absent). */
   reportProgress: (payload: ProgressPayload) => postJson<unknown>("/jellyfin/progress", payload),
+  /**
+   * The same report, made on behalf of a QUEUE rather than by a person who just pressed something
+   * (B4's progress spool, `frontend/src/features/offline/session.ts`).
+   *
+   * ⚠ `skipAuthRedirect`, and that is the whole reason it is a second method: a background replay
+   * that 401s must NOT bounce the page to the sign-in screen — nobody is watching the screen, and
+   * an expired session is not an action to react to. The queued position stays on disk for the next
+   * time that person signs in, which is the honest answer.
+   */
+  reportProgressQueued: (payload: ProgressPayload) =>
+    postJson<unknown>("/jellyfin/progress", payload, { skipAuthRedirect: true }),
   /** Same-origin stream URL for an item (token stays server-side). */
   streamUrl: (itemId: string, opts?: StreamOptions) => {
     const q = new URLSearchParams();
@@ -1059,6 +1098,25 @@ export const api = {
   /** Proxy URL for an item's 16:9 backdrop (player keyart). */
   backdropUrl: (itemId: string, width = 1600) =>
     `${BASE}/jellyfin/backdrop?id=${encodeURIComponent(itemId)}&width=${width}`,
+
+  // ---------------------------------------------------------------- offline downloads (B4)
+  /**
+   * What downloading this title would cost the server and the phone — asked BEFORE the button that
+   * commits to it (`docs/NATIVE_FEEL_AND_OFFLINE_PLAN.md` §4.6).
+   *
+   * ⚠ A 404 is an ORDINARY answer here, not an error: the server has no record of the title (it may
+   * have left the library, or its staging file was swept by the TTL). That is the `null` return, and
+   * it is what the Downloads screen says "no longer on the server" about — a thrown error would
+   * instead paint a broken panel over a screen that is working correctly.
+   */
+  offlineBundle: async (itemId: string): Promise<OfflineBundleShape | null> => {
+    try {
+      return await getJson<OfflineBundleShape>(`/offline/bundle/${encodeURIComponent(itemId)}`);
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 404) return null;
+      throw error;
+    }
+  },
 
   // ------------------------------------------------- legacy-parity surface
   /** Live rich watchlist entries (Discover/Watchlist data — dashboard mapper). */

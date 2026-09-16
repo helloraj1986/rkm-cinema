@@ -50,6 +50,19 @@ describe("guardDecision", () => {
     expect(guard({ status: "signedOut", profileSelected: false })).toBe("app");
   });
 
+  it("⚠ renders the SHELL when the server could not be REACHED — that is not a sign-out (B4)", () => {
+    // The failure this exists for: Wi-Fi off (or Tailscale down) on a phone holding downloaded
+    // films. Every call fails, `me()` included, and the old code read that as "signed out" → the
+    // login screen — which cannot be submitted either, because the server that would accept it is
+    // the thing that is unreachable. The app renders; each screen reports its own failure, and the
+    // server still refuses every route it would refuse anyway.
+    expect(guard({ status: "unreachable", profileSelected: false })).toBe("app");
+    expect(guard({ status: "unreachable", enforcementSeen: true, profileSelected: false })).toBe("app");
+    // ⚠ And it does NOT become the picker: nobody has said who is watching, and asking "who's
+    // watching?" requires the same unreachable server to answer.
+    expect(guard({ status: "unreachable", profileSelected: false, profileStale: true })).toBe("app");
+  });
+
   it("forces the login view once the SERVER has refused an app call", () => {
     // This is how Phase 2 arms the frontend without touching it: the 401 is the signal.
     expect(guard({ status: "signedOut", enforcementSeen: true, profileSelected: false })).toBe(

@@ -19,7 +19,23 @@
  */
 
 /** Where the session check has got to. `loading` until `me()` answers. */
-export type AuthStatus = "loading" | "signedIn" | "signedOut";
+/**
+ * What the session check knows.
+ *
+ * ⚠ **`unreachable` is not `signedOut` (B4, 2026-09-16).** Until this phase the two arrived as one
+ * state: `GET /api/auth/me` failing for ANY reason fell through to `signedOut`, so a phone with the
+ * Wi-Fi off — or with Tailscale down — showed the SIGN-IN screen to somebody who is signed in. That
+ * is wrong on its own terms (nobody signed anything out), and it makes offline playback impossible:
+ * a downloaded film is behind a login form that cannot be submitted, because the server that would
+ * accept it is the thing that is unreachable.
+ *
+ * ⚠ Failing open to the SHELL is the honest answer here, and the reason is that this app enforces
+ * nothing client-side: every route is session-scoped on the server, so a shell that renders without a
+ * verified session can display nothing it is not entitled to — it simply shows its own empty and
+ * offline states. The alternative (a login form) offers a control that cannot work, which is the one
+ * thing §4.5 of the offline plan forbids.
+ */
+export type AuthStatus = "loading" | "signedIn" | "signedOut" | "unreachable";
 
 /** What the route guard should render for the current state. */
 export type GuardDecision = "skeleton" | "app" | "login" | "picker";
@@ -72,6 +88,9 @@ export function guardDecision({
   profileStale,
 }: GuardInput): GuardDecision {
   if (status === "loading") return "skeleton";
+  // ⚠ "We could not ask" is not "you are signed out" — see `AuthStatus`. The shell renders and each
+  // screen states its own failure; the server still refuses every route it would refuse anyway.
+  if (status === "unreachable") return "app";
   if (status === "signedOut") return enforcementSeen ? "login" : "app";
   if (profileStale) return "picker";
   return profileSelected ? "app" : "picker";

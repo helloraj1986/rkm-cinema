@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>RKM offline page harness — frame</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <!--
+      The offline page harness (B4). The frame itself does no stubbing: `offline-frame.tsx` installs
+      the fake `window.__rkmOffline` BEFORE it mounts the app, so `?bridge=0` is a browser with no
+      bridge and `?bridge=1` is the iOS shell. Driven by `tools/check_offline_page.py`.
+    -->
+    <script type="module" src="/harness/offline-frame.tsx"></script>
+  </body>
+</html>

@@ -43,7 +43,10 @@ export type IconName =
   | "lock"
   | "chevron-down"
   | "switch"
-  | "logout";
+  | "logout"
+  // Offline downloads (B4): remove a film from the device, and re-send a download that stopped.
+  | "trash"
+  | "refresh";
 
 const OUTLINE: Record<string, string> = {
   home: '<path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>',
@@ -99,6 +102,13 @@ const OUTLINE: Record<string, string> = {
   "chevron-down": '<path d="m6 9 6 6 6-6"/>',
   switch: '<path d="M4 8h13l-3.5-3.5M20 16H7l3.5 3.5"/>',
   logout: '<path d="M15 3h3a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-3"/><path d="M10 17l-5-5 5-5"/><path d="M5 12h12"/>',
+  // Offline downloads (B4). `trash` is the only destructive control in the app, so it follows the
+  // same Lucide outline as the rest (lid, body, two lines) rather than a heavier glyph.
+  trash:
+    '<path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/>',
+  // Re-send a download that stopped (Resume/Retry): a circular arrow, Lucide's "refresh-cw" half.
+  refresh:
+    '<path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/>',
 };
 
 const FILLED: Record<string, string> = {

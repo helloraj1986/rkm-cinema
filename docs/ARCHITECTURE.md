@@ -1,5 +1,8 @@
 # RKM Cinema — Architecture
 
+> ⚠ **Integrating with the phone/tablet app? Read §17 first** — the three parts (backend · web · the
+> iOS shell) and the two seams between them, in one place. §2 is the same picture with the shell in it.
+
 > **Identity: read §11 and [`adr/ADR-0006`](adr/ADR-0006-delegated-identity-and-sessions.md) before
 > touching anything that calls the media server.** Since 2026-09-12 the app has a session per browser
 > and a *profile* per person, and the credential a call is made with is decided in ONE place
@@ -46,29 +49,73 @@ holds all secrets), and every route but `/api/health` and the sign-in routes nee
 
 ## 2. High-level layout
 
+**Three parts, two seams.** There is ONE UI (the React app), ONE implementation of every business rule
+(the api), and ONE native app whose job is *only* the things a web page cannot do. Nothing below is a
+second implementation of anything else (see §17 for the long form).
+
 ```
- Browser (Tailnet device)
-      │  http://rkm-hp.tail8d5e8.ts.net:8124
-      ▼
- ┌──────────────────────────────┐
- │  nginx (web container) :8124 │   serves the React shell (frontend/)
- │  ─ proxies /api/* → api:8000 │
- └──────────────┬───────────────┘
-                ▼
- ┌──────────────────────────────┐
- │  FastAPI  api  container     │   uvicorn api.main:app  (modular)
- │  /api/health /config /status │   holds RADARR_KEY, SONARR_KEY, JELLYFIN_KEY…
- │  /api/download /search       │
- │  /api/library /jellyfin/*    │
- │  /api/quality                │
- └───────┬──────────┬───────────┘
-         │          │   read /write
-         ▼          ▼
- ┌────────────┐  ┌───────────────────────────────┐
- │ watchlist  │  │  External: Jellyfin·Radarr     │
- │ .json (ro) │  │  Sonarr·TMDB·qBittorrent·YT    │
- └────────────┘  └───────────────────────────────┘
+                    ┌──────── the ONE UI: frontend/ (React 18 + Vite) ────────┐
+                    │  built INTO the web image — not volume-mounted (§13)    │
+                    └───────┬────────────────────────────────────┬────────────┘
+                            │  served over http(s)               │
+        ┌───────────────────┴──────────┐              ┌──────────┴───────────────────────────┐
+        │ BROWSER  (Tailnet or LAN)    │              │ iPhone/iPad — apple/ios (WKWebView)  │
+        │  the SPA, loaded from nginx  │              │  loads the SAME live SPA, and adds    │
+        │                              │              │  what a page cannot do:              │
+        │  · full UI, no install       │              │   · background URLSession downloads  │
+        │  · nothing offline           │              │   · the app's own filesystem         │
+        └───────────────┬──────────────┘              │   · a LOOPBACK HTTP server (127.0.0.1)│
+                        │                             │   · window.__rkmOffline (the bridge)  │
+                        │                             └───────┬──────────────────┬────────────┘
+                        │  same-origin /api/*  ─────── SEAM 1 │                  │ SEAM 2:
+                        │  (the same one the page uses)      │                  │ page ↔ native bridge
+                        ▼                                    ▼                  ▼
+     ┌──────────────────────────────────────────────────────────────────────────┐
+     │ nginx — web container, host port RKM_DASHBOARD_PORT (:8124)               │
+     │   /            → the built SPA        Cache-Control: no-cache             │
+     │   /assets/*    → year-long immutable  (content-hashed by the build)       │
+     │   /api/*       → api:8000             no-store JSON · artwork 7 days      │
+     │   /openapi.json→ api:8000             (so tools/check_deployed.py works)  │
+     └───────────────────────────────────┬───────────────────────────────────────┘
+                                         ▼
+     ┌──────────────────────────────────────────────────────────────────────────┐
+     │ FastAPI — api container:  uvicorn api.main:app                           │
+     │  holds EVERY secret · sessions + identity (§11) · the only route surface  │
+     │   /api/library* ·status ·search ·download   the library + acquisition     │
+     │   /api/jellyfin/stream|hls|progress|poster  in-browser playback proxy     │
+     │   /api/offline/*                            package + serve a download    │
+     └───┬──────────────┬───────────────┬──────────────────┬────────────────────┘
+         ▼              ▼               ▼                  ▼
+   Jellyfin        Radarr/Sonarr    TMDB · OpenSubtitles   state on disk (§10)
+   THE media       Prowlarr/qBit     YouTube (scraper)      watchlist.json ·
+   truth     ──►  (acquisition)     (metadata/subtitles)   sessions.json ·
+   (files on D:\RKM_MEDIA · B:\RKM_MEDIA)                  subtitles.json
 ```
+
+⚠ **The seams, named — these are the only two places integration happens:**
+
+| Seam | Protocol | Who owns the contract |
+|---|---|---|
+| **1. Page → api** | plain HTTP, same origin, `HttpOnly` session cookie | `docs/api/openapi.v1.json` + `frontend/src/lib/api/client.ts` (ADR-0001, additive-only) |
+| **2. Page ↔ native** | `postMessage` / injected JS global, both directions | `OfflineBridgeContract.swift` (pure, executed on Linux) + `docs/adr/ADR-0009` (versioned `{v:1}`) |
+
+⚠ **Nothing else is a seam.** The shell has no API client of its own for the app's data (it does not
+need one — the page talks to nginx directly), and the page never touches the app's filesystem (it cannot
+— different process, different sandbox). **Anything that looks like a third integration path is a
+design smell**; §18.2 is the one exception worth having (bearer tokens for native fetches).
+
+**Who owns which truth — the rule that explains most of the code:**
+
+| Fact | Owner | Why not the other side |
+|---|---|---|
+| is this title in the library · resume position · watched | **Jellyfin** | it holds the files; the app is a client of it (§6) |
+| the session, who is watching, which credential a call acts as | **the api** (`sessions.json` + §11) | one place decides identity, or a call silently acts as the admin |
+| the acquisition queue, subtitle choices, staged downloads | **the api** (`watchlist.json`, `subtitles.json`, `/shared/offline`) | durable, shared, and safe from the OS purging a browser cache |
+| the UI, and every rule about what is *offered* | **frontend/** | one UI, so it cannot disagree with itself across clients |
+| **what is on THIS device** · whether a film can play with no network | **the native app** | only the app can see its own container and its own socket |
+
+⚠ **A fact has exactly one owner, and a screen that needs two facts must ask two owners** — that is why
+the detail page asks the app *and* the server before it offers a download (§17.4).
 
 ---
 
@@ -334,6 +381,8 @@ queue), subtitle **usage** counts (they rank one download quota), and the server
   Switch profile · Settings · Sign out).
 - **`/login` and `/profiles` sit OUTSIDE the app shell** for the same reason: they must render when
   nothing else can — including the day enforcement is armed and every other route is refusing.
+- ⚠ **This is the whole UI for EVERY client** — the browser and the iOS shell alike (§17). There is no
+  second UI to keep in sync, which is the point.
 - **Browser checks.** `frontend/harness/*.html` are frames that mount real views over a stubbed api;
   `tools/check_*.py` drive them headless (login flow, picker, nav access, household, password,
   library scan, subtitle panel). Run them against `npx vite --port 5199`.
@@ -413,3 +462,193 @@ State: `<media root>/rkm/subtitles.json` — `prefs` (per item: provider, `subti
 language, display title, `disabled`) and `usage` (per subtitle: count, last used). Atomic
 writes, corrupt-tolerant, JSON by design. The quota is read from the API at runtime — never
 hardcoded — and the UI shows a number only when the API has actually reported one.
+
+---
+
+## 17. The phone/tablet app, and how the three parts are integrated
+
+**Read this before touching `apple/`, or before changing anything the app loads.** The one-sentence
+version: **the iOS app is a shell around the LIVE web UI, and the only code in it is the work a web page
+physically cannot do.**
+
+### 17.1 The shape — and why it is not a second client
+
+```
+apple/
+├── Shared/Sources/RKMServerKit/   the ONE thing both apps need: a typed server address
+│                                  (parse · normalise · persist) + logging (LOGGING.md)
+├── ios/RKMCinema/  (29 Swift files)  WKWebView shell — App/ · Shell/ · Offline/ · Server/ · Debug/
+└── tvos/                            ⚠ EMPTY TODAY (0 Swift files). Planned, not built.
+```
+
+The iOS app has **no bundled UI and no API client of its own**. It:
+
+1. takes a server address a human typed (normalised; `https://` assumed when no scheme is given);
+2. loads that address in a `WKWebView` — **the same React app nginx serves**;
+3. injects two scripts at document-start (instrumentation, and the `window.__rkmOffline` bridge global);
+4. answers bridge commands from the page, and adds the native-only capabilities in §17.2.
+
+**Consequences, both of them load-bearing:**
+
+- ✅ **Every `apply` reaches the phone with no app rebuild and no store release.** A UI change is a web
+  change, full stop. (This is why B4 — the whole offline UI — shipped as a web phase.)
+- ⚠ **The app can be OLDER than the page.** A page deployed today may be viewed by a build from last
+  month. That is exactly why the bridge is **versioned and refuses by version** (ADR-0009 D6), and why
+  every page-side feature must degrade rather than assume: **no bridge → no offline affordance at all**
+  (`frontend/src/features/offline/bridge.ts::bridgeAvailable()`).
+- ⚠ **tvOS cannot use this seam at all** — tvOS has no WebKit. `tvos/` will be a *real* client: its own
+  SwiftUI views plus an API client generated from `docs/api/openapi.v1.json`, and it additionally needs
+  the bearer-token work (no browser session exists there). Nothing is built yet; do not assume it.
+
+### 17.2 What the shell adds — the capability table
+
+| Capability | Where | Why the web page cannot do it |
+|---|---|---|
+| **Background downloads** | `Offline/OfflineDownloads.swift` + `App/AppDelegate.swift` | a page-side download stops when the app is backgrounded, and WebKit's Cache API is capped (~50 MiB per partition) and evictable — one film exceeds the whole budget (plan §4.1) |
+| **The app's own filesystem** | `Offline/OfflineStore.swift` → `Application Support/Offline/` | the page's origin has no access to the app's container. `Caches/` is purgeable, so it is not used; the directory is backup-excluded so multi-GB films stay out of iCloud |
+| **A loopback HTTP server** | `Offline/OfflineServer.swift` (`NWListener`, `127.0.0.1`, ephemeral port) | a `file://` URL is cross-origin to the page's origin, and a custom scheme handler was **measured out for media** (B0/E1: `mediaError=code=4` with bytes served). Loopback HTTP also gives real `Range` seeking for free |
+| **The bridge global** | `Shell/WebShellView.swift` + `Offline/OfflineBridge.swift` | a page cannot call Swift. `WKScriptMessageHandlerWithReply` makes `postMessage` return a Promise — ⚠ the plain `add(_:name:)` form must NOT be used, it is a promise that never settles |
+| **Cookie mirroring for native fetches** | `Offline/CookieMirror.swift` | a native `URLSession` has no jar of the page's. ⚠ A hard prerequisite since `RKM_AUTH_REQUIRED=true`: a background session's own cookie handling loses cookies on redirects (Apple r.16,852,027), so the cookie is sent as an explicit `Cookie:` header |
+| **The offline UI's trigger** | `Shell/WebBridge.swift` (a new `offline` report case) | the native→page direction needs a witness outside the native code: the page reports what it received back through the EXISTING instrumentation channel (ADR-0009 D9) |
+
+### 17.3 Seam 2, in short — the bridge contract
+
+```
+page → native   { v:1, c:"list"|"download"|"cancel"|"delete"|"play"|"ping", itemId?, title?, mode? }
+                  → { v:1, ok:true,  result:{ items[], bytes, count, play?, accepted? } }
+                  → { v:1, ok:false, error:{ code, message } }
+native → page   window.__rkmOffline.emit({ v:1, e:"state"|"progress"|"ready"|"removed", … })
+page            window.__rkmOffline.request({c:…}) → a Promise (`.list()/.play()/.download()/…`)
+```
+
+Four rules that are easy to get wrong, all enforced in code that is *executed* on Linux
+(`OfflineBridgeContract.swift`, 445+ checks):
+
+1. **`v` is required and exact** — a missing version and a *newer* page are both refused with a sentence
+   ("update the app"), never guessed at;
+2. **every refusal is a REPLY**, with a stable `code` the page switches on and a `message` a human can
+   act on. An unanswered `postMessage` is a button that does nothing and an error nowhere;
+3. **the event stream is throttled by a PURE planner** — state changes are never throttled, progress is
+   whole-percent steps, a rewind is a state change that resets the throttle, an unknown total is never a
+   percentage;
+4. ⚠ **the loopback URL is a capability**: never in the manifest, never in a log, handed only to the
+   live page. The port changes every launch, so a cached URL is a stale URL.
+
+### 17.4 The offline path end to end — the one flow that crosses all three parts
+
+**(a) A download — the page asks two owners, then the app does the work.**
+
+```
+ page                     native (iOS)                         api                    Jellyfin
+  │  GET /api/offline/bundle/{id} ─────────────────────────────►│  plan(): mode · estimate ·
+  │  ◄── rendition · "about 2.1 GB" · needs_transcode ──────────│  container · subtitles   [no packaging]
+  │  list  ───────────────►│  what is ALREADY on this device     │
+  │  ◄── items[] (state · bytes · totalBytes · url) ────────────│
+  │  download{itemId,title,mode} ───►│  prepare ─────────────────►│  package (remux/transcode)
+  │                        │  status ──────────────────────────►│  into /shared/offline  ──► ffmpeg
+  │                        │  (⚠ "packaging": NOTHING on the device yet)
+  │  ◄── state/progress events ─────│  file (Range) ◄───────────│  borrowed = the library file
+  │                        │  verify size + ETag → `ready` → mint a loopback handle
+  │  ◄── ready{url} ────────────────│
+```
+
+⚠ **Two owners, two answers**: the SERVER says what a download would cost; the APP says what is already
+on the phone. A page that conflated them would offer to download a film it holds, or claim a film is on
+the device when it is not. ⚠ And the **packaging** phase is why a row can sit at zero bytes for minutes:
+the number is honest ("nothing has arrived"), the *label* was not — it now says
+**"Preparing on the server…"**.
+
+**(b) Playing it with the network off.**
+
+```
+ page                                native                        network
+  │  play{itemId} ───────────────────►│  start the loopback server (if not up)
+  │  ◄── play{url: http://127.0.0.1:<port>/offline/<handle>.mp4} ──│
+  │  <video src=loopback>  ⚠ and NO /api/jellyfin/playback-info call at all
+  │  ◄══ bytes over loopback, real Range/206 ══│                   │   ← nothing here
+```
+
+⚠ The player asks the **device first** and then does not ask the server: `playback-info` is pointless
+online and impossible offline. The resume point comes from the device's OWN queue (the server's position
+is the fact that stopped updating), and the engine key stays empty until the device has answered — so no
+stream is started for a film that turns out to be local.
+
+**(c) A position reached with no server — the queue that makes it feel finished.**
+
+```
+ offline play ──► progress reports ──► QUEUE on the device (localStorage, stamped with owner+server origin)
+                                          │  replayed when the server is reachable
+                                          ▼
+                                    POST /api/jellyfin/progress ──► Jellyfin user-data write ──► Continue Watching
+```
+
+⚠ **The queue keeps the FURTHEST position per title, never the latest** (a reopened film reports `start`
+at the resume point, and last-write-wins would rewind a viewer by a whole act), a successful **live** post
+supersedes everything at or below it, and a replay is dropped by its own timestamp so a newer position
+survives the race. It is identity-bearing state: another profile's queue — or another server's — is
+dropped on read. ⚠ The page is the owner here, not the app: the position is the PLAYER's fact, and the
+app never sees it.
+
+### 17.5 What a change costs — decide with this table
+
+| You changed… | Deploy | Round needed |
+|---|---|---|
+| `frontend/` (UI, offline page, player) | `docker compose -p rkm-bundled up -d --build web` | none — visible on the phone immediately |
+| `backend/` (routes, services) | `… up -d --build api` (add `web` if both) | none |
+| `apple/ios/` (native) | nothing to deploy | ⚠ a Mac build + the app's own gate (`mac-round.sh`, then the log-reading checker) |
+| **the BRIDGE contract** (seam 2) | both of the above | ✅ **both sides** — and additive-within-`v1` only; a breaking change is a `v2` plus a page+app pair (ADR-0009 D6) |
+| `.env` / `render_config.py` / compose / provisioner | the full `bootstrap.ps1` | ⚠ full bootstrap re-provisions and can cancel a library scan |
+
+### 17.6 ⚠ Integration traps, each of which has already cost a round
+
+- ⚠ **ATS is `NSAllowsArbitraryLoads` ONLY.** Adding `NSAllowsLocalNetworking` (or a `…InWebContent` /
+  `…ForMedia` variant) makes iOS **ignore** it on iOS 10+, which breaks plain `http://` to the tailnet
+  **and** the loopback server outright. Read `Config/Info.plist`'s comment before touching it.
+- ⚠ **There is no service worker** (E2: `navigator.serviceWorker` is absent on this WebView, on a secure
+  origin as well as the app's). The offline-SHELL story is therefore the HTTP cache headers in
+  `nginx/default.conf` + the persisted query cache (A1) — not a SW.
+- ⚠ **A web view with a socket is not a page.** Between `attach` and the first `didFinish` there is no
+  document, and `evaluateJavaScript` against it THROWS. The bridge tracks `pageIsReady`; skipping events
+  there loses nothing because a page load re-announces every title (ADR-0009 D7a).
+- ⚠ **A 204 is a SUCCESS WITH NO BODY**, and a browser gives it a null body whatever the server writes.
+  `POST /api/jellyfin/progress` answers 204 — so any client that parses every success as JSON turns an
+  accepted report into a failure. Found on a phone, not by a test (ADR-0010 D9a).
+- ⚠ **A silent identity fallback is worse than an error**: `_user_id()` falls back to the FIRST account in
+  the store, so a write made without a published identity acts as somebody else (ADR-0006, §11).
+- ⚠ **`LogRedactor` rewrites the words the security grep searches for, inside ANY message** — so never
+  name a logged thing with one of them (`LOGGING.md` §9).
+- ⚠ **A fake more permissive than the real route is a gate that cannot fail.** The offline gate's stub
+  answered `200 {ok:true}` for a route that answers 204, and passed six scenarios on a live bug.
+
+---
+
+## 18. Design improvements this architecture suggests, ranked
+
+Ordered by (value × certainty) ÷ cost. **Nothing here is required for the app to work today**; each item
+is an argument about what the CURRENT design makes easy to get wrong.
+
+| # | Improvement | Why (and what it would have caught) | Cost | Verdict |
+|---|---|---|---|---|
+| **1** | **Contract-shape tests shared by the api and the frontend stubs.** One table of `(method, route, status, body)` that the backend asserts AND the harness stubs are generated from | ⚠ The 204 bug: the api was right, the client was wrong, and every gate was green because each side was tested against its own assumption. This is the highest-value change on the list — it removes a whole class of "works everywhere but in the app" | 1–2 evenings | **Do first** |
+| **2** | **A machine-readable bridge schema** (one JSON file that both `OfflineBridgeContract.swift`'s Linux checks and the TS `lib.ts` parse) | The two halves of seam 2 are written twice, in two languages, and drift is silent until a Mac round. A single schema turns "the page reads a field the app stopped sending" into a red test | ~1 evening | With B5 |
+| **3** | **`preparing` as a real state in the native `OfflineState`** | The page currently infers "the server is still packaging" from `bytes == 0 && totalBytes == 0` and says "Preparing on the server…". That is honest but coarse: a stalled transfer with no bytes yet reads the same. A real state (and the server's own packaging progress in it) makes the row exact | small, but needs a Mac round | With B5 |
+| **4** | **Persist the last profile id** so a COLD offline launch can stamp the queue | Today a launch with no network runs the session with no owner, so positions reached then are memory-only and lost on a reload. The query cache already writes an owner to disk — the same fact, for the same reason | small | With B5 |
+| **5** | **Bearer/device tokens instead of cookie mirroring** (`APPLE_CLIENTS_PLAN` Phase 2) | Removes the session-expiry edge on native fetches and deletes `CookieMirror` + the explicit `Cookie:` header. ⚠ It is also a PREREQUISITE for tvOS, which has no browser session to mirror | medium (backend + native) | Before tvOS |
+| **6** | **Decide what "my downloads" means on a SHARED device** | The file is the household's, not the profile's (ADR-0007 D6): on the family iPad, one person's downloads are visible to the next. Today the row shows the title only, so it is not a leak of *content* — but it is a product decision that is currently implicit | product call + medium work | His call |
+| **7** | **One shared `tools/harness.py`** (frame loading · dev-server freshness · **a fresh page per scenario**) | Every browser tool re-implements this, and each re-implementation has had the same two failures: a stale module served by a non-watching dev server, and a frame that never mounts because a previous scenario left a `<video>` playing. Both cost real time today | half an evening | **Do first** |
+| **8** | **Generate `ROUTE_LEVELS`** from the router declarations (a `level=` argument on each `@router.get`) | The inventory is hand-maintained, and it exists (correctly) to make a missing protection decision a test failure. Generating it removes the one way it can be wrong | small | Next api phase |
+| **9** | **An offline SHELL for cold launch** (a `WKURLSchemeHandler` serving the DOCUMENT and assets from the app's container) | E1 measured custom schemes out for **media** — but a document is not media. Today, a cold launch with no network depends on WebKit's HTTP cache and may not paint at all, which is the last gap in "it works offline" | medium-high, needs a Mac round | Only if he wants cold-launch offline |
+| **10** | **Split `PROGRESS.md`** into a short current-state page + a history archive | It is ~5,100 lines and the file the next session reads first. The rationale already lives in ADRs; the status file can be a page, not a book | small | Housekeeping |
+
+**⚠ What I would NOT change:** the single React UI, the "one implementation per business rule" layering,
+the api as the only secret-holder, the pure-core/executable-rules pattern for native code, or the ADR +
+plan + PROGRESS convention. Those are why a phase like B4 could be verified on Linux and shipped to a
+phone the same evening — and why the ONE bug that got through (the 204) was found by a person in minutes
+rather than by a code review in weeks.
+
+⚠ `ARCHITECTURE_AUDIT.md` is a PHASE-1 audit of the LEGACY app — read it as history (several of its
+"gaps" have shipped); this §18 is about the architecture as it stands today.
+
+**In one line:** do **1** and **7** next (both are test-infrastructure, both pay back immediately), take
+**2 · 3 · 4** with B5, put **5** on the critical path to tvOS, and treat **6** and **9** as your product
+decisions rather than engineering ones.

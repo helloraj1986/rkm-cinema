@@ -19,6 +19,10 @@ struct DebugHUD: View {
 
     @EnvironmentObject private var app: AppModel
     let shell: WebShellModel?
+    /// ⚠ Phase B2's dev-only controls. They live in the overlay because the overlay is the only surface
+    /// the Mac round can reach: `apple/LOGGING.md` §4 already made this the place where a screenshot and
+    /// the file log are joined, and a download has to be startable before B4 adds a page button for it.
+    let offline: OfflineDownloads
 
     @State private var showingActions = false
 
@@ -50,6 +54,9 @@ struct DebugHUD: View {
         VStack(alignment: .leading, spacing: 4) {
             header
             lines(entries: entries)
+            #if DEBUG
+            OfflineDebugPanel(offline: offline)
+            #endif
         }
     }
 
@@ -84,6 +91,10 @@ struct DebugHUD: View {
             // screen where six real requests sat right below it. §4 defines this field as the last
             // request; a line with no id is not one.
             field("net", entries.first { $0.category == .net && $0.correlationID != nil }?.hudText ?? "—")
+            // ⚠ Phase B2: one line of the downloader's state in the compact view, because a screenshot
+            // of the collapsed overlay is the cheapest evidence a Mac round can produce — and the full
+            // interactive panel is one tap below it.
+            field("off", offline.hudRows.first ?? "—")
             if let lastError = entries.first(where: { $0.level == .error }) {
                 field("last", "⚠ \(lastError.message)")
             }

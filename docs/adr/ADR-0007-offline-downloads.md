@@ -1,6 +1,6 @@
 # ADR-0007: Offline downloads are a staged, server-packaged, byte-ranged file
 
-- **Status:** Accepted (phase B1 built; B2–B5 not built)
+- **Status:** Accepted (phase B1 built; **B2 built** — see ADR-0008; B3–B5 not built)
 - **Date:** 2026-09-16
 - **Phase:** `feat/offline-api` (`NATIVE_FEEL_AND_OFFLINE_PLAN.md` §4.2/§4.3/§6, phase **B1**; depends on
   the B0 spike, `apple/SPIKE_E1_E2.md`)

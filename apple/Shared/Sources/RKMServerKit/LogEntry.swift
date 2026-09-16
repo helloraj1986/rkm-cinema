@@ -52,6 +52,9 @@ public enum LogCategory: String, CaseIterable, Sendable {
     case auth
     case library
     case playback
+    /// Downloading and storing titles on the device (phase B2+) — its own area on purpose, so a Mac
+    /// round can be filtered to it: `--predicate 'category == "offline"'`.
+    case offline
     /// What the SwiftUI layer did — row counts, state changes.
     case ui
     /// Anything from inside the web page: `console.*`, JS errors, unhandled rejections.

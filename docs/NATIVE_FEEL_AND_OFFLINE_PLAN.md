@@ -393,27 +393,45 @@ per-language URL.
 
 ### 4.4 Native side (the shell)
 
-New: `apple/ios/RKMCinema/Offline/`
+✅ **BUILT in B2** (`feat/offline-downloads`, ADR-0008) — the plan's file list, as it actually landed:
 
-| File | Responsibility |
-|---|---|
-| `OfflineStore.swift` | The container layout + `manifest.json` (item id, title, rendition, bytes, downloaded-at, poster file, subtitle files), CRUD, atomic writes. |
-| `OfflineDownloader.swift` | `URLSession` **background** configuration, one task per item, progress KVO/closures, resume via `Range` on failure, Wi-Fi-only option, retry with backoff. |
-| `OfflineServer.swift` | Loopback HTTP/1.1 on `127.0.0.1` (`Network.framework` `NWListener`): `GET`/`HEAD` only, `Range`/206/416, correct `Content-Type`, opaque tokens instead of paths (**no path traversal by construction**), bound to loopback only. |
-| `OfflineBridge.swift` | The page↔native contract (§4.5). |
-| `AppDelegate` addition | `application(_:handleEventsForBackgroundURLSession:completionHandler:)` — background sessions are delivered through the app delegate, and this app is SwiftUI `@main` with no delegate today. |
+| File | Responsibility | Where the decisions live |
+|---|---|---|
+| `Offline/OfflineManifest.swift` | The container layout + `manifest.json` (id, title, rendition, bytes, ETag, downloaded-at, state), CRUD, atomic writes, item-id validation | ⚠ **Foundation-only — compiled and falsified on Linux** |
+| `Offline/OfflinePlan.swift` | Status → meaning, the resume decision, `Content-Range` parsing, the splice plan, the retry policy | ⚠ **Foundation-only — same gate** |
+| `Offline/CookieHeader.swift` | Which cookies may go on which request (domain/path/expiry/Secure/CRLF/duplicates) | ⚠ **Foundation-only — same gate** |
+| `Offline/OfflineStore.swift` | The files: `.part` append, whole-file replace, atomic publish, disk-truth reconciliation, `isExcludedFromBackup` | iOS |
+| `Offline/OfflineAPI.swift` | The four offline calls (`bundle`/`prepare`/`status`/`HEAD`) + the download request builder | iOS |
+| `Offline/CookieMirror.swift` | `WKHTTPCookieStoreObserver` → the cookie snapshot the requests use | iOS |
+| `Offline/OfflineDownloads.swift` | The **background** `URLSession`, one task per item, progress, retries, launch restore, the delegate | iOS |
+| `App/AppDelegate.swift` | ⚠ `handleEventsForBackgroundURLSession` + the completion handler — the reason B2 needs a delegate at all | iOS |
+| `Debug/OfflineDebugPanel.swift` | ⚠ DEBUG-only: the trigger that makes this phase testable before B4's page buttons exist | iOS |
+| `Offline/OfflineServer.swift` · `Offline/OfflineBridge.swift` | loopback HTTP server + the page↔native contract | **B3 — not built** |
+
+⚠ **Everything Apple-SDK-shaped is unverified until the Mac round** (`WORKFLOW.md` §5): written,
+import-checked, syntax-checked, and its rules executed and falsified on Linux, but not *run*.
 
 ⚠ **Auth for native fetches:** a native `URLSession` does **not** share the web view's cookie jar. Two
 options, in order of preference:
 
 1. **Cookie mirroring (no backend change):** copy cookies from
-   `WKWebsiteDataStore.default().httpCookieStore` into `HTTPCookieStorage.shared` before starting
-   downloads, and re-sync on `rkm_session` refresh/sign-in. Cheap, keeps today's auth model, and it is
-   testable (a download that 401s is an immediate, visible failure rather than a silent empty file).
+   `WKWebsiteDataStore.default().httpCookieStore` before starting downloads, and re-sync on
+   `rkm_session` refresh/sign-in. Cheap, keeps today's auth model, and it is testable (a download that
+   401s is an immediate, visible failure rather than a silent empty file).
 2. **A device token** — the bearer work already planned as **Phase 2** of `APPLE_CLIENTS_PLAN.md`
    ("non-browser auth"), stored in the Keychain. Cleaner, and it removes the session-expiry edge; but
    it is a backend change and a bigger dependency for this feature. **Recommendation: start with (1),
    move to (2) when Phase 2 lands.**
+
+✅ **CHOSEN: (1) — with one deliberate deviation, recorded in ADR-0008 D2.** B2 reads the jar with a
+`WKHTTPCookieStoreObserver` (`Offline/CookieMirror.swift`) but does **not** copy the cookies into
+`HTTPCookieStorage.shared`; it sets the `Cookie:` header on each request instead, and the session is built
+with `httpShouldSetCookies = false`, `httpCookieAcceptPolicy = .never`, `httpCookieStorage = nil`. Reason:
+a **background** session's own cookie handling is documented to use the shared store inconsistently (the
+known bug is cookies lost on redirects, Apple r.16,852,027) — and a silently missing cookie is a mystery
+`401` at the moment the user committed to a 2 GB download. ⚠ This became a **hard prerequisite, not a
+nicety**, when `RKM_AUTH_REQUIRED` was turned on (B1's own step-5 probe answered 401 for a session-less
+caller). Option (2) remains the recommended destination and this does not close that door.
 
 ⚠ **Storage discipline:** `isExcludedFromBackup = true` on the offline directory; a **storage cap**
 setting (e.g. 10/25/50 GB or "keep until I delete"), LRU eviction when the cap is hit, and a
@@ -498,7 +516,7 @@ shippable.
 | **A3** | A5 launch-budget instrument + gate | Baseline printed in the log; gate fails if a warm launch fetches `/assets/` | 0.5 d |
 | **B0** | **E1 + E2 spike build** (throwaway, not merged) | A downloaded file plays from loopback, with seeking, inside the shell — or the design changes before anything else is written | 0.5 d |
 | **B1** | Backend offline API + staging + packaging + TTL, tests, contract | pytest + a `curl` proof: `HEAD` gives the size, a `Range` request returns 206 + `Content-Range`, `prepare` is idempotent | 1 d · ✅ **BUILT 2026-09-16 (`feat/offline-api`)** — `services/offline.py` (staging store + packager + range parser) + `api/routes/offline.py` (6 routes) + **ADR-0007**; `pytest` green, **17/17 falsifications red**, and ⚠⚠ **the `curl` gate RAN AGAINST THE DEPLOYED CONTAINER: 20/20 PASSED** on a real 1,795 MB film (`HEAD` → 200 + `Content-Length: 1882377499`; `Range` → 206 + `Content-Range`; past EOF → 416; whole file → 200 with an `ftypisom` payload; `prepare` twice → `reused`; `DELETE` → the library file intact). ⚠ **The live gate ALSO found the ladder defect below** (`d741a56`), which is fixed in the repo and reaches the container on the next `apply` |
-| **B2** | Native: `OfflineStore` + `OfflineDownloader` + background-session delegate + cookie mirroring | Downloads complete with the app backgrounded, resume after a forced failure, and appear in the manifest after a relaunch | 2–3 d |
+| **B2** | Native: `OfflineStore` + `OfflineDownloader` + background-session delegate + cookie mirroring | Downloads complete with the app backgrounded, resume after a forced failure, and appear in the manifest after a relaunch | 2–3 d · ✅ **BUILT 2026-09-16** (`feat/offline-downloads`, ADR-0008) — `OfflineManifest` + `OfflinePlan` + `CookieHeader` are Foundation-only and **executed + falsified on Linux** (194 checks, 30 rules reverted one at a time); the Apple-SDK half is written but **unverified until the Mac round**. ⚠ Two shape changes from the plan's sketch, both in ADR-0008: the cookie is an explicit `Cookie:` header (not a copy into `HTTPCookieStorage.shared`), and a DEBUG-only HUD panel + two launch arguments exist so this gate can be exercised before B4's page buttons |
 | **B3** | Native: `OfflineServer` + `OfflineBridge` (both directions) | Loopback server passes a Range test suite; page round-trips a command and a progress event | 1–2 d |
 | **B4** | Page: download affordances, Downloads screen, offline player path, progress spool | A film downloads, plays offline with Wi-Fi off, and its position lands in Continue Watching after reconnect | 1–2 d |
 | **B5** | Lifecycle: cap, eviction, keep/pin, delete-after-watch, disk meter, error states | Cap enforced; nothing pinned is ever evicted; storage-full path pauses cleanly | 1 d |

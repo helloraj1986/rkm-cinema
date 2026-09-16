@@ -44,6 +44,12 @@ final class AppModel: ObservableObject {
 
     let store: ServerStore
 
+    /// ⚠ Phase B2 — the device half of offline downloads. A SHARED instance rather than one built here,
+    /// and that is a lifecycle fact: iOS delivers background-`URLSession` events to the application
+    /// delegate, which can run before any view (or this model) exists, so the session and its store have
+    /// to outlive the UI. `AppModel` only *configures* it, with the address the shell is using.
+    let offline = OfflineDownloads.shared
+
     init(store: ServerStore = ServerStore()) {
         self.store = store
         // ⚠ Not the stored value directly: in a Debug build the overlay starts **on** regardless of
@@ -83,6 +89,9 @@ final class AppModel: ObservableObject {
         typedAddress = address.displayString
         unreachable = nil
         phase = .shell
+        // ⚠ The downloader needs the address the shell is loading from — it is a native client of the
+        // same server, and there is no second place that knows it.
+        offline.configure(address: address)
     }
 
     // MARK: - Screen #0

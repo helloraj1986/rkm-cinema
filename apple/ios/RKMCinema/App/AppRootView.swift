@@ -20,7 +20,7 @@ struct AppRootView: View {
 
             if app.hudVisible {
                 VStack(alignment: .leading, spacing: 0) {
-                    DebugHUD(shell: app.shell)
+                    DebugHUD(shell: app.shell, offline: app.offline)
                     Spacer(minLength: 0)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)

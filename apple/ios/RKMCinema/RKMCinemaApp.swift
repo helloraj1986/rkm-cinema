@@ -13,6 +13,13 @@ struct RKMCinemaApp: App {
 
     @StateObject private var app: AppModel
 
+    /// ⚠⚠ Phase B2 needs a real application delegate: iOS delivers background-`URLSession` events to the
+    /// application delegate and nowhere else, and this SwiftUI `@main` app had none. See
+    /// `App/AppDelegate.swift` for why that would have read as "downloads only finish when the app is
+    /// open". ⚠ It is created by SwiftUI AFTER `init()` below has run, which is what keeps the log
+    /// bootstrap ahead of the delegate's own lines.
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+
     init() {
         AppLog.bootstrap()
         _app = StateObject(wrappedValue: AppModel())

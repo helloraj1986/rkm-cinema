@@ -1,0 +1,338 @@
+#!/usr/bin/env python3
+"""Phase B2's gate that does NOT need the Mac — and, on request, its falsification.
+
+⚠ Why this exists is in `apple/WORKFLOW.md` §5: development happens on Windows, testing happens on the
+Mac, and *everything UI* is Mac-only. So the part of an offline downloader that is easy to get silently
+wrong — where a resume starts, whether a partial belongs to the file the server is now offering, what a
+`206` with a mismatched `Content-Range` means, which failures are worth retrying, whether an item id can
+escape its directory, whether a cookie value can reach the log — is written as pure Foundation and
+*executed here*.
+
+What it does:
+
+  1. compiles the three pure sources under `apple/ios/RKMCinema/Offline/`
+     (`OfflineManifest.swift`, `OfflinePlan.swift`, `CookieHeader.swift`) together with the harness in
+     `apple/scripts/offline-core-tests/main.swift`, using `swiftc`;
+  2. runs it and reports PASS/FAIL — these are the SAME sources the iOS target compiles, not a copy;
+  3. with `--falsify`, reverts each rule in a scratch copy of those sources and requires the harness to
+     go RED on the specific check that rule protects. A rule whose mutation still passes is a rule that
+     proves nothing, and this script fails in that case.
+
+⚠ Build output goes to `~/tmp` (or `$RKM_CHECK_TMP`), never `/tmp`: `/tmp` is mounted `noexec` in this
+sandbox, so a binary there cannot be run at all — the failure reads as a compile error and costs an hour.
+
+Usage:
+    python3 apple/scripts/check-offline-core.py              # compile + run
+    python3 apple/scripts/check-offline-core.py --falsify    # + revert every rule, require each to fail
+
+Exit codes: 0 = PASS · 1 = a check FAILED (or a mutation did not) · 2 = the tool itself could not run
+(stale mutation source, missing file) · 3 = no `swiftc` here.
+"""
+from __future__ import annotations
+
+import os
+import pathlib
+import shutil
+import subprocess
+import sys
+import tempfile
+
+REPO = pathlib.Path(__file__).resolve().parents[2]
+OFFLINE = REPO / "apple" / "ios" / "RKMCinema" / "Offline"
+PURE_SOURCES = [
+    OFFLINE / "OfflineManifest.swift",
+    OFFLINE / "OfflinePlan.swift",
+    OFFLINE / "CookieHeader.swift",
+]
+HARNESS = REPO / "apple" / "scripts" / "offline-core-tests" / "main.swift"
+
+# ---------------------------------------------------------------------------- what gets reverted
+#
+# Each entry: (what it protects, file, exact text, replacement, a substring of the check that must fail).
+# ⚠ The replacement is a REVERT (the rule removed or inverted), never a refinement — a mutation that
+# "improves" the code proves nothing about the check.
+MUTATIONS: list[tuple[str, str, str, str, str]] = [
+    # --- identity / layout
+    ("the item-id character rule", "OfflineManifest.swift",
+     "if let bad = raw.first(where: { !allowed.contains($0) }) {",
+     "if let bad = raw.first(where: { _ in false }) {",
+     'refuses "../../etc/passwd"'),
+    ("the item-id path check in routing", "OfflineManifest.swift",
+     "root.appendingPathComponent(try OfflineIdentifier.checked(itemId), isDirectory: true)",
+     "root.appendingPathComponent(itemId, isDirectory: true)",
+     "mediaURL refuses a traversing id"),
+    ("the MP4 family mapping", "OfflineManifest.swift",
+     '        case "mp4": return "mp4"',
+     '        case "mp4": return "mkv"',
+     "an MP4's demuxer list becomes media.mp4"),
+    ("the .part suffix", "OfflineManifest.swift",
+     'static let partialSuffix = ".part"',
+     'static let partialSuffix = ".tmp"',
+     "the partial is a sibling of the final name"),
+    # --- the record and the manifest
+    ("the safe default for an unknown state", "OfflineManifest.swift",
+     "state = rawState.flatMap(OfflineState.init(rawValue:)) ?? .paused",
+     "state = rawState.flatMap(OfflineState.init(rawValue:)) ?? .ready",
+     "an unknown state becomes paused, not ready"),
+    ("the persisted verification spelling", "OfflinePlan.swift",
+     'case sizeAndETag = "size_etag"',
+     'case sizeAndETag = "sizeETag"',
+     "size+ETag keeps the spelling it stores"),
+    ("tolerant decoding of an older record", "OfflineManifest.swift",
+     "attempts = try container.decodeIfPresent(Int.self, forKey: .attempts) ?? 0",
+     "attempts = try container.decode(Int.self, forKey: .attempts)",
+     "a manifest with missing optional fields still loads"),
+    ("the newer-manifest refusal", "OfflineManifest.swift",
+     "guard manifest.version <= currentVersion else {",
+     "guard true else {",
+     "a newer manifest version is refused"),
+    ("upsert by identity", "OfflineManifest.swift",
+     "if let index = items.firstIndex(where: { $0.itemId == record.itemId }) {\n            items[index] = record",
+     "if false, let index = items.firstIndex(where: { $0.itemId == record.itemId }) {\n            items[index] = record",
+     "upsert replaces rather than appends"),
+    # --- completion
+    ("the size equality gate", "OfflinePlan.swift",
+     "guard localBytes == remote.size else {",
+     "guard localBytes >= remote.size else {",
+     "one byte short is not complete"),
+    ("the ETag comparison", "OfflinePlan.swift",
+     "            guard local == remote else {\n"
+     "                return .incomplete(reason: \"the server's copy has changed since these bytes were fetched\")\n"
+     "            }\n"
+     "            return .complete(.sizeAndETag)",
+     "            return .complete(.sizeAndETag)",
+     "the same size with a different ETag is NOT complete"),
+    ("the zero-byte artefact refusal", "OfflinePlan.swift",
+     "guard artefact.size > 0 else {",
+     "guard artefact.size >= 0 else {",
+     "a zero-byte artefact is refused before anything else can read it as complete"),
+    # --- resume
+    ("the changed-ETag restart", "OfflinePlan.swift",
+     "if let localETag, let remoteETag = artefact.etag, localETag != remoteETag {",
+     "if false, let localETag, let remoteETag = artefact.etag, localETag != remoteETag {",
+     "a changed ETag restarts instead of splicing two different films together"),
+    ("the unprovable-partial restart", "OfflinePlan.swift",
+     "if localETag == nil {",
+     "if false {",
+     "a partial with no recorded ETag restarts"),
+    ("the bigger-than-remote restart", "OfflinePlan.swift",
+     "if localBytes > artefact.size {",
+     "if false {",
+     "a local file bigger than the server's is a restart"),
+    # --- ranges
+    ("the Content-Range strictness", "OfflinePlan.swift",
+     "start >= 0, end >= start, total > 0, end < total",
+     "start >= 0, end >= start, total > 0, end <= total",
+     'is unreadable and refused'),
+    ("not sending a Range for a fresh download", "OfflinePlan.swift",
+     "guard offset > 0 else { return nil }",
+     "guard offset >= 0 else { return nil }",
+     "a fresh download sends NO Range header"),
+    # --- assembly
+    ("the offset agreement check", "OfflinePlan.swift",
+     "guard start == requestedOffset else {",
+     "guard start >= 0 else {",
+     "a 206 from the WRONG offset is refused rather than spliced"),
+    ("the total agreement check", "OfflinePlan.swift",
+     "guard total == remoteSize else {",
+     "guard total > 0 else {",
+     "a 206 whose total disagrees with HEAD is refused"),
+    ("what a 200-to-a-range discards", "OfflinePlan.swift",
+     "return .wholeFile(discardedBytes: requestedOffset > 0 ? localBytes : 0)",
+     "return .wholeFile(discardedBytes: 0)",
+     "a 200 to a ranged request replaces the partial, and says how much it discarded"),
+    # --- retry
+    ("the attempt ceiling", "OfflinePlan.swift",
+     "guard attempt >= 1, attempt < maximumAttempts else { return nil }",
+     "guard attempt >= 1, attempt <= maximumAttempts else { return nil }",
+     "the fourth attempt does not exist"),
+    ("what is worth retrying", "OfflinePlan.swift",
+     "case .packaging, .serverError: return true",
+     "case .packaging, .serverError, .neverPrepared: return true",
+     "404 is NOT retryable"),
+    ("a cancellation is never retried", "OfflinePlan.swift",
+     "case .cancelled: return false\n        case .offline, .timedOut, .connectionLost, .other: return true",
+     "case .cancelled: return true\n        case .offline, .timedOut, .connectionLost, .other: return true",
+     "a cancellation is never retried"),
+    # --- cookies
+    ("the cookie domain rule", "CookieHeader.swift",
+     "return host == candidate || host.hasSuffix(\".\" + candidate)",
+     "return true",
+     "the cookie is NOT attached to a different host"),
+    ("the cookie path boundary", "CookieHeader.swift",
+     "        return request[index] == \"/\"",
+     "        return true",
+     "a /api cookie does NOT cover /apix"),
+    ("Secure cookies on plain http", "CookieHeader.swift",
+     "if cookie.isSecure && !isHTTPS {",
+     "if false {",
+     "a Secure cookie is not sent over plain http"),
+    ("the control-character guard", "CookieHeader.swift",
+     "        value.unicodeScalars.contains { scalar in\n            scalar.value < 0x20 || scalar.value == 0x7F\n        }",
+     "        _ = value\n        return false",
+     "a cookie value with CRLF is never forwarded"),
+    ("the duplicate-name shadowing", "CookieHeader.swift",
+     "            if let existing = chosen.first(where: { $0.name == cookie.name }) {",
+     "            if false, let existing = chosen.first(where: { $0.name == cookie.name }) {",
+     "the most specific path wins for a duplicate name"),
+    ("no cookies means no header", "CookieHeader.swift",
+     "        guard !chosen.isEmpty else {\n"
+     "            return CookieHeaderOutcome(header: nil, sent: [], skipped: skipped)\n"
+     "        }",
+     "        guard !chosen.isEmpty else {\n"
+     "            return CookieHeaderOutcome(header: \"\", sent: [], skipped: skipped)\n"
+     "        }",
+     "no cookies means NO header at all"),
+    ("the value-free description", "CookieHeader.swift",
+     '"CookieSnapshot(\\(name) @ \\(domain.isEmpty ? "?" : domain)\\(path.isEmpty ? "/" : path)"',
+     '"CookieSnapshot(\\(name)=\\(value) @ \\(domain.isEmpty ? "?" : domain)\\(path.isEmpty ? "/" : path)"',
+     "a cookie never prints its value"),
+    # --- formatting
+    ("the unknown-total dash", "OfflinePlan.swift",
+     'guard let fraction else { return "—" }',
+     'guard let fraction else { return "0%" }',
+     "an unknown total shows a dash"),
+]
+
+
+# ---------------------------------------------------------------------------- plumbing
+
+def find_swiftc() -> str | None:
+    candidates = [shutil.which("swiftc"), "/opt/swift/usr/bin/swiftc", "/usr/bin/swiftc"]
+    for candidate in candidates:
+        if candidate and pathlib.Path(candidate).exists():
+            return candidate
+    return None
+
+
+def exec_dir() -> pathlib.Path:
+    """⚠ A directory that allows execution. `/tmp` is `noexec` in this sandbox."""
+    override = os.environ.get("RKM_CHECK_TMP")
+    base = pathlib.Path(override) if override else pathlib.Path.home() / "tmp"
+    base.mkdir(parents=True, exist_ok=True)
+    return base
+
+
+def sources_in(directory: pathlib.Path) -> list[pathlib.Path]:
+    return [directory / path.name for path in PURE_SOURCES] + [HARNESS]
+
+
+def compile_and_run(
+    swiftc: str,
+    workdir: pathlib.Path,
+    *,
+    quiet: bool = False,
+    attempts: int = 2,
+) -> tuple[int, str]:
+    """Compile into `workdir` and run. ⚠ Retries a failed COMPILE once: this sandbox kills a `swiftc`
+    under memory pressure now and then, and a gate that reports a rule as unpinned because the compiler
+    was killed is a gate that cries wolf."""
+    binary = workdir / "offline-core-tests"
+    failure = ""
+    for _ in range(attempts):
+        build = subprocess.run(
+            [swiftc, "-o", str(binary)] + [str(path) for path in sources_in(workdir)],
+            capture_output=True,
+            text=True,
+        )
+        if build.returncode == 0:
+            break
+        detail = build.stderr.strip()[:2000] or "(no compiler output — the process was killed, likely memory pressure)"
+        failure = f"compile failed (rc {build.returncode}):\n{detail}"
+    else:
+        return 2, failure
+
+    run = subprocess.run([str(binary)], capture_output=True, text=True)
+    output = run.stdout + run.stderr
+    if not quiet:
+        print(output.rstrip())
+    return run.returncode, output
+
+
+def stage(swiftc: str, workdir: pathlib.Path) -> None:
+    workdir.mkdir(parents=True, exist_ok=True)
+    for path in PURE_SOURCES:
+        shutil.copy(path, workdir / path.name)
+
+
+def main(argv: list[str]) -> int:
+    falsify = "--falsify" in argv
+    swiftc = find_swiftc()
+    if swiftc is None:
+        print("no swiftc found — cannot run the B2 core gate on this machine.", file=sys.stderr)
+        print("  looked for: swiftc on PATH, /opt/swift/usr/bin/swiftc, /usr/bin/swiftc", file=sys.stderr)
+        return 3
+
+    base = exec_dir()
+    print(f"swiftc: {swiftc}")
+    print(f"temp:   {base}")
+
+    with tempfile.TemporaryDirectory(dir=base) as tmp:
+        workdir = pathlib.Path(tmp) / "pass"
+        stage(swiftc, workdir)
+        print(f"\n=== PASS RUN ({len(PURE_SOURCES)} pure sources + harness) ===")
+        code, output = compile_and_run(swiftc, workdir)
+        if code == 2:
+            print(output)
+            return 2
+        if code != 0:
+            print("\nThe B2 core gate FAILED. Fix the rules, not the harness.")
+            return 1
+
+    if not falsify:
+        print("\n(no --falsify: the rules were not reverted. Use --falsify for the full gate.)")
+        return 0
+
+    print(f"\n=== FALSIFICATION ({len(MUTATIONS)} rules reverted one at a time) ===")
+    survivors: list[str] = []
+    stale: list[str] = []
+    with tempfile.TemporaryDirectory(dir=base) as tmp:
+        root = pathlib.Path(tmp)
+        for index, (label, filename, old, new, expected) in enumerate(MUTATIONS, start=1):
+            workdir = root / f"m{index:02d}"
+            stage(swiftc, workdir)
+            target = workdir / filename
+            text = target.read_text(encoding="utf-8")
+            if old not in text:
+                stale.append(f"{label} ({filename})")
+                print(f"[{index:02d}] STALE  {label} — the text to revert is no longer in {filename}")
+                continue
+            target.write_text(text.replace(old, new, 1), encoding="utf-8")
+            code, output = compile_and_run(swiftc, workdir, quiet=True)
+            if code == 2:
+                print(f"[{index:02d}] ERROR  {label} — mutation did not compile")
+                print("       " + (output.splitlines()[0] if output else ""))
+                survivors.append(f"{label} (did not compile)")
+                continue
+            hit = expected in output
+            if code != 0 and hit:
+                print(f"[{index:02d}] red    {label} -> {expected}")
+            elif code != 0 and not hit:
+                survivors.append(label)
+                print(f"[{index:02d}] WRONG  {label} — went red, but not on {expected!r}")
+                for line in output.splitlines():
+                    if line.strip().startswith("FAIL"):
+                        print(f"       {line.strip()}")
+            else:
+                survivors.append(label)
+                print(f"[{index:02d}] GREEN  {label} — reverted and the harness STILL PASSED")
+
+    print("")
+    if stale:
+        print(f"⚠ {len(stale)} mutation(s) no longer match the source — the tool needs updating, "
+              f"and until then it proves nothing about them:")
+        for label in stale:
+            print(f"  · {label}")
+    if survivors:
+        print(f"FAIL — {len(survivors)} rule(s) are not actually pinned:")
+        for label in survivors:
+            print(f"  · {label}")
+        return 1
+    if stale:
+        return 2
+    print(f"PASS — {len(MUTATIONS)}/{len(MUTATIONS)} rules reverted, every one went red on the check it protects.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

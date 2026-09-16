@@ -60,6 +60,17 @@ MEMBER_RULES = {
         "allWebsiteDataTypes",
         "loadHTMLString",
         "evaluateJavaScript",
+        # Phase B2's cookie mirror: reached as `store.httpCookieStore.getAllCookies`, and
+        # `cookiesDidChange(in:)` is the observer callback — no `WK` prefix anywhere in the file.
+        "getAllCookies",
+        "cookiesDidChange",
+        "isSessionOnly",
+        # ⚠ NOT `isHTTPOnly`, and it was tried: our OWN `CookieSnapshot` has a property of that name
+        # (`Offline/CookieHeader.swift`), so the rule reports a missing WebKit import for a file that must
+        # stay Foundation-only — it is compiled by `apple/scripts/check-offline-core.py` on Linux, where
+        # WebKit does not exist. The genuine use (`HTTPCookie.isHTTPOnly`) is in `CookieMirror.swift`,
+        # which imports WebKit for the `WK`-prefixed names anyway. A false positive that forces a wrong
+        # import is worse than a rule that is one symbol short.
     ],
     # `uiColor` alone covers the UIColor backgrounds in this codebase (`.secondarySystemBackground`,
     # `.systemBackground`, `.separator` all appear as its argument), so the broad, noisy words
@@ -70,8 +81,17 @@ MEMBER_RULES = {
         "canBecomeFirstResponder",
         "becomeFirstResponder",
         "dequeueReusableCell",
+        # Phase B2's background assertion for the preparation phase (OfflineDownloads.swift).
+        "beginBackgroundTask",
+        "endBackgroundTask",
+        "backgroundTimeRemaining",
     ],
 }
+
+# ⚠ A third way a miss happens, caught by neither table above: a type the app defines ITSELF whose name
+# collides with a module-namespaced pattern. `OfflineDownloads` starts with "Offline", so nothing here
+# fires — but if a future type starts with `UI` or `WK` it will be reported as a missing import, and the
+# fix is to rename the type, not to add an import.
 
 DEFAULT_TARGETS = ["apple/ios/RKMCinema"]
 

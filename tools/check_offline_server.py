@@ -216,8 +216,13 @@ def analyse(lines: list[str]) -> dict:
 
     if not received:
         result["notes"].append(
-            "the event direction is proved by ANY event. To exercise it: download a title (or keep the "
-            "already-downloaded one) and relaunch with the probe arguments")
+            "the event direction is proved by ANY event. To exercise it: download a title, then relaunch "
+            "WITHOUT reinstalling (⚠ `mac-round.sh --sim` REINSTALLS, and a reinstall gives the app a NEW "
+            "container — the film you just downloaded would be stranded in the old one, which is exactly "
+            "how this state was reached):\n"
+            "         xcrun simctl terminate booted com.helloraj1986.rkmcinema.ios\n"
+            "         xcrun simctl launch booted com.helloraj1986.rkmcinema.ios "
+            "-RKMOfflineServerProbe YES -RKMOfflineBridgeProbe YES")
 
     return result
 

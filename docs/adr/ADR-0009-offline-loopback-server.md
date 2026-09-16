@@ -179,7 +179,15 @@ both worlds:
   receives back through the EXISTING instrumentation channel (`WebBridge`). It is the only thing that can
   distinguish "the page got it" from "we called `evaluateJavaScript` and nothing threw". The bridge probe
   (`-RKMOfflineBridgeProbe YES`) re-announces the REAL rows through the production path — nothing is
-  fabricated — and asks `ping` + `list` so the reply direction is exercised in the same action.
+  fabricated — and then asks `ping` + `list` so the reply direction is exercised in the same action.
+* ⚠⚠ **AND THE ASK IS AN EVENT, NOT A SECOND `evaluateJavaScript` — taught by the first real round
+  (2026-09-16).** That call threw (`A JavaScript exception occurred`) on a run where the event path worked
+  234 ms later, and the only thing that can throw in it is the document being replaced underneath it. So
+  native emits `{e:"probe"}` and the **page's own listener** asks. It inherits both properties the event path
+  has already proved: the listener is demonstrably installed, and the injected script's queue **replays** an
+  event that arrived before the listener existed. ⚠ The general rule this is an instance of: when one of two
+  channels is proved and the other is not, move the work onto the proved one rather than debugging the
+  unproved one from a distance.
 
 ## Consequences
 

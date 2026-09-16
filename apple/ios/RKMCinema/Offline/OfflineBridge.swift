@@ -562,8 +562,13 @@ final class OfflineBridge: NSObject, WKScriptMessageHandlerWithReply {
     }
 
     private func emit(_ payload: OfflineEventPayload) {
+        emitRaw(payload.jsonObject)
+    }
+
+    /// ⚠ The one place a JS call is made, so the payload can never be built by hand in two different ways.
+    private func emitRaw(_ object: [String: Any]) {
         guard let webView else { return }
-        guard let data = try? JSONSerialization.data(withJSONObject: payload.jsonObject),
+        guard let data = try? JSONSerialization.data(withJSONObject: object),
               let json = String(data: data, encoding: .utf8)
         else { return }
 
@@ -588,6 +593,16 @@ final class OfflineBridge: NSObject, WKScriptMessageHandlerWithReply {
     /// ⚠ DEBUG only: hands the live web view to the launch-argument probe, which is the only thing that can
     /// ask the PAGE a question (the native→page direction has no other witness).
     var debugWebView: WKWebView? { webView }
+
+    /// ⚠⚠ DEBUG only, and it exists because of a failure on the first real round (2026-09-16): the probe used
+    /// to ask its questions with a SECOND `evaluateJavaScript`, and on that round it threw ("A JavaScript
+    /// exception occurred") while the EVENT path — `window.__rkmOffline.emit` → the page's listener — worked
+    /// in the very same run, 234 ms later. So the ask now travels as an EVENT: the page's own listener
+    /// decides to ask, which means it inherits the two things that make the event path reliable — the
+    /// listener is demonstrably installed, and the page-side queue replays an event that arrived too early.
+    func emitProbeEvent() {
+        emitRaw(["v": OfflineBridgeRequest.supportedVersion, "e": "probe"])
+    }
 
     /// ⚠ DEBUG only, and used only by the launch-argument probe: it clears what the page has been told, so
     /// the next `publish()` re-announces every title through the REAL event path. Nothing is fabricated —

@@ -92,10 +92,10 @@ enum OfflineServerProbe {
                 RKMLog.info("offline probe · \(outcome)", category: .offline)
             }
             if bridgeProbeRequested() {
-                // ⚠ Re-announce through the PRODUCTION event path (nothing fabricated), then ask the page a
-                // question — one action proves both directions, with a real title.
+                // ⚠ Re-announce through the PRODUCTION event path (nothing fabricated), then send the
+                // `probe` event that makes the PAGE ask its own questions — one action, both directions.
                 OfflineBridge.shared.forcePublishAll()
-                askPage()
+                OfflineBridge.shared.emitProbeEvent()
             }
         }
     }
@@ -382,12 +382,37 @@ enum OfflineServerProbe {
             return
         }
 
+        // ⚠ The page asks ITS OWN questions when it sees `e: "probe"`, and that is deliberate: the ask must
+        // travel the ONE path this phase has proved end to end (an event → the page's listener), not a
+        // second `evaluateJavaScript` that ran into "A JavaScript exception occurred" on the first real round
+        // while the event path worked in the same run. ⚠ A `probe` event emitted before this listener exists
+        // is queued by the injected script and REPLAYED here, so "too early" cannot lose it either.
         let install = #"""
         (function () {
           var api = window.__rkmOffline;
           if (!api || !api.available) { window.__rkmOfflineReport('availability', {present: false}); return; }
+
+          function report(command, answer) {
+            window.__rkmOfflineReport('command', {cmd: command, ok: !!(answer && answer.ok),
+                                                 count: (answer && answer.result && answer.result.count) || 0});
+          }
+          function failed(command, error) {
+            window.__rkmOfflineReport('command', {cmd: command, ok: false,
+                                                 detail: String((error && error.message) || error)});
+          }
+          function ask() {
+            var ping = api.ping ? api.ping() : null;
+            if (!ping) { failed('ping', new Error('this build has no ping() on __rkmOffline')); }
+            else { ping.then(function (r) { report('ping', r); }, function (e) { failed('ping', e); }); }
+
+            var list = api.list ? api.list() : null;
+            if (!list) { failed('list', new Error('this build has no list() on __rkmOffline')); }
+            else { list.then(function (r) { report('list', r); }, function (e) { failed('list', e); }); }
+          }
+
           api.on(function (event) {
             window.__rkmOfflineReport('page-received', window.__rkmOfflineSummary(event));
+            if (event && event.e === 'probe') { ask(); }
           });
           window.__rkmOfflineReport('availability', {present: true, version: api.version});
         })();
@@ -396,35 +421,22 @@ enum OfflineServerProbe {
         webView.evaluateJavaScript(install) { _, error in
             if let error {
                 RKMLog.error("offline bridge probe FAIL — the page would not install the listener: "
-                             + "\(error.localizedDescription)", category: .offline)
+                             + describe(error), category: .offline)
             }
         }
     }
 
-    /// The page asks, and REPORTS what it got back — the only witness for the reply direction.
-    private static func askPage() {
-        guard let webView = OfflineBridge.shared.debugWebView else { return }
-
-        let ask = #"""
-                (function () {
-                  function report(command, answer) {
-                    window.__rkmOfflineReport('command', {cmd: command, ok: !!(answer && answer.ok),
-                                                        count: (answer && answer.result && answer.result.count) || 0});
-                  }
-                  function failed(command, error) {
-                    window.__rkmOfflineReport('command', {cmd: command, ok: false,
-                                                        detail: String((error && error.message) || error)});
-                  }
-                  window.__rkmOffline.ping().then(function (r) { report('ping', r); }, function (e) { failed('ping', e); });
-                  window.__rkmOffline.list().then(function (r) { report('list', r); }, function (e) { failed('list', e); });
-        })();
-        """#
-        webView.evaluateJavaScript(ask) { _, askError in
-            if let askError {
-                RKMLog.error("offline bridge probe FAIL — the page could not ask: "
-                             + "\(askError.localizedDescription)", category: .offline)
-            }
-        }
+    /// ⚠ An `evaluateJavaScript` failure is a JavaScript EXCEPTION, and `localizedDescription` says only
+    /// that one occurred. The message, the line and the source URL live in the error's `userInfo` — and
+    /// without them the first real round's failure was unreadable (2026-09-16).
+    static func describe(_ error: Error) -> String {
+        let nsError = error as NSError
+        let detail = nsError.userInfo
+            .map { "\($0.key)=\($0.value)" }
+            .sorted()
+            .joined(separator: " · ")
+        return "\(nsError.domain) \(nsError.code) — \(nsError.localizedDescription)"
+             + (detail.isEmpty ? "" : " · \(detail)")
     }
 }
 

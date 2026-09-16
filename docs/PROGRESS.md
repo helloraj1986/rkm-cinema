@@ -11,6 +11,14 @@
 
 ⚠ And the same round exposed a second, smaller design flaw in the probe: it ran **everything at page load**, so a film that a launch argument downloaded afterwards never got the real-film check or the announcement — `count=0`, "nothing to emit", `NOT EXERCISED`. The probe is now **two halves**: the suite + the page listener at load, and the row summary + real-film check + announcement the moment a title is playable (`OfflineServerProbe.rowsDidChange()`, called from the bridge's own publish). ⇒ **one launch covers the whole gate.**
 
+✅ **THE SECOND ROUND: 3 OF 4 QUESTIONS YES, AND THE ROW BUG IS PROVEN FIXED (2026-09-16, `aa8e69b`).** The screenshot's bug is closed on the device: `the app's own rows agree with the manifest — 1 of 1 row(s) are ready`, and the same run logged `real-film-head PASS — 1543383346 B, video/mp4` (the bridge minted a URL for the REAL 1.54 GB film and the loopback server served its true length over HEAD) and `page received event=state item=4ebd… carriesUrl=true` (an event from native reached the page, carrying the loopback URL). ⇒ **The server half is measured, and both directions of the bridge are measured — one of them through the page.**
+
+⚠⚠ **AND IT FOUND A THIRD THING, IN THE PROBE ITSELF — `A JavaScript exception occurred`, on the ASK.** The probe used to ask its questions with a second `evaluateJavaScript`, and that call threw while the EVENT path (`window.__rkmOffline.emit` → the page's listener) worked **234 ms later in the same run** — which is only explicable as the document being replaced between the two calls (nothing else in that script can throw: `ping` and `list` are on the injected object, and the script parses). ⚠ The checker made it worse by blaming the **Range suite** for it, while all 16 cases had in fact run over the socket (20 requests, every expected status) — so it sent the diagnosis at the wrong half. Fixes:
+
+* ⚠ **the ask travels as an EVENT now.** Native emits `{e:"probe"}` and the page's own listener asks; that inherits the two properties the event path has already proved — the listener is installed, and the page-side queue REPLAYS an event that arrived before the listener existed. A second `evaluateJavaScript` was the fragile half all along;
+* ⚠ **an `evaluateJavaScript` failure now prints the whole `userInfo`** (the JS message, line and source URL live there; `localizedDescription` says only "an exception occurred");
+* ⚠ **the checker judges the two halves separately** — a probe failure fails the COMMAND question, never the suite — surfaces EVERY `offline bridge ·` line instead of a curated list, and grew **`--grep REGEX`**, because diagnosing this meant reading log lines the report does not print at a container path that changes on every rebuild.
+
 **WHAT B3 IS, in one sentence:** B2 gave the device the file; this is the device **serving it back to the page that has to play it** — from `127.0.0.1`, over real HTTP, with real byte ranges, addressed by a handle that dies with the process.
 
 **WHY THE SHAPE IS WHAT IT IS — nine decisions, each with the alternative it beat (`docs/adr/ADR-0009-offline-loopback-server.md`).** The four worth knowing before touching this code:
@@ -48,6 +56,8 @@ python3 tools/check_offline_server.py
 ```
 
 ⚠ Wait for the film to finish (the HUD's `off` line and the log's `offline READY`), THEN run the checker — the checker reads ONE run, so it must read the run in which all of it happened.
+
+⚠ **If a question comes back NO or `????`, do not guess at the cause:** `python3 tools/check_offline_server.py --grep "offline bridge|probe|didFinish"` prints the judged run's matching lines and finds the container itself — that is the tool for "why did it say that", and it needs no rebuild.
 
 1. ⚠ **`check_offline_download.py` is now `--` a re-run of a PASSED gate, not the gate itself** (B2's verdict came back on 2026-09-16): run it at the end if you like, as evidence for the *next* round, but nothing waits on it any more.
 2. **The build + launch** installs and launches on the iPhone simulator with the two probe switches **plus `-RKMOfflinePick YES`**, which makes the app download a title by itself — so **one launch covers the whole gate**: the probe's suite and page listener run at load, and the moment that film is playable the probe adds the row summary, the real-film check and the announcement. ⚠ `mac-round.sh` passes these through (it used to drop them silently — fixed in B0 and verified then; the round on 2026-09-16 proves it). On a **device**, launch from Xcode and set the same switches as scheme arguments.

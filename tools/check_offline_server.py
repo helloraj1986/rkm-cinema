@@ -121,6 +121,12 @@ def analyse(lines: list[str], manifest: dict | None = None) -> dict:
 
     if started:
         result["evidence"].append(f"probe started (server={started.group(1)}, bridge={started.group(2)})")
+
+    # ⚠ EVERY line the bridge wrote, always — because the useful evidence is precisely the line that is
+    # absent when something goes wrong, and a curated list can only show what the author thought of.
+    for line in lines:
+        if "offline bridge" in line or P_BRIDGE_FAIL.search(line):
+            result["evidence"].append(line)
     if listening:
         result["evidence"].append(f"the loopback listener came up on {listening.group(1)}")
     if requests:
@@ -136,11 +142,6 @@ def analyse(lines: list[str], manifest: dict | None = None) -> dict:
                  f"{len(failures)} case(s) FAILED — first: {failures[0].group(1)} ({detail})",
                  [line for line in lines if P_CASE_FAIL.search(line)][:6])
         result["fatal"] = f"the loopback server failed {len(failures)} range case(s)"
-    elif bridge_failures:
-        question("the Range suite passed", "FAIL",
-                 f"the probe itself reported a failure: {bridge_failures[0]}",
-                 [line for line in lines if P_BRIDGE_FAIL.search(line)])
-        result["fatal"] = "the probe reported a failure"
     elif summary:
         passed, total = int(summary.group(1)), int(summary.group(2))
         if passed != total:
@@ -185,7 +186,16 @@ def analyse(lines: list[str], manifest: dict | None = None) -> dict:
     ok_commands = {name: detail for name, ok, _count, detail in commands if ok == "true"}
     bad_commands = [(name, detail) for name, ok, _count, detail in commands if ok == "false"]
 
-    if bad_commands:
+    # ⚠⚠ THE PROBE'S OWN FAILURE BELONGS TO THIS QUESTION, NOT TO THE RANGE SUITE. The first real round
+    # reported `NO the Range suite passed — the probe itself reported a failure: the page could not ask: …`
+    # while 16/16 cases had in fact run over the socket: a checker that blames the wrong half sends the next
+    # session to the wrong file.
+    if bridge_failures and not ok_commands:
+        question("a command round-tripped with the page", "FAIL",
+                 f"the probe's page-side half failed: {bridge_failures[0]}",
+                 [line for line in lines if P_BRIDGE_FAIL.search(line)])
+        result["fatal"] = "the bridge probe failed before the page could answer"
+    elif bad_commands:
         question("a command round-tripped with the page", "FAIL",
                  f"the page asked and got a refusal: {bad_commands[0][0]} — {bad_commands[0][1] or 'no detail'}",
                  [line for line in lines if P_COMMAND.search(line)])
@@ -421,6 +431,18 @@ FIXTURE_TWO_SUMMARIES = _run(
     "offline bridge · command list ok=true count=1",
 )
 
+#: ⚠ The real 2026-09-16 round: the suite ran and the server answered everything, but the probe's page-side
+#: half threw before the page could ask. The SUITE must still be judged on its own merits.
+FIXTURE_PROBE_FAIL = _run(
+    "offline probe · starting (server=true bridge=true)",
+    "offline server listening on 127.0.0.1:62819 (loopback only)",
+    "offline probe · rows 1 total, 1 ready, 0 downloading, 0 failed",
+    *_case_lines(),
+    "offline probe · real-film-head PASS — 1543383346 B, video/mp4",
+    "offline bridge probe FAIL — the page could not ask: A JavaScript exception occurred",
+    "offline bridge · page received event=state item=abc123 carriesUrl=true",
+)
+
 FIXTURE_STALE_ROW = _run(
     "offline probe · starting (server=true bridge=true)",
     "offline server listening on 127.0.0.1:51234 (loopback only)",
@@ -458,6 +480,10 @@ def selftest() -> int:
         # so) and the app's own row still says `downloading`. It must NOT be reported as "not exercised".
         ("⚠ a STALE ROW: the manifest says ready and the app's rows say downloading",
          FIXTURE_STALE_ROW, MANIFEST_READY, 1, "the row is STALE"),
+        # ⚠ The suite PASSES and the command question FAILS — the two halves are judged separately, because
+        # blaming the suite for a page-side failure is how the first round's report misled.
+        ("a probe failure must not be blamed on the Range suite", FIXTURE_PROBE_FAIL, None, 1,
+         "the probe's page-side half failed"),
         ("⚠ the real order: nothing downloaded at page load, then a film lands", FIXTURE_TWO_SUMMARIES,
          MANIFEST_READY, 0, "all 16/16 cases passed"),
         ("the same suite with no manifest to compare against",
@@ -495,6 +521,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--log", type=Path, default=None, help="the log file to read (default: find it)")
     parser.add_argument("--runs", type=int, default=DEFAULT_RUNS,
                         help=f"how many of the newest app runs to judge (default {DEFAULT_RUNS})")
+    parser.add_argument("--grep", default=None,
+                        help="print the judged run's lines matching this regex, then exit — the tool for "
+                             "'why did it say that', without needing the container path")
     args = parser.parse_args(argv)
 
     if args.selftest:
@@ -527,6 +556,21 @@ def main(argv: list[str] | None = None) -> int:
 
     run, run_note = window(lines, max(1, args.runs))
     print(f"offline loopback gate — {run_note}")
+
+    if args.grep:
+        # ⚠ `--grep` exists because diagnosing the first real round meant reading log lines the report does
+        # not print, and the log lives at a container path that changes on every rebuild. This finds it.
+        try:
+            pattern = re.compile(args.grep)
+        except re.error as error:
+            print(f"--grep is not a valid regex: {error}", file=sys.stderr)
+            return 2
+        matched = [line for line in run if pattern.search(line)]
+        print(f"grep {args.grep!r} — {len(matched)} of {len(run)} line(s) in this run:")
+        for line in matched[-60:]:
+            print(f"   {line.strip()}")
+        return 0
+
     print(f"manifest: {manifest_note}")
     return report(analyse(run, manifest), where)
 

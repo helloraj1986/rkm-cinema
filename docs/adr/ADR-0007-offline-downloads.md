@@ -82,7 +82,11 @@ MKV demuxers share `"matroska,webm"`, so the codec decides which is direct) and 
 spelling. ⚠⚠ **The same container mismatch exists in the PLAYER's own `DIRECT_CONTAINERS`
 (`frontend/src/features/playback/lib.ts`), which is where this list came from** — reported to the user
 and NOT changed here: altering player routing changes live playback for every film, which is a
-separate decision from this phase.
+separate decision from this phase. **The claim is one line of arithmetic, so it is checkable rather
+than asserted:** `Player.tsx` passes `info.container` (the `playback-info` value, unmodified) into
+`pickStreamMode`, which lowercases it and asks `DIRECT_CONTAINERS.has(c)` — and
+`"mov,mp4,m4a,3gp,3g2,mj2"` is **not** a member of `{"mp4","m4v","mov","webm"}`. Both call sites
+(`Player.tsx:78` and `:289`) use the same raw value.
 
 **D4 — publish atomically: `.part` → `os.replace`.** The final path exists only when the transfer
 finished, so `ready` and `Content-Length` cannot describe half a film. A crash leaves a `.part`,

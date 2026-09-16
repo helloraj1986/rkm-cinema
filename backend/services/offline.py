@@ -83,10 +83,31 @@ MISSING = "missing"
 #: transcoded must be transcoded here too, or the device keeps a file it cannot play.
 #: ⚠ HEVC is NOT in the safe set — the player transcodes it — and H.264 with a 10-bit
 #: depth or a "high 10" profile is refused for the same reason.
-DIRECT_CONTAINERS = ("mp4", "m4v", "mov", "webm")
 SAFE_VIDEO_CODECS = ("h264", "avc1", "vp9", "av01", "vp8", "theora")
 BROWSER_SAFE_AUDIO = ("aac", "mp3", "opus", "vorbis", "flac",
                       "pcm_s16le", "pcm_s24le", "pcm_mulaw", "alac")
+
+#: ⚠⚠ THE CONTAINER IS NOT AN EXTENSION, AND THIS WAS MEASURED THE HARD WAY (2026-09-16,
+#: 60 real library items through the DEPLOYED api): Jellyfin reports `Container` as
+#: ffprobe's ``format_name``, a **comma-separated demuxer list** — an ordinary MP4
+#: arrives as **``"mov,mp4,m4a,3gp,3g2,mj2"``** (39 of the 60 sampled titles), while an
+#: MKV arrives as plain ``"mkv"``. So a direct-play check against bare extensions
+#: (`{"mp4","m4v","mov"}`) **never matches a real MP4**, and every MP4 would take the
+#: remux rung: a full re-copy of the film through Jellyfin plus a full-size staging file,
+#: for a file the device can hold and play as-is. Hence: match the FAMILY, not the string.
+#: ⚠ The same mismatch exists today in the PLAYER's own `DIRECT_CONTAINERS`
+#: (`frontend/src/features/playback/lib.ts`), which is where this list came from —
+#: reported to the user rather than changed here, because changing player routing is a
+#: live playback behaviour change and this phase's file is the backend.
+MP4_FAMILY = ("mov", "mp4", "m4a", "m4v", "3gp", "3g2", "mj2")
+#: ffprobe names the WebM demuxer ``matroska,webm`` — the SAME string an MKV gives, so
+#: the codec decides: WebKit demuxes Matroska for the WebM codecs and nothing else.
+MATROSKA_FAMILY = ("matroska", "webm")
+WEBM_VIDEO_CODECS = ("vp8", "vp9", "av01")
+#: ⚠ ffprobe spells the codec **``av1``**; the ISO/RFC tag (and the player's own safe set)
+#: is **``av01``**. Measured live: one library title reports `av1`, and the player's
+#: `SAFE_VIDEO_CODECS` would therefore treat it as unsafe. Both spellings are accepted.
+VIDEO_CODEC_ALIASES = {"av1": "av01", "x264": "h264", "x265": "hevc"}
 
 _SINGLE_RANGE = re.compile(r"^bytes=(\d*)-(\d*)$")
 _UNSAFE_ID = re.compile(r"[^A-Za-z0-9_-]")
@@ -139,13 +160,39 @@ def parse_range(header: str, size: int) -> Any:
     return (start, end)
 
 
+def container_family(container: str) -> str:
+    """ffprobe's demuxer list → the container as a FAMILY (see ``MP4_FAMILY`` above).
+
+    ``"mov,mp4,m4a,3gp,3g2,mj2"`` → ``"mp4"`` · ``"mkv"`` → ``"mkv"`` ·
+    ``"matroska,webm"`` → ``"matroska"`` · unknown/absent → ``""`` (which the ladder reads
+    as "attempt the cheap path", the same rule the player uses for an unknown container).
+
+    ⚠ Order matters: an MP4's list is checked BEFORE Matroska, because the family strings
+    can share tokens and the MP4 list is the one that means "WebKit plays this as-is".
+    """
+    tokens = [t.strip().lower() for t in str(container or "").split(",") if t.strip()]
+    if not tokens:
+        return ""
+    if any(t in MP4_FAMILY for t in tokens):
+        return "mp4"
+    if any(t in MATROSKA_FAMILY for t in tokens):
+        return "matroska"
+    return tokens[0]
+
+
+def normalise_video_codec(codec: str) -> str:
+    """ffprobe's spelling → the tag the player's safe set uses (see aliases above)."""
+    lowered = (codec or "").lower()
+    return VIDEO_CODEC_ALIASES.get(lowered, lowered)
+
+
 def video_needs_transcode(codec: str, *, profile: str = "", bit_depth: int = 0) -> bool:
     """The player's ``videoNeedsTranscode``, in Python (see the constants above).
 
     Unknown/absent facts answer ``False`` — attempt the cheaper rendition and let the
     player's own error ladder escalate, exactly as the streaming path does.
     """
-    codec = (codec or "").lower()
+    codec = normalise_video_codec(codec)
     if codec and codec not in SAFE_VIDEO_CODECS:
         return True
     if codec in ("h264", "avc1"):
@@ -175,20 +222,28 @@ def choose_mode(*, container: str, video_codec: str, audio_codecs,
     which is the only routing a downloaded file has been measured against. Facts come
     from ``LibraryService.playback_info``.
 
+    ⚠ TWO CORRECTIONS to the mirrored rule, both measured against the live api
+    (2026-09-16) rather than reasoned about: the container is matched by FAMILY, because
+    Jellyfin reports ffprobe's demuxer list (see ``MP4_FAMILY``), and the codec is
+    normalised, because ffprobe writes ``av1`` where the player's safe set says ``av01``.
+
     The player's first rung (``quality !== "Original" → transcode``) has no analogue
     here on purpose: a download always asks for the Original rendition. If a quality
     cap ever becomes a download option, this is where it lands.
     """
-    container = (container or "").lower()
+    family = container_family(container)
     if video_needs_transcode(video_codec, profile=video_profile,
                              bit_depth=video_bit_depth):
         return "transcode"
     if audio_needs_transcode(audio_codecs):
         return "transcode_audio"
-    if container and container not in DIRECT_CONTAINERS:
-        # Right streams, wrong box (an MKV): copy both, no CPU.
-        return "remux"
-    return "direct"
+    if family == "mp4" or family == "":
+        return "direct"
+    if family == "matroska" and normalise_video_codec(video_codec) in WEBM_VIDEO_CODECS:
+        # A genuine WebM: WebKit demuxes Matroska for these codecs and no others.
+        return "direct"
+    # Right streams, wrong box (an MKV with H.264): copy both, no CPU.
+    return "remux"
 
 
 def needs_transcode(mode: str) -> bool:

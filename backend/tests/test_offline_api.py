@@ -46,6 +46,8 @@ from services.offline import (
     OfflineService,
     OfflineStore,
     choose_mode,
+    container_family,
+    normalise_video_codec,
     parse_range,
 )
 
@@ -155,20 +157,53 @@ def _patch_offline(monkeypatch, service):
 # --------------------------------------------------------------------------- 1. the ladder
 
 @pytest.mark.parametrize("container,video,audio,want", [
+    # ⚠ The container strings below are the ones the DEPLOYED api actually reported on
+    # 2026-09-16 (60 real library items), not tidy extensions: an MP4 is a comma-separated
+    # ffprobe demuxer list, an MKV is plain "mkv", and WebM and MKV share "matroska,webm".
+    ("mov,mp4,m4a,3gp,3g2,mj2", "h264", ["aac"], "direct"),
+    ("mov,mp4,m4a,3gp,3g2,mj2", "h264", ["mp3"], "direct"),
     ("mp4", "h264", ["aac"], "direct"),
-    ("m4v", "h264", ["mp3"], "direct"),
-    ("webm", "vp9", ["opus"], "direct"),
-    ("mkv", "h264", ["aac"], "remux"),             # right streams, wrong box
-    ("mkv", "av01", ["flac"], "remux"),
-    ("mp4", "h264", ["eac3"], "transcode_audio"),
+    ("m4v", "h264", ["aac"], "direct"),
+    ("", "h264", ["aac"], "direct"),                      # unknown → attempt the cheap path
+    ("matroska,webm", "vp9", ["opus"], "direct"),         # a genuine WebM
+    ("mkv", "h264", ["aac"], "remux"),                    # right streams, wrong box
+    ("mkv", "av1", ["opus"], "remux"),                    # ⚠ codec spelling: av1 → av01
+    ("mov,mp4,m4a,3gp,3g2,mj2", "h264", ["eac3"], "transcode_audio"),
     ("mkv", "h264", ["dts"], "transcode_audio"),
-    ("mp4", "h264", ["aac", "eac3"], "transcode_audio"),  # ONE bad track is enough
-    ("mkv", "hevc", ["aac"], "transcode"),         # the player transcode HEVC too
+    ("mkv", "h264", ["aac", "eac3"], "transcode_audio"),  # ONE bad track is enough
+    ("mkv", "hevc", ["aac"], "transcode"),                # the player transcodes HEVC too
     ("mkv", "mpeg2", ["aac"], "transcode"),
     ("avi", "vc1", ["ac3"], "transcode"),
+    ("matroska,webm", "h264", ["aac"], "remux"),          # Matroska H.264 is NOT WebM
 ])
 def test_the_rendition_ladder_picks_the_cheapest_thing_that_plays(container, video, audio, want):
     assert choose_mode(container=container, video_codec=video, audio_codecs=audio) == want
+
+
+def test_the_container_is_ffprobes_DEMUXER_LIST_not_an_extension():
+    """⚠⚠ The finding that made this ladder wrong for 39 of 60 real titles.
+
+    Measured against the deployed api (2026-09-16): Jellyfin's `Container` for an ordinary
+    MP4 is `"mov,mp4,m4a,3gp,3g2,mj2"`. A direct-play check against bare extensions never
+    matches it, so **every MP4** would take the remux rung — a full re-copy of the film
+    through Jellyfin and a full-size staging file, for a file the device can hold and play
+    as-is. This pins the family mapping, including the ambiguous Matroska string.
+    """
+    assert container_family("mov,mp4,m4a,3gp,3g2,mj2") == "mp4"
+    assert container_family("mkv") == "mkv"
+    assert container_family("matroska,webm") == "matroska"
+    assert container_family("") == ""
+    assert container_family("MOV,MP4") == "mp4", "the check must not be case-sensitive"
+
+
+def test_the_codec_spelling_ffprobe_uses_is_normalised():
+    """⚠ ffprobe writes `av1`; the player's safe set says `av01` — so the alias decides
+    whether one real library title is remuxed or needlessly re-encoded."""
+    assert normalise_video_codec("av1") == "av01"
+    assert normalise_video_codec("h264") == "h264"
+    assert choose_mode(container="mkv", video_codec="av1", audio_codecs=["opus"]) == "remux"
+    assert choose_mode(container="matroska,webm", video_codec="av1", audio_codecs=["opus"]) \
+        == "direct"
 
 
 def test_the_ladder_matches_the_PLAYERS_own_routing():

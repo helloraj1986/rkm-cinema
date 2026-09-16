@@ -7,7 +7,9 @@
 
 ## Context
 
-The app's iPad story ends at the tailnet. Every frame it plays is proxied from Jellyfin on RKM-HP, so
+The app's offline story on **iOS** ends at the tailnet — and that is **one client, two devices**:
+the iPhone and the iPad run the same WKWebView shell, so this work is not device-specific (⚠ the E1
+measurement it rests on was taken on an **iPhone 17 Pro** simulator). Every frame it plays is proxied from Jellyfin on RKM-HP, so
 a plane, a train or a flaky hotel Wi-Fi is the end of it. Workstream B is "download a film to the
 device and play it with the network off", and it hung on **one question only a device could answer**.
 
@@ -150,6 +152,12 @@ refusal is **507** with a sentence naming the knob.
 * **Idempotency is a property, not a hope**: (item, rendition) names one artefact, a finished one is
   returned untouched, and a second `prepare` while the first is running starts no competing writer.
   The test proves it by counting upstream calls — a re-transcode would also return `state: ready`.
+* **Which clients this serves — and it is not iPad-specific.** Every iOS client: the iPhone and the
+  iPad run the same WKWebView shell, so B1–B5 are one body of work, not two. ⚠ And because these are
+  plain HTTP routes with byte ranges, a **future native tvOS client uses the same contract** —
+  `apple/README.md` already records that the TV player additionally needs the *bearer-token* work, not
+  a different server design. What IS per-device is **storage**, not the protocol: the cap/eviction
+  settings (B5) are the part that must be sized for an iPhone's smaller disk as well as an iPad's.
 * **What B1 does NOT do, stated plainly:** no device work (B2/B3), no page affordances or Downloads
   screen (B4), no eviction/pin/delete-after-watch (B5), no server-side resume of a *packaging* job
   (a retry restarts from zero — the resumable leg is the device's download, which is the leg that

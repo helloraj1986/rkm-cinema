@@ -3,6 +3,7 @@ import type { ConfiguredLibraryShape, DetailPlay, MediaItem } from "../../lib/ap
 import {
   addedTime,
   artTone,
+  cardMetaLine,
   continueWatchingItems,
   detailInProgress,
   detailPrimaryLabel,
@@ -580,5 +581,40 @@ describe("libraryNavEntries", () => {
 
   it("tolerates an empty list, which is what a fresh install answers", () => {
     expect(libraryNavEntries([])).toEqual([]);
+  });
+});
+
+/**
+ * M3 · extraction E8. This is the line under a poster, and M3 adds a SECOND card (the phone's
+ * `PosterCard`) that must read identically — so the rule is pinned here, where both cards read
+ * it, rather than in whichever card happened to hold it first.
+ *
+ * Each case below is the desktop card's existing output, character for character, including the
+ * two easy ones to break: a play count of exactly 1 (says nothing, must not appear) and a title
+ * with no year and no runtime (must be an EMPTY line, not a line starting with " · ").
+ */
+describe("cardMetaLine (M3 · E8)", () => {
+  it("movie: year then runtime", () => {
+    expect(cardMetaLine({ ...base, year: 1999 })).toBe("1999 · 1h 40m");
+  });
+  it("series: year then TV, never a runtime", () => {
+    expect(cardMetaLine({ ...base, type: "tv", year: 2015 })).toBe("2015 · TV");
+  });
+  it("play count only when it says something", () => {
+    expect(cardMetaLine({ ...base, year: 1999, play_count: 3 })).toBe("1999 · 1h 40m · 3 plays");
+    expect(cardMetaLine({ ...base, year: 1999, play_count: 1 })).toBe("1999 · 1h 40m");
+  });
+  it("episode: code then series name", () => {
+    expect(
+      cardMetaLine({
+        ...base,
+        kind: "episode",
+        year: 2015,
+        episode: { season: 1, number: 4, series_id: "s1", series_name: "Barry" },
+      }),
+    ).toBe("S1E4 · Barry");
+  });
+  it("a title with nothing known is empty, not a separator", () => {
+    expect(cardMetaLine({ title: "T", item_id: "i1" })).toBe("");
   });
 });

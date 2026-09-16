@@ -485,6 +485,31 @@ export function resumePercent(item: MediaItem): number {
 }
 
 /**
+ * The one meta line that sits under a card's title (M3 · extraction E8).
+ *
+ * ⚠ Extracted because M3 builds a SECOND card (the mobile `PosterCard`) that must show the
+ * SAME line as the desktop one. Two cards with two copies of a meta rule is how the phone
+ * ends up reading "2021 · TV" where the laptop reads "2021 · TV · 3 plays".
+ *
+ * The rule is the desktop card's, unchanged: an EPISODE reads `S1 E4 · Series name`; anything
+ * else reads year, then either "TV" or its runtime, then a play count only when it says
+ * something (>1). Fields that are absent are dropped rather than left as an empty segment, so
+ * a title with no year never renders a leading " · ".
+ */
+export function cardMetaLine(item: MediaItem): string {
+  if (isEpisodeItem(item)) {
+    return [episodeItemCode(item), item.episode?.series_name].filter(Boolean).join(" · ");
+  }
+  return [
+    item.year ? String(item.year) : "",
+    isSeries(item) ? "TV" : fmtRuntime(item.runtime),
+    item.play_count && item.play_count > 1 ? `${item.play_count} plays` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+/**
  * The Home hero pick (NEW_UX spec §9/§64): prefer a continue-watching MOVIE
  * (clean "Resume" hero), then any in-progress item (episodes included), then
  * the most recently added title, then the first library item. Null when the

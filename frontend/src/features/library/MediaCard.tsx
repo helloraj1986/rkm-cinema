@@ -1,8 +1,8 @@
 import type { MediaItem } from "../../lib/api/client";
 import {
   artTone,
+  cardMetaLine,
   episodeItemCode,
-  fmtRuntime,
   isEpisodeItem,
   isSeries,
   playbackMarker,
@@ -77,15 +77,9 @@ export function MediaCard({
   const episode = isEpisodeItem(item);
   const epCode = episodeItemCode(item);
   const percent = resumePercent(item);
-  const sub = episode
-    ? [epCode, item.episode?.series_name].filter(Boolean).join(" · ")
-    : [
-        item.year ? String(item.year) : "",
-        tv ? "TV" : fmtRuntime(item.runtime),
-        item.play_count && item.play_count > 1 ? `${item.play_count} plays` : "",
-      ]
-        .filter(Boolean)
-        .join(" · ");
+  // The meta line's rule lives in `lib.ts::cardMetaLine` (M3 · E8) so the mobile PosterCard,
+  // built in this same phase, cannot drift from this card.
+  const sub = cardMetaLine(item);
 
   return (
     <article

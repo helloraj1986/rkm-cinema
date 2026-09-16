@@ -48,13 +48,16 @@ const MORE: { to: string; label: string; icon: IconName }[] = [
 const DOWNLOADS: Tab = { to: "/downloads", label: "Downloads", icon: "download" };
 
 function tabCls(active: boolean) {
-  return `flex min-w-0 flex-1 flex-col items-center gap-1 rounded-lg py-1.5 text-[10px] font-medium transition-colors ${
+  // ⚠ `min-h-[var(--m-tap)]` — the 44px floor is a TOKEN, not a per-tab decision. A tab whose icon
+  // or label changes must not silently drop below the size a thumb can reliably hit, and M0 already
+  // decided what that size is (`--m-tap`, `styles/index.css`). The bar's own height follows.
+  return `flex min-h-[var(--m-tap,44px)] min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-lg py-1.5 text-[10px] font-medium transition-colors ${
     active ? "text-accent" : "text-zinc-500 hover:text-zinc-200"
   }`;
 }
 
 const rowCls = (active: boolean) =>
-  `flex items-center gap-3 px-4 py-3 text-sm font-medium transition-colors ${
+  `flex min-h-[var(--m-tap,44px)] items-center gap-3 px-4 py-3 text-sm font-medium transition-colors ${
     active ? "bg-white/[.07] text-white" : "text-zinc-400 hover:bg-white/[.05] hover:text-zinc-100"
   }`;
 
@@ -142,9 +145,14 @@ export function MobileNav() {
     entries.some((e) => e.to !== null && activeFor(location.pathname, e.to));
 
   return (
+    // ⚠ `lg:hidden` — the other half of the ONE decision (MOBILE_FIRST_UI_PLAN M1). The bar is the
+    // navigation below Tailwind's `lg` (1024px), so the phone AND the tablet get it, and the sidebar
+    // gets everything at or above it. The two classes must move together: a state where both are
+    // visible is a styling bug that reads as a layout bug, and `tools/check_mobile_shell.py` asserts
+    // it at every width.
     <nav
       aria-label="Mobile"
-      className="fixed inset-x-0 bottom-0 z-[var(--z-drawer)] border-t border-white/[.07] bg-[#0B0C0F]/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl md:hidden"
+      className="fixed inset-x-0 bottom-0 z-[var(--z-drawer)] border-t border-white/[.07] bg-[#0B0C0F]/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl lg:hidden"
     >
       {moreOpen && (
         <div
@@ -175,7 +183,7 @@ export function MobileNav() {
                   key={entry.key}
                   title={entry.warning}
                   aria-label={`${entry.name} — unavailable`}
-                  className="flex cursor-not-allowed items-center gap-3 px-4 py-3 text-sm font-medium text-zinc-600 opacity-70"
+                  className="flex min-h-[var(--m-tap,44px)] cursor-not-allowed items-center gap-3 px-4 py-3 text-sm font-medium text-zinc-600 opacity-70"
                 >
                   <Icon name={entry.icon} size={18} />
                   <span className="truncate">{entry.name}</span>

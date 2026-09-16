@@ -57,7 +57,7 @@ function BrandLockup() {
   return (
     <div
       title="RKM Cinema"
-      className="flex items-center gap-3 pb-6 pt-2 md:justify-center md:px-0 xl:justify-start xl:px-3"
+      className="flex items-center gap-3 pb-6 pt-2 lg:justify-center lg:px-0 xl:justify-start xl:px-3"
     >
       <div className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] bg-gradient-to-br from-surface-2 to-surface-3 text-accent ring-1 ring-white/10">
         <Icon name="play" size={15} filled />
@@ -102,7 +102,7 @@ function linkCls(isActive: boolean): string {
   const state = isActive
     ? "bg-white/[.08] text-zinc-50 ring-1 ring-white/[.04] hover:bg-white/[.09] hover:text-white"
     : "text-zinc-400 hover:bg-white/[.06] hover:text-zinc-100";
-  return `relative flex items-center gap-3 rounded-[10px] py-2.5 text-[13.5px] font-medium transition-colors duration-150 md:justify-center md:px-0 xl:justify-start xl:px-3 ${state}`;
+  return `relative flex items-center gap-3 rounded-[10px] py-2.5 text-[13.5px] font-medium transition-colors duration-150 lg:justify-center lg:px-0 xl:justify-start xl:px-3 ${state}`;
 }
 
 function NavIndicator({ active }: { active: boolean }) {
@@ -149,7 +149,13 @@ export function Sidebar() {
   const collections = bridgeAvailable() ? [...COLLECTIONS.items, DOWNLOADS] : COLLECTIONS.items;
 
   return (
-    <aside className="sticky top-0 hidden h-dvh w-[76px] shrink-0 flex-col self-start border-r border-white/[.06] bg-[#0B0C0F] py-5 md:flex xl:w-60">
+    // ⚠ `lg:flex` — NOT `md:flex` (MOBILE_FIRST_UI_PLAN M1). The sidebar and the bottom tab bar are
+    // the two halves of ONE decision, and the boundary moved from Tailwind's `md` (768px) to `lg`
+    // (1024px): a tablet in portrait is held, not moused, so it belongs to the phone shell, and the
+    // 76px icon rail that used to appear at 768px was a worse answer for a held device than the
+    // thumb-zone bar. ⚠ `MOBILE_MAX_PX` in `layouts/LayoutMode.tsx` is 1023 — the same line, in the
+    // other language, and `LayoutMode.test.tsx` fails if the two ever disagree.
+    <aside className="sticky top-0 hidden h-dvh w-[76px] shrink-0 flex-col self-start border-r border-white/[.06] bg-[#0B0C0F] py-5 lg:flex xl:w-60">
       <BrandLockup />
 
       <nav aria-label="Primary" className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-2.5">

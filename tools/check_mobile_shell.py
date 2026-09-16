@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
@@ -66,6 +67,10 @@ MARKERS: dict[str, str] = {
     "/src/app/layout/Sidebar.tsx": "lg:flex",
     "/src/app/layout/AppShell.tsx": "data-shell",
     "/src/layouts/LayoutMode.tsx": "MOBILE_MAX_PX",
+    # ⚠ THIS TOOL HAD NO MARKER FOR THE FRAME IT DRIVES, which is how it accepted a stale frame: the
+    # probe simply lacked `navRowHeight`, the clearance check skipped itself, and the run was green.
+    # The marker is the newest thing the harness measures — not merely something recent.
+    "/harness/mobile-frame.tsx": "navRowHeight",
 }
 
 
@@ -79,7 +84,34 @@ class Result:
         return not self.problems
 
 
+def _fetch(url: str, attempts: int = 3, timeout: float = 20.0) -> str | None:
+    """Fetch a module, retrying a TIMEOUT.
+
+    ⚠ The retry is not politeness. Right after a `vite` restart the first requests transform a lot of
+    the module graph and a single marker fetch can exceed ten seconds — which made the guard report
+    "could not be fetched", i.e. a FAILURE OF THE TOOL dressed as a failure of the tree, on a server
+    that was perfectly correct. A guard that fires on warm-up is a guard people learn to ignore.
+    """
+    last: Exception | None = None
+    for attempt in range(attempts):
+        try:
+            with urllib.request.urlopen(url, timeout=timeout) as response:
+                return response.read().decode("utf-8", "replace")
+        except urllib.error.HTTPError:
+            raise
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            last = exc
+            time.sleep(0.75 * (attempt + 1))
+    raise last if last else RuntimeError("unreachable")
+
+
 def fresh(base: str) -> list[str]:
+    """Every marker must be present in what the dev server is serving right now.
+
+    ⚠ It checks BOTH sides. A marker that is no longer in the file on disk is a bug in THIS TOOL
+    (the marker went obsolete, so the guard could no longer detect staleness) — reporting that
+    loudly is the only thing that stops the guard decaying into a check that always says "fresh".
+    """
     problems: list[str] = []
     for path, marker in MARKERS.items():
         on_disk = FRONTEND / path.lstrip("/")
@@ -95,12 +127,11 @@ def fresh(base: str) -> list[str]:
             )
             continue
         try:
-            with urllib.request.urlopen(f"{base}{path}", timeout=10) as response:
-                body = response.read().decode("utf-8", "replace")
-        except (urllib.error.URLError, TimeoutError) as exc:  # pragma: no cover
-            problems.append(f"{path}: could not be fetched ({exc})")
+            body = _fetch(f"{base}{path}")
+        except Exception as exc:  # noqa: BLE001
+            problems.append(f"{path}: could not be fetched after 3 attempts ({exc})")
             continue
-        if marker not in body:
+        if body is None or marker not in body:
             problems.append(f"{path}: does not contain {marker!r} — the dev server is serving a STALE module")
     return problems
 
@@ -237,6 +268,65 @@ def assert_sheet_closed(p: dict, expected_scroll: int) -> list[str]:
     return problems
 
 
+def assert_clearance(p: dict) -> list[str]:
+    """The page must clear the fixed bar — bar height + the device's own inset + a gap.
+
+    ⚠ THIS IS THE ASSERTION FOR THE REPORTED BUG ("the bottom bar sits on top of the pages"). The
+    mechanism was a flat 96px of content padding against a 64px bar plus a 34px home-indicator inset:
+    −2px on his iPhone. ⚠ The sandbox cannot see a non-zero inset, so this can only check the
+    inset-free case — `app/shell-contract.test.ts` is what pins the DERIVATION (that the padding
+    expression contains the inset at all). Both halves are needed: one measures the result, the other
+    keeps the reason it is correct on a device this container cannot imitate.
+
+    ⚠ TWO DIFFERENT HEIGHTS, and conflating them is how this assertion first went red on a CORRECT
+    build: `--m-nav-h` is the bar's ROW height, while the nav element is taller by its 1px top border
+    and by the device's bottom inset. The token is checked against the row; the clearance against the
+    TOTAL.
+    """
+    problems: list[str] = []
+    pad = p.get("contentBottomPad")
+    nav = p.get("navHeight")
+    row = p.get("navRowHeight")
+    if nav is None or nav <= 0:
+        return ["there is no bar to clear"]
+    if pad is None:
+        return ["the page's own bottom padding could not be read"]
+    # ⚠ A MISSING FIELD IS A FAILURE, NOT A SKIP. The first version only compared the token when the
+    # row height was present, so a STALE frame (one served from a previous build, with no
+    # `navRowHeight`) made this assertion pass by not running — on a tree where the bar and the token
+    # were still 8px apart. Exactly the "a gate that cannot look is worse than no gate" failure.
+    if row is None:
+        return [
+            "the bar's ROW height is missing from the probe — the harness frame is stale, or the "
+            "measurement was removed; this check cannot run, so it must not pass"
+        ]
+    try:
+        pad_px = float(str(pad).replace("px", ""))
+    except ValueError:
+        return [f"the page's bottom padding is {pad!r}, which is not a length"]
+    if pad_px <= nav:
+        problems.append(
+            f"the page's bottom padding is {pad_px}px but the bar is {nav}px tall — the page's last "
+            "row is UNDER the bar. ⚠ On a device with a home-indicator inset the bar is taller still, "
+            "which is why the padding must be derived from the inset rather than fixed"
+        )
+    elif pad_px - nav < 16:
+        problems.append(
+            f"the page clears the bar by only {pad_px - nav}px — enough not to overlap, not enough to "
+            "read the last row comfortably"
+        )
+    token = p.get("navToken")
+    if not token:
+        return ["the --m-nav-h token could not be read — this check cannot run, so it must not pass"]
+    # ±1px: a sub-pixel row height rounds.
+    if abs(float(token.replace("px", "")) - row) > 1:
+        problems.append(
+            f"the bar's ROW is {row}px tall but --m-nav-h is {token!r} — the token and the bar have "
+            "drifted, so anything deriving a clearance from the token is now wrong by that difference"
+        )
+    return problems
+
+
 def assert_drag_snap_back(p: dict, dy: int) -> list[str]:
     """A short slow drag must leave the sheet open AND back at its anchored position."""
     problems: list[str] = []
@@ -306,6 +396,7 @@ def run(base: str, shots: Path | None) -> int:
                         continue
                     r.problems += guard(r, assert_thumb_zone, p) or []
                     r.problems += guard(r, assert_header_present, p) or []
+                    r.problems += guard(r, assert_clearance, p) or []
                     r.problems += guard(r, assert_no_sideways_scroll, p) or []
 
                     # B — thumb navigation, on the SAME page: tap a tab that is not the active one.
@@ -462,6 +553,12 @@ def selftest() -> int:
             {"label": "More", "w": 90.0, "h": 48.0},
         ],
         "header": {"x": 0.0, "y": 0.0, "w": 390.0, "h": 64.0, "right": 390.0, "bottom": 64.0},
+        "navHeight": 64.0,
+        # ⚠ The ROW is what --m-nav-h describes; the nav element is taller by its 1px border and by
+        # the device's bottom inset. The two must not be conflated (see `assert_clearance`).
+        "navRowHeight": 64.0,
+        "navToken": "64px",
+        "contentBottomPad": "96px",
         "overflowX": 0,
         "outside": [],
         "sheetOpen": True,
@@ -510,6 +607,57 @@ def selftest() -> int:
     # B/H.
     case("header accepts a real bar", assert_header_present(base), False)
     case("header catches a missing bar", assert_header_present({**base, "header": None}), True)
+
+    # A/B — THE CLEARANCE (his report: "the bottom bar now sits on top of the pages").
+    case("clearance accepts a page that clears the bar", assert_clearance(base), False)
+    case(
+        "clearance catches the flat-96px bug (padding <= bar)",
+        assert_clearance({**base, "contentBottomPad": "64px"}),
+        True,
+    )
+    case(
+        "clearance catches a page that only just clears the bar",
+        assert_clearance({**base, "contentBottomPad": "70px"}),
+        True,
+    )
+    case(
+        "clearance catches a token that disagrees with the bar's height",
+        assert_clearance({**base, "navToken": "56px"}),
+        True,
+    )
+    case(
+        "clearance catches a bar ROW that drifted from the token",
+        assert_clearance({**base, "navRowHeight": 56.0}),
+        True,
+    )
+    case(
+        # ⚠ The row and the token agree, and the nav is taller only because of the inset — NOT a drift.
+        "clearance accepts an inset-taller nav whose row still matches the token",
+        assert_clearance({**base, "navHeight": 99.0, "navRowHeight": 64.0, "contentBottomPad": "96px"}),
+        True,
+    )
+    case("clearance catches a bar with no height", assert_clearance({**base, "navHeight": None}), True)
+    case(
+        # ⚠ A stale frame sends no `navRowHeight`; the check must refuse to pass, not skip.
+        "clearance REFUSES to pass when the row height is missing (stale frame)",
+        assert_clearance({k: v for k, v in base.items() if k != "navRowHeight"}),
+        True,
+    )
+    case(
+        "clearance REFUSES to pass when the token is missing",
+        assert_clearance({k: v for k, v in base.items() if k != "navToken"}),
+        True,
+    )
+    case(
+        "clearance catches padding that is not a length",
+        assert_clearance({**base, "contentBottomPad": "auto"}),
+        True,
+    )
+    case(
+        "clearance accepts a notched-device result (derived padding grows)",
+        assert_clearance({**base, "navHeight": 98.0, "contentBottomPad": "130px"}),
+        False,
+    )
     case("no_sideways_scroll catches overflow", assert_no_sideways_scroll({**base, "overflowX": 9}), True)
     case(
         "no_sideways_scroll catches a poking element",

@@ -46,10 +46,19 @@ export function AppShell() {
         <div className="flex min-w-0 flex-1 flex-col">
           <Header />
           <main className="min-w-0 flex-1">
-            {/* ⚠ `lg:pb-12`, not `md:pb-12`: the 96px bottom padding is what clears the fixed tab
-                bar, and the bar now exists below 1024px rather than below 768px. If these two ever
-                disagree the last row of every grid hides under the bar — on a tablet, silently. */}
-            <div className="mx-auto w-full max-w-[1720px] px-4 pb-24 pt-4 sm:px-6 lg:pb-12 lg:px-8 xl:px-10">
+            {/* ⚠ THE CLEARANCE IS DERIVED, NOT A NUMBER. `lg:pb-12`, not `md:pb-12`, because the bar
+                now exists below 1024px rather than below 768px. And below lg the padding is
+                `--m-nav-h + --rkm-safe-bottom + 32px`: bar height, plus the device's own bottom
+                inset, plus a gap.
+
+                ⚠ It used to be a flat `pb-24` (96px), and that is what put the bar ON TOP OF the
+                page on his phone: the bar is 64px of content PLUS a 34px home-indicator inset = 98px
+                on a notched iPhone, so 96px of padding left the page 2px underneath it. ⚠ A hardcoded
+                number cannot be right on every device, and this sandbox cannot measure a non-zero
+                inset at all (`env(safe-area-inset-bottom)` is 0px in every desktop browser) — so the
+                only fix that works is one where the inset is part of the expression by construction.
+                On an inset-free device this resolves to 96px, which is what it has always looked like. */}
+            <div className="mx-auto w-full max-w-[1720px] px-4 pb-[calc(var(--m-nav-h,64px)_+_var(--rkm-safe-bottom,0px)_+_2rem)] pt-4 sm:px-6 lg:pb-12 lg:px-8 xl:px-10">
               <Outlet />
             </div>
           </main>

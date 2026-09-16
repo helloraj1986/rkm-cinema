@@ -305,10 +305,12 @@
  * it is a token and not a repeatable utility.
  * --------------------------------------------------------------------------- */
 [data-layout="mobile"] {
-  /* The thumb-zone bar's CONTENT height. The scroll padding and the last row's
-     bottom inset are computed from it, so a taller bar cannot leave a row hiding
-     underneath it. */
-  --m-nav-h: 56px;
+  /* ⚠ The thumb-zone bar's content height, and the SINGLE SOURCE of that number: the bar row is
+     `h-[var(--m-nav-h)]` and the page's bottom padding is derived from this + the safe-area inset
+     + a gap. ⚠ It is 64px, not 56px — as first written it disagreed with the bar's own `h-16` by
+     8px, which is exactly the drift a token exists to prevent. And the page's clearance used to be a
+     magic 96px that assumed a ZERO inset, which left the page 2px UNDER the bar on a notched phone. */
+  --m-nav-h: 64px;
   /* ⚠ The quality floor, not a preference: 44px is the smallest target a thumb
      hits reliably, and every interactive element in the shell is measured
      against it (`tools/check_mobile_shell.py`). */

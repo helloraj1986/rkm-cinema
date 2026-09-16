@@ -270,6 +270,37 @@ interface ProbeWindow extends Window {
       const r = document.querySelector('nav[aria-label="Mobile"]')?.getBoundingClientRect();
       return r ? +(window.innerHeight - r.bottom).toFixed(1) : null;
     })(),
+    /**
+     * ⚠ THE CLEARANCE, as a measured number: how much room the page's own bottom padding leaves for
+     * the fixed bar. This is the pair that put the bar ON TOP of the page on his phone — a flat 96px
+     * of padding against a 64px bar PLUS a 34px home-indicator inset, i.e. −2px.
+     *
+     * ⚠ It cannot be reproduced here (`env(safe-area-inset-bottom)` is 0px in every desktop browser),
+     * which is exactly why the padding must be DERIVED from the inset rather than written as a number:
+     * `shell-contract.test.ts` pins the expression, and this measures the result on an inset-free
+     * device where the two must agree.
+     */
+    navHeight: (() => {
+      const el = document.querySelector('nav[aria-label="Mobile"]');
+      return el ? +el.getBoundingClientRect().height.toFixed(1) : null;
+    })(),
+    /**
+     * ⚠ The bar's ROW height, which is what `--m-nav-h` describes — NOT the nav's total height.
+     *
+     * The nav is taller than its row by 1px (its top border) and by the device's bottom inset, so
+     * comparing the token to `navHeight` reports "the token and the bar have drifted" on a correct
+     * build, and reports it as 65px on an inset-free one. Two different questions: the token is the
+     * ROW, the clearance is the TOTAL.
+     */
+    navRowHeight: (() => {
+      const el = document.querySelector('nav[aria-label="Mobile"] > div:last-child');
+      return el ? +el.getBoundingClientRect().height.toFixed(1) : null;
+    })(),
+    navToken: getComputedStyle(root).getPropertyValue("--m-nav-h").trim(),
+    contentBottomPad: (() => {
+      const el = document.querySelector("main > div");
+      return el ? getComputedStyle(el).paddingBottom : null;
+    })(),
     tabHrefs: [...document.querySelectorAll<HTMLAnchorElement>('nav[aria-label="Mobile"] a')].map(
       (a) => a.getAttribute("href") ?? "",
     ),

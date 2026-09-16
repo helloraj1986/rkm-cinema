@@ -43,6 +43,27 @@ git pull --ff-only
 
 ⚠ Then on the **phone** (and on the **iPad**, which is the interesting one): the **bottom bar** is the navigation, it sits above the home indicator, every tab is comfortably tappable, and nothing scrolls sideways at any width. Append **`?layout=debug`** to the URL and a corner readout says `mobile` on the phone and `desktop` on the laptop — rotating the iPad flips the word with no reload and no visible change to the page. ⚠ **What has deliberately NOT changed: any screen's content.** This phase moved the chrome and nothing else.
 
+**⚠ HIS FIRST MOBILE ROUND — one defect and one good-to-have, both reported 2026-09-16 from the phone:**
+
+**(a) FIXED — "bottom bar now sits on top of the pages".** ⚠ **The mechanism was two numbers that disagreed, and neither was visible in a sandbox:**
+* the content padding was a flat `pb-24` (96px) that **assumed a zero-safe-area device**, while the bar is 64px of content **PLUS the home-indicator inset** — 98px on a notched iPhone ⇒ the page's last row sat **2px UNDER the bar**;
+* and `--m-nav-h` was **56px** while the bar's own row was `h-16` (**64px**) — the token and the bar disagreed by 8px. ⚠ **A token that lies is worse than no token**, because everything deriving a clearance from it is wrong by that difference and nothing says so.
+
+⇒ The clearance is now **derived, not a number**: `pb-[calc(var(--m-nav-h) + var(--rkm-safe-bottom) + 2rem)]`, the bar's row reads `h-[var(--m-nav-h)]`, and `--m-nav-h` is 64px. ⚠ On an inset-free device this resolves to 96px — **exactly what it always looked like** — and on his iPhone to 130px against a 99px bar, i.e. **a 31px clearance either way**. Measured in the sandbox: bar **65px** (64 row + 1px border), row **64**, token **64px**, padding **96px** ⇒ clearance **31px**.
+
+⚠⚠ **AND THE HONEST LIMIT: the browser gate CANNOT see this bug in this container.** `env(safe-area-inset-*)` is **0px** in every desktop browser, so a flat 96px still cleared the 65px bar and the gate was green while his phone was not. **The half that catches it is `app/shell-contract.test.ts`**, which asserts the *derivation* — that the container's class attribute contains `var(--rkm-safe-bottom)` and `var(--m-nav-h)`, uses no `pb-24`, and that the token is 64px and not 56px. Falsified: putting `pb-24` back turns that test **RED** (1 failed), and the browser gate stays green — which is exactly why the source-level test had to exist.
+
+⚠ **Two more traps found while fixing it, both in the "green run, broken thing" class:** (1) the first version of that test scanned the whole file for `pb-24` and **went red on the comment that NAMES the bug** — a rule that flags its own documentation teaches people to delete the documentation, so it now asserts on the **class attribute**; (2) `check_mobile_shell.py` had **no freshness marker for the frame it drives**, so a stale frame simply omitted the new field and the clearance check **skipped itself** — green on a tree where the two numbers were still 8px apart. A missing probe field is now a **FAILURE, not a skip**, and the frame's marker is the newest field it measures.
+
+**(b) DEFERRED BY HIM — "keep it good to have for next session": the Movies tab takes an extra second to populate (711 titles in that folder).** He wants tab switching snappy **irrespective of library size**. ⚠ **Not fixed, deliberately** — it is M9's performance pass (`MOBILE_FIRST_UI_PLAN` §11) and the brief's §5 already names the cure: *"Virtualise any list that can exceed ~200 rows."*
+
+⚠ **What to MEASURE first next session, before changing anything** — the answer decides the fix, and the two causes look identical from the sofa:
+1. **First visit or every visit?** React Query holds a query for 30s stale / `gcTime` on disk. If the second visit to the same folder is instant, it is a FETCH (711 rows of JSON); if it is slow every time, it is the RENDER.
+2. **If it is the render:** `LibraryFolderView` maps every item to a `MediaCard` with no windowing, so 711 posters are 711 DOM subtrees and 711 `/api/jellyfin/poster` image decodes. The cure is a **windowed grid** plus `loading="lazy"`, `decoding="async"`, an explicit `aspect-ratio` (to stop layout shift) and `content-visibility: auto`.
+3. **If it is the fetch:** it is a `/api/library/items` payload question — pagination or a slimmer row shape — and that is a **backend phase**, which needs the §14 check with him first.
+4. ⚠ And confirm nginx is actually serving the artwork from its 7-day cache rather than re-proxying Jellyfin (`tools/verify_nginx_artwork_cache.py`).
+⚠ **The same treatment applies to Search results and the Watchlist** — both can exceed 200 rows.
+
 ## ▶ 🔀 **BRANCH STRATEGY IS NOW `dev`-FIRST, AND `main` CARRIES ONLY WORK THAT IS UNIT TESTED *AND* TESTED BY HIM ON THE UI** (2026-09-16, his instruction) · created: **`dev`** — cut from `main` (`c5bb919`) with the **whole offline workstream merged in** (fast-forward, no merge commit) ⇒ **`dev` = `e0f5b31`, 23 commits ahead of `main`, pushed and the remote ref verified** · ⚠ **`main` is UNTOUCHED at `c5bb919`** · ⚠ `experiment/bundled-docker-stack` is 9 behind and is **no longer part of the flow** · ⚠ `spike/offline-loopback` stays a throwaway
 
 **⚠⚠ THE RULE — his words, then what they mean in commands (`docs/ARCHITECTURE.md` §13/§14 carry the short form):**

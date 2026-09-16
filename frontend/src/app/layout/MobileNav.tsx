@@ -207,7 +207,10 @@ export function MobileNav() {
       )}
       <div
         ref={barRef}
-        className="mx-auto flex h-16 max-w-lg items-center gap-1 px-3 sm:max-w-2xl"
+        /* ⚠ `h-[var(--m-nav-h)]`, NOT `h-16`: the row's height and the page's clearance must be the
+           same number, and a token nobody reads is a comment. See `--m-nav-h` in styles/index.css and
+           the derivation in AppShell. */
+        className="mx-auto flex h-[var(--m-nav-h,64px)] max-w-lg items-center gap-1 px-3 sm:max-w-2xl"
       >
         <NavLink
           to="/library/home"

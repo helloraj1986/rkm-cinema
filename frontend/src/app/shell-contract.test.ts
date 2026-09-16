@@ -55,6 +55,43 @@ describe("the iOS shell's safe-area contract", () => {
     expect(read("layout/Header.tsx")).toContain("min-h-16");
   });
 
+  it("the page's clearance for the bottom bar is DERIVED, not a number", () => {
+    // ⚠ THIS IS THE PIN FOR A REPORTED BUG, and it exists because the sandbox CANNOT reproduce it.
+    // His report (2026-09-16): "bottom bar now sits on top of the pages". The mechanism: the content
+    // padding was a flat `pb-24` (96px), and the bar is 64px of content PLUS the device's own
+    // home-indicator inset — 98px on a notched iPhone — so the page's last row sat 2px UNDER the bar.
+    // ⚠ `env(safe-area-inset-bottom)` resolves to 0px in every desktop browser, so a browser check
+    // here sees a page that clears the bar perfectly while his phone does not. The only half that can
+    // be pinned in this container is the DERIVATION, which is what this test does.
+    //
+    // ⚠ It asserts on the CLASS ATTRIBUTE, not on the file. The first version scanned the whole source
+    // for `pb-24` and went red on the comment above — which NAMES the bug it is about. A rule that
+    // flags its own documentation teaches people to delete the documentation.
+    const shell = read("layout/AppShell.tsx");
+    const nav = read("layout/MobileNav.tsx");
+    const css = read("../styles/index.css");
+
+    const contentClass = shell.match(/className="(mx-auto w-full max-w-\[1720px\][^"]*)"/)?.[1];
+    expect(contentClass, "the page container's className was not found").toBeTruthy();
+    // The padding must be derived from the bar's height AND the device's own inset.
+    expect(contentClass).toContain("var(--m-nav-h");
+    expect(contentClass).toContain("var(--rkm-safe-bottom");
+    // ⚠ A flat bottom padding IS the bug: no fixed number can be right on every device.
+    expect(contentClass).not.toMatch(/(?:^|\s)pb-24(?:\s|$)/);
+    // …and the desktop side still hands the space back.
+    expect(contentClass).toContain("lg:pb-12");
+
+    // The bar's own row reads the token, so the token is the single source of its height.
+    const barClass = nav.match(/className="(mx-auto flex h-\[var\(--m-nav-h[^"]*)"/)?.[1];
+    expect(barClass, "the tab bar row no longer reads --m-nav-h").toBeTruthy();
+
+    // The token is 64px. It was 56px, which disagreed with the bar's own `h-16` by 8px — a token that
+    // lies is worse than no token, because everything deriving a clearance from it is wrong by that
+    // difference and nothing says so.
+    expect(css).toMatch(/--m-nav-h:\s*64px/);
+    expect(css).not.toMatch(/--m-nav-h:\s*56px/);
+  });
+
   it("full screen is the viewport itself, at every size — nothing is measured", () => {
     // ⚠ The player shell IS the screen: `fixed; inset: 0` + `100dvh` stretches it to whatever
     // display this is, and the safe-area insets come from the browser — so the same CSS is

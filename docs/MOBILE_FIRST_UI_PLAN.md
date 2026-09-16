@@ -817,6 +817,15 @@ banner without rotating the phone.
 `content-visibility: auto`), a11y pass (visible focus, 44×44 targets, contrast at 20% brightness),
 reduced motion, **the largest Dynamic Type setting the WebView reports**, the desktop regression report,
 `PROGRESS.md`, `ADR-0011`, and **one paragraph** appended to `ARCHITECTURE.md` §12.
+
+⚠ **EXPLICITLY INCLUDES THE VIRTUALISATION HE ASKED FOR (his report, 2026-09-16: the Movies tab takes an
+extra second to populate, 711 titles).** Brief §5 already states the rule — *"Virtualise any list that
+can exceed ~200 rows"* — and `LibraryFolderView` currently maps every item to a `MediaCard` with no
+windowing. ⚠ **Measure before changing anything:** if a SECOND visit to the same folder is instant it is
+the fetch (React Query holds it 30s stale), not the render — and a fetch fix is a backend phase, which
+needs §14. See `PROGRESS.md`'s open item for the full measurement plan. The same applies to Search
+results and the Watchlist.
+
 **Done when:** every gate green, the M9 desktop screenshots match M0's baseline, and the docs are written.
 
 ---

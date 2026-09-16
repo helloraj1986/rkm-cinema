@@ -377,6 +377,12 @@ export function rowStatusText(item: OfflineItem): string {
   const percent = percentOf(item.bytes, item.totalBytes);
   switch (item.state) {
     case "downloading":
+      // ⚠⚠ **NOTHING HAS ARRIVED YET IS A STATE WORTH NAMING (2026-09-16, from his phone).** Before the
+      // first byte lands, `bytes` and `totalBytes` are both 0 — because the SERVER is still PACKAGING the
+      // rendition (the app's own log reads `offline packaging · packaging · 1.05 GB after 36s` while the
+      // row says nothing is happening). A download that says "0 B downloaded" for a minute reads as a
+      // download that is not working, and it is the one thing about this screen the household sees first.
+      if (item.bytes <= 0 && item.totalBytes <= 0) return "Preparing on the server…";
       return percent === null
         ? `${fmtBytes(item.bytes)} downloaded`
         : `${fmtBytes(item.bytes)} / ${fmtBytes(item.totalBytes)} · ${percent}%`;

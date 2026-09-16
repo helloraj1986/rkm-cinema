@@ -208,6 +208,18 @@ describe("the numbers a person reads", () => {
     expect(fmtBytes(Number.NaN)).toBe("0 B");
   });
 
+  it("⚠⚠ names the state his phone showed as '0%' — before a byte has landed, say WHICH side is working", () => {
+    // His report, 2026-09-16: "the file is being downloaded but on the ui of ios… you can see it shows
+    // 0%". The app's own log said `offline packaging · packaging · 1.05 GB after 36s`: the SERVER was
+    // still packaging the rendition, so nothing had arrived yet and both byte counts were 0. "0 B
+    // downloaded" for a minute of that reads as a download that is not working.
+    expect(rowStatusText(row({ state: "downloading", bytes: 0, totalBytes: 0 }))).toBe("Preparing on the server…");
+    // ⚠ And the moment a single byte or a real total exists, it says the numbers again — the label must
+    // not become a place to hide a stall.
+    expect(rowStatusText(row({ state: "downloading", bytes: 1, totalBytes: 0 }))).toBe("1 B downloaded");
+    expect(rowStatusText(row({ state: "downloading", bytes: 0, totalBytes: 100 }))).toBe("0 B / 100 B · 0%");
+  });
+
   it("says something true in every state, including the failing one", () => {
     expect(rowStatusText(row({ state: "downloading", bytes: 500 * 1e6, totalBytes: GB }))).toBe(
       "500 MB / 1.00 GB · 50%",

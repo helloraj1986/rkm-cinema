@@ -201,7 +201,13 @@ window.fetch = (async (input: RequestInfo | URL, init: RequestInit = {}) => {
     if (!WITH_BUNDLE) return new Response("", { status: 404 });
     return json({ ...BUNDLE, item_id: path.split("/").pop() });
   }
-  if (path === "/api/jellyfin/progress") return json({ ok: true });
+  // ⚠⚠ A 204 WITH NO BODY, because that is what `POST /api/jellyfin/progress` really answers
+  // (`jellyfin_stream.py` → `JSONResponse(status_code=204, content=None)`), and the browser gives a 204
+  // a NULL body whatever the server writes. ⚠ This stub used to answer `200 {ok:true}`, which is kinder
+  // than production — and a stub more permissive than the real route is a gate that cannot fail: it
+  // passed while every replay on his phone was being rejected by the client's own JSON parsing (fixed
+  // in `client.ts::request`).
+  if (path === "/api/jellyfin/progress") return new Response(null, { status: 204 });
   if (path.startsWith("/api/jellyfin/playback-info")) return json(PLAYBACK_INFO);
   if (path.startsWith("/api/jellyfin/detail")) return json(ITEM_DETAIL);
   if (path.startsWith("/api/jellyfin/similar") || path.startsWith("/api/jellyfin/backdrop")) {

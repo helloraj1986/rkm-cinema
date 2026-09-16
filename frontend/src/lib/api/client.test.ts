@@ -25,6 +25,51 @@ describe("frozen /api client surface", () => {
   });
 });
 
+// ------------------------------------------------- a success with NO body (2026-09-16)
+// ⚠ Found on his phone, in B4's Downloads screen: "3 watching positions waiting to sync" that never
+// moved. `POST /api/jellyfin/progress` answers **204** (`jellyfin_stream.py`), a 204 has a NULL body by
+// spec, and `res.json()` REJECTS on one — so a report the server had ACCEPTED was read as a failure,
+// kept, and retried every minute for good. The player swallowing the same rejection (`.catch(() => {})`)
+// is why a live online report never landed either.
+describe("a body-less success is a SUCCESS", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    resetUnauthorizedCooldown();
+    setUnauthorizedHandler(null);
+  });
+
+  it("pins the mechanism: the browser gives a 204 a null body, whatever the server writes", async () => {
+    // The fact the fix is built on, asserted where a change to it would be caught.
+    await expect(new Response(null, { status: 204 }).json()).rejects.toThrow();
+    // ⚠ …and it is not about what the SERVER writes: both engines agree a 204 has no body to parse.
+    // (undici, which this suite runs on, refuses to even CONSTRUCT a 204 with one; a browser accepts
+    // the bytes and discards them, which is the shape the report route really has.)
+    expect(() => new Response("null", { status: 204 })).toThrow();
+  });
+
+  it("resolves the report the progress route really answers", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 204 })));
+    await expect(
+      api.reportProgress({ item_id: "m-sholay", position_ticks: 10, is_paused: false, event: "stopped" }),
+    ).resolves.toBeUndefined();
+  });
+
+  it("still refuses a real error status — the 204 branch must not swallow failures", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(JSON.stringify({ detail: "Jellyfin did not store the playback position" }), {
+          status: 502,
+          headers: { "content-type": "application/json" },
+        }),
+      ),
+    );
+    await expect(
+      api.reportProgress({ item_id: "x", position_ticks: 1, is_paused: false, event: "stopped" }),
+    ).rejects.toBeInstanceOf(ApiError);
+  });
+});
+
 // ---------------------------------------------------------------- auth (Phase 1)
 // The client owns exactly ONE auth rule — "a 401 on an APP call means the session is
 // gone" — and these pin its edges: one sign-out per burst of failures, and the auth

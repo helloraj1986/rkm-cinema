@@ -68,6 +68,7 @@ export function DownloadsView() {
   const pending = useOffline((state) => state.pending);
   const notice = useOffline((state) => (state.notice && state.notice.itemId === null ? state.notice : null));
   const queued = useOffline((state) => state.queuedReports);
+  const queueNotice = useOffline((state) => state.queueNotice);
   const { startMovie } = useLibraryOutlet();
 
   if (!available) {
@@ -95,8 +96,8 @@ export function DownloadsView() {
             make "Continue Watching did not update" a mystery with nothing on screen to explain it. */}
         {queued > 0 ? (
           <p className="text-xs text-amber-300/90" data-testid="downloads-queued">
-            {queued} watching position{queued === 1 ? "" : "s"} waiting to sync — they will be sent the
-            next time this server can be reached.
+            {queued} watching position{queued === 1 ? "" : "s"} waiting to sync
+            {queueNotice ? ` — ${queueNotice}` : " — they will be sent the next time this server can be reached."}
           </p>
         ) : null}
         {notice ? <p className="text-xs text-red-400">{notice.text}</p> : null}

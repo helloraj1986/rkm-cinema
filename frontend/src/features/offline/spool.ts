@@ -173,6 +173,28 @@ export function isFinished(positionTicks: number, runtimeTicks: number): boolean
 }
 
 /**
+ /**
+  * What to tell the person when a replay did not land (`session.ts::flushSpool`).
+  *
+  * ⚠ This exists because the queue was SILENT: three positions sat on his phone with nothing on screen
+  * to say whether they were waiting, failing, or being refused — and the answer turned out to be the
+  * worst of the three (accepted reports read as failures, `client.ts::request`'s 204 bug). A count plus
+  * a reason is the difference between a feature that is waiting and a feature that is broken.
+  */
+ export function replayFailureNotice(status: number | null): string {
+   if (status === 401 || status === 403) {
+     return "Sign in again and they will be sent.";
+   }
+   if (status === null) {
+     return "The server could not be reached — they are kept and tried again.";
+   }
+   if (status >= 500) {
+     return "The server could not record them just now — they are kept and tried again.";
+   }
+   return "The server refused them — they are kept, and will be tried again.";
+ }
+
+ /**
  * Where an OFFLINE play should start.
  *
  * ⚠ `max`, and the reason is asymmetry: a resume point that is too far forward skips a scene, one

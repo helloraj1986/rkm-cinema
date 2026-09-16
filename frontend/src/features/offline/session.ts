@@ -49,6 +49,7 @@ import {
   dueSpool,
   emptySpool,
   readSpool,
+  replayFailureNotice,
   recordSpool,
   resumeSecondsFrom,
   spoolSize,
@@ -81,6 +82,12 @@ interface OfflineStoreState {
   pending: Record<string, true>;
   /** Positions still waiting for a server (the Downloads screen says how many). */
   queuedReports: number;
+  /**
+   * ⚠ WHY the last replay did not land, when it did not. The count alone is not enough: "3 waiting"
+   * reads the same whether the server is refusing them, the network is down, or the session expired —
+   * and the first real round of this feature proved a silent queue costs a Mac round to diagnose.
+   */
+  queueNotice: string | null;
 }
 
 export const useOffline = create<OfflineStoreState>(() => ({
@@ -90,6 +97,7 @@ export const useOffline = create<OfflineStoreState>(() => ({
   notice: null,
   pending: {},
   queuedReports: 0,
+  queueNotice: null,
 }));
 
 /** The store's own accessors for non-React callers (the player, the flush loop). */
@@ -151,7 +159,7 @@ export function startOfflineSession(owner: string): void {
 
   const server = serverOrigin();
   const available = bridgeAvailable();
-  useOffline.setState({ available, items: [], loaded: false, notice: null, pending: {} });
+  useOffline.setState({ available, items: [], loaded: false, notice: null, pending: {}, queueNotice: null });
 
   // ⚠ `readSpool` DELETES a foreign or unreadable envelope on the way out, so a queue left by
   // another profile (or another server, whose item ids name different films) is gone rather than
@@ -428,12 +436,21 @@ export async function flushSpool(): Promise<number> {
           play_method: entry.play_method || undefined,
           runtime_ticks: entry.runtime_ticks || undefined,
         });
-      } catch {
-        break; // still unreachable — the rest waits, in order
+      } catch (error) {
+        // ⚠ SAY WHY. The status is what tells the three cases apart — and only one of them is "try
+        // later": a 401 waits for a sign-in, a 5xx or a dropped connection waits for the server, and a
+        // refusal waits for nothing (but the entry is KEPT, because a position is worth more than the
+        // tidiness of dropping it).
+        const status = typeof (error as { status?: unknown } | null)?.status === "number"
+          ? ((error as { status: number }).status)
+          : null;
+        useOffline.setState({ queueNotice: replayFailureNotice(status) });
+        break; // the rest waits, in order
       }
       // ⚠ Dropped by `recorded_at`: a newer position for the same title may have been recorded
       // while this request was in flight, and it must survive the flush.
       persistSpool(dropSpoolEntry(spool, entry.itemId, entry.recorded_at));
+      useOffline.setState({ queueNotice: null });
       sent += 1;
     }
   } finally {

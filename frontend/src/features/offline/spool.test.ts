@@ -10,6 +10,7 @@ import {
   parseSpoolEnvelope,
   readSpool,
   recordSpool,
+  replayFailureNotice,
   resumeSecondsFrom,
   spoolEnvelope,
   spoolSize,
@@ -160,6 +161,24 @@ describe("where an offline play starts", () => {
 
   it("an unknown runtime never reads as finished", () => {
     expect(isFinished(999 * MINUTE, 0)).toBe(false);
+  });
+});
+
+describe("why a replay did not land — the three cases must not read the same", () => {
+  it("tells an expired session, a dead network and a refusal apart", () => {
+    // ⚠ The queue was silent for a whole round (three positions, no reason on screen). The status is
+    // the only thing that distinguishes these, and only one of them means "wait".
+    expect(replayFailureNotice(401)).toContain("Sign in again");
+    expect(replayFailureNotice(403)).toContain("Sign in again");
+    expect(replayFailureNotice(null)).toContain("could not be reached");
+    expect(replayFailureNotice(502)).toContain("could not record");
+    expect(replayFailureNotice(400)).toContain("refused");
+  });
+
+  it("never says the positions are lost — they are kept in every case", () => {
+    for (const status of [null, 400, 401, 403, 500, 502, 503]) {
+      expect(replayFailureNotice(status)).toMatch(/kept|Sign in again/);
+    }
   });
 });
 

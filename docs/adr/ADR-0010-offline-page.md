@@ -170,6 +170,20 @@ not entitled to — it shows its own empty and offline states, and the server st
 would refuse anyway. ⚠ And the disk cache is NOT adopted in that state (nobody is known to be watching),
 so no cached rows appear either.
 
+### D9a — ⚠⚠ A 204 IS A SUCCESS WITH NO BODY, and finding that out was the first real round's whole yield
+
+`request<T>` ended with `return (await res.json()) as T`, and **a 204 has a NULL body by spec** — a browser
+discards whatever the server writes — so `res.json()` REJECTS and a SUCCESS reads as a failure. The one
+route that answers 204 is `POST /api/jellyfin/progress` (the accepted-report answer), so the blast radius
+was exactly *"did that playback position land"*: this queue could never drain (an accepted replay was
+retried forever), and the pre-B4 player swallowed the same rejection with `.catch(() => {})`, so a live
+report never landed either. ⚠ **The repo's own progress probes could not see it** — they call the API with
+`requests`, which has no JSON-parsing step, so the route looked perfect from every angle except the app's.
+
+⇒ `if (res.status === 204) return undefined as T;`, with the mechanism, the measurement (a real browser:
+`{status: 204, ok: true, contentLength: null, jsonError: "SyntaxError: … Unexpected end of JSON input"}`)
+and the blast radius in the comment, plus tests for the mechanism and for the 502 that must still throw.
+
 ### D10 — The gate is a BROWSER harness against a fake bridge, and the rules were falsified one at a time
 
 `tools/check_offline_page.py` drives `frontend/harness/offline-frame.html` — the real `DownloadButton`,
@@ -191,6 +205,24 @@ browser exactly. Six scenarios, and the ones worth naming:
 (4 checks red), making the player use the server for a film it holds (3 checks red — and the frame even
 reached the HLS escalation ladder), and reporting through the server while playing locally (5 checks red,
 including a replayed `start` at position 0 — the rewind this ADR is about).
+
+⚠⚠ **AND THE GATE HAD A BLIND SPOT THAT HIS PHONE FOUND FIRST: the fake API answered the progress route
+with `200 {ok:true}` while the REAL route answers `204` with no body.** A stub more permissive than
+production is a gate that cannot fail — six green scenarios on the exact bug that was breaking his
+Downloads screen. The stub now answers `new Response(null, {status: 204})`, and ⚠ the falsification now
+bites: with `client.ts`'s 204 branch reverted, scenario 5 goes red three ways (the queue never empties,
+the same position is replayed **twice**, and "the queue is drained" fails). ⚠ **Generalise: a fake must
+answer what the route answers — status code included, empty body included.**
+
+⚠ **Two smaller honesty fixes came out of the same screenshot.** (1) A download **before its first byte**
+now reads **"Preparing on the server…"**, because the server is still packaging the rendition (his log:
+`offline packaging · packaging · 1.05 GB after 36s`) and `0 B downloaded` for a minute reads as a broken
+download — and it reverts to real numbers the moment a byte or a real total exists, so the label cannot
+become a place to hide a stall. (2) **A queue that cannot move now says WHY**: `flushSpool` records
+`replayFailureNotice(status)` — 401/403 waits for a sign-in, no status means the server could not be
+reached, 5xx waits for the server, 4xx is a refusal — ⚠ and the entry is KEPT in every case, because a
+position is worth more than the tidiness of dropping it. The three cases reading the same is what turned a
+one-line client bug into a Mac round to diagnose.
 
 ## Consequences
 

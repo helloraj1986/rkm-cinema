@@ -822,6 +822,17 @@ async function request<T>(path: string, init: RequestInit, options: RequestOptio
     }
     throw new ApiError(res.status, failure.message, failure.detail);
   }
+  // ⚠⚠ **A 204 IS A SUCCESS WITH NO BODY — and `res.json()` REJECTS on one** ("Unexpected end of JSON
+  // input"), so without this line a route that answers 204 turns every SUCCESS into a failure.
+  //
+  // ⚠ Measured 2026-09-16 in a real browser: the response carries no `content-length` and a null body
+  // EVEN WHEN the server writes `null`, because a 204 has a null body by spec. The one route that
+  // answers 204 is `POST /api/jellyfin/progress` (the accepted-report answer, `jellyfin_stream.py`), so
+  // the blast radius was exactly "did that playback position land" — and it is the reason B4's progress
+  // spool never drained: a replayed position that the server ACCEPTED was read as unreachable, kept,
+  // and retried every minute forever. ⚠ The pre-B4 player swallowed the same rejection with
+  // `.catch(() => {})`, which is why a live online report never landed either.
+  if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
 }
 

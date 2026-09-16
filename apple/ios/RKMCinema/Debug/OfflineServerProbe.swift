@@ -59,8 +59,58 @@ enum OfflineServerProbe {
         RKMLog.info("offline probe · starting (server=\(wantServer) bridge=\(wantBridge))", category: .offline)
         DispatchQueue.main.async {
             if wantServer { runSuite() }
-            if wantBridge { runBridgeProbe() }
+            if wantBridge { installBridgeProbeListener() }
+            // ⚠ The row summary is logged HERE as well as when part two fires, and the first one matters
+            // most: if a title is on disk but its row says `downloading`, this is the only line that shows
+            // it — and part two never fires, so a version that logged it only on success would be blind to
+            // the exact bug that prompted it.
+            logRowSummary()
+            // ⚠ Part two needs a TITLE — see `rowsDidChange`. If one is already downloaded (a plain
+            // relaunch) it runs now; otherwise it waits for the download to finish.
+            rowsDidChange()
         }
+    }
+
+    private static var didAnnounce = false
+
+    /// ⚠⚠ PART TWO, AND IT IS DELIBERATELY NOT AT PAGE LOAD.
+    ///
+    /// The real-film check and the announcement need a title the downloader knows about, and a film that a
+    /// launch argument started arrives MINUTES after the page did. Running everything at page load is how
+    /// the first Mac round reported `NOT EXERCISED` on a run that had downloaded perfectly well: 16/16 server
+    /// cases green, both commands answered, and `count=0` for the events because there was nothing to
+    /// announce. The bridge calls this from its own publish, so it fires the moment a title is playable.
+    static func rowsDidChange() {
+        guard !didAnnounce else { return }
+        guard serverProbeRequested() || bridgeProbeRequested() else { return }
+        guard OfflineDownloads.shared.rows.contains(where: { $0.state.isPlayable }) else { return }
+        didAnnounce = true
+
+        DispatchQueue.main.async {
+            logRowSummary()
+            runRealFilmCheck { outcome in
+                RKMLog.info("offline probe · \(outcome)", category: .offline)
+            }
+            if bridgeProbeRequested() {
+                // ⚠ Re-announce through the PRODUCTION event path (nothing fabricated), then ask the page a
+                // question — one action proves both directions, with a real title.
+                OfflineBridge.shared.forcePublishAll()
+                askPage()
+            }
+        }
+    }
+
+    /// ⚠ What the app itself thinks each title's state is. It is the cheapest way to see the difference
+    /// between "nothing downloaded" and "downloaded, and the row never changed" — the second of which is a
+    /// real bug the log alone cannot show (the READY line is written by the same code that fails to refresh
+    /// the row).
+    private static func logRowSummary() {
+        let rows = OfflineDownloads.shared.rows
+        let ready = rows.filter { $0.state.isPlayable }.count
+        let downloading = rows.filter { $0.state == .downloading }.count
+        let failed = rows.filter { $0.state == .failed }.count
+        RKMLog.info("offline probe · rows \(rows.count) total, \(ready) ready, \(downloading) downloading, "
+                    + "\(failed) failed", category: .offline)
     }
 
     // MARK: - The artefact
@@ -326,7 +376,7 @@ enum OfflineServerProbe {
     /// native side re-announces every REAL title through the production event path, and the page asks for
     /// `ping` and `list` and reports what it got back. The report rides the existing instrumentation channel
     /// (`WebBridge`), which is the only path that can prove the native→page direction at all.
-    private static func runBridgeProbe() {
+    private static func installBridgeProbeListener() {
         guard let webView = OfflineBridge.shared.debugWebView else {
             RKMLog.error("offline bridge probe FAIL — no web view is attached to the bridge", category: .offline)
             return
@@ -347,13 +397,15 @@ enum OfflineServerProbe {
             if let error {
                 RKMLog.error("offline bridge probe FAIL — the page would not install the listener: "
                              + "\(error.localizedDescription)", category: .offline)
-                return
             }
-            // Give the page a turn to register, then announce the real rows (native → page).
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                OfflineBridge.shared.forcePublishAll()
+        }
+    }
 
-                let ask = #"""
+    /// The page asks, and REPORTS what it got back — the only witness for the reply direction.
+    private static func askPage() {
+        guard let webView = OfflineBridge.shared.debugWebView else { return }
+
+        let ask = #"""
                 (function () {
                   function report(command, answer) {
                     window.__rkmOfflineReport('command', {cmd: command, ok: !!(answer && answer.ok),
@@ -365,14 +417,12 @@ enum OfflineServerProbe {
                   }
                   window.__rkmOffline.ping().then(function (r) { report('ping', r); }, function (e) { failed('ping', e); });
                   window.__rkmOffline.list().then(function (r) { report('list', r); }, function (e) { failed('list', e); });
-                })();
-                """#
-                webView.evaluateJavaScript(ask) { _, askError in
-                    if let askError {
-                        RKMLog.error("offline bridge probe FAIL — the page could not ask: "
-                                     + "\(askError.localizedDescription)", category: .offline)
-                    }
-                }
+        })();
+        """#
+        webView.evaluateJavaScript(ask) { _, askError in
+            if let askError {
+                RKMLog.error("offline bridge probe FAIL — the page could not ask: "
+                             + "\(askError.localizedDescription)", category: .offline)
             }
         }
     }

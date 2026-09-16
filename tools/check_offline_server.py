@@ -49,7 +49,13 @@ from pathlib import Path
 # manifest path, the container that moves on every reinstall, the per-run boundary — and two copies would
 # drift apart. Same Mac, same app, same file.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from check_offline_download import collect_log, find_log, window  # noqa: E402
+from check_offline_download import (  # noqa: E402
+    _booted_container,
+    collect_log,
+    find_log,
+    find_manifest,
+    window,
+)
 
 DEFAULT_RUNS = 1
 
@@ -70,14 +76,18 @@ P_COMMAND = re.compile(r"offline bridge · command (\S+) ok=(true|false)(?: coun
 P_PAGE_RECEIVED = re.compile(r"offline bridge · page received event=(\S+?) item=(\S+?)(?: percent=(\d+))? "
                              r"carriesUrl=(true|false)")
 P_BRIDGE_FAIL = re.compile(r"offline bridge probe FAIL — ([^\n]*)")
+#: ⚠ The app's OWN view of each title. It exists because "nothing downloaded" and "downloaded, and the row
+#: never changed" look identical from the log otherwise — the READY line is written by the same code path
+#: that failed to refresh the row (found on the Mac 2026-09-16, from a screenshot).
+P_ROWS = re.compile(r"offline probe · rows (\d+) total, (\d+) ready, (\d+) downloading, (\d+) failed")
 
 #: The suite is `OfflineProbeCases.cases(size:)`. ⚠ A floor rather than an exact number on purpose: adding a
 #: case must not fail this gate, while LOSING cases (a suite that stopped early) must.
 MINIMUM_CASES = 16
 
 
-def analyse(lines: list[str]) -> dict:
-    """Pure: given one run's lines, answer the gate's questions."""
+def analyse(lines: list[str], manifest: dict | None = None) -> dict:
+    """Pure: given one run's lines (and the manifest, for one question), answer the gate's questions."""
     text = "\n".join(lines)
     result: dict = {"questions": {}, "evidence": [], "notes": [], "fatal": None}
 
@@ -214,6 +224,37 @@ def analyse(lines: list[str]) -> dict:
                  "(every title is announced once); with none, `list` still round-trips but there is nothing "
                  "to emit — see the note below", [])
 
+    # ---- 4. do the app's own rows agree with what is on disk?
+    rows = P_ROWS.search(text)
+    if rows:
+        total, ready, downloading, failed = (int(value) for value in rows.groups())
+        result["evidence"].append(f"the app's rows: {total} total, {ready} ready, {downloading} downloading, "
+                                  f"{failed} failed")
+        if ready > 0:
+            question("the app's own rows agree with the manifest", "PASS",
+                     f"{ready} of {total} row(s) are ready, which is what a published file looks like",
+                     [line for line in lines if P_ROWS.search(line)])
+        else:
+            # ⚠ THE SIGNATURE OF A STALE ROW: the file is on disk (the manifest says ready) and the app's own
+            # row says something else. It is a FAIL, not a "not exercised", because the UI is lying about a
+            # file the user can play — and the log's `offline READY` line cannot show it.
+            ready_records = [record for record in (manifest or {}).get("items", [])
+                             if record.get("state") == "ready"]
+            if ready_records:
+                question("the app's own rows agree with the manifest", "FAIL",
+                         f"the manifest holds {len(ready_records)} ready record(s) but the app's rows show "
+                         f"{ready} ready — the row is STALE. The download finished and the UI still says "
+                         f"`downloading`, which is a bug in the completion path, not a test setup problem",
+                         [rows.group(0)])
+                result["fatal"] = "a ready file whose row never changed"
+            else:
+                question("the app's own rows agree with the manifest", "NOT EXERCISED",
+                         "no title is ready yet — nothing to agree or disagree about",
+                         [rows.group(0)])
+    else:
+        question("the app's own rows agree with the manifest", "NOT EXERCISED",
+                 "the probe did not report the app's rows (an older build?)", [])
+
     if not received:
         result["notes"].append(
             "the event direction is proved by ANY event. To exercise it: download a title, then relaunch "
@@ -295,6 +336,7 @@ FIXTURE_FULL = _run(
     "offline http GET · /offline/<token>.mp4 · → 206 · size 1.00 MB · sent 512.00 KB · "
     "range bytes 524288-1048575/1048576 · asked \"bytes=524288-\"",
     "offline http HEAD · /offline/<token>.mp4 · → 200 · size 1.00 MB · sent 0 B · range — · asked no range",
+    "offline probe · rows 1 total, 1 ready, 0 downloading, 0 failed",
     "offline probe · real-film-head PASS — 1.88 GB, video/mp4",
     "offline probe · finished (the probe artefact was removed)",
     "offline bridge · the page sees the bridge: true v1",
@@ -357,24 +399,53 @@ FIXTURE_NOT_RUN = _run(
     "offline session ready · id x.offline",
 )
 
+#: ⚠ A finished download whose row never changed: the server suite is green, the commands answer, and the
+#: app's OWN rows say `downloading` — while the file sits on disk.
+FIXTURE_STALE_ROW = _run(
+    "offline probe · starting (server=true bridge=true)",
+    "offline server listening on 127.0.0.1:51234 (loopback only)",
+    *_case_lines(),
+    "offline probe · rows 1 total, 0 ready, 1 downloading, 0 failed",
+    "offline READY · 1.54 GB · mode remux · verified size+ETag · took 190s (8.1 MB/s)",
+    "offline bridge · the page sees the bridge: true v1",
+    "offline bridge · command ping ok=true count=0",
+    "offline bridge · command list ok=true count=1",
+    "offline bridge · page received event=progress item=abc123 percent=41 carriesUrl=false",
+)
+
+
+#: A manifest that says a film is on disk — the other half of the stale-row case.
+MANIFEST_READY = {"version": 1, "items": [{"item_id": "abc123", "title": "The Book of Life",
+                                           "state": "ready", "bytes": 1540000000,
+                                           "total_bytes": 1540000000, "verification": "size_etag"}]}
+
 
 def selftest() -> int:
     cases = [
-        ("the real round: suite green, both directions proved", FIXTURE_FULL, 0, "all 16/16 cases passed"),
-        ("⚠ a SHIFTED range: the right byte count from the wrong offset", FIXTURE_SHIFTED, 1, "get-mid-open"),
-        ("a suite that stopped halfway", FIXTURE_HALF_SUITE, 1, "stopped at 10/16"),
-        ("no downloaded title, so the event direction is unproven", FIXTURE_NO_ROWS, 3, "received nothing"),
-        ("a command the page could not get an answer to", FIXTURE_COMMAND_REFUSED, 1, "got a refusal"),
-        ("the page cannot see the bridge at all", FIXTURE_NO_BRIDGE, 1, "cannot see the offline bridge"),
-        ("the probe never ran", FIXTURE_NOT_RUN, 3, "probe never ran"),
+        ("the real round: suite green, both directions proved", FIXTURE_FULL, None, 0,
+         "all 16/16 cases passed"),
+        ("⚠ a SHIFTED range: the right byte count from the wrong offset", FIXTURE_SHIFTED, None, 1,
+         "get-mid-open"),
+        ("a suite that stopped halfway", FIXTURE_HALF_SUITE, None, 1, "stopped at 10/16"),
+        ("no downloaded title, so the event direction is unproven", FIXTURE_NO_ROWS, None, 3,
+         "received nothing"),
+        ("a command the page could not get an answer to", FIXTURE_COMMAND_REFUSED, None, 1, "got a refusal"),
+        ("the page cannot see the bridge at all", FIXTURE_NO_BRIDGE, None, 1, "cannot see the offline bridge"),
+        ("the probe never ran", FIXTURE_NOT_RUN, None, 3, "probe never ran"),
         ("a STALE pass: an older run passed, this one did not (1-run window)",
-         FIXTURE_FULL + FIXTURE_NOT_RUN, 3, "probe never ran"),
+         FIXTURE_FULL + FIXTURE_NOT_RUN, None, 3, "probe never ran"),
+        # ⚠⚠ The bug the first real B3 round found from a screenshot: the film is on disk (the manifest says
+        # so) and the app's own row still says `downloading`. It must NOT be reported as "not exercised".
+        ("⚠ a STALE ROW: the manifest says ready and the app's rows say downloading",
+         FIXTURE_STALE_ROW, MANIFEST_READY, 1, "the row is STALE"),
+        ("the same suite with no manifest to compare against",
+         FIXTURE_STALE_ROW, None, 3, "nothing to agree or disagree about"),
     ]
 
     failures = 0
-    for index, (label, lines, expected_code, expected_text) in enumerate(cases, start=1):
+    for index, (label, lines, manifest, expected_code, expected_text) in enumerate(cases, start=1):
         run, _where = window(lines, DEFAULT_RUNS)
-        result = analyse(run)
+        result = analyse(run, manifest)
         code = verdict_code(result)
         body = json.dumps(result)
         ok = code == expected_code and expected_text in body
@@ -407,14 +478,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.selftest:
         return selftest()
 
+    container = None
     if args.log is not None:
         if not args.log.exists():
             print(f"no such log file: {args.log}", file=sys.stderr)
             return 3
         lines = collect_log(args.log)
         where = f"{args.log} ({len(lines)} lines)"
+        container = _booted_container()
     else:
-        container = None
         path, why, container = find_log(container)
         if path is None:
             print(f"cannot read the app's log: {why}", file=sys.stderr)
@@ -422,9 +494,19 @@ def main(argv: list[str] | None = None) -> int:
         lines = collect_log(path)
         where = f"{why} ({len(lines)} lines)"
 
+    manifest_path, manifest_note, _container = find_manifest(container)
+    manifest: dict | None = None
+    if manifest_path is not None:
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as error:
+            print(f"manifest could not be parsed: {error}", file=sys.stderr)
+            manifest_note = f"{manifest_note} — UNREADABLE ({error})"
+
     run, run_note = window(lines, max(1, args.runs))
     print(f"offline loopback gate — {run_note}")
-    return report(analyse(run), where)
+    print(f"manifest: {manifest_note}")
+    return report(analyse(run, manifest), where)
 
 
 if __name__ == "__main__":

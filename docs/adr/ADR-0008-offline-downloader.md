@@ -121,6 +121,18 @@ there. ⚠ One destructive branch, and it is deliberate: a published file whose 
 server's is not a film, it is a corrupt copy that would play badly, so it is discarded **and said so** —
 the version is on the server and can be re-fetched; a lie in the index cannot be repaired.
 
+⚠⚠ **The row is not the record, and the row must never contradict it (added 2026-09-16, after the Mac
+found it).** `OfflineDownloads.publish()` rebuilds the rows from the store and then overlays each *live*
+context as `downloading` (that is how a row shows progress during a transfer) — so at the instant a transfer
+finishes, the overlay painted `downloading` over a file the same code had just published, and the callback
+that finally drops the context returned without rebuilding again: the UI said `downloading · 100%` until the
+app was relaunched. Both halves are fixed — the overlay skips a record that is already `ready`, and
+`didCompleteWithError` always forgets-then-publishes. ⚠ The rule stated positively: **the record is the truth
+about a file that exists; a context is only an intent.** B2's own gate could not catch this (it reads the log
+and the manifest, which were both right), which is why `tools/check_offline_server.py` asks a fourth question
+— whether the app's own rows agree with the manifest — and treats a stale row as a FAILURE rather than a
+"not exercised".
+
 ⚠ Progress is **not** persisted. It lives in memory and is re-derived from the `.part` size, because the
 one thing that cannot be re-derived is a *state* — so only states are written often.
 

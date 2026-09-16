@@ -730,6 +730,17 @@ final class OfflineDownloads: NSObject, ObservableObject {
         var built = store.records.map { OfflineRow(record: $0) }
         for index in built.indices {
             guard let context = live.values.first(where: { $0.itemId == built[index].itemId }) else { continue }
+            // ⚠⚠ A LIVE CONTEXT MUST NOT PAINT OVER A RECORD THAT IS ALREADY `ready`.
+            //
+            // At the moment a transfer finishes, the order is: `didFinishDownloadingTo` publishes the record
+            // and rebuilds the rows — while that task's context is STILL in flight — and only then does
+            // `didCompleteWithError` forget the context. So this branch used to write `downloading` over a
+            // file that had just been published, and the UI showed "downloading · 100%" for the life of the
+            // process (nothing refreshes the rows after that callback). Found 2026-09-16 on the Mac, from a
+            // screenshot: the LOG said `offline READY` and the ROW said `downloading` — and B2's own gate
+            // could not have caught it, because it reads the log and the manifest, both of which were right.
+            // The record is the truth about a file that exists (ADR-0008 D4); a context is only an intent.
+            guard built[index].state != .ready else { continue }
             built[index].state = .downloading
             built[index].bytes = context.offset + context.fragmentBytes
             built[index].totalBytes = context.remote.size
@@ -1019,7 +1030,16 @@ extension OfflineDownloads: URLSessionDownloadDelegate {
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         let identifier = task.taskIdentifier
-        defer { forgetContext(identifier) }
+        // ⚠⚠ THE `publish()` IS AS IMPORTANT AS THE `forgetContext()`, AND ITS ORDER IS THE WHOLE POINT.
+        // This callback is the FIRST moment at which the task's context is gone, i.e. the first moment the
+        // rows can be rebuilt from the store without a live context overwriting them. On SUCCESS there is
+        // nothing else to do here — which is exactly why the `guard let error else { return }` below used to
+        // leave the UI frozen on "downloading · 100%" over a finished file. Every exit from this method
+        // (success, failure, cancellation) now re-reads the truth.
+        defer {
+            forgetContext(identifier)
+            publish()
+        }
 
         guard let error else { return }   // success was handled by didFinishDownloadingTo
         guard let context = context(for: identifier) else { return }

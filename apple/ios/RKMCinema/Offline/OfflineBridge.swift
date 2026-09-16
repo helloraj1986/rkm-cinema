@@ -552,6 +552,13 @@ final class OfflineBridge: NSObject, WKScriptMessageHandlerWithReply {
             emit(.removed(itemId: gone))
         }
         knownItemIds = current
+
+        #if DEBUG
+        // ⚠ The launch-argument probe's second half needs a TITLE, so it cannot run at page load — a film a
+        // launch argument started arrives minutes later. This is the hook that lets it fire the moment one
+        // exists. No-op without the launch arguments.
+        OfflineServerProbe.rowsDidChange()
+        #endif
     }
 
     private func emit(_ payload: OfflineEventPayload) {

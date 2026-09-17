@@ -8,10 +8,10 @@ He answered every open item. What that means for this file:
 |---|---|---|
 | 1 | Reproduced on device: the ⋯ and Watched DO work, but **the Watched control shows no state and no feedback on tap** | **Half closed** — `features/library/WatchedAction.tsx` now says `Unwatched`/`Watched`, shows `Saving…` while in flight, and `useMutateItemState` toasts the server's sentence on failure. His device round confirms. |
 | 2 | **Rule decided:** the details view OWNS the watched control; the poster only reflects status — so the poster shows ONE tick | **Open, and now a defined sweep** — delete `MediaCard`'s toggle button (its hover row) and the `Mark as watched/unplayed` item in its ⋯ menu, then drop the `onToggleWatched` prop at its six call sites (`LibraryHomeView`, `LibraryFolderView`, `DiscoverView`, `PosterRail`, `HomeScreen`, `BrowseScreen`). The marker on the art stays. |
-| 3 | **Corrected:** Settings is fine — the sideways scroll is on the **Switch Profile** view | **Open, in diagnosis** — evidence being gathered by measurement at 390/320 (the whole point of the earlier miss: every settings route measured `scrollWidth === 390`, because it was the wrong screen). |
+| 3 | **Corrected:** Settings is fine — the sideways scroll is on the **Switch Profile** view | **FIXED** — measured cause: the picker's nowrap subtitle (348px / 494px of min-content) floors the `place-items-center` grid track through the grid item's `min-width:auto`, so `scrollWidth` was 416 (picker) / **562 (Switch Profile)** at *every* width from 320 to 430. One token, `min-w-0` on the picker container, closes it to 0 and lets the subtitle ellipsise. ⚠ The root `overflow-x: clip` guard did not fix it — it was applied and the document still scrolled the full 172px. |
+| 7 | NEW: **Cancel does nothing on an in-progress download** | **Diagnosed, awaiting his go-ahead on the native fix** — the page → bridge half is correct; two Swift defects sit in `OfflineDownloads.swift`: a cancel during the packaging window has **no `URLSessionDownloadTask` to cancel** and returns silently (line 511), and a real cancel's `NSURLErrorCancelled` branch returns **without writing `.paused`** (line 1048-1051), so no state event is ever emitted and the control cannot change. **Cannot be verified in the sandbox** (no Mac, and no test taps Cancel anywhere) — see §7a below. |
 | 5 | **Rule decided:** the rail excludes the hero, by title ID, as one shared `lib.ts` utility with a unit test | **CLOSED** — `library/lib.ts::withoutHero()` + `useHomeRows`; both Homes inherit it; 5 tests; falsified positionally (4 went RED). |
 | 6 | Cannot reproduce; appears resolved | **CLOSED** — no blank state observed on his round. |
-| 7 | NEW: **Cancel does nothing on an in-progress download** | **Open, in diagnosis** — the tap-to-bridge chain, the Swift side and the harness stub are being read for the hop where it stops. |
 
 ⚠ The entries below are kept verbatim (his words) while their fixes land; anything actually fixed is
 deleted from here and recorded in `PROGRESS.md`, per this file's own rule at the top of the next
@@ -162,5 +162,68 @@ sheet, not the sheet alone.
 ⚠ This also means the 409 currently reaches a mobile screen as a sentence a person cannot act on **and
 cannot even read**: "POST /api/media/… -> 409" is not a sentence. Whatever is chosen, the 409's own
 message should be shown — that much is a defect, not a preference.
+
+---
+
+## 7a · The **Cancel** defect (§7's neighbour, different feature) — diagnosed, fix not yet landed
+
+His report: *"Tapping Download on a title shows the circular progress indicator with a Cancel control,
+but Cancel has no effect — the download continues and the UI state doesn't change."* Diagnosed
+2026-09-17 by reading the whole chain, top to bottom.
+
+**The WEB half is correct — do not go looking there.** `actionsFor(row)` returns `["cancel","delete"]`
+for a downloading row (`offline/lib.ts:428‑441`), the tile calls `cancelTitle(itemId)`
+(`DownloadButton.tsx:175`, ring at `:179‑181`), which goes through `session.ts:321‑325` →
+`bridge.ts:122‑124` → `window.__rkmOffline.cancel(itemId)`, which the injected JS defines at
+`OfflineBridge.swift:128` and routes to `perform()` (`:272‑290`) → `case .cancel:` (`:326‑337`) →
+`downloads.cancel(itemId:)` (`OfflineDownloads.swift:510‑516`).
+
+**Two defects, both in `OfflineDownloads.swift`:**
+
+* **(A) line 511** — `guard let identifier = taskIdentifier(for: itemId) else { return }`. The task id is
+  only written in `beginTask` (`:494`), but `plan()` publishes the record as **`.downloading`**
+  (`:401‑405`) *before* `ensurePackaged` (`:412`, poll loop `:444‑459`, which can run for minutes). In
+  that window the page offers a Cancel tile and there is **nothing to cancel** — the pipeline proceeds
+  to `beginTask` and the download runs to completion. ⚠ And it returns **silently**: no log line, no
+  state change, nothing for the page to notice.
+* **(B) lines 1031‑1052** — when a task IS cancelled, the `NSURLErrorCancelled` branch logs
+  `offline task cancelled (task N)` and **returns without writing `.paused` to the store**. The `defer`
+  then calls `publish()`, which rebuilds from `store.records` — still `.downloading`. So
+  `OfflineEventPlanner.decide` returns `.nothing`, the page is told nothing, and the Cancel tile and its
+  frozen ring stay exactly as they were. The two sibling paths that DO write paused are
+  `finishAsIncomplete` (`:1092‑1096`) and `handle` (`:804‑811`, `:822‑826`); `pause(record:)` (`:760‑767`)
+  exists and is never called from the cancel path. **Delete only *looks* like it works** because it
+  removes the record, which does change state.
+
+**Which one is he hitting? One log line decides it** (his phone, no rebuild): tap Cancel while the ring
+is climbing, then read `Library/Application Support/RKMCinema/Logs/rkm-ios.log`:
+* neither `offline download cancelled by the user` (`:515`, below the guard — so its absence is the
+  tell) nor `offline task cancelled (task N)` (`:1049`) → **(A)**, the packaging window;
+* both present, row still "downloading" → **(B)**;
+* row becomes `paused — resumable` → the claim is FALSE and this diagnosis is wrong.
+Second-cheapest, no logs at all: after a Cancel that appears to do nothing, relaunch the app — if the
+row only THEN becomes paused, the claim holds (`restore()` at `:616‑630` marks orphaned `.downloading`
+records paused).
+
+**The fix, when he authorises it:** (1) record the cancel intent so `run()` abandons after
+`ensurePackaged` instead of starting `beginTask` — fixes (A); (2) in the `NSURLErrorCancelled` branch
+write `state = .paused` + the partial bytes + a sentence, then `publish()` — the same write
+`finishAsIncomplete` already performs, which fixes (B) and needs **no JS change**: `decide` then emits
+`.state` and the page flips Cancel → Resume by itself. ⚠ The paused-write MUST be guarded "only if the
+record is not already `ready`", or a Cancel tapped at 99% races `didFinishDownloadingTo` and turns a
+whole file into "paused" (the same class of bug already documented at `:733‑743`).
+
+**⚠ And it could not be verified here**, which is why it is not landed: no Mac/Xcode in the sandbox, no
+Swift compiled or run, and nothing anywhere taps Cancel. Specifically:
+* `offline/lib.test.ts` (34 tests) — the only cancel-related case asserts `actionsFor` RENDERS the
+  control, never that a bridge call is made; no test under `frontend/src` references `__rkmOffline`.
+* `tools/check_offline_page.py:183` asserts only `"Cancel" in buttons`; its six scenarios tap Download
+  and Play, never Cancel.
+* `tools/check_offline_download.py` (the on-device log gate, 654 lines) has no cancel pattern — so the
+  B2 gate is structurally blind to this defect.
+* The harness stub can't express a cancel at all: `offline-frame.tsx:148‑151` pushes `{c:"cancel"}` and
+  resolves, stopping no timer and emitting no `state` event. **A stub that can say "the item is now
+  paused" is the prerequisite for any off-device regression test of this.**
+
 
 

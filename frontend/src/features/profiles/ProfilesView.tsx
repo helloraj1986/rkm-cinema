@@ -120,7 +120,19 @@ export function ProfilesView() {
 
   return (
     <div className="grid min-h-dvh place-items-center bg-canvas px-4 py-10 text-zinc-100">
-      <div className="w-full max-w-2xl" data-testid="profile-picker">
+      {/* ⚠ `min-w-0` IS LOAD-BEARING, not tidying (measured 2026-09-17). This element is a GRID ITEM
+          of the `place-items-center` grid above, so its automatic minimum size is its MIN-CONTENT
+          width — and the subtitle inside it (`truncate` = `white-space: nowrap`) has a min-content
+          width of the WHOLE SENTENCE: 348px for "pick who is watching", 494px for the signed-in
+          variant. The grid track is floored there, and the document with it: `scrollWidth` measured
+          416 (picker) and 562 (Switch Profile) at EVERY phone width from 320 to 430, i.e. content-
+          driven, and it is what his iPhone pans on. The `min-w-0` on the flex row inside does not
+          help; `max-w-full` here does not either; both were measured. This one closes it to exactly 0
+          at 320/375/390/414/430 and lets the subtitle actually ellipsise.
+          ⚠ The root `overflow-x: clip` guard in `styles/index.css` does NOT fix this — it was verified
+          applied and the document still scrolled the full 172px by script. That rule's own note says
+          it is "a GUARD, not a diagnosis"; this is the cause it was hiding. */}
+      <div className="w-full max-w-2xl min-w-0" data-testid="profile-picker">
         <div className="mb-6 flex items-center gap-3">
           <span
             className="grid h-10 w-10 place-items-center rounded-full bg-surface-3 text-sm font-bold text-accent ring-1 ring-white/10"

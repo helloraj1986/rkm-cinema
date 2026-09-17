@@ -9,8 +9,13 @@ import type { ReactNode } from "react";
  * flat `pb-24` sat the last row under the bar on a notched device. A screen that padded itself again
  * would add a second, disagreeing source for the same number.
  *
- * ⚠ `sticky` on the action row rather than `fixed`: a fixed row would need its own clearance token,
- * and it would sit over the content it is filtering.
+ * ⚠ **The action row STICKS** (his report, 2026-09-17: *"when I scroll up the filters button hides"*).
+ * The recommended pattern for a filter surface on a phone is a bar that stays put — the alternative, a
+ * floating button, sits on top of the posters AND just above the tab bar, which is two thumb targets
+ * fighting for the same 20mm of screen; and hiding the control means a person has to scroll back to
+ * the top to change their mind. It sticks to the top of the window (the scroller here), bleeds to the
+ * shell's gutter, and takes a translucent canvas + blur so content reads under it rather than through
+ * it. ⚠ `z-20` keeps it under the sheet (which portals above everything) and above the cards.
  */
 export function MobileScreen({
   title,
@@ -20,7 +25,7 @@ export function MobileScreen({
 }: {
   title: string;
   subtitle?: string;
-  /** The thumb-zone controls (filters, view toggle). Sits under the title, above the content. */
+  /** The thumb-zone controls (filters, view toggle). Sticks under the top bar while scrolling. */
   actions?: ReactNode;
   children: ReactNode;
 }) {
@@ -32,7 +37,11 @@ export function MobileScreen({
         </h1>
         {subtitle ? <p className="mt-1.5 text-[13px] text-zinc-500">{subtitle}</p> : null}
       </header>
-      {actions ? <div className="flex items-center gap-2">{actions}</div> : null}
+      {actions ? (
+        <div className="sticky top-0 z-20 -mx-4 flex items-center gap-2 border-b border-white/[.05] bg-canvas/85 px-4 py-2 backdrop-blur-xl">
+          {actions}
+        </div>
+      ) : null}
       {children}
     </div>
   );

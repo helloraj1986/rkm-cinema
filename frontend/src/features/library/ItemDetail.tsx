@@ -498,15 +498,17 @@ export function ItemDetailContent({
                   >
                     <Icon name="more" size={16} />
                   </PopupMenu>
-                </div>
-
                 {/* Offline download (B4, NATIVE_FEEL plan §4.6). ⚠ It renders NOTHING in a browser:
                     `window.__rkmOffline` exists only inside the iOS shell, and a Download button with
                     nowhere to put a film is a control that cannot work. It reads the app's own row for
                     this title (`list` + events) plus the server's estimate, so the two facts the button
                     needs — what is ON the device and what fetching it costs — both come from the side
-                    that owns them. Movies and episodes alike: the app addresses anything by item id. */}
+                    that owns them. Movies and episodes alike: the app addresses anything by item id.
+
+                    ⚠ It lives INSIDE the action row (his iPhone report, 2026-09-17): as a sibling it
+                    sat on a line of its own under Play / Mark watched and read as misaligned. */}
                 <DownloadButton itemId={itemId} title={title} />
+                </div>
 
                 {/* Resume progress under the actions when mid-play */}
                 {!tv && detailInProgress(d?.play) && percent > 0 ? (

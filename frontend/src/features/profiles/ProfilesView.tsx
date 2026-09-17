@@ -72,6 +72,21 @@ export function ProfilesView() {
   async function choose(target: ProfileUserShape) {
     if (!isSelectable(target) || busyId) return;
     setError("");
+    /**
+     * ⚠ Picking the profile that is ALREADY watching is a no-op, not a sign-in — so it asks for
+     * nothing and posts nothing. His report (2026-09-17): *"if you are already in one profile you
+     * shouldn't be needing password to reenter"*. Asking here was the screen insisting on a password
+     * to keep the state it was already in.
+     *
+     * ⚠ Gated on `profile_selected`, exactly as `watchingNow` is. `data.current` names the
+     * LAST-USED profile even when nobody has been chosen yet, so keying off it alone would make the
+     * server's own recommendation unselectable — the first version of this change did that, and the
+     * picker simply refused to complete (caught before it shipped).
+     */
+    if (data?.profile_selected && currentRow && target.id === currentRow.id) {
+      navigate(next, { replace: true });
+      return;
+    }
     if (requiresPassword(target)) {
       // Ask FIRST, always. The server refuses a blank attempt on the administrator's profile even
       // when that account has no password set, so a picker that posted straight away would look
@@ -100,6 +115,8 @@ export function ProfilesView() {
 
   const rows = data?.profiles ?? [];
   const currentId = data?.current?.id ?? "";
+  /** The profile watching right now, when there is one — the way back names it. */
+  const currentRow = rows.find((row) => row.id === currentId) ?? null;
 
   return (
     <div className="grid min-h-dvh place-items-center bg-canvas px-4 py-10 text-zinc-100">
@@ -119,6 +136,23 @@ export function ProfilesView() {
             </p>
           </div>
         </div>
+
+        {/* ⚠ HIS REPORT (2026-09-17): *"once you clicked on Switch profile, you cannot escape without
+            really switching to a user profile"*. Every other route out of this screen needed a
+            selection to complete, so changing your mind had no answer. Whenever somebody is ALREADY
+            watching, the way back is now part of the screen — first, above the list, named after who
+            you would be going back to. */}
+        {switching && currentRow ? (
+          <button
+            type="button"
+            data-testid="picker-cancel"
+            onClick={() => navigate(next, { replace: true })}
+            className="mb-4 flex w-full items-center justify-center gap-2 rounded-2xl border border-white/[.08] bg-surface px-4 py-3 text-sm font-semibold text-zinc-200 transition hover:border-accent"
+          >
+            <Icon name="chevron-left" size={16} />
+            Keep watching as {currentRow.name}
+          </button>
+        ) : null}
 
         {profileStale ? (
           <div
@@ -237,12 +271,17 @@ export function ProfilesView() {
             </label>
             {/* NOT `required`: the API decides. A blank attempt is refused by the SERVER on the
                 administrator's profile, and a password-less profile must open with nothing typed. */}
+            {/* ⚠ NO `autoFocus` — the §7.3 trap, and the likely cause of his "horizontal scrolling"
+                on this screen (2026-09-17): raising the keyboard on arrival inside a
+                `min-h-dvh place-items-center` frame shifts the visual viewport, and iOS pans the page
+                sideways to keep the focused field visible. The field is one tap away and the person
+                just tapped the profile that owns it; on iOS the keyboard should arrive when they say
+                so, not when the page does. */}
             <input
               id="rkm-profile-password"
               name="password"
               type="password"
               autoComplete="current-password"
-              autoFocus
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               className="w-full rounded-lg border border-white/10 bg-canvas px-3 py-2 text-sm outline-none focus:border-accent"

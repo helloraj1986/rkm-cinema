@@ -462,3 +462,42 @@
     pointer-events: auto;
   }
 }
+
+/* ⚠⚠ THE POSTER ACTION, SIZED FROM THE POSTER — his phone report, 2026-09-17:
+   "the play button and the play button with Episodes text on TV shows is very big on 3-column
+   posters; the sizes need to be in ratio with the size of the poster".
+
+   He is right about the arithmetic: the desktop grid gives a card ~158–176px, where the 48px circle
+   is ~28% of its width — but the phone's `--m-grid-cols` grid gives a card ~105–150px, where the
+   SAME 48px circle is 32–46%, and the series pill (`min-w-24` = 96px) was most of the poster.
+
+   ⚠ Scoped to `[data-layout="mobile"]`, so the desktop sizes are untouched — the complaint was made
+   about the phone grid, and a rule that silently resized the desktop card would be a change he did
+   not ask for. `clamp` makes one rule serve 3, 4 and 5 columns: ~35px on a 390px phone (3 across),
+   up to the 42px ceiling on a tablet where the cards are bigger again.
+   ⚠ The glyph is a PERCENTAGE of the button, so it scales with it instead of staying at 18px inside
+   a shrunken circle — the same proportional bug one level down. */
+[data-layout="mobile"] .rkm-cta--movie {
+  width: clamp(30px, 9vw, 42px);
+  height: clamp(30px, 9vw, 42px);
+}
+[data-layout="mobile"] .rkm-cta--series {
+  width: clamp(30px, 9vw, 42px);
+  height: clamp(30px, 9vw, 42px);
+  min-width: 0;
+  gap: 0;
+  padding: 0;
+}
+[data-layout="mobile"] .rkm-cta--movie svg,
+[data-layout="mobile"] .rkm-cta--series svg {
+  width: 42%;
+  height: 42%;
+}
+
+/* ⚠ The word "Episodes" does not fit a poster this size, and it does not need to: the card's own
+   accessible name is still "Episodes for <title>", the type glyph at the top-left already says it is
+   a series, and the whole card opens the series page. Dropping the label is what stops the pill
+   swallowing the poster; the meaning is not lost with it. */
+[data-layout="mobile"] .rkm-cta-label {
+  display: none;
+}

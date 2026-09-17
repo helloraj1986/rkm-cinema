@@ -2,6 +2,13 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { createPortal } from "react-dom";
 import { Icon, type IconName } from "./Icon";
 
+/**
+ * How long after opening a scroll event is treated as the tail of the gesture that opened the menu
+ * rather than somebody scrolling it away. ⚠ Long enough to cover iOS's momentum tail, short enough
+ * that a deliberate scroll still dismisses it.
+ */
+const SCROLL_GRACE_MS = 400;
+
 export interface PopupMenuItem {
   key: string;
   label: string;
@@ -71,6 +78,16 @@ export function PopupMenu({
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  /**
+   * ⚠ WHEN the menu was opened, so the scroll-close rule can ignore the scroll that OPENED it.
+   *
+   * Measured on his iPad (2026-09-17): *"on the details page, clicking the three dots does nothing"*.
+   * A tap at the end of a scroll gesture still delivers the tail of that gesture's scroll events on
+   * iOS, so `onScroll` below closed the menu in the same frame it opened — the panel existed for less
+   * than a frame, which reads exactly like a dead button. A desktop never does this, which is why no
+   * gate had caught it.
+   */
+  const openedAtRef = useRef(0);
 
   const measure = useCallback(() => {
     const el = btnRef.current;
@@ -103,7 +120,12 @@ export function PopupMenu({
       if (menuRef.current?.contains(t) || btnRef.current?.contains(t)) return;
       setOpen(false);
     };
-    const onScroll = () => setOpen(false);
+    const onScroll = () => {
+      // ⚠ The tail of the gesture that opened this menu is not a user scrolling a menu away — see
+      // `openedAtRef`. Without this the menu is un-openable on a touch device.
+      if (Date.now() - openedAtRef.current < SCROLL_GRACE_MS) return;
+      setOpen(false);
+    };
     window.addEventListener("keydown", onKey, true);
     window.addEventListener("mousedown", onDown);
     window.addEventListener("touchstart", onDown);
@@ -121,6 +143,15 @@ export function PopupMenu({
     item.onSelect();
   };
 
+  /**
+   * ⚠ A menu with nothing in it is a control that CANNOT ACT — his iPad report (2026-09-17) was the
+   * ⋯ on a title's details page doing nothing at all, and one of its two causes is that the item list
+   * was legitimately empty: an unplayed title with no Jellyfin link builds `[]`, and the trigger still
+   * opened a 12px-tall empty panel. "Nothing happens" is the honest reading of a button whose whole
+   * job is to show a list of zero things, so the trigger is not rendered at all.
+   */
+  if (items.length === 0 && !header) return null;
+
   return (
     <>
       <button
@@ -132,7 +163,10 @@ export function PopupMenu({
         data-testid={triggerTestId}
         onClick={(e) => {
           e.stopPropagation();
-          setOpen((o) => !o);
+          setOpen((o) => {
+            if (!o) openedAtRef.current = Date.now();
+            return !o;
+          });
         }}
         className={triggerClassName}
       >

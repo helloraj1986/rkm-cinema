@@ -118,8 +118,16 @@ export function DownloadButton({ itemId, title }: { itemId: string; title: strin
   const actions = actionsFor(row).filter((kind) => kind !== "play");
 
   return (
-    <div className="flex flex-col items-start gap-1.5">
-      <div className="flex flex-wrap items-center gap-2.5">
+    /**
+     * ⚠ ONE flex row that the DETAILS SCREEN can drop into its action bar, and whose status lines
+     * wrap onto their own line under the buttons (`w-full` below).
+     *
+     * It used to be a column with a nested row, which is why the button sat alone on a line under
+     * Play / Mark watched and read as misaligned — his iPhone report, 2026-09-17. Placed inside the
+     * action bar it now sits IN that row, and when the app has something to say (progress, a warning,
+     * a failure) each line still gets the full width, left-aligned with the buttons above it.
+     */
+    <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
         {row ? (
           <>
             {row.state === "downloading" ? (
@@ -161,16 +169,15 @@ export function DownloadButton({ itemId, title }: { itemId: string; title: strin
             ) : null}
           </>
         )}
-      </div>
 
       {row ? (
-        <p className={`text-[11px] ${row.state === "failed" ? "text-red-400" : "text-zinc-500"}`}>
+        <p className={`w-full text-[11px] ${row.state === "failed" ? "text-red-400" : "text-zinc-500"}`}>
           {rowStatusText(row)}
         </p>
       ) : null}
-      {warning ? <p className="text-[11px] text-amber-300/90">{warning}</p> : null}
-      {note ? <p className="text-[11px] text-amber-300/90">{note}</p> : null}
-      {notice ? <p className="text-[11px] text-red-400">{notice.text}</p> : null}
+      {warning ? <p className="w-full text-[11px] text-amber-300/90">{warning}</p> : null}
+      {note ? <p className="w-full text-[11px] text-amber-300/90">{note}</p> : null}
+      {notice ? <p className="w-full text-[11px] text-red-400">{notice.text}</p> : null}
     </div>
   );
 }

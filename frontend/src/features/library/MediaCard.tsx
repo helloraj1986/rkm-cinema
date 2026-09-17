@@ -163,14 +163,24 @@ function MediaCardBase({
               triangle floated ABOVE the word inside a correctly-sized box (the pill's height is
               fixed at h-9, so nothing overflowed to give the mistake away). Flex puts them on one
               line; `leading-none` stops the label's line box from pushing the glyph off the axis. */}
+          {/* ⚠ `rkm-cta--movie` / `rkm-cta--series`: the DESKTOP sizes live here (48px circle, and a
+              pill for a series), and the phone's proportional sizes live in `styles/index.css`. His
+              report, 2026-09-17: at three columns the 48px circle and the `min-w-24` "Episodes" pill
+              were most of a ~110px poster's width. */}
           <span
             data-testid="media-card-cta"
             className={`flex items-center justify-center rounded-full bg-accent leading-none text-black shadow-lg transition hover:scale-105 hover:bg-accent-hover ${
-              tv ? "h-9 min-w-24 gap-1.5 px-3.5 text-xs font-bold" : "h-12 w-12"
+              tv
+                ? "rkm-cta--series h-9 min-w-24 gap-1.5 px-3.5 text-xs font-bold"
+                : "rkm-cta--movie h-12 w-12"
             }`}
           >
             <Icon name="play" size={tv ? 13 : 18} filled className="ml-0.5" />
-            {tv ? <span data-testid="media-card-cta-label">Episodes</span> : null}
+            {tv ? (
+              <span data-testid="media-card-cta-label" className="rkm-cta-label">
+                Episodes
+              </span>
+            ) : null}
           </span>
         </button>
 

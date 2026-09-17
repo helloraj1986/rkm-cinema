@@ -134,26 +134,39 @@ export function BrowseScreen() {
 
       {filtersOpen ? (
         <Sheet labelledBy="mobile-filters-title" onClose={() => setFiltersOpen(false)}>
-          <div className="flex flex-col gap-5 px-1 pb-2">
+          {/* ⚠ `max-w-lg mx-auto`, and the aligned layouts below — his iPad report, 2026-09-17:
+              "the filter card UI is not aligned properly". On a tablet the sheet spans the width of
+              an iPad, so a wrapped row of text-sized chips left a ragged right edge and made every
+              chip a different width; a fixed-width column of full-width sort ROWS (the iOS idiom,
+              with a tick on the active one) and an even genre GRID are aligned by construction
+              rather than by luck. */}
+          <div className="mx-auto flex w-full max-w-lg flex-col gap-5 px-1 pb-2">
             <h2 id="mobile-filters-title" className="text-base font-bold text-zinc-100">
               Filters
             </h2>
 
-            <section className="flex flex-col gap-2">
+            <section className="flex flex-col gap-1.5">
               <h3 className="text-[11px] font-bold uppercase tracking-[0.14em] text-zinc-500">
                 Sort by
               </h3>
-              <div className="flex flex-wrap gap-2">
-                {LIBRARY_SORT_OPTIONS.map((o) => (
-                  <MobileAction
-                    key={o.key}
-                    label={`Sort by ${o.label}`}
-                    active={parsed.sort === o.key}
-                    onClick={() => apply({ sort: o.key })}
-                  >
-                    {o.label}
-                  </MobileAction>
-                ))}
+              <div className="flex flex-col">
+                {LIBRARY_SORT_OPTIONS.map((o) => {
+                  const active = parsed.sort === o.key;
+                  return (
+                    <button
+                      key={o.key}
+                      type="button"
+                      aria-pressed={active}
+                      onClick={() => apply({ sort: o.key })}
+                      className={`flex h-12 items-center justify-between rounded-[10px] px-3 text-left text-sm font-medium transition ${
+                        active ? "bg-accent/15 text-accent" : "text-zinc-300 active:bg-white/[.06]"
+                      }`}
+                    >
+                      <span>{o.label}</span>
+                      {active ? <Icon name="check" size={16} strokeWidth={2.5} /> : null}
+                    </button>
+                  );
+                })}
               </div>
             </section>
 
@@ -162,16 +175,21 @@ export function BrowseScreen() {
                 <h3 className="text-[11px] font-bold uppercase tracking-[0.14em] text-zinc-500">
                   Genre
                 </h3>
-                <div className="flex flex-wrap gap-2">
+                <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
                   {genres.map((g) => (
-                    <MobileAction
+                    <button
                       key={g}
-                      label={`Filter by ${g}`}
-                      active={parsed.genre === g}
+                      type="button"
+                      aria-pressed={parsed.genre === g}
                       onClick={() => apply({ genre: parsed.genre === g ? "" : g })}
+                      className={`h-11 min-w-0 truncate rounded-[10px] px-2 text-[13px] font-semibold transition ${
+                        parsed.genre === g
+                          ? "bg-accent text-black"
+                          : "border border-white/[.08] bg-white/[.06] text-zinc-300 active:bg-white/[.12]"
+                      }`}
                     >
                       {g}
-                    </MobileAction>
+                    </button>
                   ))}
                 </div>
               </section>

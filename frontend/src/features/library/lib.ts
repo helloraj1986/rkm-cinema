@@ -575,6 +575,29 @@ export function cardMetaLine(item: MediaItem): string {
     .join(" · ");
 }
 
+// ---------------------------------------------- Copy shared by every library surface
+/**
+ * ⚠ These sentences are exported because MORE THAN ONE SCREEN renders them (M3): the desktop folder
+ * view and the phone's `BrowseScreen` show the same empty state, and a second copy of a sentence is
+ * how two screens come to say different things about the same folder (`MOBILE_FIRST_UI_PLAN` §3.4
+ * names this exact class of drift — it is the one rule there that a regex cannot enforce, so it is
+ * held by there being one copy to import).
+ */
+export const FOLDER_EMPTY_SUB =
+  "Your media folder doesn't have any titles yet — scan your library after adding some.";
+
+export const NO_PROVIDER_TITLE = "No media server connected";
+export const NO_PROVIDER_SUB = "Connect Jellyfin in the repo .env, then redeploy the stack.";
+
+/** Offered to nobody: the scan route is administrators-only, and a member is told who can. */
+export const SCAN_ADMIN_ONLY =
+  "Scanning is an administrator action — sign in as the administrator to scan the library.";
+
+/** The folder view's own heading for an empty folder ("No titles in Movies yet"). */
+export function folderEmptyTitle(label: string): string {
+  return `No titles in ${label} yet`;
+}
+
 /**
  * The Home hero pick (NEW_UX spec §9/§64): prefer a continue-watching MOVIE
  * (clean "Resume" hero), then any in-progress item (episodes included), then

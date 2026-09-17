@@ -2,6 +2,11 @@ import { useParams, useSearchParams } from "react-router-dom";
 import { useFolderItems, useLibraryFolders, useScanLibrary } from "./api";
 import {
   filterLibraryItems,
+  FOLDER_EMPTY_SUB,
+  folderEmptyTitle,
+  NO_PROVIDER_SUB,
+  NO_PROVIDER_TITLE,
+  SCAN_ADMIN_ONLY,
   folderCountLabel,
   libraryByFolderId,
   libraryFilterFromParams,
@@ -106,7 +111,7 @@ export function LibraryFolderView() {
         {provider ? (
           <p className="mt-2 text-[13px] text-zinc-500">{folderCountLabel(folderItems.length)}</p>
         ) : (
-          <p className="mt-2 text-[13px] text-zinc-500">No media server connected</p>
+          <p className="mt-2 text-[13px] text-zinc-500">{NO_PROVIDER_TITLE}</p>
         )}
         {warning ? (
           <p className="mt-2 flex items-start gap-1.5 rounded-lg border border-amber-500/20 bg-amber-500/[.06] px-3 py-2 text-xs text-amber-300">
@@ -148,10 +153,8 @@ export function LibraryFolderView() {
             <Icon name={icon} size={22} />
           </div>
           <div className="max-w-sm">
-            <h2 className="font-semibold text-zinc-200">No media server connected</h2>
-            <p className="mt-1 text-sm leading-relaxed text-zinc-500">
-              Connect Jellyfin in the repo .env, then redeploy the stack.
-            </p>
+            <h2 className="font-semibold text-zinc-200">{NO_PROVIDER_TITLE}</h2>
+            <p className="mt-1 text-sm leading-relaxed text-zinc-500">{NO_PROVIDER_SUB}</p>
           </div>
         </div>
       ) : folderItems.length === 0 ? (
@@ -160,10 +163,8 @@ export function LibraryFolderView() {
             <Icon name={icon} size={22} />
           </div>
           <div className="max-w-sm">
-            <h2 className="font-semibold text-zinc-200">No titles in {label} yet</h2>
-            <p className="mt-1 text-sm leading-relaxed text-zinc-500">
-              Your media folder doesn't have any titles yet — scan your library after adding some.
-            </p>
+            <h2 className="font-semibold text-zinc-200">{folderEmptyTitle(label)}</h2>
+            <p className="mt-1 text-sm leading-relaxed text-zinc-500">{FOLDER_EMPTY_SUB}</p>
           </div>
           {mayScan ? (
             <button
@@ -177,10 +178,7 @@ export function LibraryFolderView() {
             </button>
           ) : (
             // Never OFFER what the server refuses (the route is administrators-only, Phase E).
-            <p className="max-w-sm text-xs leading-relaxed text-zinc-500">
-              Scanning is an administrator action — sign in as the administrator to scan the
-              library.
-            </p>
+            <p className="max-w-sm text-xs leading-relaxed text-zinc-500">{SCAN_ADMIN_ONLY}</p>
           )}
         </div>
       ) : list.length === 0 ? (

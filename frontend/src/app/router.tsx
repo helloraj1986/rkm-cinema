@@ -7,6 +7,8 @@ import { RequireSession } from "../features/auth/RequireSession";
 // (`desktop.LibraryHomeView` / `mobile.HomeScreen`), and that a future physical move would be a
 // one-file change here instead of a sweep of every import in the router.
 import * as desktop from "../layouts/desktop";
+import * as mobile from "../layouts/mobile";
+import { Screen } from "../layouts/Screen";
 
 /**
  * One router for the React shell (the legacy vanilla app was removed).
@@ -57,7 +59,14 @@ export const router = createBrowserRouter([
         children: [
           { index: true, element: <Navigate to="/library/home" replace /> },
           { path: "home", element: <desktop.LibraryHomeView /> },
-          { path: "folder/:folderId", element: <desktop.LibraryFolderView /> },
+          // ⚠ M3: the folder route is the first one with a phone counterpart — the desktop view is
+          // unchanged, and `Screen` renders exactly one of the two (§3.3).
+          {
+            path: "folder/:folderId",
+            element: (
+              <Screen desktop={<desktop.LibraryFolderView />} mobile={<mobile.BrowseScreen />} />
+            ),
+          },
           { path: "movies", element: <desktop.LibraryKindRedirect kind="movies" /> },
           { path: "shows", element: <desktop.LibraryKindRedirect kind="tvshows" /> },
           { path: "item/:itemId", element: <desktop.ItemDetailPage /> },

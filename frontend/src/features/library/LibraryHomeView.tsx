@@ -16,6 +16,7 @@ import {
   isSeries,
   posterUrl,
   resumePercent,
+  SCAN_ADMIN_ONLY,
   scanFailure,
 } from "./lib";
 import { useState } from "react";
@@ -167,9 +168,7 @@ export function LibraryHomeView() {
           // Never OFFER what the server refuses: `GET /api/library/scan` is administrators-only,
           // so a member (or a signed-out visitor) is told who can do it instead of being handed a
           // button that answers 403.
-          <p className="max-w-md text-xs leading-relaxed text-zinc-500">
-            Scanning is an administrator action — sign in as the administrator to scan the library.
-          </p>
+          <p className="max-w-md text-xs leading-relaxed text-zinc-500">{SCAN_ADMIN_ONLY}</p>
         )}
       </div>
     );

@@ -133,3 +133,17 @@ things this app does not currently have:
 Recorded rather than guessed: this is the first thing in M4 that the mobile work cannot settle by
 itself, and it is his call which of the three it is.
 
+⚠ **Second finding, same ground truth (checked while waiting on the decision): option (b) needs a small
+CLIENT change too.** `ApiError` (frontend/src/lib/api/client.ts:357) carries only the server's `detail`
+as a **string** — and for a 409 the server's `detail` is an OBJECT `{message, candidates}`. So today the
+candidate list does not reach the browser at all: the error is raised with the client's own
+`METHOD path -> status` fallback. Showing the candidate titles read-only therefore needs `ApiError` to
+keep the structured payload (an additive field; the existing `detail` string behaviour stays exactly as
+it is for every screen that reads it). Still no invented capability — but (b) is a client change plus the
+sheet, not the sheet alone.
+
+⚠ This also means the 409 currently reaches a mobile screen as a sentence a person cannot act on **and
+cannot even read**: "POST /api/media/… -> 409" is not a sentence. Whatever is chosen, the 409's own
+message should be shown — that much is a defect, not a preference.
+
+

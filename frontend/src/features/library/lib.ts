@@ -507,6 +507,32 @@ export function resumePercent(item: MediaItem): number {
   return Math.min(100, Math.round((pos / rt) * 100));
 }
 
+// ---------------------------------------- The Home hero's rail (2026-09-17, his decision)
+/**
+ * The Continue Watching rail WITHOUT the title the hero is already showing.
+ *
+ * ⚠ **A product decision, taken by him on 2026-09-17, and it is a RULE rather than a view's
+ * preference** — which is why it lives here and both Homes inherit it. Before this, the rail rendered
+ * every Continue-Watching title including the hero, so the same film appeared twice on one page: once
+ * big at the top, once as the first card in the rail below. That reads as a de-duplication bug, and
+ * every major streaming app avoids it. His wording: *"exclude the hero title from the rail … matches
+ * the standard pattern"*.
+ *
+ * ⚠ **Matched by ITEM ID, never by position** (his own note). The hero is picked from a different
+ * list than the rail is built from, and it rotates as things are watched — a positional exclusion
+ * (`slice(1)`) would silently drop the wrong card the moment the two lists disagree, which is the
+ * kind of bug that looks like "the rail is missing a title" and never gets traced back to here.
+ *
+ * ⚠ A null hero (an empty library, or a Home with nothing to feature) removes nothing: the rail is
+ * then simply all of Continue Watching.
+ */
+export function withoutHero(items: MediaItem[], hero: MediaItem | null): MediaItem[] {
+  if (!hero) return items ?? [];
+  const heroId = hero.item_id;
+  if (!heroId) return items ?? [];
+  return (items ?? []).filter((item) => item.item_id !== heroId);
+}
+
 // ---------------------------------------- Episode progress (M4 · extraction E6)
 /**
  * An episode's progress, as ONE rule — the arithmetic AND the copy that reads it out.

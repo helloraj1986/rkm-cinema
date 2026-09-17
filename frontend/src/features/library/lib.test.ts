@@ -45,6 +45,7 @@ import {
   seriesPlayLabel,
   seriesTargetForEpisode,
   similarItemToResult,
+  withoutHero,
 } from "./lib";
 
 const base: MediaItem = {
@@ -815,6 +816,40 @@ describe("moreActionsFor (M4 · E10 — which secondaries the ⋯ offers)", () =
       expect(MORE_ACTION_COPY[key].label.length).toBeGreaterThan(3);
       expect(MORE_ACTION_COPY[key].icon).toBeTruthy();
     }
+  });
+});
+
+describe("withoutHero (2026-09-17 — the rail excludes what the hero shows)", () => {
+  const item = (id: string, title = id): MediaItem =>
+    ({ item_id: id, title, type: "movie", played: false, playback_position: 60, runtime: 3600 } as MediaItem);
+
+  it("removes the hero's own card from the rail", () => {
+    const items = [item("a"), item("b"), item("c")];
+    expect(withoutHero(items, item("b")).map((i) => i.item_id)).toEqual(["a", "c"]);
+  });
+
+  it("⚠ matches by ID, never by position — the hero is not always first", () => {
+    // A `slice(1)` (or "drop the first") implementation passes the case above and fails this one.
+    const items = [item("a"), item("b"), item("c")];
+    expect(withoutHero(items, item("c")).map((i) => i.item_id)).toEqual(["a", "b"]);
+  });
+
+  it("keeps every other title, in order, including same-titled ones", () => {
+    const items = [item("a", "Sholay"), item("b", "Sholay"), item("c", "Dune")];
+    expect(withoutHero(items, item("a", "Sholay")).map((i) => i.item_id)).toEqual(["b", "c"]);
+  });
+
+  it("removes nothing when there is no hero (or the hero has no id)", () => {
+    const items = [item("a"), item("b")];
+    expect(withoutHero(items, null)).toEqual(items);
+    expect(withoutHero(items, { title: "no id" } as MediaItem)).toEqual(items);
+  });
+
+  it("cannot return a longer list, and survives empty input", () => {
+    const items = [item("a")];
+    expect(withoutHero(items, item("zzz"))).toHaveLength(1);
+    expect(withoutHero([], item("a"))).toEqual([]);
+    expect(withoutHero([], null)).toEqual([]);
   });
 });
 

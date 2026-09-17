@@ -148,6 +148,16 @@ def offline_prepare(payload: OfflinePrepareRequest):
     try:
         outcome = service.prepare(payload.item_id, payload.mode)
     except OfflineError as exc:
+        # ⚠ THE REASON IS LOGGED, not only returned. A `507` carries the whole explanation in
+        # `detail` — the two causes (a full disk vs. a budget smaller than the film) are
+        # indistinguishable by status alone — and the client shows only the canned half until it is
+        # rebuilt (`OfflinePlan.swift::sentence(detail:)`, 2026-09-18). The container log is therefore
+        # the one place a refusal can be read as words, today:
+        #     docker compose logs --tail=50 api | grep "offline: prepare refused"
+        # Until this line existed the route logged nothing and the log held only uvicorn's own
+        # `507 235` — so "the log says which in words" was advice that did not work.
+        logger.warning("offline: prepare refused (%s) for %s: %s",
+                       exc.status, payload.item_id, exc.message)
         raise HTTPException(status_code=exc.status, detail=exc.message) from exc
     manifest = outcome.manifest
     body = _manifest_json(manifest, expiry_epoch=service.store.resolve_expiry(manifest))
@@ -195,6 +205,9 @@ def offline_bundle(
     try:
         plan = service.plan(item_id, mode)
     except OfflineError as exc:
+        # Same reason as `offline_prepare` above: the sentence exists only to be read.
+        logger.warning("offline: bundle refused (%s) for %s: %s",
+                       exc.status, item_id, exc.message)
         raise HTTPException(status_code=exc.status, detail=exc.message) from exc
     manifest = service.status(item_id, plan["mode"])
     poster_item = plan["series_id"] or item_id

@@ -162,6 +162,13 @@ MUTATIONS: list[tuple[str, str, str, str, str]] = [
      "case .cancelled: return false\n        case .offline, .timedOut, .connectionLost, .other: return true",
      "case .cancelled: return true\n        case .offline, .timedOut, .connectionLost, .other: return true",
      "a cancellation is never retried"),
+    # --- the sentence a failure shows
+    # ⚠ His report 2026-09-18: the detail was discarded on the way to the row, so a `507` read "the
+    # download storage is full" even when the server had said the budget was smaller than the film.
+    ("the server's own sentence beating the canned one", "OfflinePlan.swift",
+     "            if let detail, !detail.isEmpty { return detail }",
+     "            if let detail, detail.isEmpty { return detail }",
+     "the server's own sentence is what the row says"),
     # --- cookies
     ("the cookie domain rule", "CookieHeader.swift",
      "return host == candidate || host.hasSuffix(\".\" + candidate)",

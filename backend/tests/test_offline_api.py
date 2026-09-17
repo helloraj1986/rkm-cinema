@@ -25,6 +25,7 @@ follow are about the result and not about scheduling.
 from __future__ import annotations
 
 import hashlib
+import logging
 import time
 import urllib.error
 from pathlib import Path
@@ -440,6 +441,35 @@ def test_prepare_refuses_when_staging_is_full(tmp_path, monkeypatch):
     r = client.post("/api/offline/prepare", json={"item_id": ITEM})
     assert r.status_code == 507
     assert "RKM_OFFLINE_MAX_BYTES" in r.json()["detail"]
+
+
+def test_the_refusal_is_readable_in_the_SERVER_LOG(tmp_path, monkeypatch, caplog):
+    """⚠ The sentence a refusal carries is the only statement of its cause, and until the client is
+    rebuilt it shows just its canned half ("the download storage is full" — which cannot tell a full
+    disk from a budget smaller than the film). The api's own log is therefore the one place a person
+    can read the reason TODAY:
+
+        docker compose logs --tail=50 api | grep "offline: prepare refused"
+
+    That makes this a contract, not a nicety: the route used to log nothing at all, so the advice
+    "the log now says which in words" was advice that did not work.
+    """
+    big = tmp_path / "Big.mkv"
+    big.write_bytes(b"b" * 50_000)
+    service = _service(tmp_path, library=_remuxable_library(path=str(big)), cap=10_000)
+    _patch_offline(monkeypatch, service)
+
+    with caplog.at_level(logging.WARNING, logger="rkm.api.offline"):
+        r = client.post("/api/offline/prepare", json={"item_id": ITEM})
+
+    assert r.status_code == 507
+    said = [rec.getMessage() for rec in caplog.records]
+    refused = [m for m in said if m.startswith("offline: prepare refused")]
+    assert refused, f"the refusal was not logged at all: {said}"
+    assert "507" in refused[0], "the status must be in the line"
+    assert ITEM in refused[0], "which title was refused must be in the line"
+    # ⚠ THE SENTENCE, not the status — a bare "507" logged is the bug this test exists for.
+    assert "larger than the entire offline budget" in refused[0]
 
 
 def test_a_title_bigger_than_the_whole_budget_says_THAT_not_full(tmp_path):

@@ -28,6 +28,19 @@ export function posterUrl(item: Pick<MediaItem, "item_id">): string | null {
   return null;
 }
 
+/**
+ * Backdrop proxy URL for a library item — the wide hero art.
+ *
+ * ⚠ Same reason as `posterUrl`: this is the URL an item's artwork is addressed by, and the mobile
+ * views are forbidden (`layouts/importRule.ts`) from reaching into `lib/api/client` for it. The
+ * client keeps its own `backdropUrl` for the desktop views that already use it; the SHAPE of the
+ * route (`/api/jellyfin/backdrop?id=…&width=…`) is stated here as well so a phone screen can build it
+ * without a second client.
+ */
+export function backdropUrl(itemId: string, width = 1600): string {
+  return `/api/jellyfin/backdrop?id=${encodeURIComponent(itemId)}&width=${width}`;
+}
+
 export type Marker = { kind: "watched" } | { kind: "resume"; percent: number } | { kind: "none" };
 
 /** Mirrors legacy playbackMarkup: watched → tick; pos>0 && runtime>0 → amber % bar. */

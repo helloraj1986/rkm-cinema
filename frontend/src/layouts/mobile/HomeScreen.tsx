@@ -10,6 +10,7 @@ import { useCurrentProfile } from "../../features/auth/useCurrentProfile";
 import { mayScanLibrary } from "../../features/auth/lib";
 import {
   artTone,
+  backdropUrl,
   episodeItemCode,
   fmtRuntime,
   heroEyebrow,
@@ -23,7 +24,6 @@ import {
   scanFailure,
 } from "../../features/library/lib";
 import { toast } from "../../features/watchlist/toast";
-import { api } from "../../lib/api/client";
 
 /**
  * `/library/home` on a PHONE (MOBILE_FIRST_UI_PLAN §3.1, phase M3) — the same page the desktop
@@ -136,7 +136,7 @@ export function HomeScreen() {
           <div aria-hidden="true" className={`absolute inset-0 art-${artTone(title)}`} />
           {!backdropFailed ? (
             <img
-              src={api.backdropUrl(hero.item_id, 1200)}
+              src={backdropUrl(hero.item_id, 1200)}
               alt=""
               referrerPolicy="no-referrer"
               onError={() => setBackdropFailed(true)}

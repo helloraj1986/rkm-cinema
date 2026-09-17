@@ -4,11 +4,14 @@ import { MediaCard } from "./MediaCard";
 /**
  * The handlers every poster on Home takes. Exported with the rail because they travel together — a
  * rail of posters that cannot be played or opened is not a rail.
+ *
+ * ⚠ There is deliberately no `onToggleWatched` here (his rule, 2026-09-18): the poster REFLECTS
+ * watched state and does not offer it, so the rail carries no way to change it. The details view owns
+ * that control — see `MediaCard`'s note.
  */
 export type CardHandlers = {
   onQuickPlay: (item: MediaItem) => void;
   onOpenDetail: (item: MediaItem) => void;
-  onToggleWatched?: (item: MediaItem) => void;
 };
 
 /**

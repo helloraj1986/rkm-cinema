@@ -45,7 +45,7 @@ export function LibraryFolderView() {
   const foldersQ = useLibraryFolders();
   const items = useFolderItems(folderId || null);
   const scan = useScanLibrary();
-  const { quickPlay, openItem, toggleWatched } = useLibraryOutlet();
+  const { quickPlay, openItem } = useLibraryOutlet();
   // Phase E: administrators-only on the server, and strict in every world — so the control is only
   // OFFERED to an administrator (a member, or a signed-out visitor, is not one).
   const mayScan = mayScanLibrary(useCurrentProfile()?.is_admin);
@@ -221,7 +221,6 @@ export function LibraryFolderView() {
                   fluid
                   onQuickPlay={quickPlay}
                   onOpenDetail={openItem}
-                  onToggleWatched={toggleWatched}
                 />
               ))}
             </div>

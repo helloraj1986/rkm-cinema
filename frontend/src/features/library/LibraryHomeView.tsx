@@ -83,7 +83,7 @@ export function LibraryHomeView() {
     hasRecentlyAdded,
   } = useHomeRows();
   const scan = useScanLibrary();
-  const { quickPlay, openItem, toggleWatched } = useLibraryOutlet();
+  const { quickPlay, openItem } = useLibraryOutlet();
   // Phase E: the scan route is administrators-only and strict in every world, so the control is
   // only OFFERED to an administrator. Signed out (or before the profiles answer) is not one.
   const mayScan = mayScanLibrary(useCurrentProfile()?.is_admin);
@@ -91,7 +91,6 @@ export function LibraryHomeView() {
   const cardProps: CardHandlers = {
     onQuickPlay: quickPlay,
     onOpenDetail: openItem,
-    onToggleWatched: toggleWatched,
   };
 
   const runScan = () => {

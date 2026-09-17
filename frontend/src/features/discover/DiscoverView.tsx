@@ -112,7 +112,6 @@ export function DiscoverView() {
                 item={item}
                 onQuickPlay={actions.quickPlayLibrary}
                 onOpenDetail={actions.openLibraryItem}
-                onToggleWatched={actions.toggleWatched}
               />
             ))}
           </CardRow>
@@ -126,7 +125,6 @@ export function DiscoverView() {
                 item={item}
                 onQuickPlay={actions.quickPlayLibrary}
                 onOpenDetail={actions.openLibraryItem}
-                onToggleWatched={actions.toggleWatched}
               />
             ))}
           </CardRow>

@@ -159,8 +159,8 @@ function Frame() {
         <div className="min-h-dvh bg-canvas p-6 text-zinc-100">
           {SHOW_CARD ? (
             <section data-section="cards" className="flex items-start gap-6">
-              <MediaCard item={SERIES} onQuickPlay={() => {}} onOpenDetail={() => {}} onToggleWatched={() => {}} />
-              <MediaCard item={MOVIE} onQuickPlay={() => {}} onOpenDetail={() => {}} onToggleWatched={() => {}} />
+              <MediaCard item={SERIES} onQuickPlay={() => {}} onOpenDetail={() => {}} />
+              <MediaCard item={MOVIE} onQuickPlay={() => {}} onOpenDetail={() => {}} />
             </section>
           ) : null}
 

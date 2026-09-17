@@ -10,6 +10,7 @@ import {
 } from "../../lib/api/client";
 import { useItemDetail, useLibraryItems } from "./api";
 import { SimilarRow } from "./SimilarRow";
+import { initials } from "../auth/lib";
 import { useEpisodes } from "../playback/api";
 import {
   episodeCode,
@@ -114,13 +115,11 @@ function PersonHead({
 }) {
   const [errored, setErrored] = useState(false);
   const src = person.has_image && !errored ? personHeadshotUrl(person.id) : null;
-  const initials = (person.name || fallbackName || "?")
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((p) => p[0])
-    .join("")
-    .toUpperCase();
+  // ⚠ ONE initials rule (M4 · extraction E7). This was a second copy of the whole thing — split,
+  // filter, slice, join, uppercase — written here and already owned by `auth/lib.ts::initials()`,
+  // the function the header chip uses. Two copies is how "Rajeev Kumar" comes to read "RK" in the
+  // header and something else on a person card once either one is touched.
+  const label = initials(person.name || fallbackName || "");
   return (
     <div className="flex w-[72px] shrink-0 flex-col items-center gap-1.5 text-center">
       <div className="grid h-[72px] w-[72px] place-items-center overflow-hidden rounded-full bg-surface-3 text-sm font-bold text-zinc-300 ring-1 ring-white/10">
@@ -133,7 +132,7 @@ function PersonHead({
             onError={() => setErrored(true)}
           />
         ) : (
-          <span aria-hidden="true">{initials}</span>
+          <span aria-hidden="true">{label}</span>
         )}
       </div>
       <span className="line-clamp-1 w-full text-[11px] font-medium text-zinc-200" title={person.name}>

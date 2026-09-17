@@ -10,6 +10,8 @@ import {
   detailResumePercent,
   episodeItemCode,
   filterLibraryItems,
+  heroEyebrow,
+  heroPrimaryLabel,
   filterLibraryRows,
   firstMountCount,
   FIRST_PAINT_CARDS,
@@ -699,5 +701,26 @@ describe("progressive mounting (M3)", () => {
   it("⚠ CANNOT exceed the list even if the growth state is wrong", () => {
     expect(mountedCount(TOTAL, 99999)).toBe(TOTAL);
     expect(mountedCount(30, 99999)).toBe(30);
+  });
+});
+
+describe("the Home hero's labels (M3)", () => {
+  it("says what the hero is showing — and an episode of a continuation is not a plain Continue Watching", () => {
+    expect(heroEyebrow(true, false)).toBe("Continue Watching");
+    expect(heroEyebrow(true, true)).toBe("Continue episode");
+    expect(heroEyebrow(false, false)).toBe("Recently Added");
+    expect(heroEyebrow(false, true)).toBe("Recently Added");
+  });
+
+  it("names the five primary cases — and a series never offers to PLAY", () => {
+    expect(heroPrimaryLabel({ isEpisode: false, episodeCode: "", isSeries: false, percent: 0 })).toBe("Play");
+    expect(heroPrimaryLabel({ isEpisode: false, episodeCode: "", isSeries: false, percent: 42 })).toBe("Resume");
+    expect(heroPrimaryLabel({ isEpisode: false, episodeCode: "", isSeries: true, percent: 0 })).toBe("Explore Episodes");
+    expect(heroPrimaryLabel({ isEpisode: true, episodeCode: "S1E4", isSeries: false, percent: 0 })).toBe("Play S1E4");
+    expect(heroPrimaryLabel({ isEpisode: true, episodeCode: "S1E4", isSeries: false, percent: 10 })).toBe("Resume S1E4");
+  });
+
+  it("never leaves a trailing space when the episode has no code", () => {
+    expect(heroPrimaryLabel({ isEpisode: true, episodeCode: "", isSeries: false, percent: 0 })).toBe("Play");
   });
 });

@@ -2,6 +2,7 @@ import { useScanLibrary } from "./api";
 import { useHomeRows } from "./useHomeRows";
 import { ContinueWatchingRow } from "./ContinueWatchingRow";
 import { MediaCard } from "./MediaCard";
+import { PosterRail, type CardHandlers } from "./PosterRail";
 import { useLibraryOutlet } from "./LibraryLayout";
 import { SectionHeader } from "../../components/ui/SectionHeader";
 import { EmptyState } from "../watchlist/CardRow";
@@ -12,6 +13,8 @@ import {
   artTone,
   episodeItemCode,
   fmtRuntime,
+  heroEyebrow,
+  heroPrimaryLabel,
   isEpisodeItem,
   isSeries,
   posterUrl,
@@ -25,22 +28,6 @@ import { mayScanLibrary } from "../auth/lib";
 import { useCurrentProfile } from "../auth/useCurrentProfile";
 
 /** Poster-rail helper shared by the Recently Added / Recently Played rows. */
-type CardHandlers = {
-  onQuickPlay: (item: MediaItem) => void;
-  onOpenDetail: (item: MediaItem) => void;
-  onToggleWatched?: (item: MediaItem) => void;
-};
-
-function PosterRail({ items, handlers }: { items: MediaItem[]; handlers: CardHandlers }) {
-  return (
-    <div className="no-scrollbar snap-rail flex gap-3.5 overflow-x-auto pb-1.5">
-      {items.map((item) => (
-        <MediaCard key={item.item_id} item={item} {...handlers} />
-      ))}
-    </div>
-  );
-}
-
 function HeroSkeleton() {
   return (
     <div aria-hidden="true" className="skeleton relative aspect-[21/10] w-full overflow-hidden rounded-2xl">
@@ -261,13 +248,14 @@ function HomeHero({
   const showProgress = percent > 0 && (runtimeLeft || episode);
   const backdropUrl = api.backdropUrl(item.item_id, 1600);
   const poster = posterUrl(item);
-  const primaryLabel = episode
-    ? `${percent > 0 ? "Resume" : "Play"} ${epCode ?? ""}`.trim()
-    : series
-      ? "Explore Episodes"
-      : percent > 0
-        ? "Resume"
-        : "Play";
+  // ⚠ The label and the eyebrow are RULES (M3): the phone Home renders the same hero states, so both
+  // live in `lib.ts` and are called here rather than written out a second time.
+  const primaryLabel = heroPrimaryLabel({
+    isEpisode: episode,
+    episodeCode: epCode ?? "",
+    isSeries: series,
+    percent,
+  });
   const primaryGoesToPage = series;
 
   return (
@@ -313,7 +301,7 @@ function HomeHero({
         <div className="absolute inset-x-0 bottom-0 max-w-2xl p-6 sm:p-10 lg:p-12">
           <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.18em] text-accent">
             <Icon name={episode ? "tv" : "play"} size={13} filled={!episode} />
-            {cw ? (episode ? "Continue episode" : "Continue Watching") : "Recently Added"}
+            {heroEyebrow(cw, episode)}
           </div>
           <h1 className="mt-2.5 line-clamp-2 text-4xl font-bold leading-[1.02] tracking-[-0.02em] text-white drop-shadow-[0_4px_24px_rgba(0,0,0,.6)] sm:text-6xl">
             {title}

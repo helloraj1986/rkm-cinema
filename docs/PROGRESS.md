@@ -1,3 +1,39 @@
+## ▶ 🏠 **M3 PART 4 — THE PHONE GETS ITS OWN HOME, THE DETAILS OPTIONS GET A ORDER, AND TWO OF HIS DEVICE BUGS DIE** (2026-09-17) · branch **`feat/mobile-m3-library`** · NEW `layouts/mobile/HomeScreen.tsx`, `layouts/Screen.tsx`, `layouts/mobile/BrowseScreen.tsx`, `layouts/mobile/MobileScreen.tsx`, `components/ui/IconAction.tsx`, `features/library/PosterRail.tsx` + five fixes from his iPad/iPhone round
+
+**M3's two screens are now real, and the chooser that puts them there is `layouts/Screen.tsx` (§3.3):**
+`<Screen desktop={…} mobile={…}/>` renders exactly ONE subtree, so nothing here can change the laptop.
+`/library/home` and `/library/folder/:id` are wired; the desktop views are untouched in both.
+
+**The phone Home is NOT a re-layout of the desktop one, and it is not a copy either.** Data comes from
+`useHomeRows()` (E4) — one view model, so the two Homes cannot disagree about Continue Watching, rail
+lengths or the hero pick. The hero's eyebrow and primary label became FUNCTIONS in `lib.ts`
+(`heroEyebrow`, `heroPrimaryLabel`) because they are rules with five and four cases; the rail became
+`PosterRail` (E9) because a second copy of `snap-rail flex gap-3.5 overflow-x-auto` is a second rail.
+Only the COMPOSITION is new: 4:3 full-bleed backdrop (the desktop 21:10 letterbox is mostly empty art
+on a 390px screen), copy under the art, full-width Resume + Details, then the rails. Measured at
+390×844 on his library: hero renders, 16-card Recently Added rail scrolls sideways (3026 → 358px),
+page scrollWidth 390 of 390, no errors; at 1440 the DESKTOP Home reports zero full-width buttons.
+
+**His details-page ask — the options were "all over the place".** The sequence now: ONE primary
+(icon + text, full width on a phone), then icon TILES (68×56, glyph over one word), then ONE caption
+line. Which is icons and which is text is the point: the verb keeps its word, the secondaries get
+tiles. "Play from beginning" moved into More — it was a peer of Play, which it never was. ⚠ The
+download button's real defect was found here: it sat inside the row with its size summary riding
+along, so its intrinsic width pushed it onto its own line — split into `DownloadAction` (tile) and
+`DownloadNotice` (caption), with `actionsFor` still the one decision about which controls exist.
+
+**Two of his device bugs, with mechanisms:** ⋯ on a details page did nothing — (a) iOS delivers the
+tail of the opening gesture's scroll events, and the menu closed on scroll in the same frame (now
+ignored for 400ms), and (b) a title with no extra actions built an EMPTY menu, so the trigger is no
+longer rendered — a control that cannot act. A 28px touch target became a 56px tile.
+
+**⚠ Reported, not fixed:** on a fresh profile pick the Home queries can sit unfired until a reload —
+the DESKTOP Home does exactly the same thing in the same harness run, so it is pre-existing and
+outside this phase. ⚠ The iPhone Settings sideways scroll could NOT be reproduced (every settings
+route at 390px reports `scrollWidth === 390` on his own data), so `[data-layout="mobile"] { overflow-x:
+clip }` ships as a GUARD, not a diagnosis; `clip` and not `hidden` because `hidden` breaks the sticky
+filter bar. If his phone still pans, that rule only hides it.
+
 ## ▶ 👆 **M3 PART 3 — THE POSTER ACTIONS EXIST ON A PHONE NOW: they were behind a hover that a touch device does not have** (2026-09-17) · branch **`feat/mobile-m3-library`** · NEW `tools/check_touch_actions.py`, `styles/index.css` (`.rkm-reveal` / `.rkm-reveal-hit`) · `MediaCard`, `MediaListRow`, `WatchCard`, `SuggestCard`
 
 **THE DEFECT (plan §7.3).** Every poster action — the ▶ / **Episodes** button, the watched toggle and the **⋯** menu — was `opacity-0` with `group-hover:opacity-100` and **no `(hover: hover)` guard anywhere in the file**. On a touch device that is not a styling nicety: the app's **primary interaction was invisible and untappable**, and it is invisible in every screenshot too, because a desktop browser hides them "correctly" — it can hover. Turned up on the phone as *"you can't play anything from the grid"* would have been the report.

@@ -19,4 +19,5 @@
 
 export { MobileNav } from "../../app/layout/MobileNav";
 export { BrowseScreen } from "./BrowseScreen";
+export { HomeScreen } from "./HomeScreen";
 export { MobileAction, MobileScreen } from "./MobileScreen";

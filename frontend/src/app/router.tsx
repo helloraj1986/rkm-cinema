@@ -58,7 +58,8 @@ export const router = createBrowserRouter([
         element: <desktop.LibraryLayout />,
         children: [
           { index: true, element: <Navigate to="/library/home" replace /> },
-          { path: "home", element: <desktop.LibraryHomeView /> },
+          // ⚠ M3: the phone's own Home (the layout chooser renders exactly one of the two, §3.3).
+          { path: "home", element: <Screen desktop={<desktop.LibraryHomeView />} mobile={<mobile.HomeScreen />} /> },
           // ⚠ M3: the folder route is the first one with a phone counterpart — the desktop view is
           // unchanged, and `Screen` renders exactly one of the two (§3.3).
           {

@@ -575,6 +575,40 @@ export function cardMetaLine(item: MediaItem): string {
     .join(" · ");
 }
 
+// ---------------------------------------------- The Home hero's two labels (M3)
+/**
+ * The hero's eyebrow (M3): what the hero is showing and why. Extracted because M3 builds a SECOND
+ * Home — the phone's — and this string is a RULE (a Continue Watching hero says so), not styling.
+ * ⚠ The order matters: an EPISODE of a continuation says "Continue episode", not "Continue Watching".
+ */
+export function heroEyebrow(isContinueWatching: boolean, isEpisode: boolean): string {
+  if (!isContinueWatching) return "Recently Added";
+  return isEpisode ? "Continue episode" : "Continue Watching";
+}
+
+/**
+ * The hero's primary button label (M3) — the same rule the desktop hero rendered inline:
+ *
+ *   episode  -> "Play S1E1" / "Resume S1E1" (the code, when there is one)
+ *   series   -> "Explore Episodes" (a series does not "play"; it opens its episode list)
+ *   progress -> "Resume"
+ *   else     -> "Play"
+ *
+ * Extracted for the phone Home, which must not invent its own wording for the same five cases.
+ */
+export function heroPrimaryLabel(input: {
+  isEpisode: boolean;
+  episodeCode: string;
+  isSeries: boolean;
+  /** 0-100. Any progress at all means this is a Resume, not a Play. */
+  percent: number;
+}): string {
+  const { isEpisode, episodeCode, isSeries, percent } = input;
+  if (isEpisode) return `${percent > 0 ? "Resume" : "Play"} ${episodeCode}`.trim();
+  if (isSeries) return "Explore Episodes";
+  return percent > 0 ? "Resume" : "Play";
+}
+
 // ---------------------------------------------- Copy shared by every library surface
 /**
  * ⚠ These sentences are exported because MORE THAN ONE SCREEN renders them (M3): the desktop folder

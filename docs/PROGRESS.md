@@ -4,6 +4,59 @@ from there to here.
 
 ---
 
+---
+
+## ▶ ✅ **HIS ANSWER ROUND, AND THE THREE RULES THAT CAME OUT OF IT** (2026-09-17, session 2) · branch **`feat/mobile-m3-library`**
+
+He reproduced and answered every open defect. Three of them were DECISIONS, and decisions are rules —
+which is why two of them landed as `lib.ts` functions with tests rather than as edits to one screen.
+
+**§5 — THE RAIL EXCLUDES THE HERO** (`2ef995b`). A title could appear twice on one Home: hero at the
+top, first card in the rail below. His ruling: exclude it, matched by **item ID, never position**, as
+one shared utility with a unit test — because the hero is picked from a different list than the rail is
+built from and rotates as things are watched. `library/lib.ts::withoutHero()` + the shared view model
+`useHomeRows`, so BOTH Homes inherit it and neither can drift. ⚠ `heroIsCw` now reads the unfiltered
+set (or a CW hero would stop reporting itself as one), and the phone's rail condition became
+`hasCwRail` — with the hero excluded, one remaining title is a legitimate one-card rail, where the old
+`cwItems.length > 1` existed only to suppress a rail holding nothing but the hero. Falsified
+positionally: `items.slice(1)` turned FOUR of the five tests RED, including "removes the hero's own
+card" — with the hero mid-list, dropping the first item removes the wrong title.
+
+**§1 — THE WATCHED CONTROL SHOWS ITS STATE AND ACKNOWLEDGES THE TAP** (`351c7c4`). His report, from the
+device: *"the Watched button gives no indication of its default (unwatched) state, and on tap the
+button itself shows no state change or feedback — only a green tick and label appear elsewhere."* The
+POST was never broken; the control was unreadable. Three fixes, each a rule:
+* the label carries the state — `Unwatched` / `Watched`, not one word and an absence;
+* the tap is acknowledged — `Saving…` and disabled while the request is in flight, so a second tap
+  cannot flip it back;
+* ⚠ **a failed tap is no longer silent** — `useMutateItemState` had NO `onError` at all (no toast, no
+  revert, no clue). It now shows the server's own sentence, and it lives in the HOOK because every
+  watched toggle in the app goes through it.
+`features/library/WatchedAction.tsx` is the one control, shared by the desktop detail and the phone's
+screen, and it OWNS the mutation rather than taking a handler prop — a caller that passes its own
+handler is a caller that can forget the feedback.
+
+**§6 — CLOSED.** He could not reproduce a blank Home after a profile pick, so it is closed unless it
+resurfaces. ⚠ Noted for the record: what was measured was the DESKTOP and phone Home behaving
+identically in the harness, i.e. a pre-existing shape, not a mobile regression — nothing was changed
+for it, so nothing needs unwinding.
+
+**§2 — RULE DECIDED, SWEEP OUTSTANDING.** The details view owns the watched control; the poster only
+reflects status. That makes the poster's toggle (one in `MediaCard`'s hover row, one in its ⋯ menu) a
+second owner and the "two green ticks" a duplicate of one fact. ⚠ Deliberately NOT started in this
+session: it is a mechanical sweep across `MediaCard` plus six call sites
+(`LibraryHomeView`, `LibraryFolderView`, `DiscoverView`, `PosterRail`, `HomeScreen`, `BrowseScreen`),
+and half-landing it would be worse than not starting. Recorded in `KNOWN_ISSUES` §2 as the exact next
+step, with the marker on the art staying as the status.
+
+⚠ **AND ONE THING NOT TO FORGET FROM THIS SESSION:** the detail screen's `WatchedAction` change is
+verified by `typecheck` and the suite, NOT by the harness probe — the probe was last run before it, and
+its tile-label assertion (`["Watched","More"]`) is now knowingly stale (the same fixture is mid-play
+and unwatched, so the label is `Unwatched`). Re-run it before trusting that screen again described as
+"measured".
+
+Gates: `npm run typecheck` clean · full `npx vitest run` **551 passed / 20 files** (was 546).
+
 ## ▶ 🔎 **M3 CLOSES AND M4 OPENS: THE PHONE GETS A SEARCH SCREEN AND A TITLE-DETAIL SCREEN, THE IMPORT BAN FINALLY READS REAL FILES, AND THREE MORE RULES GO BACK TO THEIR OWNERS** (2026-09-17) · branch **`feat/mobile-m3-library`** · NEW `layouts/mobile/SearchScreen.tsx`, `layouts/mobile/DetailScreen.tsx`, `features/search/recent.ts`, `features/library/useAutoPlayDeepLink.ts`, `harness/search-mobile-frame.*`, `harness/detail-mobile-frame.*`
 
 **M3 IS COMPLETE.** Home (part 4), Browse, **Search** (this session) and the four extractions the

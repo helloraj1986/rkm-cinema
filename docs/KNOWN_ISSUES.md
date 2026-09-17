@@ -1,5 +1,22 @@
 # Known issues — open defects, in his words
 
+## ▶ STATUS AFTER HIS 2026-09-17 ANSWER ROUND — read this first
+
+He answered every open item. What that means for this file:
+
+| # | His answer | State |
+|---|---|---|
+| 1 | Reproduced on device: the ⋯ and Watched DO work, but **the Watched control shows no state and no feedback on tap** | **Half closed** — `features/library/WatchedAction.tsx` now says `Unwatched`/`Watched`, shows `Saving…` while in flight, and `useMutateItemState` toasts the server's sentence on failure. His device round confirms. |
+| 2 | **Rule decided:** the details view OWNS the watched control; the poster only reflects status — so the poster shows ONE tick | **Open, and now a defined sweep** — delete `MediaCard`'s toggle button (its hover row) and the `Mark as watched/unplayed` item in its ⋯ menu, then drop the `onToggleWatched` prop at its six call sites (`LibraryHomeView`, `LibraryFolderView`, `DiscoverView`, `PosterRail`, `HomeScreen`, `BrowseScreen`). The marker on the art stays. |
+| 3 | **Corrected:** Settings is fine — the sideways scroll is on the **Switch Profile** view | **Open, in diagnosis** — evidence being gathered by measurement at 390/320 (the whole point of the earlier miss: every settings route measured `scrollWidth === 390`, because it was the wrong screen). |
+| 5 | **Rule decided:** the rail excludes the hero, by title ID, as one shared `lib.ts` utility with a unit test | **CLOSED** — `library/lib.ts::withoutHero()` + `useHomeRows`; both Homes inherit it; 5 tests; falsified positionally (4 went RED). |
+| 6 | Cannot reproduce; appears resolved | **CLOSED** — no blank state observed on his round. |
+| 7 | NEW: **Cancel does nothing on an in-progress download** | **Open, in diagnosis** — the tap-to-bridge chain, the Swift side and the harness stub are being read for the hop where it stops. |
+
+⚠ The entries below are kept verbatim (his words) while their fixes land; anything actually fixed is
+deleted from here and recorded in `PROGRESS.md`, per this file's own rule at the top of the next
+section.
+
 ⚠ **This file is for OPEN DEFECTS ONLY.** Anything fixed here must be deleted from this file and
 recorded in `PROGRESS.md` instead. Each entry keeps his wording, then what is already known about
 where it lives — so the next session starts from evidence rather than from a blank page.

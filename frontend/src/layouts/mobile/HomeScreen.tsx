@@ -199,15 +199,19 @@ export function HomeScreen() {
         </div>
       </section>
 
+      {/* ⚠ NO heading, and no wrapper section: `ContinueWatchingRow` brings its OWN heading and its own
+          `<section aria-label>`. Wrapping it added a SECOND "Continue Watching" to the screen — his
+          report (2026-09-17): "on mobile screen i can see two continue watching sections". The desktop
+          Home never had this bug because it renders the row bare; this screen now does the same.
+          ⚠ The row renders every Continue Watching title, the hero included, so the hero can also
+          appear as a card in it — flagged in KNOWN_ISSUES rather than changed here, because the
+          desktop behaves identically and that is his call. */}
       {rows.cwItems.length > 1 ? (
-        <section className="flex flex-col gap-3">
-          <SectionHeader title="Continue Watching" />
-          <ContinueWatchingRow
-            items={rows.cwItems}
-            onQuickPlay={handlers.onQuickPlay}
-            onOpenDetail={handlers.onOpenDetail}
-          />
-        </section>
+        <ContinueWatchingRow
+          items={rows.cwItems}
+          onQuickPlay={handlers.onQuickPlay}
+          onOpenDetail={handlers.onOpenDetail}
+        />
       ) : null}
 
       {rows.hasRecentlyPlayed ? (

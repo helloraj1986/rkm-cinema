@@ -74,7 +74,27 @@ phone still pans, something is scrolling a container the root rule cannot clip.
 
 ---
 
-## 4 · Background observation — Home can come up blank after a profile pick
+## 5 · A Continue Watching title can appear TWICE on one page — hero *and* first card in the rail
+
+⚠ Found by reading the code while fixing the double-heading bug, not reported by him, and **not
+changed** — the answer is a product decision, not a defect I get to pick.
+
+`ContinueWatchingRow` filters the Continue Watching items and renders **all** of them. When the hero
+IS a Continue Watching pick (which is the usual case — that is how `pickHomeHero` chooses), that same
+title is therefore also the first card in the rail below it: once big, once as a card.
+
+* **Desktop:** has always done this.
+* **Phone:** only when there are 2+ Continue Watching titles — my screen renders the rail only above
+  `cwItems.length > 1`, so a single in-progress title appears exactly once.
+
+**The decision needed from him:** does the hero also belong in the rail (current behaviour, both
+layouts), or is the rail *"everything except what the hero is already showing"*? ⚠ The second is what
+most streaming apps do, and because it is a RULE it belongs in `lib.ts` and would then apply to both
+Homes at once — not patched into one screen.
+
+---
+
+## 6 · Home can come up blank after a profile pick (pre-existing)
 
 Not reported by him; found while measuring (§ above). After a fresh profile pick, the Home queries can
 sit unfired until a reload. ⚠ **The DESKTOP Home does the same thing in the same harness run**, so it

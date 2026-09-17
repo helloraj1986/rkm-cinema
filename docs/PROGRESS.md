@@ -33,6 +33,15 @@ tail of the opening gesture's scroll events, and the menu closed on scroll in th
 ignored for 400ms), and (b) a title with no extra actions built an EMPTY menu, so the trigger is no
 longer rendered — a control that cannot act. A 28px touch target became a 56px tile.
 
+**Also fixed in his same round — the phone showed "two continue watching sections".** The cause was
+mine, not the row's: `ContinueWatchingRow` renders its OWN `SectionHeader` (line 27), and my mobile
+screen wrapped it in a section that added a SECOND one. The desktop never had the bug because it
+renders the row bare. Measured after the fix — the phone's heading list went from
+`['…', 'Continue Watching', 'Continue Watching', 'Recently Played', 'Recently Added']` to a single
+`Continue Watching`. ⚠ While reading it I also found that the rail renders EVERY Continue Watching
+title, hero included — flagged in `KNOWN_ISSUES.md` rather than changed, because the desktop behaves
+identically and the answer is a product decision, not a bug I get to pick.
+
 **⚠ Reported, not fixed:** on a fresh profile pick the Home queries can sit unfired until a reload —
 the DESKTOP Home does exactly the same thing in the same harness run, so it is pre-existing and
 outside this phase. ⚠ The iPhone Settings sideways scroll could NOT be reproduced (every settings

@@ -1,3 +1,45 @@
+## ▶ ⚡ **M3 PART 2 — THE FOLDER NOW PAINTS IN 33 ms INSTEAD OF 1.8 s: a screenful first, containment for the tail, and the two ways each half FAILED alone** (2026-09-17) · branch **`feat/mobile-m3-library`** · commit `323895a` · NEW `frontend/src/features/library/useProgressiveMount.ts`, `tools/check_library_mounting.py`, `tools/serve_prod_build.py` · ⚠ **`main` AND `dev` are at `c9abf04`** (M0+M1, accepted by him 2026-09-17) — this commit is on the branch only
+
+**THE BUG, and it was confirmed twice.** `LibraryFolderView` mapped every row of a folder in ONE commit, so the real **714-title** Movies folder put **22,271 nodes** into the DOM at once. CDP attributed the tap: **Script 2.4 s** · Layout 0.5 s · RecalcStyle 0.35 s, with `setAttribute` alone **814 ms**. The query cache removed the fetch entirely and the tap was *still* 1.8–2.0 s, i.e. the render was paid on **every** visit — exactly the "extra second to populate" he reported from the phone.
+
+**THE FIX IS TWO PARTS, AND THE MEASUREMENT IS WHY BOTH ARE HERE:**
+
+* **`useProgressiveMount`** mounts **48 rows** (a screenful at 390px AND at the widest desktop — 3 columns vs ~10) and grows by 48 in separate macrotasks, so no single commit is a long task. ⚠ **It is deliberately NOT virtualisation**: nothing is ever unmounted, so the page keeps its height, every row stays reachable by ordinary scrolling, and no row's geometry moves — which is what makes it safe on the DESKTOP view too, where the §10 regression argument protects the layout.
+* **`content-visibility: auto` + `contain-intrinsic-size: auto 320px`** on the card, so layout and paint skip the off-screen tail.
+
+⚠⚠ **EACH HALF FAILED ON ITS OWN, AND THE FAILURES ARE THE INTERESTING PART:**
+1. **Mounting alone made the TOTAL worse** — a 78 ms first paint, then **7.4 s** to finish mounting. Cause, measured: every growth step re-laid-out a **126,000 px** page. Containment is what makes each step cheap.
+2. **My first scheduler was `requestIdleCallback`, and it is starved by the work it queues** — each step starts 48 poster loads and a layout, so the browser is never "idle" and every step waits out its `timeout`. A macrotask (`setTimeout(…, 0)`) per step is what made the fill fast. ⚠ Written into the hook's docstring so it is not "optimised" back.
+3. **`MediaCard`/`MediaListRow` are memoised, and that is load-bearing, not cosmetic** — every growth step re-renders the view, and a new element object cannot bail out, so React re-ran **every card already on screen**: 48 mounted per step but up to 672 re-rendered, cost growing with the square of the steps. ⚠ The precondition is on the component: **items are never mutated in place** (checked across the app) and state changes arrive through `invalidateQueries`, so a changed row is a new object.
+
+**THE NUMBERS — production build, real 714-title folder, 390×844, `tools/measure_library_latency.py` (three taps: cold, cached, stale):**
+
+| | FIRST CARD (what he feels) | full list in the DOM | long tasks |
+|---|---|---|---|
+| **before** (deployed build = the old code) | 1028 / 1844 / 2243 ms | ~1.0 / 1.8 / 2.2 s | 1413 · 3158 ms |
+| **after** (`feat/mobile-m3-library`) | **488 / 33 / 40 ms** | 2.3 / 1.7 / 1.7 s | 1240 · 1347 ms |
+
+⇒ **first paint ~50× better, the tail NOT worse, and the blocking work halved.** ⚠ The dev server is a different build class and must NOT be used to judge any of this — on the same folder the dev build took **15.5 s** where production took **2.3 s**, which is why **`tools/serve_prod_build.py`** exists: it serves `dist/` with `/api` proxied to the live stack, so before/after can be taken on a production bundle **without deploying**.
+
+**NEW GATE — `tools/check_library_mounting.py`, and it was falsified twice** (the brief's §8.4, applied to a performance claim):
+* **four scenarios** — phone grid, desktop grid, phone **compact list**, and a 30-row folder — each in its **own fresh browser** (the §18.7 lesson: nine frames in one Chromium is what still fails `check_nav_access`), over a mutation trace of `(ms, mounted count)` taken inside the page;
+* it asserts: first commit ≤ 96 rows, **no** commit over 96, the count never goes DOWN, the final count is exactly the folder's, the **last title is in the DOM**, and after scrolling the last row is **in the viewport** — i.e. it cannot be satisfied by a list that quietly dropped rows;
+* **falsified, the rule:** `firstMountCount` returning the whole list turns 3 `progressive mounting (M3)` unit tests RED;
+* **falsified, the check:** reverting the view to `list.map(…)` turns **every** scenario RED — *"the FIRST commit mounted 713 rows — a screenful is 48"* — and restoring it is green;
+* **`--selftest` 11/11**: each assertion is fed a probe it must reject (713-in-one, a 200-card jump, a stall at 400, rows unmounted mid-render, the last title missing, mounted-but-unreachable, a page error) plus two it must accept.
+
+⚠⚠ **THREE TRAPS THIS COST, all in the "the check is wrong, the app is fine" class — worth more than the code:**
+1. **An init script that names `window.__probe` is OVERWRITTEN by the harness frame's own probe** — the check then reported *"no cards were ever observed"* about a page rendering 713 of them. Two probes, one name.
+2. **A card-based wait is wrong for the compact view** — it renders no `media-card` at all, so the wait returned instantly and measured the list mid-growth, which read as *"stalled at 336 of 713"*. The trace counts grid cards **+** compact rows.
+3. **`--strictPort` did not save me from a STALE server**: killing the wrapper left the `node` child holding `:5199`, my new vite exited, and the OLD one kept serving a cached `library-frame.tsx` (its watcher does not fire on this mount) — **the harness kept answering 1 row for `rows=713`**. ⚠ Kill the `node … bin/vite` process, not the wrapper, and prove freshness by reading the served module (which the gate now does).
+   ⚠ And one more, for the next person: **a `//` comment inserted into a JSX expression can swallow the code after it** once the transform collapses lines — my "before" measurement silently ran `list.map(undefined)` and reported 0 cards.
+
+**GATES ON THIS COMMIT:** `tsc --noEmit` ✅ · `vitest run` ✅ **515 passed / 20 files** · `npm run build` ✅ · `check_library_mounting` ✅ (4 scenarios, 11/11 selftest) · `check_library_scan` ✅ · `check_cta_alignment` ✅ · `check_query_cache` ✅ · ⚠ **`check_library_scan` crashed a renderer once** while three vite servers and two builds were running — it re-ran green alone, and that is the same multi-frame/contention class as `check_nav_access`'s scenario F, not a fault in this change.
+
+⚠ **One interaction worth knowing:** `contain-intrinsic-size` makes the page slightly SHORTER until cards have rendered once (the harness `scrollHeight` went 126,130 → 124,448 px over 238 rows). The last row is still reachable — which is what the gate asserts — but a fast fling to the bottom may see the page settle by a few pixels.
+
+⚠ **STILL NOT DONE, and it is the phase's headline defect:** the mobile screens themselves — `HomeScreen`, `BrowseScreen`, `SearchScreen`, and the phone `PosterCard` whose actions are visible without a hover (§7.3: on a touch device every poster action is currently unreachable). The Home rails and the Watchlist are the next lists to take the same treatment.
+
 ## ▶ 🔎 **M3 PART 1 — THE MOVIES TAB IS SLOW BECAUSE OF THE RENDER, PAID ON EVERY TAP (MEASURED, NOT GUESSED); AND THE PHASE'S FOUR EXTRACTIONS LAND GREEN** (2026-09-17) · branch **`feat/mobile-m3-library`** (cut from `dev`) · commits `192996e` (E3) · `8d63795` (E5) · `54f4198` (E8) · `861e26e` (E4) · NEW **`tools/measure_library_latency.py`** · ⚠ **`feat/mobile-first-ui` IS NOW MERGED INTO `dev`** (fast-forward, no merge commit — `dev` carries M0 + M1 + the bar-clearance fix) · ⚠ **the working tree is on `feat/mobile-m3-library`, so THAT is what `.\rkm-cinema.ps1 apply` builds** — the command for each is at the bottom
 
 **THE QUESTION THE LAST SESSION LEFT OPEN, ANSWERED WITH NUMBERS.** It left two candidates that look identical from the sofa — the **FETCH** of 713 rows of JSON, or the **RENDER** of 713 unbounded `MediaCard`s — and said to measure before changing anything. Method: a real browser at **390×844** against the **LIVE stack** (`host.docker.internal:8124`, the deployed build), signed in with a real session on the **`rkm-tools` device** (⚠ never the app's own device id — `services/auth.py` rotates the previous token of a `(device, user)` pair on login, so measuring on the browser's device would leave his phone answering 401), tapping `/library/folder/<Movies>` **inside the SPA** (`pushState` + `popstate`, same document throughout — asserted, because a reload would destroy the query cache and answer a different question). ⚠ **The method is now a tool so it can be re-run after the fix: `tools/measure_library_latency.py`** (read-only; `--folder`, `--viewport`, `--repeat`, `--stale-wait`, `--json`).

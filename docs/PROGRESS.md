@@ -1,3 +1,9 @@
+⚠ **Open defects live in [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md)** — read it before starting work. This
+file is the record of what is DONE; that one is the record of what is BROKEN. Fixing an entry moves it
+from there to here.
+
+---
+
 ## ▶ 🏠 **M3 PART 4 — THE PHONE GETS ITS OWN HOME, THE DETAILS OPTIONS GET A ORDER, AND TWO OF HIS DEVICE BUGS DIE** (2026-09-17) · branch **`feat/mobile-m3-library`** · NEW `layouts/mobile/HomeScreen.tsx`, `layouts/Screen.tsx`, `layouts/mobile/BrowseScreen.tsx`, `layouts/mobile/MobileScreen.tsx`, `components/ui/IconAction.tsx`, `features/library/PosterRail.tsx` + five fixes from his iPad/iPhone round
 
 **M3's two screens are now real, and the chooser that puts them there is `layouts/Screen.tsx` (§3.3):**

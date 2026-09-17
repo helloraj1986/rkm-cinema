@@ -442,6 +442,49 @@ def test_prepare_refuses_when_staging_is_full(tmp_path, monkeypatch):
     assert "RKM_OFFLINE_MAX_BYTES" in r.json()["detail"]
 
 
+def test_a_title_bigger_than_the_whole_budget_says_THAT_not_full(tmp_path):
+    """⚠ The classification his report turned up (2026-09-18).
+
+    A film larger than the entire budget can never be staged, and the old message called that
+    "offline staging is full" — a lie that sent him looking for a full disk. The sentence must name
+    the budget, the film's size and the way out.
+    """
+    big = tmp_path / "Huge.mkv"
+    big.write_bytes(b"h" * 50_000)
+    service = _service(tmp_path, library=_remuxable_library(path=str(big)), cap=10_000)
+
+    with pytest.raises(OfflineRefused) as caught:
+        service.prepare(ITEM)
+
+    assert caught.value.status == 507
+    assert "larger than the entire offline budget" in caught.value.message
+    assert "RKM_OFFLINE_MAX_BYTES" in caught.value.message
+    # The numbers are GB, not the raw byte count nobody can compare against a film.
+    assert "GB" in caught.value.message
+    assert "full" not in caught.value.message.split("budget")[0]
+
+
+def test_a_genuinely_full_DISK_still_says_full(tmp_path, monkeypatch):
+    """The other half of the same pair: when the DISK is the constraint, "full" is the truth."""
+    from collections import namedtuple
+
+    usage = namedtuple("usage", "total used free")
+    big = tmp_path / "Big.mkv"
+    big.write_bytes(b"b" * 50_000)
+    service = _service(tmp_path, library=_remuxable_library(path=str(big)), cap=0)  # no budget at all
+    monkeypatch.setattr(offline_mod.shutil, "disk_usage",
+                        lambda _p: usage(total=1_000_000, used=999_000, free=1_000))
+
+    with pytest.raises(OfflineRefused) as caught:
+        service.prepare(ITEM)
+
+    assert caught.value.status == 507
+    assert "staging disk is full" in caught.value.message
+    # ⚠ With the budget disabled the refusal can ONLY be the disk — which is what makes this test
+    # evidence that the two checks are separate rather than one message wearing two hats.
+    assert "RKM_OFFLINE_MAX_BYTES" not in caught.value.message
+
+
 def test_the_cap_is_enforced_DURING_packaging_too(tmp_path, monkeypatch):
     """The pre-check uses an estimate; this is the guarantee behind it."""
     monkeypatch.setattr(offline_mod.urllib.request, "urlopen",

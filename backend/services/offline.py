@@ -38,6 +38,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import threading
 import time
 import urllib.error
@@ -770,22 +771,55 @@ class OfflineService:
                    "needs_transcode": False})
 
     def _check_cap(self, item_id: str, mode: str, plan: dict) -> None:
-        """Refuse BEFORE writing when this rendition would overrun the staging cap."""
+        """Refuse BEFORE writing when this rendition would overrun the staging cap.
+
+        ⚠ **TWO different refusals live here, and telling them apart is the whole point** (his report,
+        2026-09-18: *"on any poster clicking on download says servers download storage is full"*). The
+        old text said "offline staging is full" for both — a lie in the common case:
+
+          * **The DISK is genuinely full.** Space on the Docker host behind the staging root cannot
+            hold this title. That is the only case where "full" is true, so it is checked first.
+          * **The BUDGET is too small.** `RKM_OFFLINE_MAX_BYTES` is the app's own budget for staged
+            bytes (12 GiB by default). Nothing is "full" — a policy number is simply smaller than this
+            film, and for a title bigger than the whole budget the old message was unanswerable advice:
+            the knob could not even be set, because the renderer never passed it to the container
+            (fixed in `render_config.py` the same day). It is passed now, so the sentence names a
+            knob that actually exists.
+
+        ⚠ The estimate is the LIBRARY FILE's size — the honest number for a direct/remux rendition and
+        an over-estimate for a transcode, which is the safe direction for a refusal. A single title
+        larger than the budget is refused here BEFORE a byte is written, deliberately: that download
+        could never complete.
+        """
+        estimate = int(plan.get("bytes") or 0)
+
+        # 1. The disk — the only "full" that is really full.
+        try:
+            free = shutil.disk_usage(self.store.root).free
+        except OSError:
+            free = None  # an unreadable root is the writer's own 507 to report, not this check's
+        if estimate and free is not None and estimate > free:
+            raise OfflineRefused(
+                f"the staging disk is full: this title needs about {_gb(estimate)} and only "
+                f"{_gb(free)} is free on the disk behind {self.store.root}. Free space on the Docker "
+                "host, or point RKM_OFFLINE_STAGING at a roomier disk.")
+
+        # 2. The app's own budget.
         cap = self.max_bytes()
         if cap <= 0:
             return
         used = self.store.staged_bytes()
-        # Best available estimate before a byte is written: the library file is the
-        # right size for a remux (same streams) and an over-estimate for a
-        # transcode, which is the safe direction for a refusal. 0 means the media
-        # server did not report a path, so nothing can be estimated here — the
-        # in-flight ceiling in `_package` is then the enforcement.
-        estimate = int(plan.get("bytes") or 0)
-        if estimate and used + estimate > cap:
+        if not estimate or used + estimate <= cap:
+            return
+        if estimate > cap:
             raise OfflineRefused(
-                f"offline staging is full: {used} B staged + ~{estimate} B for this title "
-                f"exceeds the {cap} B cap (RKM_OFFLINE_MAX_BYTES). Delete a downloaded "
-                "title, or raise the cap, or point RKM_OFFLINE_STAGING at a roomier disk.")
+                f"this title alone is about {_gb(estimate)}, which is larger than the entire offline "
+                f"budget of {_gb(cap)} (RKM_OFFLINE_MAX_BYTES) — it can never be staged while that "
+                "budget stands. Raise the budget, or set it to 0 for no budget at all.")
+        raise OfflineRefused(
+            f"the offline budget is full: {_gb(used)} of {_gb(cap)} is already staged and this title "
+            f"needs about {_gb(estimate)}. Delete a downloaded title, raise RKM_OFFLINE_MAX_BYTES, or "
+            "set it to 0 for no budget at all.")
 
     # -- packaging ---------------------------------------------------------
 
@@ -892,6 +926,16 @@ def _as_int(value, default: int) -> int:
         return int(str(value).strip())
     except (TypeError, ValueError):
         return default
+
+
+def _gb(n: int) -> str:
+    """Bytes as GB with one decimal — the unit a person budgets in, not a raw integer.
+
+    ⚠ The old refusal printed both numbers as plain bytes ("12884901888 B cap"), which is the one form
+    nobody can compare against a film's size. It also printed them under the word "full", which is why
+    a policy limit read as a full disk.
+    """
+    return f"{n / 1024 ** 3:.1f} GB"
 
 
 def _ttl_seconds(config) -> int:

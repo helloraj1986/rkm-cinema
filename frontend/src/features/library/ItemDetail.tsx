@@ -42,6 +42,7 @@ import {
 } from "./lib";
 import { Icon } from "../../components/ui/Icon";
 import { IconAction, ICON_ACTION_CLASS } from "../../components/ui/IconAction";
+import { WatchedAction } from "./WatchedAction";
 import { PopupMenu } from "../../components/ui/PopupMenu";
 import { DownloadAction, DownloadNotice } from "../offline/DownloadButton";
 
@@ -478,15 +479,11 @@ export function ItemDetailContent({
                   ) : null}
 
                   <div className="flex items-start gap-2">
-                    {onToggleWatched && item ? (
-                      <IconAction
-                        icon="check"
-                        label="Watched"
-                        active={played}
-                        title={played ? "Mark as unplayed" : "Mark as watched"}
-                        onClick={() => onToggleWatched({ ...item, played })}
-                      />
-                    ) : null}
+                    {/* ⚠ ONE Watched control (`WatchedAction`), shared with the phone's screen — it
+                        carries its own on/off label, its `Saving…` state and its failure toast, which
+                        is what his device report asked for (KNOWN_ISSUES §1). It is NOT a handler
+                        prop any more: a caller that passes its own handler can forget the feedback. */}
+                    {item ? <WatchedAction item={item} played={played} /> : null}
 
                     {/* Offline download (B4, NATIVE_FEEL plan §4.6). ⚠ It renders NOTHING in a
                         browser: `window.__rkmOffline` exists only inside the iOS shell, and a

@@ -4,6 +4,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { Icon } from "../../components/ui/Icon";
 import { IconAction } from "../../components/ui/IconAction";
 import { Sheet } from "../../components/ui/Sheet";
+import { WatchedAction } from "../../features/library/WatchedAction";
 import { useItemDetail, useLibraryItems } from "../../features/library/api";
 import { useLibraryOutlet } from "../../features/library/LibraryLayout";
 import {
@@ -346,15 +347,7 @@ export function DetailScreen() {
 
         {tv && epQ.isLoading ? <span className="text-[12px] text-zinc-400">Loading…</span> : null}
 
-        {item ? (
-          <IconAction
-            icon="check"
-            label="Watched"
-            active={played}
-            title={played ? "Mark as unplayed" : "Mark as watched"}
-            onClick={() => toggleWatched({ ...item, played })}
-          />
-        ) : null}
+        {item ? <WatchedAction item={item} played={played} /> : null}
 
         {/* Renders NOTHING in a browser — the bridge only exists inside the iOS shell (B4). */}
         <DownloadAction itemId={itemId} title={title} />

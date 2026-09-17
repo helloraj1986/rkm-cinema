@@ -4,6 +4,90 @@ from there to here.
 
 ---
 
+## ▶ 🔎 **M3 CLOSES AND M4 OPENS: THE PHONE GETS A SEARCH SCREEN AND A TITLE-DETAIL SCREEN, THE IMPORT BAN FINALLY READS REAL FILES, AND THREE MORE RULES GO BACK TO THEIR OWNERS** (2026-09-17) · branch **`feat/mobile-m3-library`** · NEW `layouts/mobile/SearchScreen.tsx`, `layouts/mobile/DetailScreen.tsx`, `features/search/recent.ts`, `features/library/useAutoPlayDeepLink.ts`, `harness/search-mobile-frame.*`, `harness/detail-mobile-frame.*`
+
+**M3 IS COMPLETE.** Home (part 4), Browse, **Search** (this session) and the four extractions the
+phase asked for (E3 · E4 · E5 · E8) are all on the branch, and the poster actions stopped depending
+on a hover in part 3. Five commits, each with its own falsification and its own gate numbers.
+
+**⚠ THE M3 SCREEN THAT WAS MISSING WAS SEARCH, AND THE REASON IT COULD NOT BE THE PALETTE IS
+MEASURABLE.** The desktop's global search is a command palette: a `max-w-[430px]` field in the 64px
+top bar that opens a dropdown under it, driven by ⌘K / ↑↓ / Enter, and **every result row renders TWO
+text buttons** ("Watch Now" + "Details"). On a 390px phone that is a 390px dropdown inside a 64px
+bar, rows that cannot fit their own actions, and shortcuts that do not exist. So the phone gets a
+SCREEN, reached from a field-shaped BUTTON in the bar (`Header.tsx` branches on `useLayoutMode()`;
+the desktop keeps the palette untouched, and the bar hides its own affordance on `/search` so the
+screen never shows two search fields):
+
+| | |
+|---|---|
+| `RECENT` | chips, only while the field is empty. **Remembered when a search WORKS** (acting on a result), not on every keystroke — RECENT is a list of searches that led somewhere, not a transcript of half-typed words. Per device, never shared (there is no endpoint, and a shared list would show one household member's searches to another). |
+| `IN YOUR LIBRARY` | the row BODY opens the title, the trailing pill plays it at `actionLabel(row)` — two zones, one tap each, both ≥44px, both visible with no hover |
+| `DISCOVER · not in your library` | `Add` → `Download`, the same mutation the desktop cards use. ⚠ Deliberately NOT tappable as a row: the desktop's tap opens `SuggestDetailModal` — a centred `Dialog`, i.e. the thing mobile replaces with a sheet. Until that sheet exists, the honest answer is the action. |
+
+⚠ **No rule was re-derived.** `SEARCH_DEBOUNCE_MS`, the placeholder, `SEARCH_FAILED`,
+`noMatchesText()`, the two discovery-row adapters and `parseRecent`/`pushRecent`/`RECENT_MAX` moved
+into `features/search/lib.ts` and BOTH surfaces read them; `GlobalSearch.tsx` lost two local helpers
+to the same move. `recent.ts` is only the state + `localStorage` half — the half that can fail.
+
+**M4 OPENS, and its four extractions landed BEFORE the screen that needs them** (the ordering is the
+point — `layouts/importRule.ts` bans `* 100` in a mobile view, so `episodeProgress` had to exist
+first): **E6** `episodeProgress(ep)` → `{percent, inProgress, remainingLabel}`; **E7** `PersonHead`
+calls `auth/lib.ts::initials()` instead of its own copy; **E10** `moreActionsFor` / `MORE_ACTION_COPY`
+(the ⋯'s three conditional spreads, now one rule for the desktop menu AND the phone's sheet); **E11**
+`useAutoPlayDeepLink` (the `?play=1[&episode=]` deep link — a rule with real reasoning in it: a series
+arrives before its episode list, so it must WAIT, and the params must be cleared or Back replays the
+film). Three more small rules came with the screen: `seriesPlayLabel`, `detailMetaBits`, and the three
+detail sentences — the desktop reads all five, so the modal and the screen cannot disagree.
+
+**THE PHONE'S DETAIL SCREEN** (`/library/item/:itemId`): full-bleed 4:3 backdrop with Back, the copy
+under it, the episodes as a list, and **ONE action bar pinned in the thumb zone** (`sticky`, offset
+derived from `--m-nav-h` + `--rkm-safe-bottom` — a number would be wrong on a notched phone, which is
+what his 2026-09-16 report was about). The bar is the ONLY primary on the screen. ⚠ **The ⋯ does not
+exist when it has nothing to open** — measured on the fresh, link-less title, the bar carries exactly
+one tile, `["Watched"]`. That is the M3-part-4 defect (a control that cannot act) prevented in the new
+code rather than fixed in it.
+
+**⚠ THE IMPORT BAN WAS DOCUMENTATION, AND IT IS NOW A CHECK.** `imports.test.ts` tested
+`importRule.ts` against FIXTURE STRINGS and never opened a file in the directory it governs — so
+`HomeScreen.tsx`, one commit old, imported `lib/api/client` directly for a backdrop URL for a whole
+phase without anything going red. The scan now walks `src/layouts/mobile`, a guard asserts it READ
+something (≥5 files, named — without it a rename makes the green run pass by finding nothing), and the
+falsification is permanent in the test itself. The one violation it found is fixed the honest way:
+`library/lib.ts::backdropUrl()` now sits beside `posterUrl()`.
+
+**Measured in the sandbox browser** (Chromium, the real screens, the app's real stylesheet, stubbed
+api — `harness/*-frame.html`), every scenario PASS:
+* search at 390 and 320: mounts, `data-layout=mobile`, `scrollWidth == viewport`, no element outside,
+  ONE `/api/search/global` request per typed word, all three group headings, every action opacity 1
+  with NO hover and 44px tall, RECENT == `["sholay"]` after acting on a result, `?fail=1` renders
+  exactly "Search failed — try again shortly." and `?empty=1` exactly "No matches for “sholai”.";
+* detail at 390: a movie mid-play → primary `Resume (28%)` 48px pinned, tiles `Watched`/`More` 56px,
+  ⋯ opens a SHEET with "Play from beginning" + "Open in Jellyfin" and NOT "Mark as unplayed", tapping
+  the primary calls `startMovie(id, title, 2400, 8640)`; a series → primary `Resume S1E2` (the NEXT
+  playable episode), both seasons headed, five play controls, the in-progress row reading
+  "33% watched · 40m left" from the shared rule; a fresh link-less movie at 320 → primary `Play`, one
+  tile, NO ⋯, `scrollWidth` 320 of 320.
+
+⚠ **The harness caught TWO fixture bugs and no app bugs**, which is worth recording as the pattern: the
+first detail fixture had the movie PLAYED rather than mid-play (so the bar said "Play" and the ⋯
+offered no restart — the screen was right, the fixture was wrong), and the first `episodeRows` probe
+regex only matched the primary, hiding a correct four-row episode list. Both were fixed in the
+FIXTURE. Measured cost of a stale dev server, again: the first re-run of the detail probe still
+answered from the PRE-EDIT fixture module — `pgrep -f "[b]in/vite" | xargs -r kill -9` first, then
+re-read a file you CHANGED through the server before trusting a number.
+
+⚠ **STILL OPEN IN M4, and it needs HIS DECISION, not mine: the RequestSheet.** The wireframe asks for
+a quality profile list and "⚠ 2 titles matched — pick one". Two facts from the ground truth: the app
+has **no** quality parameter on `POST /api/media/{id}/request` (the profile is the server's configured
+default — a phone control that offered 1080p/720p/4K would be a control that cannot act), and the
+ambiguous case answers **409** with `candidates: [{title, year}]` — **no id**, so the candidate list
+cannot be actioned from the client without a backend change. Recorded in `KNOWN_ISSUES.md`.
+
+Gates, every commit: `npm run typecheck` clean · full `npx vitest run` **546 passed / 20 files** (was
+518 at the start of the session; library `lib.test.ts` 95, search `lib.test.ts` 17, layouts
+`imports.test.ts` 31).
+
 ## ▶ 🏠 **M3 PART 4 — THE PHONE GETS ITS OWN HOME, THE DETAILS OPTIONS GET A ORDER, AND TWO OF HIS DEVICE BUGS DIE** (2026-09-17) · branch **`feat/mobile-m3-library`** · NEW `layouts/mobile/HomeScreen.tsx`, `layouts/Screen.tsx`, `layouts/mobile/BrowseScreen.tsx`, `layouts/mobile/MobileScreen.tsx`, `components/ui/IconAction.tsx`, `features/library/PosterRail.tsx` + five fixes from his iPad/iPhone round
 
 **M3's two screens are now real, and the chooser that puts them there is `layouts/Screen.tsx` (§3.3):**

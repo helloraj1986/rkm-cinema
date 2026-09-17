@@ -100,3 +100,36 @@ Not reported by him; found while measuring (§ above). After a fresh profile pic
 sit unfired until a reload. ⚠ **The DESKTOP Home does the same thing in the same harness run**, so it
 is pre-existing and unrelated to the mobile work — recorded here so it is not rediscovered as new, and
 so it can be given its own investigation rather than being quietly worked around.
+
+---
+
+## 7 · M4's **RequestSheet** cannot be built truthfully until one of these changes — his call
+
+⚠ Found in the backend/client ground truth while starting M4 (2026-09-17). The wireframe (§7.4) shows
+a request flow with a quality list and an ambiguity list. Two facts stand in the way, and BOTH are
+things this app does not currently have:
+
+1. **There is no quality parameter to choose.** `POST /api/media/{id}/request` takes the media id and
+   nothing else; the profile is whatever the *arr instance is configured with server-side. The
+   wireframe's "◉ 1080p HD (2.1 GB) / ○ 720p / ○ 4K" would therefore be a control that cannot act —
+   exactly the defect M3-part-4 removed from the details page. (`GET /api/quality` DOES exist and
+   returns profiles, so the data is reachable — but nothing accepts a chosen one on the request path.)
+2. **The ambiguous case cannot be actioned from the client.** The server answers **409** with
+   `detail: {message, candidates: [{title, year}]}` — see `backend/api/routes/media.py:112`. The
+   candidates carry **no id**, so "pick one" has nothing to re-request with. `_candidates()` in
+   `request_media.py` flattens the provider's result to title/year only.
+
+**So the honest options, for him to choose:**
+
+* **(a) Nothing yet** — the phone keeps today's behaviour (Add → Download with the server's own
+  message on failure). Zero code, and no control that lies.
+* **(b) A sheet that shows what the server said** — the request's own sentence, and for a 409 the
+  candidate titles as a READ-ONLY list ("2 titles matched — this app cannot choose for you yet"). Small
+  client work, still no invented capability.
+* **(c) Make it real, backend first** — carry an id (and ideally `tmdbId`) on each candidate and accept
+  a chosen candidate id on the request path; then a pick-one list is actionable. That is a backend
+  phase with tests, not a mobile phase.
+
+Recorded rather than guessed: this is the first thing in M4 that the mobile work cannot settle by
+itself, and it is his call which of the three it is.
+

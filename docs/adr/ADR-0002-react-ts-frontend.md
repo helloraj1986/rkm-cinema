@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-09-06
-- **Phase:** 0 (`docs/modular-scalable-architecture.md`)
+- **Phase:** 0 (the restructure plan, archived: `docs/archive/modular-scalable-architecture.md`)
 
 ## Context
 `app.js` is a **2,191-line single-file monolith** (+ `api.js`, `app.css`) — global render

@@ -1,5 +1,11 @@
 # RKM Cinema — Architecture
 
+> **This is the single architecture document.** Last verified against the code: **2026-09-18**.
+> `ARCHITECTURE_AUDIT.md` and `modular-scalable-architecture.md` — the two files that used to sit beside
+> this one — are **superseded and ARCHIVED** in [`archive/`](archive/) (their still-true content is folded
+> into §19–§21 below). Nothing else in `docs/` is architecture: §21 is the map of which file is the truth
+> for what.
+
 > ⚠ **Integrating with the phone/tablet app? Read §17 first** — the three parts (backend · web · the
 > iOS shell) and the two seams between them, in one place. §2 is the same picture with the shell in it.
 
@@ -22,6 +28,39 @@
 > modular FastAPI app: **`uvicorn api.main:app`** (see `backend/Dockerfile`). There is
 > exactly ONE implementation of each business rule. Add features to the modular
 > tree, not a parallel monolith.
+
+---
+
+## 0. How to read this map — and the five rules that explain most of the code
+
+**Read in this order:**
+
+| # | Read | For |
+|---|---|---|
+| 1 | **this file** | the map: what runs where, what owns which fact, where a change goes |
+| 2 | [`../README.md`](../README.md) | how to RUN it: the one script, the ports, the three operational rules |
+| 3 | [`adr/`](adr/) | WHY the load-bearing choices are what they are (§20 is the index) |
+| 4 | [`PROGRESS.md`](PROGRESS.md) | what is DONE and what the next session picks up — ⚠ it is a log, not a map: read its top block, not its body |
+| 5 | [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) | what is BROKEN right now, in his own words |
+
+**The five rules. Everything else in this document follows from them:**
+
+1. **One implementation of every business rule.** `route → command/service → provider`, and the rule
+   itself lives in `domain/` or one service (§4). A second copy of a rule is the defect this architecture
+   exists to prevent — the recurring failure mode in this repo's history.
+2. **A fact has exactly one owner** (§2), and **a screen that needs two facts asks two owners** — that is
+   why the detail page asks the app *and* the server before it offers a download (§17.4).
+3. **The api is the only thing that holds a secret.** Keys and media-server URLs never reach the browser
+   or the app: nginx fronts `/api` and the api proxies every byte of media (§2, §9).
+4. **Identity is decided in ONE place** — `backend/api/session.py` (§11). A route that builds a request
+   with a credential from anywhere else silently acts as the administrator, with no error anywhere.
+5. **Nothing is verified by reading it.** Every rule here is pinned by a test, a gate or a falsification
+   run (§15). ⚠ The house rule: **a check that has never been reverted proves nothing** — run the
+   falsification direction (`--falsify`, `--expect-broken`, or mutate the fix and require RED) before
+   claiming a gate passes.
+
+⚠ **What this document is not.** It is not the plan — plans are `docs/*_PLAN.md`, and they become history
+once built. It is not the status — that is `PROGRESS.md`. It describes the system as it stands.
 
 ---
 
@@ -117,34 +156,83 @@ design smell**; §18.2 is the one exception worth having (bearer tokens for nati
 ⚠ **A fact has exactly one owner, and a screen that needs two facts must ask two owners** — that is why
 the detail page asks the app *and* the server before it offers a download (§17.4).
 
+### 2.1 What actually runs — the deployed inventory (verified 2026-09-18)
+
+⚠ **Two shapes of the same stack, and they differ.** The compose file *can* run the whole pipeline; **his
+deployment runs the bundled app and points at an existing \*arr stack on the Windows host.** Verified by
+reading `.env` + the rendered `.rkm.env` and probing every port:
+
+| Piece | Where | Address | Notes |
+|---|---|---|---|
+| **web** (nginx) | bundled compose, project `rkm-bundled` | host **:8124** → :80 | the app's ONLY published port; the built SPA + the `/api` proxy |
+| **api** (FastAPI) | bundled compose | **not published** — only `api:8000`, behind nginx | holds every secret; `env_file: .rkm.env` |
+| **jellyfin** | bundled compose | host **:8098** → :8096 | the media server, and the truth for availability (§6) |
+| Radarr · Sonarr · Prowlarr · qBittorrent | **NOT this compose** — they run on the Docker host | `192.168.65.254:` **7878 · 8989 · 9696 · 1701** | reached by URL from `.env`. The compose `fullstack` profile (7879/8988/9697/8080) exists for a host with no \*arr stack of its own and is **not used on his box** |
+| **provisioner** | one-shot, `provision` profile | — | wires Jellyfin: admin account, API key, libraries |
+| Media | `D:/RKM_MEDIA` → `/data`, `B:/RKM_MEDIA` → `/media2` | — | two physical drives, mounted at the SAME container paths in every service so hardlinks/imports/scans just work (`RKM_MEDIA_PATH_3` → `/media3` if a third is ever added) |
+
+⚠ **The host gateway is `192.168.65.254`** on Docker Desktop/WSL2 — that is how a container reaches a
+service running on Windows itself. `.env` uses the literal IP rather than the portable
+`host.docker.internal`.
+
+**Volumes** (all project-scoped by `-p rkm-bundled`): `rkm_shared` (`/shared` — the api's runtime file,
+and the staged offline downloads under `/shared/offline`), `jellyfin-config`, `jellyfin-cache`,
+`radarr-config`, `sonarr-config`, `prowlarr-config`, `qbit-config`. ⚠ The app's OWN durable state —
+`watchlist.json`, `sessions.json`, `subtitles.json` — is written **under the media root**, not into a
+container volume (§10), so rebuilding the api never loses it.
+
+**One network**: `rkm-exp`, a bridge of its own. That is what keeps the bundled stack from colliding with
+the production containers it was built beside.
+
 ---
 
 ## 3. Repository layout
 
 ```
-rkm-cinema/                       (full annotated tree in ../README.md)
-├── backend/                      FastAPI app + pytest suite + Dockerfile
-│   ├── api/                      main.py app factory + routes/ (thin routers)
-│   ├── services/                 external integrations + app services
-│   │   ├── library/ acquisition/ recommendation/ reconciliation/  (canonical)
-│   │   ├── radarr.py sonarr.py tmdb.py youtube.py
-│   │   ├── qbittorrent.py watchlist.py media_status.py recommendations.py
-│   ├── domain/                   business layer: state machine + resolver
-│   ├── core/  config/  infrastructure/  application/  jobs/
-│   ├── scripts/                  daily pipeline + probes
-│   ├── provisioner/              bundled-stack Jellyfin provisioner
-│   └── tests/                    unit + API tests (mockable, no live LAN)
-├── frontend/                     React 18 + TS + Vite shell (the only UI)
-├── docs/                         architecture, plans, ADRs, API contract,
-│                                 OPERATIONS.md, PROGRESS.md, ARCHITECTURE.md
-├── nginx/  scripts/  tools/      web config; backup/restore; diagnostics
-├── docker-compose.yml  bootstrap.ps1  bootstrap.sh  render_config.py  rkm-cinema.ps1
-└── README.md  .env (single config)  .env.example (committed template)
+rkm-cinema/
+├── backend/                          FastAPI app + pytest suite + Dockerfile
+│   ├── api/                          main.py (app factory) + routes/ (thin routers)
+│   │   └── session.py                ⚠ THE identity seam (§11) — read before touching a media call
+│   ├── domain/                       pure business rules: state_machine.py · resolver.py · enums.py
+│   ├── services/                     everything that talks to the outside world + app services
+│   │   ├── library/ acquisition/ recommendation/ reconciliation/   (canonical packages)
+│   │   ├── offline.py                staging + packaging + byte-ranged serving (ADR-0007)
+│   │   ├── subtitles.py · subtitle_store.py · opensubtitles.py     (ADR-0005)
+│   │   └── radarr.py sonarr.py tmdb.py youtube.py qbittorrent.py watchlist.py · global_search.py
+│   ├── core/ config/ infrastructure/ application/ jobs/            (http client, settings, repo, jobs)
+│   ├── provisioner/                  one-shot Jellyfin provisioner (bundled stack)
+│   ├── scripts/                      snapshot_openapi.py + operational probes
+│   └── tests/                        unit + API tests — mockable, no live LAN, no real keys
+├── frontend/                          React 18 + TS + Vite — the ONLY UI (§12)
+│   ├── src/app/                      router.tsx · layout/ (Header, Sidebar, MobileNav) · guards
+│   ├── src/features/                 one folder per bounded context: library · playback · search ·
+│   │                                 discover · watchlist · profiles · admin · offline · subtitles …
+│   ├── src/layouts/                  LayoutMode.tsx (the viewport switch, ADR-0011) + mobile/ + desktop/
+│   ├── src/lib/api/                  client.ts (the ONE HTTP client) · types.ts (GENERATED — do not edit)
+│   ├── src/components/               ui/ primitives + composed media components
+│   ├── src/styles/index.css          Tailwind entry + the scoped rules a shell needs
+│   └── harness/                      browser frames that mount REAL views over a stubbed api (§12, §15)
+├── apple/                            the native clients (§17)
+│   ├── Shared/Sources/RKMServerKit/  typed server address + logging, shared by both apps
+│   ├── ios/RKMCinema/                29 Swift files: App/ · Shell/ · Offline/ · Server/ · Debug/
+│   ├── tvos/                         ⚠ NOT BUILT — a README and nothing else
+│   └── scripts/                      the Linux-executable gates (offline-core, typecheck)
+├── docs/                             ARCHITECTURE.md (this) · adr/ · api/openapi.v1.json (frozen) ·
+│                                     OPERATIONS.md · PROGRESS.md · KNOWN_ISSUES.md · *_PLAN.md · archive/
+├── nginx/                            web container config: the SPA, the /api proxy, artwork caching
+├── tools/                            diagnostics + browser checks (check_*.py, probe_*.py)
+├── .github/workflows/ci.yml          the gate that runs on every push (§13, §15)
+├── docker-compose.yml                the bundled stack (§2.1 — note the profiles)
+├── render_config.py                  ⚠ the ONLY writer of .rkm.env (§10)
+├── rkm-cinema.ps1                    the one operator script (bootstrap.ps1/rkm.ps1 forward to it)
+├── .env                              YOUR config (untracked) · .env.example (committed template)
+└── README.md                         how to run it
 ```
 
 Run everything from the subdirs: `cd backend && python -m pytest tests/ -q`,
 `cd frontend && npm run typecheck && npx vitest run && npm run build`.
-Deploy stays at the root (`.\\bootstrap.ps1`, wrapped by `.\\rkm-cinema.ps1 deploy`).
+Deploy stays at the root (`.\\rkm-cinema.ps1 apply`). ⚠ **`.env` is not committed** and `.rkm.env` is
+**generated** — never edit it by hand (§10).
 
 ---
 
@@ -179,12 +267,27 @@ architecturally is the LEVEL of each route, and that is declared and enforced in
 `tests/test_route_protection.py::ROUTE_LEVELS` — *the* inventory: it fails if a route ships without a
 decision, and a second test fails if a session route is not on the Phase-5 dependency.
 
-| Level | Count | Meaning |
+| Level | Count (2026-09-18) | Meaning |
 |---|---|---|
 | **PUBLIC** | 1 | `GET /api/health` — the Docker HEALTHCHECK calls it; a 401 here marks the api unhealthy and cascades |
 | **auth-route** | 6 | `/api/auth/*` — reachable signed out (sign-in cannot require a session) and deliberately **not** behind the credential probe: they are the FIX for a refused credential |
-| **session** | 36 | everything else in the app — the identity is published for the request (§11) |
-| **ADMIN** | 11 | `require_admin_session`: a Jellyfin **administrator**, strictly, *even while* `RKM_AUTH_REQUIRED` is false. The 6 `/api/admin/*` household routes plus the four operational ones Phase E gated (`POST /api/download`, `POST /api/jobs/{name}/run`, `GET /api/library/scan`, `POST /api/reconcile`) |
+| **session** | 41 | everything else in the app — the identity is published for the request (§11) |
+| **ADMIN** | 11 | `require_admin_session`: a Jellyfin **administrator**, strictly, *even while* `RKM_AUTH_REQUIRED` is false. The 6 `/api/admin/*` household routes plus the five operational ones Phase E gated (`POST /api/download`, `POST /api/jobs/{name}/run`, `GET /api/library/scan`, `POST /api/reconcile`) |
+
+**59 routes declared in total.** ⚠ The counts MOVE — do not trust this table as a number, trust the test:
+the declaration is the source, and recount it with
+
+```bash
+cd backend && python -c "
+import re, collections
+src = open('tests/test_route_protection.py').read()
+block = src.split('ROUTE_LEVELS: dict[str, str] = {',1)[1].split('\n}',1)[0]
+rows = re.findall(r'\"((?:GET|POST|PUT|DELETE|PATCH) /api[^\"]*)\"\s*:\s*([A-Za-z-]+)', block)
+print(len(rows), collections.Counter(l for _, l in rows))"
+```
+
+⚠ And that is deliberately manual friction in the CODE, not in this doc: a new route fails the suite
+until it is declared, and a deleted one fails until its row is removed.
 
 Grouped by what they are for:
 
@@ -417,6 +520,21 @@ architecture exists to prevent. ⚠ `layouts/desktop/index.ts` is a **thin re-ex
 - Three containers: `api` (FastAPI modular, holds secrets) + `web` (nginx :8124, the built React shell + `/api` proxy, **including `location = /openapi.json`** so `tools/check_deployed.py` can compare the running api's contract), plus the bundled `jellyfin` media server.
 - ⚠ **Editing `.env` alone changes nothing** — a container reads its environment when it STARTS. `apply` (or `auth on|off`) is what applies it.
 - **The media server is reached over Tailscale** (HTTPS via the MagicDNS host); deep-links must target the browser-reachable `JELLYFIN_BROWSER_URL` host, not the container-internal `JELLYFIN_URL` (see §8).
+- **CI runs on every push** (`.github/workflows/ci.yml`, both jobs on `push: branches ["**"]` and on PRs):
+  - *backend* — `ruff check api application config core domain infrastructure jobs services` (rule set
+    **F only**, deliberately: the real-bug class) then `python -m pytest tests/ -q`;
+  - *frontend* — `npm run typecheck`, `npx vitest run`, `npm run build`, and a **contract-drift guard**:
+    `npm run generate:types && git diff --exit-code src/lib/api/types.ts` — so a route change that is not
+    reflected in the committed `types.ts` fails the build.
+  ⚠ CI is **not** the whole gate: the Apple halves, the offline core and the browser checks are Linux-run
+  commands a human (or agent) invokes — §15 is the full list.
+- **How a change reaches each surface** (§17.5 has the cost table): `frontend/` and `backend/` arrive with
+  `.\\rkm-cinema.ps1 apply`; **the phone gets a UI change for free** (the app loads the live page) but
+  needs a Mac build for anything under `apple/`. The bridge contract needs BOTH, and only additively
+  within `v1`.
+- ⚠ **Current branch state (2026-09-18):** `main` is an ancestor of `dev` (fast-forward still possible —
+  verified with `git merge-base --is-ancestor main dev`), and `dev` carries work `main` does not. That is
+  the expected steady state, not drift.
 
 ---
 
@@ -437,13 +555,68 @@ architecture exists to prevent. ⚠ `layouts/desktop/index.ts` is a **thin re-ex
    `tests/test_route_protection.py::ROUTE_LEVELS` (the test fails without one) and, if it touches the
    media server, to ride the session dependency (§11) — never its own token.
 
+**"Where do I change X?" — the lookup an agent actually needs:**
+
+| I want to change… | Go here | ⚠ And remember |
+|---|---|---|
+| what a title's status IS (available/downloading/…) | `backend/domain/state_machine.py` (+ `services/reconciliation/`) | the media server is the truth for availability (§6); never recompute status in a route or a component |
+| whether something is a movie or a series | `backend/domain/resolver.py` | one rule, used by acquisition and the UI |
+| an external service (Radarr/Sonarr/TMDB/Jellyfin/subtitles) | the matching `backend/services/*.py` client | routes never build a URL; the credential comes from `api/session.py` only |
+| an HTTP endpoint | `backend/api/routes/*.py` (thin) | a NEW route needs a `ROUTE_LEVELS` line, or the suite fails |
+| who may call an endpoint | the route's dependency + `ROUTE_LEVELS` | ADMIN is strict even when `RKM_AUTH_REQUIRED=false` |
+| the library/status data a screen reads | `backend/services/library/` | the Jellyfin listing is cached 60 s — do not add an uncached per-item scan |
+| offline downloads (server half) | `backend/services/offline.py` + `api/routes/offline.py` | the budget/disk refusals are DIFFERENT 507s and must stay distinguishable (ADR-0007) |
+| offline downloads (device half) | `apple/ios/RKMCinema/Offline/` | ⚠ the bridge contract needs both sides; a Mac build is the only way to see it (ADR-0008/0009) |
+| a screen (any client) | `frontend/src/features/<area>/` | the phone renders the SAME views — a second UI is the thing this architecture forbids |
+| phone vs desktop layout | `frontend/src/layouts/` (`LayoutMode.tsx`, `mobile/`) | ⚠ `mobile/**` may hold layout/markup/state only — no `fetch`, no re-derived rule (`imports.test.ts` enforces it) |
+| a rule about what a user is OFFERED | the component or `lib.ts` for that feature | the server enforces it too (never UI-only); and do not OFFER what the server will refuse |
+| configuration / a new knob | `.env` + `.env.example` + `render_config.py` | ⚠ a container reads `.rkm.env`, and only `render_config.py` writes it — a knob the renderer does not pass is unreachable (see §10) |
+| the deploy script | `rkm-cinema.ps1` | never `docker compose … down -v`, always `-p rkm-bundled` (README's three rules) |
+
 ---
 
-## 15. Testing
+## 15. Testing & gates — what to run before you say "done"
 
-- `backend/tests/` cover: the status resolver + state machine, media-type resolver, Radarr/Sonarr routing + title fallback + ambiguity, duplicate prevention, error handling, trailer validation, the library provider + factory (one backend: Jellyfin), the `LibraryService` collapse and watch-link failure containment, the reconciler, recommendation pipeline, and API endpoints.
-- All tests use **injected fakes** — no real LAN, no real API keys required.
-- Run: `cd backend && python -m pytest tests/ -q` (all green; count moves with the suite — see `PROGRESS.md` for the current number).
+⚠ **"Done" means the gate ran and its output is in the transcript** — never that the code looks right.
+Verify the numbers below on the day (§"counts move"); the commands are the contract, not the totals.
+
+| Command (from the given dir) | What it proves | Falsification direction |
+|---|---|---|
+| `cd backend && python -m pytest tests/ -q` | **1177 passed** — route levels + identity rail, the status machine, acquisition routing, the library service, the offline API, the config renderer, subtitles, auth. All with injected fakes: **no live LAN, no real keys** | mutate the rule under test and require RED |
+| `cd backend && ruff check api application config core domain infrastructure jobs services` | lint, **F rules only** (undefined names, unused imports, shadowing) — the real-bug class | inject an undefined name |
+| `cd frontend && npm run typecheck` | TS types and call shapes (`tsc --noEmit`) | — |
+| `cd frontend && npx vitest run` | **551 passed / 20 files** — the layout switch (`LayoutMode.test.tsx`), the mobile import ban (`imports.test.ts`), `lib.ts` rules, sheet rules, query policy | break the rule in `lib.ts`, require RED |
+| `cd frontend && npm run build` | the production bundle builds — it IS the web image (`frontend/Dockerfile`) | — |
+| `cd frontend && npm run generate:types && git diff --exit-code src/lib/api/types.ts` | the committed TS types still match the frozen contract | also runs in CI |
+| `python3 tools/check_md_links.py` | **61 markdown files, every relative link resolves** — this is what keeps a doc move honest | break a link |
+| `python3 apple/scripts/check-offline-core.py` | the pure Apple core **executed on Linux**: **517 checks** (bridge contract, ranges, manifest, cookie rules, planner) | `--falsify` reverts **all 67 rules** one at a time and requires each to go RED — that IS the falsification |
+| `bash apple/scripts/check-apple-typecheck.sh` | the iOS sources typecheck on Linux, **one compiler invocation per file**, with the 2 Darwin-only API errors filtered by name | re-introduce a real error and require it to be named |
+| `python3 tools/check_*.py` (browser checks) | the REAL views in a real browser over a stubbed api (login, picker, nav, household, password, library scan, CTA, poster-watched, offline page, subtitle panel, item modal) | most accept `--expect-broken`: run the SAME assertions against the pre-fix source and require failures |
+| `python3 tools/check_offline_download.py` | the **device's own** log + `manifest.json`, read out of the booted simulator — the only on-device gate. Needs a Mac + simulator | tri-state `PASS`/`FAIL`/**`NOT EXERCISED`** (exit 0/1/3), and `--selftest` falsifies the TOOL against 9 fixtures with no Mac |
+
+**Running the browser checks** (they are the ones that need setup):
+
+```bash
+pgrep -f "[b]in/vite" | xargs -r kill -9          # ⚠ kill by pattern-that-cannot-match-itself
+cd frontend && npx vite --port 5199 --strictPort &  # ONE server; --strictPort exits if :5199 is held
+unset TMPDIR                                        # ⚠ Chromium will NOT launch with TMPDIR under /root
+cd .. && python3 tools/check_cta_alignment.py       # e.g.
+```
+
+⚠ **Restart the dev server after editing app source.** Vite's watcher does not fire on this mount
+(WSL2/Docker), so a stale server keeps answering from its pre-edit module graph — and a fresh server
+silently fails to bind while the old one keeps serving. Prove the server is fresh by reading a module you
+just changed: `curl -s http://localhost:5199/src/features/library/MediaCard.tsx | grep -c justify-end`.
+`frontend/harness/README.md` documents every frame and the traps each one cost.
+
+⚠ **In the Docker sandbox `pytest` needs `--capture=no`**: some suite removes the capture tempfile and
+the session dies in teardown (`FileNotFoundError` in `capture.py::snap`), which reads as a crash while
+every test passed.
+
+⚠ **Two browser checks fail AT HEAD** as this was written — `check_library_scan.py` scenario G (the
+signed-out frame never renders) and `check_item_modal.py` scenario H (Escape and the player). They were
+measured against a stashed tree, so they are not caused by whatever you are doing right now:
+[`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) §8. Do not "fix" them by weakening the check.
 
 ---
 
@@ -503,7 +676,7 @@ apple/
 ├── Shared/Sources/RKMServerKit/   the ONE thing both apps need: a typed server address
 │                                  (parse · normalise · persist) + logging (LOGGING.md)
 ├── ios/RKMCinema/  (29 Swift files)  WKWebView shell — App/ · Shell/ · Offline/ · Server/ · Debug/
-└── tvos/                            ⚠ EMPTY TODAY (0 Swift files). Planned, not built.
+└── tvos/                            ⚠ NOT BUILT: a README and 0 Swift files. Planned, not started.
 ```
 
 The iOS app has **no bundled UI and no API client of its own**. It:
@@ -671,9 +844,116 @@ plan + PROGRESS convention. Those are why a phase like B4 could be verified on L
 phone the same evening — and why the ONE bug that got through (the 204) was found by a person in minutes
 rather than by a code review in weeks.
 
-⚠ `ARCHITECTURE_AUDIT.md` is a PHASE-1 audit of the LEGACY app — read it as history (several of its
-"gaps" have shipped); this §18 is about the architecture as it stands today.
+⚠ `ARCHITECTURE_AUDIT.md` (a PHASE-1 audit of the LEGACY app) and `modular-scalable-architecture.md`
+(the plan that drove the restructure) are **superseded and archived** in [`archive/`](archive/) — read them
+as history, if at all. §18 above is about the architecture as it stands today, and §19–§21 below carry
+forward the parts of those two documents that are still true: the reasoning behind the stack, the ADR
+index, and where the truth lives.
+
+**Status of this list, re-checked 2026-09-18:**
+
+- **#1 — half done.** CI now pins the *contract* (`npm run generate:types && git diff --exit-code`), but
+  the shared `(method, route, status, body)` table is still missing, and the offline gate's stub is still
+  hand-written — so the class of bug it targets (each side tested against its own assumption) is still open.
+- **#7 — not started.** `tools/harness.py` does not exist; every browser check still re-implements frame
+  loading, server-freshness and a fresh page per scenario, and the stale-server trap fired again on
+  2026-09-18 and cost a run.
+- **#10 — bigger, not smaller.** `PROGRESS.md` is ~5,700 lines and is still the first file the next
+  session reads.
+- **#2 · #3 · #4 · #5 · #6 · #8 · #9 — unchanged** (nothing has landed since this list was written).
 
 **In one line:** do **1** and **7** next (both are test-infrastructure, both pay back immediately), take
 **2 · 3 · 4** with B5, put **5** on the critical path to tvOS, and treat **6** and **9** as your product
 decisions rather than engineering ones.
+
+---
+
+## 19. Why the stack is what it is (the decisions made once)
+
+Absorbed from the restructure plan — `docs/archive/modular-scalable-architecture.md`, now historical — so
+the reasoning sits beside the architecture instead of inside an archived plan.
+
+| Decision | Chosen | Why, and what it replaced |
+|---|---|---|
+| Frontend | **React 18 + TS + Vite + Tailwind** (ADR-0002) | the owner's own stack; the thing it replaced was a **2,191-line `app.js` monolith** with global state (`DATA`, `RES`, `LIBALL`…) and delegated handlers — not maintainable past a handful of screens |
+| Server state | **TanStack Query** | cache + invalidation tied to the library-scan job; no hand-rolled polling maps |
+| Client state | **Zustand** (light) — auth/UI only | small and slice-shaped; Redux Toolkit was the heavier alternative |
+| Backend | **Keep Python/FastAPI — consolidate** (ADR-0003) | it was already sound and test-covered; rewriting a working backend is the classic trap |
+| API contract | **Frozen `docs/api/openapi.v1.json`, additive only** (ADR-0001), with `types.ts` GENERATED | the contract is the seam that de-risked the re-platform; CI now fails if the committed types drift |
+| Repo | **One monorepo** — `backend/` + `frontend/` + `apple/` | one deploy, one CI, one config file |
+| Media server | **Jellyfin only** (ADR-0004) | Plex/Emby were removed rather than maintained; one provider means one watch-link path |
+| Native clients | **A shell around the LIVE web UI, not a second client** (§17) | one UI cannot disagree with itself; the app adds only what a page physically cannot do |
+| Identity | **Accounts delegated to Jellyfin, sessions owned by the app** (ADR-0006) | the app stores no password and invents no account |
+
+**The rules those decisions imply** (the plan called them "use-principally" — they are enforced by the
+layout, the import ban and CI, not by good intentions):
+
+- **Layering:** `route → command/service → provider`. A route never embeds a business rule; a service
+  never speaks HTTP to the app's own api; `domain/` is pure and imports nothing infrastructural.
+- **One way to do a thing.** One identity, one status resolver, one acquisition service, one library SPI,
+  one cache primitive, one repository, one HTTP client, one operator script. **Search before you add.**
+- **Contract-first.** A frontend need is an ADDITIVE field or endpoint on the frozen `/api`, then
+  regenerate the client — never a second shape for the same fact.
+- **Provider SPI.** Everything behind the media-server boundary implements the same capability surface;
+  the UI never branches on a provider name.
+- **Additive and parity-checked, never a big cut-over.** The mobile layout shipped BESIDE the desktop one
+  (ADR-0011) and each ported view matched the old one before the old one was deleted.
+- **A rule belongs where it can be EXECUTED.** Pure decisions — status, byte ranges, the bridge contract,
+  the layout switch, the offline planner — are written as Foundation-only or plain-TS functions with
+  tests, so they run on Linux in seconds instead of on a device nobody can automate.
+
+---
+
+## 20. The ADR index — the WHY behind the load-bearing choices
+
+`docs/adr/` holds one ADR per decision that would be expensive to reverse. **Read the ADR before changing
+what it locks in.** A reversed decision gets a NEW ADR that supersedes and names the old one — the old one
+is never quietly edited, because the reason it existed is part of the record.
+
+| ADR | What it locks in |
+|---|---|
+| [0001](adr/ADR-0001-freeze-api-contract.md) | The `/api` contract is **frozen and additive-only** — new fields yes, changed meanings no |
+| [0002](adr/ADR-0002-react-ts-frontend.md) | **One UI**: React 18 + TS + Vite. There is no second frontend |
+| [0003](adr/ADR-0003-keep-python-backend.md) | **Keep FastAPI/Python** — consolidate, don't rewrite |
+| [0004](adr/ADR-0004-remove-plex-emby-support.md) | **Jellyfin is the only media server**; the Plex/Emby routes and response fields are gone |
+| [0005](adr/ADR-0005-opensubtitles-integration.md) | Subtitles are optional, delivered as **sidecar files**, metered downloads, and degrade instead of failing (§16) |
+| [0006](adr/ADR-0006-delegated-identity-and-sessions.md) | **Identity**: sessions owned by the app, accounts owned by Jellyfin, ONE credential seam (§11) |
+| [0007](adr/ADR-0007-offline-downloads.md) | A download is a **staged, server-packaged, byte-ranged file** — and what "the household's downloads" means |
+| [0008](adr/ADR-0008-offline-downloader.md) | The device half: a **background `URLSession`**, an explicit `Cookie:` header, and a `.part` file it never trusts |
+| [0009](adr/ADR-0009-offline-loopback-server.md) | The **loopback server**: a token, a byte range, and decisions taken in pure code (§17.3) |
+| [0010](adr/ADR-0010-offline-page.md) | The offline PAGE: a capability it must not assume, and a **progress queue that must never rewind** (§17.4c) |
+| [0011](adr/ADR-0011-mobile-layout-shells.md) | **Two layout shells in one app**, chosen by the viewport alone (§12) — and `mobile/**` may hold no rule |
+
+---
+
+## 21. Where the truth lives — the documentation map
+
+| The question | The file that answers it |
+|---|---|
+| What IS the system, and where do I change X? | **this file** |
+| How do I run, deploy or recover it? | [`../README.md`](../README.md) (ports · the one script · the three rules) + [`OPERATIONS.md`](OPERATIONS.md) |
+| Why is it built this way? | [`adr/`](adr/) — indexed in §20 |
+| What exactly must the api serve? | [`api/openapi.v1.json`](api/openapi.v1.json) — the FROZEN contract (ADR-0001); `frontend/src/lib/api/types.ts` is GENERATED from it |
+| What is done, and what comes next? | [`PROGRESS.md`](PROGRESS.md) — ⚠ read its TOP block; the rest is an append-only log |
+| What is broken right now, in his words? | [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) |
+| What is planned but not built yet? | `docs/*_PLAN.md` — ⚠ a plan becomes history the moment it is built; check `PROGRESS.md` for what actually landed |
+| How does a browser/test tool work? | [`../frontend/harness/README.md`](../frontend/harness/README.md) — every frame and the trap each one cost; each `tools/check_*.py` also carries it in its docstring |
+| The native (iOS) workflow: two machines, build, gates? | [`../apple/WORKFLOW.md`](../apple/WORKFLOW.md) + [`../apple/LOGGING.md`](../apple/LOGGING.md) |
+
+**Archived and superseded — do NOT treat these as current:**
+
+| File | What it was | What to do with it |
+|---|---|---|
+| [`archive/ARCHITECTURE_AUDIT.md`](archive/ARCHITECTURE_AUDIT.md) | the Phase-1 audit of the LEGACY app (Plex/Emby, `app.js`, "56 tests green") | history only; most of its "gaps" shipped years-of-sessions ago |
+| [`archive/modular-scalable-architecture.md`](archive/modular-scalable-architecture.md) | the plan that drove the restructure (phases 0–5, the decisions table, risks) | history; the parts that are still true are §19 |
+| [`archive/ARCHITECTURE_GUIDE.md`](archive/ARCHITECTURE_GUIDE.md) · [`archive/RKM_Watchlist_Production_Refactor_Task.md`](archive/RKM_Watchlist_Production_Refactor_Task.md) | earlier guides and the refactor spec | history |
+
+**Documentation conventions** — how this stays readable:
+
+1. **One file per question.** If a new document would answer a question another already answers, extend
+   that document instead. That is exactly why this file absorbed the two that used to sit beside it.
+2. **⚠ Mark what is history.** A superseded document moves to `docs/archive/` with a banner naming what
+   replaced it; it is never quietly left in `docs/` to be read as current.
+3. **Falsify, then write the number.** Every factual claim here was checked by running something; put the
+   command next to the claim (§15) so the next reader re-verifies instead of trusting.
+4. **`python3 tools/check_md_links.py` must stay green** — it is what makes moving a document safe.

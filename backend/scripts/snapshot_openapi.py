@@ -1,7 +1,8 @@
 """
 Snapshot the live FastAPI OpenAPI schema to docs/api/openapi.v1.json.
 
-Contract freeze (Phase 0 of docs/modular-scalable-architecture.md). The /api surface is
+Contract freeze (Phase 0 of the restructure plan, archived at
+docs/archive/modular-scalable-architecture.md). The /api surface is
 treated as immutable v1 — this snapshot is the single source of truth the React client's
 generated types (openapi-typescript, Phase 2) are built from. New fields/endpoints are
 additive only; regenerate and commit this file whenever the API shape changes.

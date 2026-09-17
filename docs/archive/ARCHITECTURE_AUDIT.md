@@ -1,11 +1,14 @@
 # RKM Watchlist — Architecture Audit (Phase 1)
 
-> ⚠ **THIS IS HISTORY, NOT A TO-DO LIST.** It is the Phase-1 audit of the LEGACY app (before the
-> modular FastAPI tree and before the React shell). Several "gaps" below have since SHIPPED — canonical
-> identity (`ADR-0006`), the library abstraction (`services/library/`), watch-link containment
-> (`WatchLinks`), Plex/Emby removal (`ADR-0004`), in-container jobs. **Check `docs/adr/` and the current
-> code before acting on a row here.** The current architecture is `ARCHITECTURE.md`; the live status is
-> `PROGRESS.md`.
+> ⚠⚠ **SUPERSEDED AND ARCHIVED — 2026-09-18. This is history, not a to-do list.**
+> It is the Phase-1 audit of the **LEGACY** app (before the modular FastAPI tree and before the React
+> shell), and it was replaced by **[`../ARCHITECTURE.md`](../ARCHITECTURE.md)** — the single architecture
+> document — which absorbed everything here that is still true. Read this only for the audit trail.
+> Several "gaps" below have since SHIPPED — canonical identity ([`ADR-0006`](../adr/ADR-0006-delegated-identity-and-sessions.md)),
+> the library abstraction (`services/library/`), watch-link containment (`WatchLinks`), Plex/Emby removal
+> ([`ADR-0004`](../adr/ADR-0004-remove-plex-emby-support.md)), in-container jobs.
+> **Check [`../adr/`](../adr/) and the current code before acting on a row here.** Live status:
+> [`../PROGRESS.md`](../PROGRESS.md). Open defects: [`../KNOWN_ISSUES.md`](../KNOWN_ISSUES.md).
 
 > **Gate deliverable for `RKM_Watchlist_Production_Refactor_Task.md`.** Per §3/§43.1 no
 > rewrite begins until this audit is complete. Baseline: **56 tests passing** before any

@@ -111,6 +111,50 @@ from there to here.
 
 ---
 
+## ▶ 📘 **THE DOCS CONSOLIDATED: one architecture file, two archived, every claim re-verified** (2026-09-18, session 2) · his ask: *"i see there are two architecture files ... consolidate them so that i can have a clear picture of the project and anyone who reads it understand it totally and take it dev work … anyone means any agent"*
+
+**Three architecture files became one.** `docs/ARCHITECTURE.md` is now the single architecture document;
+the two that sat beside it are **ARCHIVED** (moved with `git mv`, so history survives) with banners naming
+what replaced them, and the live references to them were repointed.
+
+| File | Was | Now |
+|---|---|---|
+| `docs/ARCHITECTURE.md` | a good map, but counted **36** session routes (41), claimed `frontend/` had no CI, and sent readers to the audit | **the ONE document** — §0 orientation + the five rules, §2.1 the deployed inventory, §14 "where do I change X", §15 the full gate table, §19 why-the-stack, §20 the ADR index, §21 the documentation map |
+| `ARCHITECTURE_AUDIT.md` → `docs/archive/` | Phase-1 audit of the **legacy** app (Plex/Emby, `app.js`, "56 tests green") | 🔴 SUPERSEDED banner; its durable content was already shipped or is in §19 |
+| `modular-scalable-architecture.md` → `docs/archive/` | the plan that drove the restructure (phases 0–5) | 🔴 SUPERSEDED — **EXECUTED**; its decisions table + "use-principally" rules are now §19 |
+
+Repointed (they would otherwise be instructions to a file that no longer exists): `backend/ruff.toml`,
+`backend/scripts/snapshot_openapi.py`, `backend/services/library/service.py`, and `ADR-0001/0002/0003`'s
+`**Phase:**` line. `docs/archive/README.md` became a real index (every archived doc → what replaced it).
+`README.md` gained the reading pointer and its **stale counts were corrected: 1107 → 1177 pytest,
+294 → 551 vitest**.
+
+**⚠ Every factual claim added was VERIFIED, not remembered** — this document is read by agents that act on
+it, so a plausible sentence is a trap:
+
+| Claim | How it was checked |
+|---|---|
+| **1177 backend tests pass** | `python -m pytest tests/ -q` → `1177 passed` in 125 s |
+| **551 frontend tests / 20 files** | `npx vitest run` → `551 passed (20)` |
+| 59 routes = **PUBLIC 1 · auth-route 6 · session 41 · ADMIN 11** | parsed `ROUTE_LEVELS` from `test_route_protection.py` (the declaration, not a comment) — the doc now carries the recount command |
+| **the deployed topology** | `.env` + the rendered `.rkm.env`, then probed every port: `192.168.65.254` answers **200** on 7878 Radarr · 8989 Sonarr · 9696 Prowlarr · 1701 qBittorrent, Jellyfin 8098, the app 8124. ⚠ **The compose `fullstack` profile is NOT what he runs** (its 7879/8988/9697/8080 answered nothing) — the doc now says so, because "run the fullstack profile" would have been wrong advice for this box |
+| CI exists and what it runs | read `.github/workflows/ci.yml` — backend ruff+pytest, frontend typecheck+vitest+build **+ a contract-drift check** (`generate:types && git diff --exit-code`) |
+| `apple/` state | 29 Swift files in the iOS target, `tvos/` holds a README and nothing else, `tools/harness.py` still absent |
+| the branch rule still holds | `git merge-base --is-ancestor main dev` → yes (fast-forward still possible) |
+| every gate command in §15 exists | each read from `package.json`/CI/the tool itself, incl. `check_offline_download.py --selftest` and its 0/1/3 tri-state |
+| the doc set is internally consistent | `python3 tools/check_md_links.py` → **61 files, 63 relative links, all resolve** (was 22 links; §20/§21 added 41) |
+
+⚠ **Two stale claims found and corrected rather than copied forward** — both worth remembering as the
+failure mode of documentation: the compose file's own header still says *"bundled self-contained stack
+(EXPERIMENT branch)"* while it is the stack he deploys, and §18's improvement list needed its status
+re-checked (now annotated: **#1 half done, #7 not started, #10 bigger**). A doc written from the previous
+doc is how a wrong number outlives its code.
+
+Gates: `check_md_links.py` clean · `ruff check` clean · `pytest` 1177 passed · no code behaviour changed
+(comments/docstrings only in `backend/`).
+
+---
+
 ## ▶ ✅ **THE `507`, ANSWERED FROM HIS OWN LOG — and the client defect standing behind it, then THE #2 SWEEP** (2026-09-18, session 2) · branch **`feat/mobile-m3-library`** · `581f226`, `3e91fd0`
 
 He sent the phone's log with the report: *"currently for the offline download the ios still have these

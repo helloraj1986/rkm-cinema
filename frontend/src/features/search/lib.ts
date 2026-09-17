@@ -4,7 +4,21 @@
  * watch_again / next_episode) — these helpers map each row to its premium
  * copy (action label, meta line) and its play/details navigation target.
  */
-import type { GlobalOwnedRow } from "../../lib/api/client";
+import type {
+  GlobalDiscoveryRow,
+  GlobalOwnedRow,
+  SuggestResult,
+  WatchlistEntry,
+} from "../../lib/api/client";
+
+/**
+ * ⚠ Re-exported for the mobile views. `layouts/importRule.ts` bans `layouts/mobile/` from importing
+ * the API client directly — the rule that keeps a second cache key and a second staleness policy
+ * from appearing — and a mobile screen still has to be able to NAME the rows it renders. A type
+ * carries no behaviour, so re-exporting it beside the hooks that produce it is the honest half of
+ * that ban rather than an exception to it.
+ */
+export type { GlobalDiscoveryRow, GlobalHint, GlobalOwnedRow } from "../../lib/api/client";
 
 /** S/E code from season/episode numbers ("" when absent). */
 export function codeOf(season?: number | null, episode?: number | null): string {
@@ -76,4 +90,132 @@ export function detailsTarget(row: GlobalOwnedRow): string {
 /** Poster/art proxy URL for an owned item id. */
 export function artUrl(itemId: string, width = 92): string {
   return `/api/jellyfin/poster?id=${encodeURIComponent(itemId)}&width=${width}`;
+}
+
+// ---------------------------------------- The search screen's own rules (M3)
+/**
+ * ⚠ Everything below moved here from `GlobalSearch.tsx` the moment a SECOND search surface existed.
+ * M3 gives the phone its own search screen, and a screen that re-words "No matches for X" or
+ * re-derives the debounce is exactly the copy the architecture forbids — two surfaces, two answers to
+ * the same question, and a diff that shows neither.
+ */
+
+/** How long the field waits after a keystroke before it asks the server. Fast enough to feel live,
+ *  slow enough that typing a word is one request — and ONE value, for the palette and the screen. */
+export const SEARCH_DEBOUNCE_MS = 200;
+
+/** Placeholder on both fields (it names what can be searched, not where it searches). */
+export const SEARCH_PLACEHOLDER = "Search movies, shows, people…";
+
+export const SEARCH_FAILED = "Search failed — try again shortly.";
+
+/** "No matches for “sholay”." — the query is echoed, so a typo is visible. */
+export function noMatchesText(query: string): string {
+  return `No matches for “${query}”.`;
+}
+
+// ---------------------------------------- Recent searches (M3 · the phone's RECENT row)
+/** Where the phone's recent queries live. Versioned: a shape change is a new key, never a migration. */
+export const RECENT_KEY = "rkm.recentSearches.v1";
+
+/** How many the row keeps. Six fits two lines of chips on a 390px screen without a horizontal
+ *  scroller that nobody discovers. */
+export const RECENT_MAX = 6;
+
+/**
+ * Read a stored recent list, tolerantly. ⚠ This parses something a previous version of the app wrote,
+ * so it must never throw and never trust the shape: anything that is not an array of non-empty
+ * strings is dropped rather than rendered as "[object Object]" under a heading that reads RECENT.
+ * Case-insensitive dedupe, most recent first, capped.
+ */
+export function parseRecent(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return []; // corrupt storage is a reason to forget, not to crash the screen
+  }
+  if (!Array.isArray(parsed)) return [];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const entry of parsed) {
+    if (typeof entry !== "string") continue;
+    const q = entry.trim();
+    if (!q) continue;
+    const key = q.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(q);
+    if (out.length >= RECENT_MAX) break;
+  }
+  return out;
+}
+
+/**
+ * The list with `query` at the top. `["a","b"]` + "B" → `["B","a"]` — a repeat moves the entry up and
+ * keeps the person's latest SPELLING, which is the one they just typed. An empty query changes
+ * nothing (a screen that stores its own blank state is a screen with a history of nothing).
+ */
+export function pushRecent(list: string[], query: string): string[] {
+  const q = String(query ?? "").trim();
+  if (!q) return parseRecent(JSON.stringify(list));
+  return [q, ...list.filter((entry) => entry.toLowerCase() !== q.toLowerCase())].slice(0, RECENT_MAX);
+}
+
+// ---------------------------------------- Discovery rows → the shared action language
+/**
+ * ⚠ Also lifted out of `GlobalSearch.tsx` for M3. A discovery row has to become a `SuggestResult`
+ * (the shape `SuggestDetailModal` and the suggest cards speak) and a `WatchlistEntry` stub (the shape
+ * `useCardActions().download` requests the canonical media id from). Two adapters, one copy: the
+ * phone's search screen and the palette must agree about what "Add" adds and what "Download" asks for.
+ */
+export function discoveryToSuggestItem(
+  disc: GlobalDiscoveryRow,
+  inWatchlist: boolean,
+): SuggestResult {
+  return {
+    tmdb_id: disc.tmdb_id,
+    media_type: disc.media_type,
+    title: disc.title,
+    year: disc.year ?? null,
+    tmdb_score: 0,
+    vote_count: 0,
+    genres: [],
+    overview: disc.overview,
+    poster: disc.poster,
+    backdrop: "",
+    in_watchlist: inWatchlist,
+    in_library: false,
+  };
+}
+
+/** A `WatchlistEntry` stub so Download requests the canonical media id. */
+export function discoveryEntryStub(disc: GlobalDiscoveryRow): WatchlistEntry {
+  return {
+    imdbId: "",
+    tmdbId: disc.tmdb_id,
+    tvdbId: null,
+    title: disc.title,
+    year: disc.year ?? 0,
+    type: disc.media_type === "tv" ? "tv" : "movie",
+    category: "Other",
+    genres: [],
+    lang: "",
+    cert: "",
+    rt: null,
+    imdb: null,
+    tmdbScore: null,
+    overview: disc.overview,
+    cast: [],
+    director: "",
+    runtime: null,
+    poster: disc.poster,
+    backdrop: "",
+    trailerId: "",
+    trailerTitle: "",
+    trailerUrl: "",
+    added: "",
+    source: "search",
+  };
 }

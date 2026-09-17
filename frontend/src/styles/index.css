@@ -501,3 +501,21 @@
 [data-layout="mobile"] .rkm-cta-label {
   display: none;
 }
+
+/* ⚠⚠ THE PHONE SHELL CANNOT SCROLL SIDEWAYS — his report, 2026-09-17: "Settings page on iPad looks
+   good but still scrolls on iPhone".
+
+   ⚠ What was measured BEFORE this rule: every settings route at 390px reports
+   `scrollWidth === 390` — no element overflows, on his own library data, through the live API. So the
+   sandbox cannot reproduce it, and this is therefore a GUARD, not a diagnosis: one wide element (a
+   long path, a bad paste, a future screen) pans the WHOLE page on iOS where a desktop browser would
+   simply clip it. A fixed-width phone shell should never be horizontally pannable, whatever is inside
+   it.
+
+   ⚠ `clip`, NOT `hidden`. `overflow: hidden` makes the element a scroll container, and that BREAKS
+   `position: sticky` for everything inside it — the Browse screen's pinned filter bar, which he asked
+   for in the same breath. `clip` clips without becoming one. ⚠ If his phone still pans after this
+   build, the cause is somewhere this rule only hides, and I need the exact screen and gesture. */
+[data-layout="mobile"] {
+  overflow-x: clip;
+}

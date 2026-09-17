@@ -1,6 +1,7 @@
 import { useCallback } from "react";
 
 import { Icon } from "../../components/ui/Icon";
+import { IconAction } from "../../components/ui/IconAction";
 import {
   ACTION_LABELS,
   actionsFor,
@@ -92,7 +93,19 @@ function ProgressRing({ percent, bytes }: { percent: number | null; bytes: numbe
   );
 }
 
-export function DownloadButton({ itemId, title }: { itemId: string; title: string }) {
+/**
+ * ⚠ ONE derivation, TWO places to render it — and the split is the fix for his "the options are all
+ * over the place" (2026-09-17).
+ *
+ * A download is a CONTROL and a REPORT: the control belongs in the action row with the other actions
+ * (same box as Watched and More), and the report — "1.4 GB downloaded", "no longer on the server", a
+ * transcode warning — belongs on its own line under that row. One component returning both is why the
+ * button had to carry its own paragraph and why its size-summary text pushed it onto a line of its own
+ * inside the action row: the row was measuring a button AND a sentence.
+ *
+ * Both halves call this, so the facts cannot disagree between the tile and the line.
+ */
+function useDownloadFacts(itemId: string, title: string) {
   const available = useOffline((state) => state.available);
   const row = useOffline((state) => state.items.find((item) => item.itemId === itemId) ?? null);
   const busy = useOffline((state) => Boolean(state.pending[itemId]));
@@ -106,78 +119,98 @@ export function DownloadButton({ itemId, title }: { itemId: string; title: strin
     void downloadTitle(itemId, title, "auto");
   }, [itemId, title]);
 
-  if (!available) return null;
-
   // `null` = we could not ask (the server is unreachable), which must never be shown as "the server
   // has forgotten this title": offline, the second sentence would be a lie about the first fact.
   const serverKnows = bundle.isError ? null : bundle.data === null ? false : bundle.data ? true : null;
-  const summary = downloadSummary(bundle.data);
-  const warning = transcodeWarning(bundle.data);
-  const note = row ? serverNote(serverKnows, row) : "";
-  // `play` is filtered out: the page's Play button is the one that starts a film (see above).
-  const actions = actionsFor(row).filter((kind) => kind !== "play");
+
+  return {
+    available,
+    row,
+    busy,
+    notice,
+    onDownload,
+    serverKnows,
+    summary: downloadSummary(bundle.data),
+    warning: transcodeWarning(bundle.data),
+    note: row ? serverNote(serverKnows, row) : "",
+    // ⚠ `actionsFor` is the ONE decision about what a download can do in its current state
+    // (offline/lib.ts) — this file renders what it returns and decides nothing itself. `play` is
+    // filtered out because the page's own Play button is the one that starts a film; the offline
+    // entry point for it is the item row on the Downloads screen.
+    actions: actionsFor(row).filter((kind) => kind !== "play"),
+  };
+}
+
+/**
+ * The download CONTROL, as tiles for the action row — one per action the rule returns (a state can
+ * offer two: cancel/delete, resume/delete, retry/delete, delete).
+ */
+export function DownloadAction({ itemId, title }: { itemId: string; title: string }) {
+  const { available, row, busy, actions, onDownload } = useDownloadFacts(itemId, title);
+  if (!available) return null;
+
+  /** No row yet: the one action is Download, and it is the only thing to draw. */
+  if (actions.length === 0) {
+    return (
+      <IconAction
+        icon="download"
+        label={busy ? "Starting…" : "Download"}
+        disabled={busy}
+        onClick={onDownload}
+      />
+    );
+  }
+
+  const percent = row ? percentOf(row.bytes, row.totalBytes) : 0;
+  return (
+    <>
+      {actions.map((kind) => (
+        <IconAction
+          key={kind}
+          label={ACTION_LABELS[kind]}
+          danger={kind === "delete"}
+          disabled={busy}
+          onClick={() => {
+            if (kind === "delete") void deleteTitle(itemId);
+            else if (kind === "cancel") void cancelTitle(itemId);
+            else onDownload(); // download · resume · retry — the app decides which of the three
+          }}
+        >
+          {kind === "cancel" ? (
+            <ProgressRing percent={percent} bytes={row?.bytes ?? 0} />
+          ) : (
+            <Icon name={ACTION_ICON[kind]} size={19} />
+          )}
+        </IconAction>
+      ))}
+    </>
+  );
+}
+
+/**
+ * The download REPORT, as lines under the action row: the row's own status, a transcode warning, the
+ * "the server no longer has this" note, and any failure the app reported. Each takes the full width so
+ * it reads as a caption for the row above it rather than as another control.
+ */
+export function DownloadNotice({ itemId }: { itemId: string }) {
+  const { available, row, warning, note, notice } = useDownloadFacts(itemId, "");
+  if (!available) return null;
+  if (!row && !warning && !note && !notice) return null;
 
   return (
-    /**
-     * ⚠ ONE flex row that the DETAILS SCREEN can drop into its action bar, and whose status lines
-     * wrap onto their own line under the buttons (`w-full` below).
-     *
-     * It used to be a column with a nested row, which is why the button sat alone on a line under
-     * Play / Mark watched and read as misaligned — his iPhone report, 2026-09-17. Placed inside the
-     * action bar it now sits IN that row, and when the app has something to say (progress, a warning,
-     * a failure) each line still gets the full width, left-aligned with the buttons above it.
-     */
-    <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
-        {row ? (
-          <>
-            {row.state === "downloading" ? (
-              <ProgressRing percent={percentOf(row.bytes, row.totalBytes)} bytes={row.bytes} />
-            ) : null}
-            {actions.map((kind) => (
-              <button
-                key={kind}
-                type="button"
-                disabled={busy}
-                className={ACTION_VARIANT[kind]}
-                onClick={() => {
-                  if (kind === "delete") void deleteTitle(itemId);
-                  else if (kind === "cancel") void cancelTitle(itemId);
-                  else onDownload(); // download · resume · retry — the app decides which of the three
-                }}
-              >
-                <Icon name={ACTION_ICON[kind]} size={15} />
-                {ACTION_LABELS[kind]}
-              </button>
-            ))}
-            {row.mode ? (
-              <span className="rounded-full border border-white/[.08] bg-white/[.06] px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.08em] text-zinc-400">
-                {modeLabel(row.mode)}
-              </span>
-            ) : null}
-          </>
-        ) : (
-          <>
-            <button type="button" onClick={onDownload} disabled={busy} className={PRIMARY}>
-              <Icon name="download" size={15} />
-              {busy ? "Starting…" : "Download"}
-            </button>
-            {/* ⚠ The rendition and the size BEFORE he commits to it, or nothing at all. */}
-            {summary ? (
-              <span className="text-[11px] font-medium text-zinc-500">{summary}</span>
-            ) : bundle.isError ? (
-              <span className="text-[11px] font-medium text-zinc-500">The server could not be asked.</span>
-            ) : null}
-          </>
-        )}
-
+    <>
       {row ? (
         <p className={`w-full text-[11px] ${row.state === "failed" ? "text-red-400" : "text-zinc-500"}`}>
+          {/* ⚠ The rendition rides WITH the status, not as a chip beside the button: it is a report
+              about the copy on the device, and a badge in the action row made it look like something
+              you could change here. */}
           {rowStatusText(row)}
+          {row.mode ? ` · ${modeLabel(row.mode)}` : ""}
         </p>
       ) : null}
       {warning ? <p className="w-full text-[11px] text-amber-300/90">{warning}</p> : null}
       {note ? <p className="w-full text-[11px] text-amber-300/90">{note}</p> : null}
       {notice ? <p className="w-full text-[11px] text-red-400">{notice.text}</p> : null}
-    </div>
+    </>
   );
 }

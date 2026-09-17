@@ -32,8 +32,9 @@ import {
   ratingText,
 } from "./lib";
 import { Icon } from "../../components/ui/Icon";
+import { IconAction, ICON_ACTION_CLASS } from "../../components/ui/IconAction";
 import { PopupMenu } from "../../components/ui/PopupMenu";
-import { DownloadButton } from "../offline/DownloadButton";
+import { DownloadAction, DownloadNotice } from "../offline/DownloadButton";
 
 function EpisodeRow({
   ep,
@@ -418,96 +419,126 @@ export function ItemDetailContent({
                   <p className="mt-2 text-xs text-red-400">Couldn't load full details — playing still works.</p>
                 )}
 
-                {/* Actions: ONE dominant Play (+ supporting secondary) */}
-                <div className="mt-5 flex flex-wrap items-center justify-center gap-2.5 sm:justify-start">
+                {/* ⚠ THE ACTION AREA — ONE dominant verb, then icon tiles, then a caption line.
+                    His ask (2026-09-17): *"think what would be the most logical sequence (both for iOS
+                    and iPadOS), should be icons or text"*. The sequence is the order a person actually
+                    decides in:
+
+                      1. Play / Resume / Resume S1 E1 — the verb that matters, so it carries BOTH an
+                         icon and its words, and on a phone it takes the full width: it is the reason
+                         the page exists.
+                      2. Watched · Download · More — the secondaries, as icon TILES (glyph + one word)
+                         in a row beneath it. Icons alone make people guess (↓ or ✕?); full-text
+                         buttons make every secondary shout as loudly as Play.
+                      3. the caption line (offline state, warnings) under the row.
+
+                    ⚠ "Play from beginning" moved INTO More (it was a peer of Play, which made two
+                    buttons look like the primary action), and every tile is ≥56px — the phone's card
+                    actions had to live at 28px, and a tile that misses the thumb floor is a tile a
+                    thumb misses. */}
+                <div className="mt-5 flex flex-wrap items-center gap-2.5">
                   {!tv && !isLoading ? (
-                    <>
-                      <ActionButton
-                        variant="primary"
-                        onClick={() =>
-                          onPlayMovie(
-                            itemId,
-                            d?.name ?? item?.title ?? "Unknown",
-                            detailInProgress(d?.play) ? resumeSec : 0,
-                            runtimeSec,
-                          )
-                        }
-                      >
-                        <Icon name="play" size={15} filled />
-                        {detailPrimaryLabel(d?.play)}
-                        {percent > 0 ? ` (${percent}%)` : ""}
-                      </ActionButton>
-                      {detailInProgress(d?.play) && (
-                        <ActionButton
-                          variant="secondary"
-                          onClick={() => onPlayMovie(itemId, d?.name ?? item?.title ?? "Unknown", 0, runtimeSec)}
-                        >
-                          Play from beginning
-                        </ActionButton>
-                      )}
-                    </>
+                    <ActionButton
+                      variant="primary"
+                      className="h-12 w-full justify-center text-[15px] sm:w-auto sm:min-w-44"
+                      onClick={() =>
+                        onPlayMovie(
+                          itemId,
+                          d?.name ?? item?.title ?? "Unknown",
+                          detailInProgress(d?.play) ? resumeSec : 0,
+                          runtimeSec,
+                        )
+                      }
+                    >
+                      <Icon name="play" size={17} filled />
+                      {detailPrimaryLabel(d?.play)}
+                      {percent > 0 ? ` (${percent}%)` : ""}
+                    </ActionButton>
+                  ) : null}
+                  {tv && seriesPlayEp ? (
+                    <ActionButton
+                      variant="primary"
+                      className="h-12 w-full justify-center text-[15px] sm:w-auto sm:min-w-44"
+                      onClick={() => onPlayEpisode(seriesPlayEp, queue)}
+                    >
+                      <Icon name="play" size={17} filled />
+                      {seriesLabel}
+                    </ActionButton>
                   ) : null}
                   {tv && epQuery.isLoading ? (
                     <span className="text-sm text-zinc-400">Loading episodes…</span>
                   ) : null}
-                  {tv && !epQuery.isLoading && seriesPlayEp ? (
-                    <ActionButton
-                      variant="primary"
-                      onClick={() => onPlayEpisode(seriesPlayEp, queue)}
-                    >
-                      <Icon name="play" size={15} filled />
-                      {seriesLabel}
-                    </ActionButton>
-                  ) : null}
-                  {onToggleWatched && item ? (
-                    <ActionButton
-                      variant={played ? "secondary" : "ghost"}
-                      onClick={() => onToggleWatched({ ...item, played })}
-                      className={played ? "text-emerald-300 ring-1 ring-emerald-500/30" : ""}
-                    >
-                      <Icon name="check" size={15} strokeWidth={2.25} />
-                      {played ? "Watched" : "Mark watched"}
-                    </ActionButton>
-                  ) : null}
-                  <PopupMenu
-                    label={`More actions for ${title}`}
-                    triggerClassName="inline-flex h-10 w-10 items-center justify-center rounded-[10px] border border-white/10 bg-white/[.07] text-zinc-300 transition hover:bg-white/[.12] hover:text-white"
-                    items={[
-                      ...(onToggleWatched && item && item.played
-                        ? [
-                            {
-                              key: "untoggle",
-                              label: "Mark as unplayed",
-                              icon: "check" as const,
-                              onSelect: () => onToggleWatched({ ...item, played }),
-                            },
-                          ]
-                        : []),
-                      ...(item?.jellyfin_url
-                        ? [
-                            {
-                              key: "jellyfin",
-                              label: "Open in Jellyfin",
-                              icon: "external" as const,
-                              onSelect: () =>
-                                window.open(item.jellyfin_url as string, "_blank", "noopener,noreferrer"),
-                            },
-                          ]
-                        : []),
-                    ]}
-                  >
-                    <Icon name="more" size={16} />
-                  </PopupMenu>
-                {/* Offline download (B4, NATIVE_FEEL plan §4.6). ⚠ It renders NOTHING in a browser:
-                    `window.__rkmOffline` exists only inside the iOS shell, and a Download button with
-                    nowhere to put a film is a control that cannot work. It reads the app's own row for
-                    this title (`list` + events) plus the server's estimate, so the two facts the button
-                    needs — what is ON the device and what fetching it costs — both come from the side
-                    that owns them. Movies and episodes alike: the app addresses anything by item id.
 
-                    ⚠ It lives INSIDE the action row (his iPhone report, 2026-09-17): as a sibling it
-                    sat on a line of its own under Play / Mark watched and read as misaligned. */}
-                <DownloadButton itemId={itemId} title={title} />
+                  <div className="flex items-start gap-2">
+                    {onToggleWatched && item ? (
+                      <IconAction
+                        icon="check"
+                        label="Watched"
+                        active={played}
+                        title={played ? "Mark as unplayed" : "Mark as watched"}
+                        onClick={() => onToggleWatched({ ...item, played })}
+                      />
+                    ) : null}
+
+                    {/* Offline download (B4, NATIVE_FEEL plan §4.6). ⚠ It renders NOTHING in a
+                        browser: `window.__rkmOffline` exists only inside the iOS shell, and a
+                        Download button with nowhere to put a film is a control that cannot work.
+                        Its CONTROL sits here with the other actions; its REPORT is the caption line
+                        below (`DownloadNotice`), which is what stops its size-summary text pushing the
+                        button onto a line of its own. */}
+                    <DownloadAction itemId={itemId} title={title} />
+
+                    <PopupMenu
+                      label={`More actions for ${title}`}
+                      triggerClassName={ICON_ACTION_CLASS}
+                      items={[
+                        ...(!tv && detailInProgress(d?.play)
+                          ? [
+                              {
+                                key: "restart",
+                                label: "Play from beginning",
+                                icon: "play" as const,
+                                onSelect: () =>
+                                  onPlayMovie(
+                                    itemId,
+                                    d?.name ?? item?.title ?? "Unknown",
+                                    0,
+                                    runtimeSec,
+                                  ),
+                              },
+                            ]
+                          : []),
+                        ...(onToggleWatched && item && item.played
+                          ? [
+                              {
+                                key: "untoggle",
+                                label: "Mark as unplayed",
+                                icon: "check" as const,
+                                onSelect: () => onToggleWatched({ ...item, played }),
+                              },
+                            ]
+                          : []),
+                        ...(item?.jellyfin_url
+                          ? [
+                              {
+                                key: "jellyfin",
+                                label: "Open in Jellyfin",
+                                icon: "external" as const,
+                                onSelect: () =>
+                                  window.open(item.jellyfin_url as string, "_blank", "noopener,noreferrer"),
+                              },
+                            ]
+                          : []),
+                      ]}
+                    >
+                      <Icon name="more" size={19} />
+                      <span className="max-w-16 truncate">More</span>
+                    </PopupMenu>
+                  </div>
+                </div>
+
+                <div className="mt-2 flex flex-col gap-1">
+                  <DownloadNotice itemId={itemId} />
                 </div>
 
                 {/* Resume progress under the actions when mid-play */}

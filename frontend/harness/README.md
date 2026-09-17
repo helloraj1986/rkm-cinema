@@ -27,9 +27,20 @@ pre-edit module — the measurement then reports the OLD layout and looks like y
 did nothing. Check before trusting a run:
 
 ```bash
-pkill -f "vite --port 5199"          # then start it again
+pgrep -f "bin/vite" | xargs -r kill -9   # ⚠ NOT `pkill -f "vite --port 5199"` — see below
+cd frontend && npx vite --port 5199 --strictPort &
 curl -s http://localhost:5199/src/features/playback/Player.tsx | grep -c rkm-player__dock
 ```
+
+⚠⚠ **THE RESTART IS THE TRAP, AND `pkill -f "vite --port 5199"` DOES NOT DO IT.** That pattern matches the
+*npm wrapper* and the *sh* it spawns, so it kills those and leaves the `node …/bin/vite` child alive and
+holding the port; a new `npx vite --strictPort` then **exits with code 1**, and the OLD process keeps
+answering — with the pre-edit module still in its in-memory graph, because the watcher (above) never
+invalidates it. Measured cost, 2026-09-17: a harness frame that should have answered 713 rows kept
+answering **1**, and a "before" measurement read as if the app rendered nothing. ⚠ `--strictPort` is not
+a guard against this; it only tells you the port is busy if you read the exit code.
+**Kill the `node` process, then prove the SERVER is fresh by reading the module you just edited** — a new
+file is served fresh even by a stale server, so read one you CHANGED, not one you added.
 
 `tools/measure_player_layout.py` prints a PASS/FAIL table for 10 device sizes and
 exits non-zero if any viewport fails. It asserts: the shell == the viewport, the dock

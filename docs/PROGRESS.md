@@ -1,10 +1,15 @@
-## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-18, after session 2) · branch **`feat/mobile-m3-library`** · tip **`3e91fd0`** · **1 commit ahead of `dev`** (everything else is merged), tree clean, pushed
+## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-18, after session 2) · branch **`feat/mobile-m3-library`** · tip **`b48d6c7`** · **2 commits ahead of `dev`** (everything else is merged), tree clean, pushed
 
-⚠ **Session 2 did three things: it closed item 5 (the offline `507` was his `.env`, not his disk), found
-the client defect standing behind it, and landed item 1 — the #2 poster-toggle sweep.** M3+M4 are now
-**merged to `dev`** (`ec5a37a`, on his word); the sweep (`3e91fd0`) is the only commit still on the
-branch. Read the 507 section below before touching the offline code — half of it needs no iOS rebuild
-and can be tried in one command.
+⚠ **An agent starting here: read [`ARCHITECTURE.md`](ARCHITECTURE.md) §0 first** — one document now, with
+the reading order, the five rules, the deployed inventory (§2.1), "where do I change X" (§14) and every
+gate command (§15). The other two architecture files were archived on 2026-09-18.
+
+⚠ **Session 2 did four things: closed item 5 (the offline `507` was his `.env`, not his disk), found the
+client defect standing behind it, landed item 1 — the #2 poster-toggle sweep — and consolidated the
+architecture docs into one verified document.** M3+M4 are
+**merged to `dev`** (`ec5a37a`, on his word); the sweep (`3e91fd0`) and the docs (`b48d6c7`) are what the
+branch carries. Read the 507 section below before touching the offline code — half of it needs no iOS
+rebuild and can be tried in one command.
 
 **Say this first:** *"continue rkm-cinema — pick up the RESUME-HERE block."* Then read this and
 `KNOWN_ISSUES.md`'s status table (the live list of open defects and their state).

@@ -70,7 +70,7 @@ export const router = createBrowserRouter([
           },
           { path: "movies", element: <desktop.LibraryKindRedirect kind="movies" /> },
           { path: "shows", element: <desktop.LibraryKindRedirect kind="tvshows" /> },
-          { path: "item/:itemId", element: <desktop.ItemDetailPage /> },
+          { path: "item/:itemId", element: <Screen desktop={<desktop.ItemDetailPage />} mobile={<mobile.DetailScreen />} /> },
         ],
       },
       { path: "discover", element: <desktop.DiscoverView /> },

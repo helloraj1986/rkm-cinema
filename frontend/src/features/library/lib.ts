@@ -13,6 +13,14 @@ import type {
   SuggestResult,
 } from "../../lib/api/client";
 import type { IconName } from "../../components/ui/Icon";
+import { episodeCode } from "../playback/lib";
+
+/**
+ * ⚠ Re-exported for the mobile views, for the reason `search/lib.ts` records: `layouts/importRule.ts`
+ * bans `layouts/mobile/` from importing the API client, and a phone screen still has to NAME the rows
+ * it renders. A type carries no behaviour, so it travels with the hooks that produce it.
+ */
+export type { EpisodeShape, MediaItem } from "../../lib/api/client";
 
 /**
  * Poster proxy URL for a library item — by ITEM ID, or null.
@@ -537,6 +545,55 @@ export function episodeProgress(
   const remainingLabel =
     inProgress && runtime > 0 ? `${fmtRuntime(Math.max(1, runtime - pos))} left` : "";
   return { percent, inProgress, remainingLabel };
+}
+
+// ---------------------------------------- Detail copy & the series verb (M4)
+/**
+ * ⚠ The detail screen's own sentences, in ONE place. M4 gives the phone its own screen and the
+ * desktop keeps the modal — the same title, the same failure, so the same words: a screen that
+ * re-words "we couldn't find that title" is a copy no regex can catch (§3.4).
+ */
+export const DETAIL_NOT_FOUND_TITLE = "We couldn't find that title in the library.";
+export const DETAIL_NOT_FOUND_SUB = "It may have been removed or the link is stale.";
+export const DETAIL_PARTIAL_WARNING = "Couldn't load full details — playing still works.";
+
+/**
+ * The series primary button's label — "Resume S1E4" / "Play S1E4" / "Replay S1E4" / "Play".
+ *
+ * ⚠ Extracted with M4 rather than copied: the desktop page computed it inline from the next playable
+ * episode, and the phone's screen needs the same four cases. A series' primary verb is the one thing
+ * a person reads before tapping, and two surfaces disagreeing about it is a bug with no symptom
+ * until someone is on the wrong episode.
+ */
+export function seriesPlayLabel(
+  target: Pick<EpisodeShape, "season" | "episode" | "playback_position"> | null,
+  first: Pick<EpisodeShape, "season" | "episode"> | null,
+): string {
+  if (target) {
+    return `${(Number(target.playback_position) || 0) > 0 ? "Resume" : "Play"} ${episodeCode(target)}`;
+  }
+  return first ? `Replay ${episodeCode(first)}` : "Play";
+}
+
+/**
+ * The detail page's meta line, as parts: year · runtime (or season count) · certification.
+ * ⚠ Unknown values are DROPPED, never rendered as an empty separator — the desktop built this inline
+ * and M4's screen reads it, so the rule (and the dropping) lives here.
+ */
+export function detailMetaBits(f: {
+  year: number | null | undefined;
+  runtimeSec: number | null | undefined;
+  isSeries: boolean;
+  seasonCount: number;
+  certification: string | null | undefined;
+}): string[] {
+  const seasons =
+    f.seasonCount > 0 ? `${f.seasonCount} season${f.seasonCount > 1 ? "s" : ""}` : "";
+  return [
+    f.year != null ? String(f.year) : "",
+    f.isSeries ? seasons : fmtRuntime(f.runtimeSec),
+    f.certification || "",
+  ].filter(Boolean);
 }
 
 // ---------------------------------------- The secondary actions (M4 · extraction E10)

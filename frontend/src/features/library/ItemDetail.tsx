@@ -23,7 +23,11 @@ import {
 } from "../playback/lib";
 import {
   artTone,
+  DETAIL_NOT_FOUND_SUB,
+  DETAIL_NOT_FOUND_TITLE,
+  DETAIL_PARTIAL_WARNING,
   detailInProgress,
+  detailMetaBits,
   detailPrimaryLabel,
   detailResumePercent,
   episodeProgress,
@@ -34,6 +38,7 @@ import {
   personHeadshotUrl,
   posterUrl,
   ratingText,
+  seriesPlayLabel,
 } from "./lib";
 import { Icon } from "../../components/ui/Icon";
 import { IconAction, ICON_ACTION_CLASS } from "../../components/ui/IconAction";
@@ -229,20 +234,18 @@ export function ItemDetailContent({
   const target = tv ? nextPlayableEpisode(episodes) : null;
   const firstEp = episodes[0];
   const seriesPlayEp = target ?? firstEp ?? null;
-  const seriesLabel = target
-    ? `${(target.playback_position || 0) > 0 ? "Resume" : "Play"} ${episodeCode(target)}`
-    : firstEp
-      ? `Replay ${episodeCode(firstEp)}`
-      : "Play";
+  const seriesLabel = seriesPlayLabel(target, firstEp);
 
   const poster = posterUrl({ item_id: itemId });
   const backdrop = d?.has_backdrop ? api.backdropUrl(itemId, 1920) : null;
   const percent = detailResumePercent(d?.play, runtimeSec);
-  const metaBits = [
-    d?.year != null ? String(d.year) : item?.year != null ? String(item.year) : "",
-    !tv ? fmtRuntime(runtimeSec) : groups.length > 0 ? `${groups.length} season${groups.length > 1 ? "s" : ""}` : "",
-    d?.official_rating || "",
-  ].filter(Boolean);
+  const metaBits = detailMetaBits({
+    year: d?.year ?? item?.year,
+    runtimeSec,
+    isSeries: tv,
+    seasonCount: groups.length,
+    certification: d?.official_rating,
+  });
   const rating = ratingText(d?.community_rating);
   const people = d?.people;
 
@@ -308,8 +311,8 @@ export function ItemDetailContent({
             <Icon name="film" size={24} />
           </div>
           <div className="max-w-sm">
-            <p className="text-[15px] font-semibold text-zinc-200">We couldn't find that title in the library.</p>
-            <p className="mt-1 text-sm text-zinc-500">It may have been removed or the link is stale.</p>
+            <p className="text-[15px] font-semibold text-zinc-200">{DETAIL_NOT_FOUND_TITLE}</p>
+            <p className="mt-1 text-sm text-zinc-500">{DETAIL_NOT_FOUND_SUB}</p>
           </div>
           <ActionButton variant="primary" onClick={onBack}>
             <Icon name="back" size={15} />
@@ -421,7 +424,7 @@ export function ItemDetailContent({
                 )}
 
                 {isError && !d && !notFound && (
-                  <p className="mt-2 text-xs text-red-400">Couldn't load full details — playing still works.</p>
+                  <p className="mt-2 text-xs text-red-400">{DETAIL_PARTIAL_WARNING}</p>
                 )}
 
                 {/* ⚠ THE ACTION AREA — ONE dominant verb, then icon tiles, then a caption line.

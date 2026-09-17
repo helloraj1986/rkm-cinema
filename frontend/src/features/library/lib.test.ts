@@ -6,6 +6,7 @@ import {
   cardMetaLine,
   continueWatchingItems,
   detailInProgress,
+  detailMetaBits,
   detailPrimaryLabel,
   detailResumePercent,
   episodeItemCode,
@@ -41,6 +42,7 @@ import {
   ratingText,
   resumePercent,
   scanFailure,
+  seriesPlayLabel,
   seriesTargetForEpisode,
   similarItemToResult,
 } from "./lib";
@@ -813,5 +815,37 @@ describe("moreActionsFor (M4 · E10 — which secondaries the ⋯ offers)", () =
       expect(MORE_ACTION_COPY[key].label.length).toBeGreaterThan(3);
       expect(MORE_ACTION_COPY[key].icon).toBeTruthy();
     }
+  });
+});
+
+describe("the detail page's shared rules (M4)", () => {
+  it("seriesPlayLabel names the next episode's verb, or replays the first, or just plays", () => {
+    const ep = (over: Partial<{ season: number; episode: number; playback_position: number }> = {}) => ({
+      season: 1, episode: 2, playback_position: 0, ...over,
+    });
+    expect(seriesPlayLabel(ep({ playback_position: 1200 }), null)).toBe("Resume S1E2");
+    expect(seriesPlayLabel(ep(), null)).toBe("Play S1E2");
+    // ⚠ Nothing next to play: the FIRST episode is a replay (the series was finished), and a series
+    // with no episodes at all still says something a person can press.
+    expect(seriesPlayLabel(null, ep({ episode: 1 }))).toBe("Replay S1E1");
+    expect(seriesPlayLabel(null, null)).toBe("Play");
+  });
+
+  it("detailMetaBits drops unknown parts instead of leaving separators", () => {
+    expect(
+      detailMetaBits({ year: 1975, runtimeSec: 8640, isSeries: false, seasonCount: 0, certification: "PG" }),
+    ).toEqual(["1975", "2h 24m", "PG"]);
+    // A series shows its season count where a movie shows its runtime.
+    expect(
+      detailMetaBits({ year: 2025, runtimeSec: 0, isSeries: true, seasonCount: 2, certification: "" }),
+    ).toEqual(["2025", "2 seasons"]);
+    // ⚠ Nothing known: NO empty strings — the caller renders the parts it gets, so an empty part is
+    // a stray bullet between two dots in the UI.
+    expect(
+      detailMetaBits({ year: null, runtimeSec: 0, isSeries: false, seasonCount: 0, certification: null }),
+    ).toEqual([]);
+    expect(
+      detailMetaBits({ year: 2025, runtimeSec: 0, isSeries: true, seasonCount: 1, certification: null }),
+    ).toEqual(["2025", "1 season"]);
   });
 });

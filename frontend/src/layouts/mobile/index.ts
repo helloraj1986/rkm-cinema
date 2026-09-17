@@ -22,3 +22,4 @@ export { BrowseScreen } from "./BrowseScreen";
 export { HomeScreen } from "./HomeScreen";
 export { MobileAction, MobileScreen } from "./MobileScreen";
 export { SearchScreen } from "./SearchScreen";
+export { DetailScreen } from "./DetailScreen";

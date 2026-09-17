@@ -1,4 +1,8 @@
-## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-18) · branch **`feat/mobile-m3-library`** · tip **`ac57b65`** · **14 commits ahead of `dev`**, tree clean, pushed
+## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-18, after session 2) · branch **`feat/mobile-m3-library`** · tip **`581f226`** · **15 commits ahead of `dev`**, tree clean, pushed
+
+⚠ **Session 2 closed item 5 below — the offline `507` was his `.env`, not his disk — and found a second
+defect standing behind it: the phone was throwing the server's own sentence away.** Read the 507 section
+below before touching the offline code. Half of it needs no iOS rebuild and can be tried in one command.
 
 **Say this first:** *"continue rkm-cinema — pick up the RESUME-HERE block."* Then read this and
 `KNOWN_ISSUES.md`'s status table (the live list of open defects and their state).
@@ -13,7 +17,7 @@
 | **Import ban** | `imports.test.ts` now scans the REAL files in `src/layouts/mobile`, not fixtures only — it found one violation (`HomeScreen` importing the API client) and that is fixed. |
 | Gates | frontend `typecheck` clean · `npx vitest run` **551 passed / 20 files** · backend `pytest` **143 passed** (offline/render/config) · `check_md_links.py` clean |
 
-### ⚠ FIVE THINGS ARE BUILT BUT **NOT VERIFIED ON HIS DEVICE** — never describe them as working
+### ⚠ SIX THINGS ARE BUILT BUT **NOT VERIFIED ON HIS DEVICE** — never describe them as working
 
 1. **M3 Search** + **M4 Detail** screens — measured headlessly at 320/390 only.
 2. **#1 Watched control** — the detail tile was **not** re-measured: the harness probe last ran BEFORE
@@ -24,9 +28,17 @@
 4. **#7 Cancel** — Swift fix, typecheck gate PASS, **no Mac build and nothing anywhere taps Cancel**
    (`check_offline_page.py` only asserts the word renders; `check_offline_download.py` has no cancel
    pattern). The log lines that decide (A) vs (B) are in §7a.
-5. **Offline staging budget** — render + message fix tested; **which cause HE hit is still unknown** (he
-   never pasted the log/`df`). With `RKM_OFFLINE_MAX_BYTES=0` in `.env` + `.\rkm-cinema.ps1 apply`, a
-   continued refusal means disk/volume, and `docker compose logs --tail=80 api` now says which in words.
+5. **Offline staging budget** — **ANSWERED 2026-09-18 (session 2): the BUDGET, not the disk.** His `.env`
+   said `RKM_OFFLINE_MAX_BYTES=10000` — ten KILOBYTES — so the cap was 10 KB against a 4.63 GB film and
+   `_check_cap` refused every download. Fixed in `.env` (12 GiB, the code's own default) and confirmed
+   through `render_config.parse_env_file` + `build_api_vars`; **this half needs NO iOS rebuild** —
+   `.\rkm-cinema.ps1 apply`, then tap Download. ⚠ The advice that stood here — *"`docker compose logs
+   --tail=80 api` now says which in words"* — was **FALSE**: the route logged nothing at all, only
+   uvicorn's `507 235`. It logs the sentence now (`581f226`).
+6. **NEW (2026-09-18): the server's sentence reaching the row** — Swift. `OfflineFailure` now CARRIES the
+   server's `detail` (it was destructured away on the way to the sentence), so a `507` can say *which*
+   `507` it is. 9 core checks + a falsify mutation. ⚠ **Needs a Mac build**: until his phone is rebuilt it
+   still reads "The server's download storage is full" for every `507`.
 
 ### NEXT STEPS, in order
 
@@ -36,11 +48,14 @@
    `onToggleWatched` prop at six call sites: `LibraryHomeView`, `LibraryFolderView`, `DiscoverView`,
    `PosterRail`, `HomeScreen`, `BrowseScreen`. The tick MARKER on the art stays. → kills the "two green
    ticks" report.
-2. **Falsify the five new render tests** (`backend/tests/test_render_offline_knobs.py`) — passing but
-   never falsified. The one that matters: `test_zero_survives_rendering` (an `or "48"`-style default
-   swallows the string `"0"` and silently restores the 12 GiB budget — the fix appearing not to work).
+2. ✔ **DONE 2026-09-18 (session 2): the five render tests are falsified.** All five went RED and the file
+   was restored byte-identically. The mutations, each one line in `render_config.py::build_api_vars`:
+   drop the staging assignment · change the `12 * 1024 ** 3` default · hardcode over an env override ·
+   `str(int(str(env.get(…) or "0")) or default)` — the `"0"`-swallowing bug this test exists for ·
+   remove the blank fallback. Same lesson as the Swift core's `--falsify`: a check that has never been
+   reverted proves nothing.
 3. **Re-run the detail-screen harness probe** with the corrected tile label (see #2 above).
-4. **His phone round** on those five items → on his word, **merge to `dev`** (14 commits is a lot of
+4. **His phone round** on those six items → on his word, **merge to `dev`** (15 commits is a lot of
    unreviewed branch; he asks for merges).
 5. **M5 — Player** (plan §11: landscape-first, `playsinline`, tap-to-reveal chrome, thumb scrubber,
    ±10 s, lock, resume, **204-as-success**), then M6 subtitles · M7 downloads (bridge) · M8 admin ·
@@ -90,6 +105,65 @@ file is the record of what is DONE; that one is the record of what is BROKEN. Fi
 from there to here.
 
 ---
+
+---
+
+## ▶ ✅ **THE `507`, ANSWERED FROM HIS OWN LOG — and the client defect standing behind it** (2026-09-18, session 2) · branch **`feat/mobile-m3-library`** · `581f226`
+
+He sent the phone's log with the report: *"currently for the offline download the ios still have these
+logs, where it says storage is full"* — `POST /api/offline/prepare -> 507`, then
+`offline download stopped · The server's download storage is full (OfflineDownloads.swift:901)`.
+
+**The first cause is a number in his `.env`, and it is not the disk.** `RKM_OFFLINE_MAX_BYTES=10000`
+is ten **KILOBYTES** — the knob is bytes, the name says so, and `settings.py` passes it through
+verbatim — so the cap was 10 KB against a 4.63 GB film and `_check_cap`'s BUDGET branch refused every
+download, correctly.
+**How "budget, not disk" was settled with no credentials and no Mac: the two refusals are byte-distinct.**
+The live server's body measured **235 bytes**, which is the budget sentence exactly —
+`{"detail": "this title alone is about 4.3 GB, which is larger than the entire offline budget of 0.0 GB
+(RKM_OFFLINE_MAX_BYTES) — it can never be staged while that budget stands. Raise the budget, or set it to
+0 for no budget at all."}` under Starlette's `(",", ":")` separators (one byte fewer than `json.dumps`
+defaults) — where the DISK sentence is **208** bytes with a plausible 50 GB free. Nothing was full: a
+policy number was smaller than the film.
+`.env` (untracked, gitignored — it is HIS file) now reads `12884901888` = 12 GiB, the code's own default,
+confirmed through `render_config.parse_env_file` + `build_api_vars`. ⚠ **This half needs no iOS rebuild.**
+
+**The second cause is why his screen never changed: the phone threw the server's sentence away.**
+`OfflineAPIError` parsed `detail` off the wire and carried it — and `OfflineAPIError.failure` then
+destructured it away (`case .remote(let verdict, _): return .http(verdict)`), while
+`OfflineFailure.sentence` rebuilt the message from the status alone (`verdict.sentence(detail: nil)`).
+**Every `507` on that phone read "The server's download storage is full" whatever the server had said** —
+so `ac57b65`'s server-side fix could not be seen to work; the client undid it one frame later.
+The rule now, in `OfflineHTTPVerdict.sentence(detail:)`: **the server's own sentence wins when it sends
+one**, and `cannedSentence` is only the fallback for a status with no words to prefer — a `416` carries
+none by design, and `unexpected` keeps its HTTP code because there the CODE is the diagnostic and no
+canned claim exists to be corrected. `OfflineFailure.http(verdict, detail: String? = nil)` carries it.
+9 new checks in `offline-core-tests/main.swift`, one of them his exact refusal with the numbers off his log.
+
+**Third: the container log could not say it either, which the previous handoff claimed it could.**
+`offline_prepare` logged nothing, so `docker compose logs api` held only uvicorn's own `507 235`. Both
+`except OfflineError` sites in `backend/api/routes/offline.py` now warn with the sentence
+(`offline: prepare refused (507) for <id>: …`), pinned by
+`test_the_refusal_is_readable_in_the_SERVER_LOG` and falsified — deleting the log line turns it RED.
+**This is the half that makes the next diagnosis possible without a rebuild.**
+
+Gates, all run in the sandbox:
+* `python3 apple/scripts/check-offline-core.py` — **PASS, 517 checks** · `--falsify` — **67/67 rules
+  reverted, every one went red on the check it protects**, including the new one
+  (`[24] the server's own sentence beating the canned one`).
+* `bash apple/scripts/check-apple-typecheck.sh` — **PASS**, 11 files, the 2 Darwin-only API errors
+  filtered by name. ⚠ Types and call shapes only — NOT behaviour.
+* backend `pytest` — **144 passed** (61 offline_api including the new log test, + 83 render/config).
+* `tools/check_md_links.py` — 61 files, all links resolve.
+* ⚠ `pytest` needs **`--capture=no`** in this sandbox: some test removes pytest's capture tempfile and
+  the session dies in teardown (`FileNotFoundError` in `capture.py::snap`), which reads as a crash while
+  every test passes. Pre-existing, unrelated, and it cost time twice.
+
+**What he runs to make it take effect:**
+1. `.env` half (no rebuild): `.\rkm-cinema.ps1 apply` → tap Download. If it still refuses,
+   `docker compose logs --tail=50 api | grep "offline: prepare refused"` now names the cause.
+2. Swift half (`581f226`): a Mac build, then the row shows the server's own words — which is the only
+   way to tell "the staging disk is full" from a budget that is smaller than the film.
 
 ---
 

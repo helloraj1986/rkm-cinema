@@ -1,3 +1,90 @@
+## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-18) · branch **`feat/mobile-m3-library`** · tip **`ac57b65`** · **14 commits ahead of `dev`**, tree clean, pushed
+
+**Say this first:** *"continue rkm-cinema — pick up the RESUME-HERE block."* Then read this and
+`KNOWN_ISSUES.md`'s status table (the live list of open defects and their state).
+
+### Built this session (all committed + pushed, none merged)
+
+| Area | State |
+|---|---|
+| **M3 — Library & search** | **COMPLETE** — Home, Browse, Search, E3/E4/E5/E8; marked BUILT in the plan §11. |
+| **M4 — Title detail** | **Screen built** (4:3 backdrop, pinned action bar, episode list, More sheet) + E6 · E7 · E10 · E11 and rules `seriesPlayLabel` / `detailMetaBits` / `withoutHero`. ⚠ **`RequestSheet` NOT built — blocked on his decision.** |
+| **His answer round** | #5 rail-excludes-hero `2ef995b` · #1 Watched control `351c7c4` · #3 Switch Profile `bfac863` · #7 Cancel `c0e2f9f` · offline budget `ac57b65` · #6 CLOSED (not reproducible) |
+| **Import ban** | `imports.test.ts` now scans the REAL files in `src/layouts/mobile`, not fixtures only — it found one violation (`HomeScreen` importing the API client) and that is fixed. |
+| Gates | frontend `typecheck` clean · `npx vitest run` **551 passed / 20 files** · backend `pytest` **143 passed** (offline/render/config) · `check_md_links.py` clean |
+
+### ⚠ FIVE THINGS ARE BUILT BUT **NOT VERIFIED ON HIS DEVICE** — never describe them as working
+
+1. **M3 Search** + **M4 Detail** screens — measured headlessly at 320/390 only.
+2. **#1 Watched control** — the detail tile was **not** re-measured: the harness probe last ran BEFORE
+   it, so its assertion `tiles == ["Watched","More"]` is knowingly stale (that fixture is mid-play →
+   the label is now `Unwatched`). Re-run the probe before calling that screen "measured".
+3. **#3 Switch Profile** — overflow measured fixed (0 at 320–430), but a headless browser cannot do an
+   iOS finger-drag or raise the keyboard. His phone is the acceptance.
+4. **#7 Cancel** — Swift fix, typecheck gate PASS, **no Mac build and nothing anywhere taps Cancel**
+   (`check_offline_page.py` only asserts the word renders; `check_offline_download.py` has no cancel
+   pattern). The log lines that decide (A) vs (B) are in §7a.
+5. **Offline staging budget** — render + message fix tested; **which cause HE hit is still unknown** (he
+   never pasted the log/`df`). With `RKM_OFFLINE_MAX_BYTES=0` in `.env` + `.\rkm-cinema.ps1 apply`, a
+   continued refusal means disk/volume, and `docker compose logs --tail=80 api` now says which in words.
+
+### NEXT STEPS, in order
+
+1. **#2 — the poster-toggle sweep (decided by him; no decision needed).** The details view OWNS the
+   watched control; the poster only REFLECTS status. Delete `MediaCard`'s toggle button (its
+   `rkm-reveal-hit` bottom row) and the `Mark as watched/unplayed` item in its ⋯ menu, then drop the
+   `onToggleWatched` prop at six call sites: `LibraryHomeView`, `LibraryFolderView`, `DiscoverView`,
+   `PosterRail`, `HomeScreen`, `BrowseScreen`. The tick MARKER on the art stays. → kills the "two green
+   ticks" report.
+2. **Falsify the five new render tests** (`backend/tests/test_render_offline_knobs.py`) — passing but
+   never falsified. The one that matters: `test_zero_survives_rendering` (an `or "48"`-style default
+   swallows the string `"0"` and silently restores the 12 GiB budget — the fix appearing not to work).
+3. **Re-run the detail-screen harness probe** with the corrected tile label (see #2 above).
+4. **His phone round** on those five items → on his word, **merge to `dev`** (14 commits is a lot of
+   unreviewed branch; he asks for merges).
+5. **M5 — Player** (plan §11: landscape-first, `playsinline`, tap-to-reveal chrome, thumb scrubber,
+   ±10 s, lock, resume, **204-as-success**), then M6 subtitles · M7 downloads (bridge) · M8 admin ·
+   M9 polish + virtualisation + desktop regression report + ADR-0011 + `ARCHITECTURE.md` §12.
+
+### ⏳ PENDING DECISIONS FROM HIM (ask standalone, never buried in a long update)
+
+* **M4's `RequestSheet` — (a), (b) or (c)?** (`KNOWN_ISSUES` §7.) The request route takes no quality
+  argument (a 1080p/720p/4K picker would be a control that cannot act) and the 409's `candidates` carry
+  **no id**, so "pick one" has nothing to re-request with. ⚠ Also a real defect either way: `ApiError`
+  (`lib/api/client.ts:357`) keeps `detail` as a STRING while a 409's detail is an OBJECT, so the
+  candidates never reach the browser and the error arrives as `POST /api/media/… -> 409` — not a
+  sentence.
+* **Merge M3+M4 to `dev` now, or after his phone round?**
+* **The phone's Similar row** is deliberately not rendered — the desktop's is a TMDB rail whose tap
+  opens a centred `Dialog`, which on a phone must become a sheet.
+
+### ⚠ TRAPS THAT COST REAL TIME HERE — carry them forward
+
+* **`pgrep -f "[b]in/vite" | xargs -r kill -9` before trusting ANY harness number.** Vite's watcher does
+  not fire on this mount; a stale server answers from the PRE-EDIT module.
+* **When a probe disagrees with the screen, check the FIXTURE first.** Two of three detail-probe
+  "failures" were fixture bugs (a movie seeded as PLAYED rather than mid-play; an `episodeRows` regex
+  matching only the primary). The screen was right both times.
+* **A Swift interpolation written through a patch tool can land as a literal `\\(` — and it COMPILES.**
+  `check-apple-typecheck.sh` will not catch it; the log prints `\(identifier)`. Build such strings by
+  concatenation and `grep -F '\\('` the file after.
+* **`.env` is NOT the container's environment.** The api reads `.rkm.env`, written by
+  `render_config.py` from a curated dict — a key the renderer does not pass is unreachable from
+  configuration no matter what an error message advises.
+* **The root `overflow-x: clip` guard fixes nothing** — verified applied while the document still
+  scrolled 172px. Measure `documentElement.scrollWidth` vs `innerWidth`, then find the element whose
+  min-content floors a grid track (that was the Switch Profile bug).
+
+### HOUSEKEEPING
+
+* ⚠ **The `rkm-cinema` skill's `SKILL.md` is at the 100k write limit — patches are REFUSED.** This
+  session's mobile state went to `references/mobile-ui-status.md` instead. Split SKILL.md into
+  references before the next attempt to update it, or the skill stays frozen.
+* The mobile screens are measured with `harness/search-mobile-frame.*` and
+  `harness/detail-mobile-frame.*`; both expose `window.__probe()`.
+
+---
+
 ⚠ **Open defects live in [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md)** — read it before starting work. This
 file is the record of what is DONE; that one is the record of what is BROKEN. Fixing an entry moves it
 from there to here.

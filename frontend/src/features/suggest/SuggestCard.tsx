@@ -66,7 +66,7 @@ export function SuggestCard({
           />
         ) : null}
         <div className="absolute inset-0 bg-black/0 transition duration-300 group-hover:bg-black/45" />
-        <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/85 to-transparent opacity-0 transition duration-300 group-hover:opacity-100" />
+        <div className="rkm-reveal absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/85 to-transparent transition duration-300" />
 
         {/* badges */}
         <div className="absolute left-2 top-2 flex flex-col items-start gap-1">
@@ -95,7 +95,7 @@ export function SuggestCard({
         {/* hover actions — gated to the visible state so invisible chips can
             never intercept card taps; group-focus-within keeps them on
             keyboard/touch. */}
-        <div className="pointer-events-none absolute inset-x-2 bottom-2 z-[2] flex flex-col items-stretch gap-1.5 opacity-0 transition group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
+        <div className="rkm-reveal-hit absolute inset-x-2 bottom-2 z-[2] flex flex-col items-stretch gap-1.5 transition">
           <button
             type="button"
             onClick={onAdd}

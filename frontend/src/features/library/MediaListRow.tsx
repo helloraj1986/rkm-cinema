@@ -127,7 +127,7 @@ function MediaListRowBase({
             onQuickPlay(item);
           }}
           aria-label={tv ? `Episodes for ${item.title}` : `Play ${item.title}`}
-          className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-accent text-black opacity-0 transition hover:bg-accent-hover group-hover:opacity-100 focus-visible:opacity-100"
+          className="rkm-reveal-hit grid h-8 w-8 shrink-0 place-items-center rounded-full bg-accent text-black transition hover:bg-accent-hover"
         >
           <Icon name="play" size={13} filled />
         </button>

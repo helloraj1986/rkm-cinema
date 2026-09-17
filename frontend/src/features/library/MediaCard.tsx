@@ -130,9 +130,11 @@ function MediaCardBase({
           />
         ) : null}
 
-        {/* Hover darkening + bottom gradient so actions read over posters. */}
+        {/* Hover darkening + bottom gradient so actions read over posters. ⚠ `rkm-reveal` (§7.3):
+            on a touch device these layers must be visible too, because the actions they sit under
+            are — see styles/index.css. Visual only: it never takes pointer events. */}
         <div className="absolute inset-0 bg-black/0 transition duration-300 group-hover:bg-black/45" />
-        <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/85 to-transparent opacity-0 transition duration-300 group-hover:opacity-100" />
+        <div className="rkm-reveal absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/85 to-transparent transition duration-300" />
 
         {/* Type glyph (subtle, not a dashboard badge). */}
         <span className="absolute left-2 top-2 grid h-[22px] w-[22px] place-items-center rounded-md border border-white/10 bg-black/40 text-zinc-100 backdrop-blur-sm">
@@ -154,7 +156,7 @@ function MediaCardBase({
           type="button"
           onClick={() => onQuickPlay(item)}
           aria-label={tv ? `Episodes for ${item.title}` : `Play ${item.title}`}
-          className="pointer-events-none absolute left-1/2 top-[42%] z-[2] -translate-x-1/2 -translate-y-1/2 opacity-0 transition group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100"
+          className="rkm-reveal-hit absolute left-1/2 top-[42%] z-[2] -translate-x-1/2 -translate-y-1/2 transition"
         >
           {/* ⚠ FLEX ROW, not `grid place-items-center` (his report, 2026-09-13): this pill has TWO
               children, and grid laid the glyph into row 1 and the label into row 2 — the play
@@ -174,8 +176,9 @@ function MediaCardBase({
 
         {/* Bottom hover row: watched toggle + ⋯ context menu (§46). The
             jellyfin deep link now lives in the menu so the row stays calm.
-            pointer-events gated to the visible state, as the centre action. */}
-        <div className="pointer-events-none absolute inset-x-2 bottom-2 z-[2] flex items-center justify-between gap-1 opacity-0 transition group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
+            ⚠ `rkm-reveal-hit` (§7.3): on a touch device this row is always visible and tappable —
+            gating it to hover made the watched toggle and the ⋯ menu unreachable on a phone. */}
+        <div className="rkm-reveal-hit absolute inset-x-2 bottom-2 z-[2] flex items-center justify-between gap-1 transition">
           {onToggleWatched ? (
             <button
               type="button"

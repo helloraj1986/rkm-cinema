@@ -27,10 +27,14 @@ pre-edit module — the measurement then reports the OLD layout and looks like y
 did nothing. Check before trusting a run:
 
 ```bash
-pgrep -f "bin/vite" | xargs -r kill -9   # ⚠ NOT `pkill -f "vite --port 5199"` — see below
+pgrep -f "[b]in/vite" | xargs -r kill -9   # ⚠ NOT `pkill -f "vite --port 5199"` — see below
 cd frontend && npx vite --port 5199 --strictPort &
 curl -s http://localhost:5199/src/features/playback/Player.tsx | grep -c rkm-player__dock
 ```
+
+⚠ **The `[b]` is not a typo.** `pgrep -f "bin/vite"` matches its OWN command line — the pattern is in
+it — so the kill lands on the shell running the command (exit 137) while looking like it worked. The
+bracket form makes the pattern not match itself. Same trick for any `pkill -f` you write here.
 
 ⚠⚠ **THE RESTART IS THE TRAP, AND `pkill -f "vite --port 5199"` DOES NOT DO IT.** That pattern matches the
 *npm wrapper* and the *sh* it spawns, so it kills those and leaves the `node …/bin/vite` child alive and

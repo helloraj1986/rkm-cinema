@@ -422,3 +422,43 @@
   grid-template-columns: repeat(var(--m-grid-cols), minmax(0, 1fr));
   gap: var(--space-5) var(--space-3);
 }
+
+/* ⚠⚠ §7.3 — AN ACTION THAT ONLY EXISTS ON HOVER DOES NOT EXIST ON A PHONE.
+   Every poster action (▶ / Episodes, the watched toggle, ⋯) was `opacity-0` plus
+   `group-hover:opacity-100`, with no `(hover: hover)` guard anywhere — so on a touch device the
+   app's PRIMARY interaction could not be seen, let alone tapped. That is the biggest UX defect the
+   mobile brief found, and it is invisible in every screenshot: a desktop browser shows the hidden
+   state as "correct" because it can hover.
+
+   So the default is now VISIBLE, and the hide-until-hover behaviour is scoped to pointers that
+   actually have a hover — which leaves the desktop behaviour character-for-character what it was
+   (hidden until hover or keyboard focus). Two classes, because a decorative layer and an
+   interactive one must not share pointer-events:
+     .rkm-reveal      — visual only (gradients that sit under the actions)
+     .rkm-reveal-hit  — the interactive rows: visible AND tappable with no hover */
+.rkm-reveal {
+  opacity: 1;
+}
+.rkm-reveal-hit {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .rkm-reveal,
+  .rkm-reveal-hit {
+    opacity: 0;
+  }
+  .rkm-reveal-hit {
+    pointer-events: none;
+  }
+  .group:hover .rkm-reveal,
+  .group:focus-within .rkm-reveal {
+    opacity: 1;
+  }
+  .group:hover .rkm-reveal-hit,
+  .group:focus-within .rkm-reveal-hit {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}

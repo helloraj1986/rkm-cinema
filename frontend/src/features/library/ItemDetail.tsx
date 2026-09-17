@@ -1,5 +1,4 @@
-import { useEffect, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useState, type ButtonHTMLAttributes, type ReactNode } from "react";
 import {
   api,
   type DetailPeople,
@@ -11,6 +10,7 @@ import {
 import { useItemDetail, useLibraryItems } from "./api";
 import { SimilarRow } from "./SimilarRow";
 import { initials } from "../auth/lib";
+import { useAutoPlayDeepLink } from "./useAutoPlayDeepLink";
 import { useEpisodes } from "../playback/api";
 import {
   episodeCode,
@@ -29,6 +29,8 @@ import {
   episodeProgress,
   fmtRuntime,
   isSeries,
+  MORE_ACTION_COPY,
+  moreActionsFor,
   personHeadshotUrl,
   posterUrl,
   ratingText,
@@ -248,31 +250,34 @@ export function ItemDetailContent({
   // list has no match — render the grid-style fallback instead of a blank page.
   const notFound = !isLoading && isError && !item && !d;
 
-  // Global-search deep link (?play=1[&episode={id}]): start playback as soon as
-  // the data this item needs is ready, then clear the params so Back/refresh
-  // don't replay it. Fires once per mount (remounts on item change via key).
-  const [searchParams, setSearchParams] = useSearchParams();
-  const autoPlayedRef = useRef(false);
-  useEffect(() => {
-    if (searchParams.get("play") !== "1" || autoPlayedRef.current) return;
-    if (tv) {
-      const epId = searchParams.get("episode");
-      const targetEp = epId ? episodes.find((e) => e.id === epId) ?? null : seriesPlayEp;
-      if (!targetEp) return; // wait for the episode list
-      autoPlayedRef.current = true;
-      onPlayEpisode(targetEp, queue);
-    } else if (d) {
-      autoPlayedRef.current = true;
-      onPlayMovie(itemId, d.name ?? title, detailInProgress(d?.play) ? resumeSec : 0, runtimeSec);
-    } else {
-      return; // wait for the detail probe
-    }
-    const next = new URLSearchParams(searchParams);
-    next.delete("play");
-    next.delete("episode");
-    setSearchParams(next, { replace: true });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams, tv, d, episodes, itemId, title, resumeSec, runtimeSec, seriesPlayEp]);
+  // Global-search deep link (?play=1[&episode={id}]): start playback as soon as the
+  // data this item needs is ready, then clear the params so Back/refresh don't
+  // replay it. ⚠ ONE implementation, shared with the phone's detail screen
+  // (M4 · extraction E11) — "wait for the episodes, then clear the params" is not
+  // a rule two screens may each own.
+  useAutoPlayDeepLink({
+    itemId,
+    isSeries: tv,
+    detail: d,
+    episodes,
+    seriesPlayEp,
+    queue,
+    resumeSec,
+    runtimeSec,
+    title: d?.name ?? item?.title ?? "Unknown",
+    onPlayMovie,
+    onPlayEpisode,
+  });
+
+  // ⚠ Which secondaries the ⋯ offers is `moreActionsFor` (M4 · extraction E10): the phone's More
+  // sheet reads the same three keys and the same copy, so the two surfaces cannot disagree about
+  // when "Play from beginning" or "Mark as unplayed" exists.
+  const moreActions = moreActionsFor({
+    isSeries: tv,
+    inProgress: detailInProgress(d?.play),
+    played,
+    hasExternalLink: Boolean(item?.jellyfin_url),
+  });
 
   if (isLoading && !d && !item) {
     return (
@@ -491,45 +496,20 @@ export function ItemDetailContent({
                     <PopupMenu
                       label={`More actions for ${title}`}
                       triggerClassName={ICON_ACTION_CLASS}
-                      items={[
-                        ...(!tv && detailInProgress(d?.play)
-                          ? [
-                              {
-                                key: "restart",
-                                label: "Play from beginning",
-                                icon: "play" as const,
-                                onSelect: () =>
-                                  onPlayMovie(
-                                    itemId,
-                                    d?.name ?? item?.title ?? "Unknown",
-                                    0,
-                                    runtimeSec,
-                                  ),
-                              },
-                            ]
-                          : []),
-                        ...(onToggleWatched && item && item.played
-                          ? [
-                              {
-                                key: "untoggle",
-                                label: "Mark as unplayed",
-                                icon: "check" as const,
-                                onSelect: () => onToggleWatched({ ...item, played }),
-                              },
-                            ]
-                          : []),
-                        ...(item?.jellyfin_url
-                          ? [
-                              {
-                                key: "jellyfin",
-                                label: "Open in Jellyfin",
-                                icon: "external" as const,
-                                onSelect: () =>
-                                  window.open(item.jellyfin_url as string, "_blank", "noopener,noreferrer"),
-                              },
-                            ]
-                          : []),
-                      ]}
+                      items={moreActions.map((key) => ({
+                        key,
+                        label: MORE_ACTION_COPY[key].label,
+                        icon: MORE_ACTION_COPY[key].icon,
+                        onSelect: () => {
+                          if (key === "restart") {
+                            onPlayMovie(itemId, d?.name ?? item?.title ?? "Unknown", 0, runtimeSec);
+                          } else if (key === "untoggle") {
+                            if (item) onToggleWatched?.({ ...item, played });
+                          } else if (item?.jellyfin_url) {
+                            window.open(item.jellyfin_url as string, "_blank", "noopener,noreferrer");
+                          }
+                        },
+                      }))}
                     >
                       <Icon name="more" size={19} />
                       <span className="max-w-16 truncate">More</span>

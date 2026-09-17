@@ -28,6 +28,8 @@ import {
   libraryIconFor,
   libraryNavEntries,
   libraryViewFromParams,
+  MORE_ACTION_COPY,
+  moreActionsFor,
   mountedCount,
   needsMoreRows,
   nextExtraCount,
@@ -772,5 +774,44 @@ describe("episodeProgress (M4 · E6)", () => {
     const p = episodeProgress({ played: false, playback_position: undefined as unknown as number, runtime: 3600 });
     expect(p.percent).toBe(0);
     expect(p.inProgress).toBe(false);
+  });
+});
+
+describe("moreActionsFor (M4 · E10 — which secondaries the ⋯ offers)", () => {
+  const facts = (over: Partial<Parameters<typeof moreActionsFor>[0]> = {}) => ({
+    isSeries: false, inProgress: false, played: false, hasExternalLink: false, ...over,
+  });
+
+  it("offers a restart ONLY on a movie that is mid-play", () => {
+    expect(moreActionsFor(facts({ inProgress: true }))).toEqual(["restart"]);
+    expect(moreActionsFor(facts())).toEqual([]); // untouched film: nothing to restart
+  });
+
+  it("⚠ never offers a restart on a series — that verb belongs to an episode", () => {
+    expect(moreActionsFor(facts({ isSeries: true, inProgress: true }))).toEqual([]);
+  });
+
+  it("offers 'Mark as unplayed' only when it is played", () => {
+    expect(moreActionsFor(facts({ played: true }))).toEqual(["untoggle"]);
+    // ⚠ ORDER is part of the rule: restart first, exactly as the desktop's three spreads emitted them.
+    expect(moreActionsFor(facts({ played: true, inProgress: true }))).toEqual(["restart", "untoggle"]);
+  });
+
+  it("offers the external link only when the item carries one", () => {
+    expect(moreActionsFor(facts({ hasExternalLink: true }))).toEqual(["jellyfin"]);
+  });
+
+  it("is deterministic in order — the menu may not reshuffle between renders", () => {
+    const all = facts({ played: true, inProgress: true, hasExternalLink: true });
+    expect(moreActionsFor(all)).toEqual(["restart", "untoggle", "jellyfin"]);
+    expect(moreActionsFor(all)).toEqual(moreActionsFor(all));
+  });
+
+  it("has copy for every key it can return", () => {
+    const keys = moreActionsFor(facts({ played: true, inProgress: true, hasExternalLink: true }));
+    for (const key of keys) {
+      expect(MORE_ACTION_COPY[key].label.length).toBeGreaterThan(3);
+      expect(MORE_ACTION_COPY[key].icon).toBeTruthy();
+    }
   });
 });

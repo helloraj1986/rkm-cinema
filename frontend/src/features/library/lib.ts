@@ -12,6 +12,7 @@ import type {
   SimilarItem,
   SuggestResult,
 } from "../../lib/api/client";
+import type { IconName } from "../../components/ui/Icon";
 
 /**
  * Poster proxy URL for a library item — by ITEM ID, or null.
@@ -536,6 +537,48 @@ export function episodeProgress(
   const remainingLabel =
     inProgress && runtime > 0 ? `${fmtRuntime(Math.max(1, runtime - pos))} left` : "";
   return { percent, inProgress, remainingLabel };
+}
+
+// ---------------------------------------- The secondary actions (M4 · extraction E10)
+/**
+ * Which actions a title's ⋯ offers — ONE rule, for the desktop menu AND the phone's sheet.
+ *
+ * ⚠ The desktop built this array inline inside `ItemDetail`'s JSX: three conditional spreads around
+ * three `PopupMenu` items. M4 adds a second surface for the same three actions (the phone's More
+ * sheet — a `Dialog`-style popup is not a thumb target), and a second copy of "when does Play from
+ * beginning exist" is how the phone comes to offer a restart on an untouched film, or to hide
+ * "Mark as unplayed" on a title the person just finished.
+ *
+ * The FACTS come from the caller (`isSeries`, `inProgress`, `played`, `hasExternalLink`) because the
+ * things they are derived from live in different places — the list query, the detail probe and the
+ * item's own `jellyfin_url`. The DECISION lives here, and the copy lives next to it so the two
+ * surfaces read the same words.
+ */
+export type MoreActionKey = "restart" | "untoggle" | "jellyfin";
+
+export interface MoreActionFacts {
+  isSeries: boolean;
+  /** Mid-play — `detailInProgress(detail.play)`. */
+  inProgress: boolean;
+  played: boolean;
+  /** The item carries a link into the media server's own web UI. */
+  hasExternalLink: boolean;
+}
+
+export const MORE_ACTION_COPY: Record<MoreActionKey, { label: string; icon: IconName }> = {
+  restart: { label: "Play from beginning", icon: "play" },
+  untoggle: { label: "Mark as unplayed", icon: "check" },
+  jellyfin: { label: "Open in Jellyfin", icon: "external" },
+};
+
+export function moreActionsFor(f: MoreActionFacts): MoreActionKey[] {
+  const keys: MoreActionKey[] = [];
+  // A series never offers a restart: "from the beginning" is a movie's verb, and a series' first
+  // episode is reached from the episode list.
+  if (!f.isSeries && f.inProgress) keys.push("restart");
+  if (f.played) keys.push("untoggle");
+  if (f.hasExternalLink) keys.push("jellyfin");
+  return keys;
 }
 
 // ---------------------------------------- Progressive mounting (M3 · the latency cure)

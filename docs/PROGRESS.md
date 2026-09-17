@@ -1,8 +1,10 @@
-## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-18, after session 2) · branch **`feat/mobile-m3-library`** · tip **`581f226`** · **15 commits ahead of `dev`**, tree clean, pushed
+## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-18, after session 2) · branch **`feat/mobile-m3-library`** · tip **`3e91fd0`** · **1 commit ahead of `dev`** (everything else is merged), tree clean, pushed
 
-⚠ **Session 2 closed item 5 below — the offline `507` was his `.env`, not his disk — and found a second
-defect standing behind it: the phone was throwing the server's own sentence away.** Read the 507 section
-below before touching the offline code. Half of it needs no iOS rebuild and can be tried in one command.
+⚠ **Session 2 did three things: it closed item 5 (the offline `507` was his `.env`, not his disk), found
+the client defect standing behind it, and landed item 1 — the #2 poster-toggle sweep.** M3+M4 are now
+**merged to `dev`** (`ec5a37a`, on his word); the sweep (`3e91fd0`) is the only commit still on the
+branch. Read the 507 section below before touching the offline code — half of it needs no iOS rebuild
+and can be tried in one command.
 
 **Say this first:** *"continue rkm-cinema — pick up the RESUME-HERE block."* Then read this and
 `KNOWN_ISSUES.md`'s status table (the live list of open defects and their state).
@@ -42,12 +44,13 @@ below before touching the offline code. Half of it needs no iOS rebuild and can 
 
 ### NEXT STEPS, in order
 
-1. **#2 — the poster-toggle sweep (decided by him; no decision needed).** The details view OWNS the
-   watched control; the poster only REFLECTS status. Delete `MediaCard`'s toggle button (its
-   `rkm-reveal-hit` bottom row) and the `Mark as watched/unplayed` item in its ⋯ menu, then drop the
-   `onToggleWatched` prop at six call sites: `LibraryHomeView`, `LibraryFolderView`, `DiscoverView`,
-   `PosterRail`, `HomeScreen`, `BrowseScreen`. The tick MARKER on the art stays. → kills the "two green
-   ticks" report.
+1. ✔ **DONE 2026-09-18 (session 2) — the #2 poster-toggle sweep landed** (`3e91fd0`). The details view
+   OWNS the watched control; the poster only REFLECTS status. `MediaCard`'s toggle button and the ⋯
+   menu's `Mark as watched/unplayed` item are gone, `onToggleWatched` is DELETED (not left optional),
+   the six call sites dropped it, and the ⋯ row is `justify-end` now that it has one child. The tick
+   MARKER on the art stays. Pinned by `tools/check_poster_watched.py` — falsified against the pre-fix
+   source (6 problems, *"draws the watched fact 2 time(s) — 1 marker + 1 control"*). See the section
+   below for the probe bug that falsification caught.
 2. ✔ **DONE 2026-09-18 (session 2): the five render tests are falsified.** All five went RED and the file
    was restored byte-identically. The mutations, each one line in `render_config.py::build_api_vars`:
    drop the staging assignment · change the `12 * 1024 ** 3` default · hardcode over an env override ·
@@ -108,7 +111,7 @@ from there to here.
 
 ---
 
-## ▶ ✅ **THE `507`, ANSWERED FROM HIS OWN LOG — and the client defect standing behind it** (2026-09-18, session 2) · branch **`feat/mobile-m3-library`** · `581f226`
+## ▶ ✅ **THE `507`, ANSWERED FROM HIS OWN LOG — and the client defect standing behind it, then THE #2 SWEEP** (2026-09-18, session 2) · branch **`feat/mobile-m3-library`** · `581f226`, `3e91fd0`
 
 He sent the phone's log with the report: *"currently for the offline download the ios still have these
 logs, where it says storage is full"* — `POST /api/offline/prepare -> 507`, then
@@ -164,6 +167,56 @@ Gates, all run in the sandbox:
    `docker compose logs --tail=50 api | grep "offline: prepare refused"` now names the cause.
 2. Swift half (`581f226`): a Mac build, then the row shows the server's own words — which is the only
    way to tell "the staging disk is full" from a budget that is smaller than the film.
+
+### ✔ ...and then item 1 landed: **the #2 poster-toggle sweep** (`3e91fd0`)
+
+His rule, decided 2026-09-17 and landed here: **the details view OWNS the watched control; the poster
+only REFLECTS status.** One fact was drawn twice on one card — the tick MARKER on the art and a green
+TOGGLE in the bottom row, both driven by `item.played` — and offered a third time by the details tile.
+
+* `MediaCard` loses the toggle button AND the ⋯ menu's `Mark as watched` / `Mark as unplayed` item. ⚠ The
+  `onToggleWatched` prop is **DELETED, not left optional**: the prop is what made the old behaviour
+  conditional, so leaving it would let a future caller bring the second tick back.
+* The tick MARKER on the art stays — a marker is status, and a control must not look like status.
+* ⚠ The bottom row became `justify-end`. It has ONE child left, and `justify-between` would have silently
+  moved the ⋯ menu to the LEFT edge — a defect introduced by the fix itself, which is why the check
+  asserts the trigger's right edge.
+* The six call sites dropped the prop: `LibraryHomeView` and `LibraryFolderView` (each also dropped a
+  `toggleWatched` destructure used for nothing else), `DiscoverView` ×2, `BrowseScreen`, `HomeScreen`,
+  and `PosterRail::CardHandlers` — the shared type, which is how one rule reaches all of them.
+  `WatchedAction` / `ItemDetail` / `DetailScreen` are untouched: they ARE the owner (`moreActionsFor`'s
+  `untoggle` verb is the DETAILS ⋯ menu, never the card's).
+* ⚠ `WatchedAction`'s doc comment already CLAIMED this sweep had landed ("the grid's cards … no longer
+  offer the toggle at all") while the code still had it. Written from the decision, not from the code —
+  it is true now, and it says which day each half happened.
+
+**A browser check, because the defect was a duplicate ON SCREEN** — a props-level test would have been
+satisfied by the pair. `tools/check_poster_watched.py` mounts the REAL `MediaCard` three times (played
+film · unplayed film · played series: both states, or *"the marker follows `played`"* cannot be told from
+*"the marker is always drawn"*) and asserts: **one watched indicator per played poster**
+(`markers + toggles == 1`), no card renders a watched control, the ⋯ menu offers no watched verb while
+still offering Replay + View details, an unplayed card shows no marker, the marker sits INSIDE the
+artwork, and the ⋯ trigger is at the row's right edge.
+
+⚠⚠ **THE FALSIFICATION CAUGHT A BUG IN THE CHECK, NOT IN THE FIX** — the lesson worth carrying: run
+against the pre-fix `MediaCard` (restored from HEAD, with a frame that passes `onToggleWatched`) it
+reports **6 problems**, including *"draws the watched fact 2 time(s) — 1 marker(s) ['Watched'] + 1
+control(s) ['Mark as unplayed']"*, which is his report verbatim. **But the FIRST falsification run
+missed the played cards entirely.** The probe matched only the word `unwatched`, while the removed control
+said **`Mark as unplayed`** for a played title — so it was blind to the duplicate on exactly the card the
+report is about, and only the unplayed fixture came back red. A check that had never been reverted would
+have shipped looking green and blind. Match the VERB, not one spelling of it.
+The same run proved the source restores byte-identically afterwards.
+
+⚠ And the harness's oldest trap fired again mid-session: after the falsification left its own `vite`
+holding :5199, a fresh one silently failed to bind (`--strictPort`) and the STALE server answered — my
+next "PASS" read as 6 problems on the FIXED source. Kill by port owner, start ONE server, then
+`curl … | grep` a module you just edited before believing any number (README).
+
+Gates: `typecheck` clean · `npx vitest run` **551 passed / 20 files** · `check_poster_watched.py` **PASS**
+(+ `--expect-broken` 6 problems) · `check_cta_alignment.py` still **OK** (it shares the frame this change
+edited) · `check_md_links.py` clean · ⚠ `check_library_scan.py` G and `check_item_modal.py` H fail **at
+HEAD too** (measured against a stashed tree) — recorded as `KNOWN_ISSUES` §8, not fixed here.
 
 ---
 

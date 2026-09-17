@@ -9,6 +9,7 @@ import {
   detailPrimaryLabel,
   detailResumePercent,
   episodeItemCode,
+  episodeProgress,
   filterLibraryItems,
   heroEyebrow,
   heroPrimaryLabel,
@@ -722,5 +723,54 @@ describe("the Home hero's labels (M3)", () => {
 
   it("never leaves a trailing space when the episode has no code", () => {
     expect(heroPrimaryLabel({ isEpisode: true, episodeCode: "", isSeries: false, percent: 0 })).toBe("Play");
+  });
+});
+
+describe("episodeProgress (M4 · E6)", () => {
+  const ep = (played: boolean, pos: number, runtime: number) => ({
+    played,
+    playback_position: pos,
+    runtime,
+  });
+
+  it("reads a half-watched episode as a percent AND a countdown", () => {
+    const p = episodeProgress(ep(false, 1200, 3600));
+    expect(p.percent).toBe(33);
+    expect(p.inProgress).toBe(true);
+    expect(p.remainingLabel).toBe("40m left");
+  });
+
+  it("an episode 2 seconds from the end says 1m left — never 0m left", () => {
+    expect(episodeProgress(ep(false, 3598, 3600)).remainingLabel).toBe("1m left");
+  });
+
+  it("⚠ NEVER divides by an unknown runtime — 0%, and no countdown", () => {
+    const p = episodeProgress(ep(false, 900, 0));
+    expect(p.percent).toBe(0);
+    expect(p.inProgress).toBe(true); // it IS mid-play; there is just nothing to count down against
+    expect(p.remainingLabel).toBe("");
+  });
+
+  it("a finished episode is not in progress and has no countdown, even with a position left over", () => {
+    const p = episodeProgress(ep(true, 1800, 3600));
+    expect(p.inProgress).toBe(false);
+    expect(p.remainingLabel).toBe("");
+  });
+
+  it("an untouched episode is 0% and not in progress", () => {
+    const p = episodeProgress(ep(false, 0, 3600));
+    expect(p.percent).toBe(0);
+    expect(p.inProgress).toBe(false);
+    expect(p.remainingLabel).toBe("");
+  });
+
+  it("clamps at 100 — a position past the runtime is not 104%", () => {
+    expect(episodeProgress(ep(false, 4000, 3600)).percent).toBe(100);
+  });
+
+  it("treats a missing position as zero rather than NaN", () => {
+    const p = episodeProgress({ played: false, playback_position: undefined as unknown as number, runtime: 3600 });
+    expect(p.percent).toBe(0);
+    expect(p.inProgress).toBe(false);
   });
 });

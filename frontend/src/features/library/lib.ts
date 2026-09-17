@@ -7,6 +7,7 @@
 import type {
   ConfiguredLibraryShape,
   DetailPlay,
+  EpisodeShape,
   MediaItem,
   SimilarItem,
   SuggestResult,
@@ -482,6 +483,46 @@ export function resumePercent(item: MediaItem): number {
   const rt = Number(item.runtime || 0);
   if (pos <= 0 || rt <= 0) return 0;
   return Math.min(100, Math.round((pos / rt) * 100));
+}
+
+// ---------------------------------------- Episode progress (M4 · extraction E6)
+/**
+ * An episode's progress, as ONE rule — the arithmetic AND the copy that reads it out.
+ *
+ * ⚠ Until M4 the expression `Math.min(100, Math.round((pos / runtime) * 100))` was written inline in
+ * `ItemDetail`'s episode row, and the sentence under it was assembled from a second, hand-rolled
+ * remainder. M4 gives the phone its own episode list, which is exactly the second copy that would
+ * have drifted: two screens showing two different percentages for the same episode, and nothing in
+ * the diff to say which one was right. It is also why `layouts/importRule.ts` bans `* 100` in a mobile
+ * view — the rule has to exist BEFORE the view does, or the view invents its own.
+ *
+ * ⚠ `percent` is returned even for a finished episode (the desktop row never renders it there): the
+ * caller decides what to show. `inProgress` — mid-play AND not finished — is the flag that decision
+ * keys off, and `remainingLabel` is empty unless there is genuinely something left to count down.
+ */
+export interface EpisodeProgress {
+  /** 0–100, rounded. 0 when the runtime is unknown (never a division by zero, never a fake bar). */
+  percent: number;
+  /** Started and not finished — the row's accent state, and the only case with a countdown. */
+  inProgress: boolean;
+  /** "1h 04m left", or "" — never "0m left", and never a "· left" with nothing in front of it. */
+  remainingLabel: string;
+}
+
+export function episodeProgress(
+  ep: Pick<EpisodeShape, "played" | "playback_position" | "runtime">,
+): EpisodeProgress {
+  const pos = Number(ep.playback_position) || 0;
+  const runtime = Number(ep.runtime) || 0;
+  const percent = runtime > 0 ? Math.min(100, Math.round((pos / runtime) * 100)) : 0;
+  const inProgress = !ep.played && pos > 0;
+  // ⚠ TWO conditions, not one. `Math.max(1, …)` floors the readout at a minute — an episode two
+  // seconds from the end says "1m left", not "0m left" (the desktop row's own floor) — and the
+  // runtime test is what stops an episode whose runtime the server did not send reading
+  // "0% watched · 1m left", which is a countdown against a length nobody knows.
+  const remainingLabel =
+    inProgress && runtime > 0 ? `${fmtRuntime(Math.max(1, runtime - pos))} left` : "";
+  return { percent, inProgress, remainingLabel };
 }
 
 // ---------------------------------------- Progressive mounting (M3 · the latency cure)

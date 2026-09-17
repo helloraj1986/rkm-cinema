@@ -25,6 +25,7 @@ import {
   detailInProgress,
   detailPrimaryLabel,
   detailResumePercent,
+  episodeProgress,
   fmtRuntime,
   isSeries,
   personHeadshotUrl,
@@ -45,9 +46,9 @@ function EpisodeRow({
   queue: QueueEntry[];
   onPlay: (ep: EpisodeShape, queue: QueueEntry[]) => void;
 }) {
-  const percent =
-    ep.runtime > 0 ? Math.min(100, Math.round(((ep.playback_position || 0) / ep.runtime) * 100)) : 0;
-  const inProgress = !ep.played && ep.playback_position > 0;
+  // ⚠ The episode's progress is NOT computed here (M4 · extraction E6): `episodeProgress` owns the
+  // arithmetic and the readout, so the phone's episode list and this row cannot disagree.
+  const { percent, inProgress, remainingLabel } = episodeProgress(ep);
   return (
     <div
       className={`flex items-center gap-4 rounded-xl border p-2.5 pr-3 transition-colors ${
@@ -87,7 +88,7 @@ function EpisodeRow({
           </span>
         ) : inProgress ? (
           <span className="mt-0.5 text-xs text-zinc-400">
-            {percent}% watched · {fmtRuntime(Math.max(1, ep.runtime - (ep.playback_position || 0)))} left
+            {percent}% watched · {remainingLabel}
           </span>
         ) : (
           <span className="mt-0.5 text-xs text-zinc-500">{fmtRuntime(ep.runtime) || "Not watched"}</span>

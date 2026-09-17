@@ -8,58 +8,21 @@ import { useCardActions } from "../watchlist/actions";
 import { toast } from "../watchlist/toast";
 import { SuggestDetailModal } from "../suggest/SuggestDetailModal";
 import { useGlobalSearch } from "./api";
-import { actionLabel, artUrl, detailsTarget, metaLine, playTarget } from "./lib";
+import {
+  actionLabel,
+  artUrl,
+  detailsTarget,
+  discoveryEntryStub,
+  discoveryToSuggestItem,
+  metaLine,
+  noMatchesText,
+  playTarget,
+  SEARCH_DEBOUNCE_MS,
+  SEARCH_FAILED,
+  SEARCH_PLACEHOLDER,
+} from "./lib";
 
-const DEBOUNCE_MS = 200;
 const KIND_TEXT: Record<string, string> = { movie: "Movie", tv: "TV Show" };
-
-/** Adapt a discovery row for the shared Suggest detail modal/card language. */
-function toSuggestItem(disc: GlobalDiscoveryRow, inWatchlist: boolean): SuggestResult {
-  return {
-    tmdb_id: disc.tmdb_id,
-    media_type: disc.media_type,
-    title: disc.title,
-    year: disc.year ?? null,
-    tmdb_score: 0,
-    vote_count: 0,
-    genres: [],
-    overview: disc.overview,
-    poster: disc.poster,
-    backdrop: "",
-    in_watchlist: inWatchlist,
-    in_library: false,
-  };
-}
-
-/** A WatchlistEntry stub so Download requests the canonical media id. */
-function entryStubFor(disc: GlobalDiscoveryRow): WatchlistEntry {
-  return {
-    imdbId: "",
-    tmdbId: disc.tmdb_id,
-    tvdbId: null,
-    title: disc.title,
-    year: disc.year ?? 0,
-    type: disc.media_type === "tv" ? "tv" : "movie",
-    category: "Other",
-    genres: [],
-    lang: "",
-    cert: "",
-    rt: null,
-    imdb: null,
-    tmdbScore: null,
-    overview: disc.overview,
-    cast: [],
-    director: "",
-    runtime: null,
-    poster: disc.poster,
-    backdrop: "",
-    trailerId: "",
-    trailerTitle: "",
-    trailerUrl: "",
-    added: "",
-    source: "search",
-  };
-}
 
 type Selectable =
   | { kind: "owned"; row: GlobalOwnedRow }
@@ -91,7 +54,7 @@ export function GlobalSearch() {
 
   // Debounce typing (fast, visually responsive).
   useEffect(() => {
-    const t = setTimeout(() => setDebounced(text.trim()), DEBOUNCE_MS);
+    const t = setTimeout(() => setDebounced(text.trim()), SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(t);
   }, [text]);
 
@@ -182,7 +145,7 @@ export function GlobalSearch() {
   };
 
   const downloadDisc = (disc: GlobalDiscoveryRow) => {
-    cardActions.download(entryStubFor(disc));
+    cardActions.download(discoveryEntryStub(disc));
   };
 
   /** Row click / Enter → the full Suggest-style metadata modal. */
@@ -250,7 +213,7 @@ export function GlobalSearch() {
         onChange={(e) => setText(e.target.value)}
         onFocus={() => setOpen(true)}
         onKeyDown={onKeyDown}
-        placeholder="Search movies, shows, people…"
+        placeholder={SEARCH_PLACEHOLDER}
         autoComplete="off"
         aria-label="Search movies, shows and people"
         role="combobox"
@@ -273,9 +236,9 @@ export function GlobalSearch() {
               Searching your library…
             </div>
           ) : isError ? (
-            <p className="px-4 py-3 text-[13px] text-zinc-500">Search failed — try again shortly.</p>
+            <p className="px-4 py-3 text-[13px] text-zinc-500">{SEARCH_FAILED}</p>
           ) : data && selectables.length === 0 ? (
-            <p className="px-4 py-3 text-[13px] text-zinc-500">No matches for “{debounced}”.</p>
+            <p className="px-4 py-3 text-[13px] text-zinc-500">{noMatchesText(debounced)}</p>
           ) : data ? (
             <div className="max-h-[min(68vh,540px)] overflow-y-auto py-2" role="listbox" aria-label="Search results">
               {ownedCount > 0 ? <GroupLabel>In your library</GroupLabel> : null}
@@ -336,7 +299,7 @@ export function GlobalSearch() {
           scores, synopsis, cast — with Add/Download that match the row). */}
       {detailDisc ? (
         <SuggestDetailModal
-          item={toSuggestItem(detailDisc, inWatchlist(detailDisc))}
+          item={discoveryToSuggestItem(detailDisc, inWatchlist(detailDisc))}
           busyAdd={addingId === detailDisc.tmdb_id}
           busyDownload={false}
           onAdd={() => addDisc(detailDisc)}

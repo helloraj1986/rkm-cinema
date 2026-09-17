@@ -485,6 +485,37 @@ checkEqual(OfflineFailure.http(.neverPrepared).sentence,
            "This title has not been prepared on the server yet",
            "the 404 sentence tells the user what to do")
 
+// ⚠⚠ THE SERVER'S OWN SENTENCE WINS (his report, 2026-09-18: *"for the offline download the ios still
+// have these logs, where it says storage is full"*). The server's refusal had stopped lying the day
+// before and the phone had not: the detail was parsed off the wire and then discarded, so a 507 read
+// "the download storage is full" whether the disk was full or the budget was smaller than the film.
+// The text below is the backend's own budget sentence (`backend/services/offline.py::_check_cap`)
+// with the numbers off his log — a 4.63 GB title against `RKM_OFFLINE_MAX_BYTES=10000` (bytes).
+let hisBudgetRefusal = "this title alone is about 4.3 GB, which is larger than the entire offline "
+    + "budget of 0.0 GB (RKM_OFFLINE_MAX_BYTES) — it can never be staged while that budget stands. "
+    + "Raise the budget, or set it to 0 for no budget at all."
+checkEqual(OfflineFailure.http(.storageFull, detail: hisBudgetRefusal).sentence,
+           hisBudgetRefusal,
+           "the server's own sentence is what the row says — not the client's canned one")
+check(!OfflineFailure.http(.storageFull).sentence.contains("RKM_OFFLINE_MAX_BYTES"),
+      "without the server's words, the canned sentence names no knob — so it must not pretend to")
+checkEqual(OfflineFailure.http(.packaging, detail: "Still packaging (1234 B so far) — try again shortly").sentence,
+           "Still packaging (1234 B so far) — try again shortly",
+           "a 409's own words reach the row too")
+checkEqual(OfflineFailure.http(.storageFull).sentence, "The server's download storage is full",
+           "with no words from the server, the canned sentence stands in")
+checkEqual(OfflineFailure.http(.serverError, detail: "").sentence, "The server had an error",
+           "an EMPTY detail is not a sentence — the canned one stands in")
+checkEqual(OfflineHTTPVerdict.classify(503).sentence(detail: "the disk is on fire"),
+           "the disk is on fire",
+           "a 5xx defers to the server as well — no canned claim survives beside it")
+checkEqual(OfflineHTTPVerdict.classify(418).sentence(detail: "short and stout"),
+           "Unexpected answer from the server (HTTP 418) — short and stout",
+           "an unexpected status keeps its CODE, and the detail rides along beside it")
+checkEqual(OfflineFailure.http(.rangeNotSatisfiable).sentence,
+           "The server rejected the resume point — the download will start again from the beginning",
+           "a 416 has no body to prefer, so the canned sentence is what it still says")
+
 // MARK: - Cookies — the native session
 
 section("cookies")

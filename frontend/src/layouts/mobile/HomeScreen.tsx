@@ -10,6 +10,7 @@ import { useCurrentProfile } from "../../features/auth/useCurrentProfile";
 import { mayScanLibrary } from "../../features/auth/lib";
 import {
   artTone,
+  backdropUrl,
   episodeItemCode,
   fmtRuntime,
   heroEyebrow,
@@ -23,7 +24,6 @@ import {
   scanFailure,
 } from "../../features/library/lib";
 import { toast } from "../../features/watchlist/toast";
-import { api } from "../../lib/api/client";
 
 /**
  * `/library/home` on a PHONE (MOBILE_FIRST_UI_PLAN §3.1, phase M3) — the same page the desktop
@@ -136,7 +136,7 @@ export function HomeScreen() {
           <div aria-hidden="true" className={`absolute inset-0 art-${artTone(title)}`} />
           {!backdropFailed ? (
             <img
-              src={api.backdropUrl(hero.item_id, 1200)}
+              src={backdropUrl(hero.item_id, 1200)}
               alt=""
               referrerPolicy="no-referrer"
               onError={() => setBackdropFailed(true)}
@@ -203,10 +203,11 @@ export function HomeScreen() {
           `<section aria-label>`. Wrapping it added a SECOND "Continue Watching" to the screen — his
           report (2026-09-17): "on mobile screen i can see two continue watching sections". The desktop
           Home never had this bug because it renders the row bare; this screen now does the same.
-          ⚠ The row renders every Continue Watching title, the hero included, so the hero can also
-          appear as a card in it — flagged in KNOWN_ISSUES rather than changed here, because the
-          desktop behaves identically and that is his call. */}
-      {rows.cwItems.length > 1 ? (
+          ⚠ The row renders every Continue Watching title EXCEPT the one the hero is already showing
+          — his decision (2026-09-17): the rail excludes the hero by item id (`lib.ts::withoutHero`),
+          so a title can no longer appear twice on one page. That rule is in the shared view model, so
+          the desktop Home moved with this screen. */}
+      {rows.hasCwRail ? (
         <ContinueWatchingRow
           items={rows.cwItems}
           onQuickPlay={handlers.onQuickPlay}

@@ -768,7 +768,7 @@ submit" means here.
 **Done when (phone, < 1 min):** sign in, pick a profile, switch profile, and sign out — with no pinch, no
 zoom when a field is focused, and nothing clipped by the home indicator.
 
-### M3 — Library & search
+### ✅ M3 — Library & search · **BUILT**
 **Scope.** E3 · E4 · E5 · E8 extractions, `HomeScreen` (the Continue Watching hero), `BrowseScreen`,
 `SearchScreen`, mobile `PosterCard` (**actions always visible — §7.3**), the toolbar and filters as
 sheets, empty and degraded states, virtualisation above ~200 rows. ⚠ Three couplings from §7.3 are in
@@ -778,12 +778,24 @@ below 640px**, and the skeleton grid matching `--m-grid-cols`.
 on every poster without a hover**; nothing overflows at 320px; the iPad at 834px shows more columns with
 no new component.
 
-### M4 — Title detail & request
+✅ **Built, 2026-09-17** — Home (M3 part 4), Browse, the four extractions, the poster actions (part 3)
+and **Search** (the session that closed the phase). The tablet's extra columns come from
+`--m-grid-cols` alone. ⚠ One deliberate deviation: the mobile card is the SAME `MediaCard`, not a new
+`PosterCard`, because `.rkm-reveal-hit` fixed the hover problem for every card at once (§7.3).
+
+### M4 — Title detail & request · **PARTLY BUILT — the RequestSheet needs his decision (KNOWN_ISSUES §7)**
 **Scope.** E6 + E7 extractions, `DetailScreen` (backdrop hero, pinned action bar in the thumb zone),
 `EpisodeList`, `RequestSheet` with quality profiles and the **ambiguity list as a list**, the honest
 404/502/503 sentences, and the `ItemDetail` reuse decision (§4.3.2).
 **Done when (phone, < 1 min):** find a title, open it, and request it end to end — including the
 "2 titles matched, pick one" case, and each error shown as a sentence rather than a stack.
+
+✅ **E6 · E7 · E10 · E11 and the `DetailScreen` are built** (2026-09-17), with the reuse decision taken
+as §4.3.2's second option — extractions rather than a fork: `ItemDetailContent` stays the desktop
+presentation and `DetailScreen` is the phone's, both reading the same rules.
+⚠ **The `RequestSheet` is blocked on grounds that are not mine to decide**: the request route takes no
+quality argument, and the 409's candidates carry no id, so neither half of the wireframe can act.
+See `KNOWN_ISSUES.md` §7 for the three honest options.
 
 ### M5 — Player
 **Scope.** `PlayerScreen`: landscape-first, `playsinline` + `webkit-playsinline`, tap-to-reveal chrome

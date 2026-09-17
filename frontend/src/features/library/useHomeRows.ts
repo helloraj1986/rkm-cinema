@@ -1,5 +1,5 @@
 import { useContinueWatching, useLibraryItems, useLibraryRecent, useRecentlyWatched } from "./api";
-import { continueWatchingItems, pickHomeHero, recentlyAddedItems } from "./lib";
+import { continueWatchingItems, pickHomeHero, recentlyAddedItems, withoutHero } from "./lib";
 import type { MediaItem } from "../../lib/api/client";
 
 /**
@@ -34,6 +34,8 @@ export function useHomeRows(): {
   cwItems: MediaItem[];
   hero: MediaItem | null;
   heroIsCw: boolean;
+  /** The Continue-Watching rail (hero EXCLUDED, his rule) — empty means the rail does not render. */
+  hasCwRail: boolean;
   recentlyPlayed: MediaItem[];
   hasRecentlyPlayed: boolean;
   recentlyAdded: MediaItem[];
@@ -45,17 +47,22 @@ export function useHomeRows(): {
   const recent = useLibraryRecent();
 
   const all = items.data?.items ?? [];
-  const cwItems = continueWatchingItems(continueWatching.data?.items);
+  const cwAll = continueWatchingItems(continueWatching.data?.items);
   const recentlyAddedAll = recentlyAddedItems(recent.data?.recent);
   const recentlyPlayedAll = recentlyWatched.data?.items ?? [];
-  const hero = pickHomeHero(cwItems, recentlyAddedAll, all);
+  const hero = pickHomeHero(cwAll, recentlyAddedAll, all);
+  // ⚠ The hero is picked from the WHOLE Continue-Watching set and then REMOVED from the rail (his
+  // decision, 2026-09-17 — see `withoutHero`): the same title appearing big at the top and as the
+  // first card below reads as a de-duplication bug. Both Homes read `cwItems`, so both move together.
+  const cwItems = withoutHero(cwAll, hero);
 
   return {
     items,
     all,
     cwItems,
     hero,
-    heroIsCw: Boolean(hero && cwItems.some((i) => i.item_id === hero.item_id)),
+    heroIsCw: Boolean(hero && cwAll.some((i) => i.item_id === hero.item_id)),
+    hasCwRail: cwItems.length > 0,
     recentlyPlayed: recentlyPlayedAll.slice(0, RECENTLY_PLAYED_ROW),
     hasRecentlyPlayed: recentlyPlayedAll.length > 0,
     recentlyAdded: recentlyAddedAll.slice(0, RECENTLY_ADDED_ROW),

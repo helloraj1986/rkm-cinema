@@ -7,10 +7,20 @@
 import type {
   ConfiguredLibraryShape,
   DetailPlay,
+  EpisodeShape,
   MediaItem,
   SimilarItem,
   SuggestResult,
 } from "../../lib/api/client";
+import type { IconName } from "../../components/ui/Icon";
+import { episodeCode } from "../playback/lib";
+
+/**
+ * ⚠ Re-exported for the mobile views, for the reason `search/lib.ts` records: `layouts/importRule.ts`
+ * bans `layouts/mobile/` from importing the API client, and a phone screen still has to NAME the rows
+ * it renders. A type carries no behaviour, so it travels with the hooks that produce it.
+ */
+export type { EpisodeShape, MediaItem } from "../../lib/api/client";
 
 /**
  * Poster proxy URL for a library item — by ITEM ID, or null.
@@ -25,6 +35,19 @@ export function posterUrl(item: Pick<MediaItem, "item_id">): string | null {
     return `/api/jellyfin/poster?id=${encodeURIComponent(item.item_id)}&width=500`;
   }
   return null;
+}
+
+/**
+ * Backdrop proxy URL for a library item — the wide hero art.
+ *
+ * ⚠ Same reason as `posterUrl`: this is the URL an item's artwork is addressed by, and the mobile
+ * views are forbidden (`layouts/importRule.ts`) from reaching into `lib/api/client` for it. The
+ * client keeps its own `backdropUrl` for the desktop views that already use it; the SHAPE of the
+ * route (`/api/jellyfin/backdrop?id=…&width=…`) is stated here as well so a phone screen can build it
+ * without a second client.
+ */
+export function backdropUrl(itemId: string, width = 1600): string {
+  return `/api/jellyfin/backdrop?id=${encodeURIComponent(itemId)}&width=${width}`;
 }
 
 export type Marker = { kind: "watched" } | { kind: "resume"; percent: number } | { kind: "none" };
@@ -482,6 +505,163 @@ export function resumePercent(item: MediaItem): number {
   const rt = Number(item.runtime || 0);
   if (pos <= 0 || rt <= 0) return 0;
   return Math.min(100, Math.round((pos / rt) * 100));
+}
+
+// ---------------------------------------- The Home hero's rail (2026-09-17, his decision)
+/**
+ * The Continue Watching rail WITHOUT the title the hero is already showing.
+ *
+ * ⚠ **A product decision, taken by him on 2026-09-17, and it is a RULE rather than a view's
+ * preference** — which is why it lives here and both Homes inherit it. Before this, the rail rendered
+ * every Continue-Watching title including the hero, so the same film appeared twice on one page: once
+ * big at the top, once as the first card in the rail below. That reads as a de-duplication bug, and
+ * every major streaming app avoids it. His wording: *"exclude the hero title from the rail … matches
+ * the standard pattern"*.
+ *
+ * ⚠ **Matched by ITEM ID, never by position** (his own note). The hero is picked from a different
+ * list than the rail is built from, and it rotates as things are watched — a positional exclusion
+ * (`slice(1)`) would silently drop the wrong card the moment the two lists disagree, which is the
+ * kind of bug that looks like "the rail is missing a title" and never gets traced back to here.
+ *
+ * ⚠ A null hero (an empty library, or a Home with nothing to feature) removes nothing: the rail is
+ * then simply all of Continue Watching.
+ */
+export function withoutHero(items: MediaItem[], hero: MediaItem | null): MediaItem[] {
+  if (!hero) return items ?? [];
+  const heroId = hero.item_id;
+  if (!heroId) return items ?? [];
+  return (items ?? []).filter((item) => item.item_id !== heroId);
+}
+
+// ---------------------------------------- Episode progress (M4 · extraction E6)
+/**
+ * An episode's progress, as ONE rule — the arithmetic AND the copy that reads it out.
+ *
+ * ⚠ Until M4 the expression `Math.min(100, Math.round((pos / runtime) * 100))` was written inline in
+ * `ItemDetail`'s episode row, and the sentence under it was assembled from a second, hand-rolled
+ * remainder. M4 gives the phone its own episode list, which is exactly the second copy that would
+ * have drifted: two screens showing two different percentages for the same episode, and nothing in
+ * the diff to say which one was right. It is also why `layouts/importRule.ts` bans `* 100` in a mobile
+ * view — the rule has to exist BEFORE the view does, or the view invents its own.
+ *
+ * ⚠ `percent` is returned even for a finished episode (the desktop row never renders it there): the
+ * caller decides what to show. `inProgress` — mid-play AND not finished — is the flag that decision
+ * keys off, and `remainingLabel` is empty unless there is genuinely something left to count down.
+ */
+export interface EpisodeProgress {
+  /** 0–100, rounded. 0 when the runtime is unknown (never a division by zero, never a fake bar). */
+  percent: number;
+  /** Started and not finished — the row's accent state, and the only case with a countdown. */
+  inProgress: boolean;
+  /** "1h 04m left", or "" — never "0m left", and never a "· left" with nothing in front of it. */
+  remainingLabel: string;
+}
+
+export function episodeProgress(
+  ep: Pick<EpisodeShape, "played" | "playback_position" | "runtime">,
+): EpisodeProgress {
+  const pos = Number(ep.playback_position) || 0;
+  const runtime = Number(ep.runtime) || 0;
+  const percent = runtime > 0 ? Math.min(100, Math.round((pos / runtime) * 100)) : 0;
+  const inProgress = !ep.played && pos > 0;
+  // ⚠ TWO conditions, not one. `Math.max(1, …)` floors the readout at a minute — an episode two
+  // seconds from the end says "1m left", not "0m left" (the desktop row's own floor) — and the
+  // runtime test is what stops an episode whose runtime the server did not send reading
+  // "0% watched · 1m left", which is a countdown against a length nobody knows.
+  const remainingLabel =
+    inProgress && runtime > 0 ? `${fmtRuntime(Math.max(1, runtime - pos))} left` : "";
+  return { percent, inProgress, remainingLabel };
+}
+
+// ---------------------------------------- Detail copy & the series verb (M4)
+/**
+ * ⚠ The detail screen's own sentences, in ONE place. M4 gives the phone its own screen and the
+ * desktop keeps the modal — the same title, the same failure, so the same words: a screen that
+ * re-words "we couldn't find that title" is a copy no regex can catch (§3.4).
+ */
+export const DETAIL_NOT_FOUND_TITLE = "We couldn't find that title in the library.";
+export const DETAIL_NOT_FOUND_SUB = "It may have been removed or the link is stale.";
+export const DETAIL_PARTIAL_WARNING = "Couldn't load full details — playing still works.";
+
+/**
+ * The series primary button's label — "Resume S1E4" / "Play S1E4" / "Replay S1E4" / "Play".
+ *
+ * ⚠ Extracted with M4 rather than copied: the desktop page computed it inline from the next playable
+ * episode, and the phone's screen needs the same four cases. A series' primary verb is the one thing
+ * a person reads before tapping, and two surfaces disagreeing about it is a bug with no symptom
+ * until someone is on the wrong episode.
+ */
+export function seriesPlayLabel(
+  target: Pick<EpisodeShape, "season" | "episode" | "playback_position"> | null,
+  first: Pick<EpisodeShape, "season" | "episode"> | null,
+): string {
+  if (target) {
+    return `${(Number(target.playback_position) || 0) > 0 ? "Resume" : "Play"} ${episodeCode(target)}`;
+  }
+  return first ? `Replay ${episodeCode(first)}` : "Play";
+}
+
+/**
+ * The detail page's meta line, as parts: year · runtime (or season count) · certification.
+ * ⚠ Unknown values are DROPPED, never rendered as an empty separator — the desktop built this inline
+ * and M4's screen reads it, so the rule (and the dropping) lives here.
+ */
+export function detailMetaBits(f: {
+  year: number | null | undefined;
+  runtimeSec: number | null | undefined;
+  isSeries: boolean;
+  seasonCount: number;
+  certification: string | null | undefined;
+}): string[] {
+  const seasons =
+    f.seasonCount > 0 ? `${f.seasonCount} season${f.seasonCount > 1 ? "s" : ""}` : "";
+  return [
+    f.year != null ? String(f.year) : "",
+    f.isSeries ? seasons : fmtRuntime(f.runtimeSec),
+    f.certification || "",
+  ].filter(Boolean);
+}
+
+// ---------------------------------------- The secondary actions (M4 · extraction E10)
+/**
+ * Which actions a title's ⋯ offers — ONE rule, for the desktop menu AND the phone's sheet.
+ *
+ * ⚠ The desktop built this array inline inside `ItemDetail`'s JSX: three conditional spreads around
+ * three `PopupMenu` items. M4 adds a second surface for the same three actions (the phone's More
+ * sheet — a `Dialog`-style popup is not a thumb target), and a second copy of "when does Play from
+ * beginning exist" is how the phone comes to offer a restart on an untouched film, or to hide
+ * "Mark as unplayed" on a title the person just finished.
+ *
+ * The FACTS come from the caller (`isSeries`, `inProgress`, `played`, `hasExternalLink`) because the
+ * things they are derived from live in different places — the list query, the detail probe and the
+ * item's own `jellyfin_url`. The DECISION lives here, and the copy lives next to it so the two
+ * surfaces read the same words.
+ */
+export type MoreActionKey = "restart" | "untoggle" | "jellyfin";
+
+export interface MoreActionFacts {
+  isSeries: boolean;
+  /** Mid-play — `detailInProgress(detail.play)`. */
+  inProgress: boolean;
+  played: boolean;
+  /** The item carries a link into the media server's own web UI. */
+  hasExternalLink: boolean;
+}
+
+export const MORE_ACTION_COPY: Record<MoreActionKey, { label: string; icon: IconName }> = {
+  restart: { label: "Play from beginning", icon: "play" },
+  untoggle: { label: "Mark as unplayed", icon: "check" },
+  jellyfin: { label: "Open in Jellyfin", icon: "external" },
+};
+
+export function moreActionsFor(f: MoreActionFacts): MoreActionKey[] {
+  const keys: MoreActionKey[] = [];
+  // A series never offers a restart: "from the beginning" is a movie's verb, and a series' first
+  // episode is reached from the episode list.
+  if (!f.isSeries && f.inProgress) keys.push("restart");
+  if (f.played) keys.push("untoggle");
+  if (f.hasExternalLink) keys.push("jellyfin");
+  return keys;
 }
 
 // ---------------------------------------- Progressive mounting (M3 · the latency cure)

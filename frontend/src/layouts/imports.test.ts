@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync, readdirSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import {
   BANS,
   findForbiddenSources,
@@ -101,5 +103,48 @@ describe("which files the rule governs", () => {
     ["src/features/library/lib.ts", false],
   ])("%s → %s", (path, expected) => {
     expect(isMobileViewFile(path)).toBe(expected);
+  });
+});
+
+/**
+ * ⚠ THE HALF THAT WAS MISSING, and it mattered: until M4 this file tested the RULE against fixture
+ * strings and never read a real mobile file. So the ban was documentation with unit tests next to it,
+ * and `HomeScreen.tsx` — a file in this directory — imported `lib/api/client` directly for a backdrop
+ * URL for a whole phase without anything going red. A check nobody points at the tree is a check that
+ * only knows what its author remembered to plant.
+ *
+ * The scanner is the same pure function the fixtures above exercise; what is new is that it is fed
+ * every file in `src/layouts/mobile`.
+ */
+describe("the ban, applied to the REAL mobile files", () => {
+  const dir = fileURLToPath(new URL("./mobile", import.meta.url));
+
+  const files = readdirSync(dir)
+    .filter((name) => /\.(?:ts|tsx)$/.test(name))
+    .map((name) => ({ path: `src/layouts/mobile/${name}`, source: readFileSync(`${dir}/${name}`, "utf8") }))
+    .filter((f) => isMobileViewFile(f.path));
+
+  it("reads the directory it is supposed to police", () => {
+    // ⚠ Without this, a rename or a wrong path makes the scan below pass by finding nothing — the
+    // exact failure mode this whole block exists to fix.
+    expect(files.length).toBeGreaterThanOrEqual(5);
+    expect(files.map((f) => f.path)).toContain("src/layouts/mobile/HomeScreen.tsx");
+    expect(files.map((f) => f.path)).toContain("src/layouts/mobile/SearchScreen.tsx");
+  });
+
+  it("finds no violation in any of them", () => {
+    const violations = files.flatMap((f) => findForbiddenSources(f.path, f.source));
+    expect(describeViolations(violations)).toBe("");
+  });
+
+  it("⚠ would FIND one — the same scanner, fed a file that breaks the rule", () => {
+    // Falsification, kept permanently: proving the scan CAN fail is the only thing that makes the
+    // green run above evidence rather than a print statement.
+    const planted = [
+      { path: "layouts/mobile/Planted.tsx", source: `import { api } from "../../lib/api/client";` },
+    ];
+    const violations = planted.flatMap((f) => findForbiddenSources(f.path, f.source));
+    expect(violations).toHaveLength(1);
+    expect(violations[0].rule).toBe("no-direct-api-client");
   });
 });

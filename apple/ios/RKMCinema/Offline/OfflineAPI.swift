@@ -107,7 +107,9 @@ enum OfflineAPIError: Error, LocalizedError {
 
     var failure: OfflineFailure {
         switch self {
-        case .remote(let verdict, _): return .http(verdict)
+        // ⚠ The detail is CARRIED, not discarded — see `OfflineFailure.http`. Dropping it here is what
+        // made every 507 on his phone read "the download storage is full" whatever the server had said.
+        case .remote(let verdict, let detail): return .http(verdict, detail: detail)
         case .transport(let transport): return .transport(transport)
         case .unexpectedBody(let detail): return .local("Unexpected answer from the server: \(detail)")
         case .notConfigured: return .local("No server address is set.")

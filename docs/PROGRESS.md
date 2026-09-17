@@ -1,8 +1,306 @@
+## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-18, after session 2) · branch **`feat/mobile-m3-library`** · tip **`581f226`** · **15 commits ahead of `dev`**, tree clean, pushed
+
+⚠ **Session 2 closed item 5 below — the offline `507` was his `.env`, not his disk — and found a second
+defect standing behind it: the phone was throwing the server's own sentence away.** Read the 507 section
+below before touching the offline code. Half of it needs no iOS rebuild and can be tried in one command.
+
+**Say this first:** *"continue rkm-cinema — pick up the RESUME-HERE block."* Then read this and
+`KNOWN_ISSUES.md`'s status table (the live list of open defects and their state).
+
+### Built this session (all committed + pushed, none merged)
+
+| Area | State |
+|---|---|
+| **M3 — Library & search** | **COMPLETE** — Home, Browse, Search, E3/E4/E5/E8; marked BUILT in the plan §11. |
+| **M4 — Title detail** | **Screen built** (4:3 backdrop, pinned action bar, episode list, More sheet) + E6 · E7 · E10 · E11 and rules `seriesPlayLabel` / `detailMetaBits` / `withoutHero`. ⚠ **`RequestSheet` NOT built — blocked on his decision.** |
+| **His answer round** | #5 rail-excludes-hero `2ef995b` · #1 Watched control `351c7c4` · #3 Switch Profile `bfac863` · #7 Cancel `c0e2f9f` · offline budget `ac57b65` · #6 CLOSED (not reproducible) |
+| **Import ban** | `imports.test.ts` now scans the REAL files in `src/layouts/mobile`, not fixtures only — it found one violation (`HomeScreen` importing the API client) and that is fixed. |
+| Gates | frontend `typecheck` clean · `npx vitest run` **551 passed / 20 files** · backend `pytest` **143 passed** (offline/render/config) · `check_md_links.py` clean |
+
+### ⚠ SIX THINGS ARE BUILT BUT **NOT VERIFIED ON HIS DEVICE** — never describe them as working
+
+1. **M3 Search** + **M4 Detail** screens — measured headlessly at 320/390 only.
+2. **#1 Watched control** — the detail tile was **not** re-measured: the harness probe last ran BEFORE
+   it, so its assertion `tiles == ["Watched","More"]` is knowingly stale (that fixture is mid-play →
+   the label is now `Unwatched`). Re-run the probe before calling that screen "measured".
+3. **#3 Switch Profile** — overflow measured fixed (0 at 320–430), but a headless browser cannot do an
+   iOS finger-drag or raise the keyboard. His phone is the acceptance.
+4. **#7 Cancel** — Swift fix, typecheck gate PASS, **no Mac build and nothing anywhere taps Cancel**
+   (`check_offline_page.py` only asserts the word renders; `check_offline_download.py` has no cancel
+   pattern). The log lines that decide (A) vs (B) are in §7a.
+5. **Offline staging budget** — **ANSWERED 2026-09-18 (session 2): the BUDGET, not the disk.** His `.env`
+   said `RKM_OFFLINE_MAX_BYTES=10000` — ten KILOBYTES — so the cap was 10 KB against a 4.63 GB film and
+   `_check_cap` refused every download. Fixed in `.env` (12 GiB, the code's own default) and confirmed
+   through `render_config.parse_env_file` + `build_api_vars`; **this half needs NO iOS rebuild** —
+   `.\rkm-cinema.ps1 apply`, then tap Download. ⚠ The advice that stood here — *"`docker compose logs
+   --tail=80 api` now says which in words"* — was **FALSE**: the route logged nothing at all, only
+   uvicorn's `507 235`. It logs the sentence now (`581f226`).
+6. **NEW (2026-09-18): the server's sentence reaching the row** — Swift. `OfflineFailure` now CARRIES the
+   server's `detail` (it was destructured away on the way to the sentence), so a `507` can say *which*
+   `507` it is. 9 core checks + a falsify mutation. ⚠ **Needs a Mac build**: until his phone is rebuilt it
+   still reads "The server's download storage is full" for every `507`.
+
+### NEXT STEPS, in order
+
+1. **#2 — the poster-toggle sweep (decided by him; no decision needed).** The details view OWNS the
+   watched control; the poster only REFLECTS status. Delete `MediaCard`'s toggle button (its
+   `rkm-reveal-hit` bottom row) and the `Mark as watched/unplayed` item in its ⋯ menu, then drop the
+   `onToggleWatched` prop at six call sites: `LibraryHomeView`, `LibraryFolderView`, `DiscoverView`,
+   `PosterRail`, `HomeScreen`, `BrowseScreen`. The tick MARKER on the art stays. → kills the "two green
+   ticks" report.
+2. ✔ **DONE 2026-09-18 (session 2): the five render tests are falsified.** All five went RED and the file
+   was restored byte-identically. The mutations, each one line in `render_config.py::build_api_vars`:
+   drop the staging assignment · change the `12 * 1024 ** 3` default · hardcode over an env override ·
+   `str(int(str(env.get(…) or "0")) or default)` — the `"0"`-swallowing bug this test exists for ·
+   remove the blank fallback. Same lesson as the Swift core's `--falsify`: a check that has never been
+   reverted proves nothing.
+3. **Re-run the detail-screen harness probe** with the corrected tile label (see #2 above).
+4. **His phone round** on those six items → on his word, **merge to `dev`** (15 commits is a lot of
+   unreviewed branch; he asks for merges).
+5. **M5 — Player** (plan §11: landscape-first, `playsinline`, tap-to-reveal chrome, thumb scrubber,
+   ±10 s, lock, resume, **204-as-success**), then M6 subtitles · M7 downloads (bridge) · M8 admin ·
+   M9 polish + virtualisation + desktop regression report + ADR-0011 + `ARCHITECTURE.md` §12.
+
+### ⏳ PENDING DECISIONS FROM HIM (ask standalone, never buried in a long update)
+
+* **M4's `RequestSheet` — (a), (b) or (c)?** (`KNOWN_ISSUES` §7.) The request route takes no quality
+  argument (a 1080p/720p/4K picker would be a control that cannot act) and the 409's `candidates` carry
+  **no id**, so "pick one" has nothing to re-request with. ⚠ Also a real defect either way: `ApiError`
+  (`lib/api/client.ts:357`) keeps `detail` as a STRING while a 409's detail is an OBJECT, so the
+  candidates never reach the browser and the error arrives as `POST /api/media/… -> 409` — not a
+  sentence.
+* **Merge M3+M4 to `dev` now, or after his phone round?**
+* **The phone's Similar row** is deliberately not rendered — the desktop's is a TMDB rail whose tap
+  opens a centred `Dialog`, which on a phone must become a sheet.
+
+### ⚠ TRAPS THAT COST REAL TIME HERE — carry them forward
+
+* **`pgrep -f "[b]in/vite" | xargs -r kill -9` before trusting ANY harness number.** Vite's watcher does
+  not fire on this mount; a stale server answers from the PRE-EDIT module.
+* **When a probe disagrees with the screen, check the FIXTURE first.** Two of three detail-probe
+  "failures" were fixture bugs (a movie seeded as PLAYED rather than mid-play; an `episodeRows` regex
+  matching only the primary). The screen was right both times.
+* **A Swift interpolation written through a patch tool can land as a literal `\\(` — and it COMPILES.**
+  `check-apple-typecheck.sh` will not catch it; the log prints `\(identifier)`. Build such strings by
+  concatenation and `grep -F '\\('` the file after.
+* **`.env` is NOT the container's environment.** The api reads `.rkm.env`, written by
+  `render_config.py` from a curated dict — a key the renderer does not pass is unreachable from
+  configuration no matter what an error message advises.
+* **The root `overflow-x: clip` guard fixes nothing** — verified applied while the document still
+  scrolled 172px. Measure `documentElement.scrollWidth` vs `innerWidth`, then find the element whose
+  min-content floors a grid track (that was the Switch Profile bug).
+
+### HOUSEKEEPING
+
+* ⚠ **The `rkm-cinema` skill's `SKILL.md` is at the 100k write limit — patches are REFUSED.** This
+  session's mobile state went to `references/mobile-ui-status.md` instead. Split SKILL.md into
+  references before the next attempt to update it, or the skill stays frozen.
+* The mobile screens are measured with `harness/search-mobile-frame.*` and
+  `harness/detail-mobile-frame.*`; both expose `window.__probe()`.
+
+---
+
 ⚠ **Open defects live in [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md)** — read it before starting work. This
 file is the record of what is DONE; that one is the record of what is BROKEN. Fixing an entry moves it
 from there to here.
 
 ---
+
+---
+
+## ▶ ✅ **THE `507`, ANSWERED FROM HIS OWN LOG — and the client defect standing behind it** (2026-09-18, session 2) · branch **`feat/mobile-m3-library`** · `581f226`
+
+He sent the phone's log with the report: *"currently for the offline download the ios still have these
+logs, where it says storage is full"* — `POST /api/offline/prepare -> 507`, then
+`offline download stopped · The server's download storage is full (OfflineDownloads.swift:901)`.
+
+**The first cause is a number in his `.env`, and it is not the disk.** `RKM_OFFLINE_MAX_BYTES=10000`
+is ten **KILOBYTES** — the knob is bytes, the name says so, and `settings.py` passes it through
+verbatim — so the cap was 10 KB against a 4.63 GB film and `_check_cap`'s BUDGET branch refused every
+download, correctly.
+**How "budget, not disk" was settled with no credentials and no Mac: the two refusals are byte-distinct.**
+The live server's body measured **235 bytes**, which is the budget sentence exactly —
+`{"detail": "this title alone is about 4.3 GB, which is larger than the entire offline budget of 0.0 GB
+(RKM_OFFLINE_MAX_BYTES) — it can never be staged while that budget stands. Raise the budget, or set it to
+0 for no budget at all."}` under Starlette's `(",", ":")` separators (one byte fewer than `json.dumps`
+defaults) — where the DISK sentence is **208** bytes with a plausible 50 GB free. Nothing was full: a
+policy number was smaller than the film.
+`.env` (untracked, gitignored — it is HIS file) now reads `12884901888` = 12 GiB, the code's own default,
+confirmed through `render_config.parse_env_file` + `build_api_vars`. ⚠ **This half needs no iOS rebuild.**
+
+**The second cause is why his screen never changed: the phone threw the server's sentence away.**
+`OfflineAPIError` parsed `detail` off the wire and carried it — and `OfflineAPIError.failure` then
+destructured it away (`case .remote(let verdict, _): return .http(verdict)`), while
+`OfflineFailure.sentence` rebuilt the message from the status alone (`verdict.sentence(detail: nil)`).
+**Every `507` on that phone read "The server's download storage is full" whatever the server had said** —
+so `ac57b65`'s server-side fix could not be seen to work; the client undid it one frame later.
+The rule now, in `OfflineHTTPVerdict.sentence(detail:)`: **the server's own sentence wins when it sends
+one**, and `cannedSentence` is only the fallback for a status with no words to prefer — a `416` carries
+none by design, and `unexpected` keeps its HTTP code because there the CODE is the diagnostic and no
+canned claim exists to be corrected. `OfflineFailure.http(verdict, detail: String? = nil)` carries it.
+9 new checks in `offline-core-tests/main.swift`, one of them his exact refusal with the numbers off his log.
+
+**Third: the container log could not say it either, which the previous handoff claimed it could.**
+`offline_prepare` logged nothing, so `docker compose logs api` held only uvicorn's own `507 235`. Both
+`except OfflineError` sites in `backend/api/routes/offline.py` now warn with the sentence
+(`offline: prepare refused (507) for <id>: …`), pinned by
+`test_the_refusal_is_readable_in_the_SERVER_LOG` and falsified — deleting the log line turns it RED.
+**This is the half that makes the next diagnosis possible without a rebuild.**
+
+Gates, all run in the sandbox:
+* `python3 apple/scripts/check-offline-core.py` — **PASS, 517 checks** · `--falsify` — **67/67 rules
+  reverted, every one went red on the check it protects**, including the new one
+  (`[24] the server's own sentence beating the canned one`).
+* `bash apple/scripts/check-apple-typecheck.sh` — **PASS**, 11 files, the 2 Darwin-only API errors
+  filtered by name. ⚠ Types and call shapes only — NOT behaviour.
+* backend `pytest` — **144 passed** (61 offline_api including the new log test, + 83 render/config).
+* `tools/check_md_links.py` — 61 files, all links resolve.
+* ⚠ `pytest` needs **`--capture=no`** in this sandbox: some test removes pytest's capture tempfile and
+  the session dies in teardown (`FileNotFoundError` in `capture.py::snap`), which reads as a crash while
+  every test passes. Pre-existing, unrelated, and it cost time twice.
+
+**What he runs to make it take effect:**
+1. `.env` half (no rebuild): `.\rkm-cinema.ps1 apply` → tap Download. If it still refuses,
+   `docker compose logs --tail=50 api | grep "offline: prepare refused"` now names the cause.
+2. Swift half (`581f226`): a Mac build, then the row shows the server's own words — which is the only
+   way to tell "the staging disk is full" from a budget that is smaller than the film.
+
+---
+
+## ▶ ✅ **HIS ANSWER ROUND, AND THE THREE RULES THAT CAME OUT OF IT** (2026-09-17, session 2) · branch **`feat/mobile-m3-library`**
+
+He reproduced and answered every open defect. Three of them were DECISIONS, and decisions are rules —
+which is why two of them landed as `lib.ts` functions with tests rather than as edits to one screen.
+
+**§5 — THE RAIL EXCLUDES THE HERO** (`2ef995b`). A title could appear twice on one Home: hero at the
+top, first card in the rail below. His ruling: exclude it, matched by **item ID, never position**, as
+one shared utility with a unit test — because the hero is picked from a different list than the rail is
+built from and rotates as things are watched. `library/lib.ts::withoutHero()` + the shared view model
+`useHomeRows`, so BOTH Homes inherit it and neither can drift. ⚠ `heroIsCw` now reads the unfiltered
+set (or a CW hero would stop reporting itself as one), and the phone's rail condition became
+`hasCwRail` — with the hero excluded, one remaining title is a legitimate one-card rail, where the old
+`cwItems.length > 1` existed only to suppress a rail holding nothing but the hero. Falsified
+positionally: `items.slice(1)` turned FOUR of the five tests RED, including "removes the hero's own
+card" — with the hero mid-list, dropping the first item removes the wrong title.
+
+**§1 — THE WATCHED CONTROL SHOWS ITS STATE AND ACKNOWLEDGES THE TAP** (`351c7c4`). His report, from the
+device: *"the Watched button gives no indication of its default (unwatched) state, and on tap the
+button itself shows no state change or feedback — only a green tick and label appear elsewhere."* The
+POST was never broken; the control was unreadable. Three fixes, each a rule:
+* the label carries the state — `Unwatched` / `Watched`, not one word and an absence;
+* the tap is acknowledged — `Saving…` and disabled while the request is in flight, so a second tap
+  cannot flip it back;
+* ⚠ **a failed tap is no longer silent** — `useMutateItemState` had NO `onError` at all (no toast, no
+  revert, no clue). It now shows the server's own sentence, and it lives in the HOOK because every
+  watched toggle in the app goes through it.
+`features/library/WatchedAction.tsx` is the one control, shared by the desktop detail and the phone's
+screen, and it OWNS the mutation rather than taking a handler prop — a caller that passes its own
+handler is a caller that can forget the feedback.
+
+**§6 — CLOSED.** He could not reproduce a blank Home after a profile pick, so it is closed unless it
+resurfaces. ⚠ Noted for the record: what was measured was the DESKTOP and phone Home behaving
+identically in the harness, i.e. a pre-existing shape, not a mobile regression — nothing was changed
+for it, so nothing needs unwinding.
+
+**§2 — RULE DECIDED, SWEEP OUTSTANDING.** The details view owns the watched control; the poster only
+reflects status. That makes the poster's toggle (one in `MediaCard`'s hover row, one in its ⋯ menu) a
+second owner and the "two green ticks" a duplicate of one fact. ⚠ Deliberately NOT started in this
+session: it is a mechanical sweep across `MediaCard` plus six call sites
+(`LibraryHomeView`, `LibraryFolderView`, `DiscoverView`, `PosterRail`, `HomeScreen`, `BrowseScreen`),
+and half-landing it would be worse than not starting. Recorded in `KNOWN_ISSUES` §2 as the exact next
+step, with the marker on the art staying as the status.
+
+⚠ **AND ONE THING NOT TO FORGET FROM THIS SESSION:** the detail screen's `WatchedAction` change is
+verified by `typecheck` and the suite, NOT by the harness probe — the probe was last run before it, and
+its tile-label assertion (`["Watched","More"]`) is now knowingly stale (the same fixture is mid-play
+and unwatched, so the label is `Unwatched`). Re-run it before trusting that screen again described as
+"measured".
+
+Gates: `npm run typecheck` clean · full `npx vitest run` **551 passed / 20 files** (was 546).
+
+## ▶ 🔎 **M3 CLOSES AND M4 OPENS: THE PHONE GETS A SEARCH SCREEN AND A TITLE-DETAIL SCREEN, THE IMPORT BAN FINALLY READS REAL FILES, AND THREE MORE RULES GO BACK TO THEIR OWNERS** (2026-09-17) · branch **`feat/mobile-m3-library`** · NEW `layouts/mobile/SearchScreen.tsx`, `layouts/mobile/DetailScreen.tsx`, `features/search/recent.ts`, `features/library/useAutoPlayDeepLink.ts`, `harness/search-mobile-frame.*`, `harness/detail-mobile-frame.*`
+
+**M3 IS COMPLETE.** Home (part 4), Browse, **Search** (this session) and the four extractions the
+phase asked for (E3 · E4 · E5 · E8) are all on the branch, and the poster actions stopped depending
+on a hover in part 3. Five commits, each with its own falsification and its own gate numbers.
+
+**⚠ THE M3 SCREEN THAT WAS MISSING WAS SEARCH, AND THE REASON IT COULD NOT BE THE PALETTE IS
+MEASURABLE.** The desktop's global search is a command palette: a `max-w-[430px]` field in the 64px
+top bar that opens a dropdown under it, driven by ⌘K / ↑↓ / Enter, and **every result row renders TWO
+text buttons** ("Watch Now" + "Details"). On a 390px phone that is a 390px dropdown inside a 64px
+bar, rows that cannot fit their own actions, and shortcuts that do not exist. So the phone gets a
+SCREEN, reached from a field-shaped BUTTON in the bar (`Header.tsx` branches on `useLayoutMode()`;
+the desktop keeps the palette untouched, and the bar hides its own affordance on `/search` so the
+screen never shows two search fields):
+
+| | |
+|---|---|
+| `RECENT` | chips, only while the field is empty. **Remembered when a search WORKS** (acting on a result), not on every keystroke — RECENT is a list of searches that led somewhere, not a transcript of half-typed words. Per device, never shared (there is no endpoint, and a shared list would show one household member's searches to another). |
+| `IN YOUR LIBRARY` | the row BODY opens the title, the trailing pill plays it at `actionLabel(row)` — two zones, one tap each, both ≥44px, both visible with no hover |
+| `DISCOVER · not in your library` | `Add` → `Download`, the same mutation the desktop cards use. ⚠ Deliberately NOT tappable as a row: the desktop's tap opens `SuggestDetailModal` — a centred `Dialog`, i.e. the thing mobile replaces with a sheet. Until that sheet exists, the honest answer is the action. |
+
+⚠ **No rule was re-derived.** `SEARCH_DEBOUNCE_MS`, the placeholder, `SEARCH_FAILED`,
+`noMatchesText()`, the two discovery-row adapters and `parseRecent`/`pushRecent`/`RECENT_MAX` moved
+into `features/search/lib.ts` and BOTH surfaces read them; `GlobalSearch.tsx` lost two local helpers
+to the same move. `recent.ts` is only the state + `localStorage` half — the half that can fail.
+
+**M4 OPENS, and its four extractions landed BEFORE the screen that needs them** (the ordering is the
+point — `layouts/importRule.ts` bans `* 100` in a mobile view, so `episodeProgress` had to exist
+first): **E6** `episodeProgress(ep)` → `{percent, inProgress, remainingLabel}`; **E7** `PersonHead`
+calls `auth/lib.ts::initials()` instead of its own copy; **E10** `moreActionsFor` / `MORE_ACTION_COPY`
+(the ⋯'s three conditional spreads, now one rule for the desktop menu AND the phone's sheet); **E11**
+`useAutoPlayDeepLink` (the `?play=1[&episode=]` deep link — a rule with real reasoning in it: a series
+arrives before its episode list, so it must WAIT, and the params must be cleared or Back replays the
+film). Three more small rules came with the screen: `seriesPlayLabel`, `detailMetaBits`, and the three
+detail sentences — the desktop reads all five, so the modal and the screen cannot disagree.
+
+**THE PHONE'S DETAIL SCREEN** (`/library/item/:itemId`): full-bleed 4:3 backdrop with Back, the copy
+under it, the episodes as a list, and **ONE action bar pinned in the thumb zone** (`sticky`, offset
+derived from `--m-nav-h` + `--rkm-safe-bottom` — a number would be wrong on a notched phone, which is
+what his 2026-09-16 report was about). The bar is the ONLY primary on the screen. ⚠ **The ⋯ does not
+exist when it has nothing to open** — measured on the fresh, link-less title, the bar carries exactly
+one tile, `["Watched"]`. That is the M3-part-4 defect (a control that cannot act) prevented in the new
+code rather than fixed in it.
+
+**⚠ THE IMPORT BAN WAS DOCUMENTATION, AND IT IS NOW A CHECK.** `imports.test.ts` tested
+`importRule.ts` against FIXTURE STRINGS and never opened a file in the directory it governs — so
+`HomeScreen.tsx`, one commit old, imported `lib/api/client` directly for a backdrop URL for a whole
+phase without anything going red. The scan now walks `src/layouts/mobile`, a guard asserts it READ
+something (≥5 files, named — without it a rename makes the green run pass by finding nothing), and the
+falsification is permanent in the test itself. The one violation it found is fixed the honest way:
+`library/lib.ts::backdropUrl()` now sits beside `posterUrl()`.
+
+**Measured in the sandbox browser** (Chromium, the real screens, the app's real stylesheet, stubbed
+api — `harness/*-frame.html`), every scenario PASS:
+* search at 390 and 320: mounts, `data-layout=mobile`, `scrollWidth == viewport`, no element outside,
+  ONE `/api/search/global` request per typed word, all three group headings, every action opacity 1
+  with NO hover and 44px tall, RECENT == `["sholay"]` after acting on a result, `?fail=1` renders
+  exactly "Search failed — try again shortly." and `?empty=1` exactly "No matches for “sholai”.";
+* detail at 390: a movie mid-play → primary `Resume (28%)` 48px pinned, tiles `Watched`/`More` 56px,
+  ⋯ opens a SHEET with "Play from beginning" + "Open in Jellyfin" and NOT "Mark as unplayed", tapping
+  the primary calls `startMovie(id, title, 2400, 8640)`; a series → primary `Resume S1E2` (the NEXT
+  playable episode), both seasons headed, five play controls, the in-progress row reading
+  "33% watched · 40m left" from the shared rule; a fresh link-less movie at 320 → primary `Play`, one
+  tile, NO ⋯, `scrollWidth` 320 of 320.
+
+⚠ **The harness caught TWO fixture bugs and no app bugs**, which is worth recording as the pattern: the
+first detail fixture had the movie PLAYED rather than mid-play (so the bar said "Play" and the ⋯
+offered no restart — the screen was right, the fixture was wrong), and the first `episodeRows` probe
+regex only matched the primary, hiding a correct four-row episode list. Both were fixed in the
+FIXTURE. Measured cost of a stale dev server, again: the first re-run of the detail probe still
+answered from the PRE-EDIT fixture module — `pgrep -f "[b]in/vite" | xargs -r kill -9` first, then
+re-read a file you CHANGED through the server before trusting a number.
+
+⚠ **STILL OPEN IN M4, and it needs HIS DECISION, not mine: the RequestSheet.** The wireframe asks for
+a quality profile list and "⚠ 2 titles matched — pick one". Two facts from the ground truth: the app
+has **no** quality parameter on `POST /api/media/{id}/request` (the profile is the server's configured
+default — a phone control that offered 1080p/720p/4K would be a control that cannot act), and the
+ambiguous case answers **409** with `candidates: [{title, year}]` — **no id**, so the candidate list
+cannot be actioned from the client without a backend change. Recorded in `KNOWN_ISSUES.md`.
+
+Gates, every commit: `npm run typecheck` clean · full `npx vitest run` **546 passed / 20 files** (was
+518 at the start of the session; library `lib.test.ts` 95, search `lib.test.ts` 17, layouts
+`imports.test.ts` 31).
 
 ## ▶ 🏠 **M3 PART 4 — THE PHONE GETS ITS OWN HOME, THE DETAILS OPTIONS GET A ORDER, AND TWO OF HIS DEVICE BUGS DIE** (2026-09-17) · branch **`feat/mobile-m3-library`** · NEW `layouts/mobile/HomeScreen.tsx`, `layouts/Screen.tsx`, `layouts/mobile/BrowseScreen.tsx`, `layouts/mobile/MobileScreen.tsx`, `components/ui/IconAction.tsx`, `features/library/PosterRail.tsx` + five fixes from his iPad/iPhone round
 

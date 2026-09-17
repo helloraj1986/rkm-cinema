@@ -361,6 +361,23 @@ def build_api_vars(env: dict) -> dict:
               f"boolean; rendering false (auth not enforced).")
         api["RKM_AUTH_REQUIRED"] = "false"
 
+    # ⚠ THE OFFLINE STAGING KNOBS (2026-09-18). The BACKEND has read all three since B1 —
+    # `services/offline.py` takes the staging path, the TTL and the byte CAP from the environment —
+    # but this renderer never passed them, so `.rkm.env` (the api container's env_file) never carried
+    # one and the cap could not be configured AT ALL: the 12 GiB default was forced, and the refusal
+    # message's own advice ("raise the cap (RKM_OFFLINE_MAX_BYTES), or point RKM_OFFLINE_STAGING at a
+    # roomier disk") was impossible to follow. His report, 2026-09-18: every poster's Download said
+    # "the server's download storage is full".
+    #
+    # ⚠ The defaults below are the CODE's own (`offline.py`: `/shared/offline`, 48h, 12 GiB), spelled
+    # out here so `.rkm.env` shows the values actually in force instead of leaving them implicit.
+    # `0` is a real value for both numeric knobs: 0 bytes = no cap, 0 hours = never sweep.
+    api["RKM_OFFLINE_STAGING"] = str(env.get("RKM_OFFLINE_STAGING") or "").strip() or "/shared/offline"
+    api["RKM_OFFLINE_TTL_HOURS"] = str(env.get("RKM_OFFLINE_TTL_HOURS") or "").strip() or "48"
+    api["RKM_OFFLINE_MAX_BYTES"] = str(env.get("RKM_OFFLINE_MAX_BYTES") or "").strip() or str(12 * 1024 ** 3)
+    if api["RKM_OFFLINE_MAX_BYTES"] == "0":
+        print("[env] offline staging: no byte cap (RKM_OFFLINE_MAX_BYTES=0)")
+
     # Subtitles / OpenSubtitles (SUBTITLES_OPENSUBTITLES_PLAN §3.1). The api is the
     # ONLY consumer of these credentials — never a web build arg, never the frontend
     # bundle (the plan's §1 criterion 11). Blank is a supported state: no API key

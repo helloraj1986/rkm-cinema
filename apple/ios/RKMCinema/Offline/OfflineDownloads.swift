@@ -162,6 +162,41 @@ final class OfflineDownloads: NSObject, ObservableObject {
     private let lock = NSLock()
     private var contexts: [Int: OfflineTaskContext] = [:]
     private var taskIdentifiers: [String: Int] = [:]
+
+    /// ⚠ **The cancellation window (2026-09-18).** The page offers a Cancel tile as soon as the record
+    /// is published as `.downloading` — and `plan()` publishes it BEFORE `ensurePackaged`, whose poll
+    /// loop can run for minutes while the server remuxes. In that window there is no `URLSessionTask`
+    /// to cancel, and the old `guard let identifier = … else { return }` did nothing at all: no log, no
+    /// state, and the pipeline went on to start the task. So the INTENT is recorded here, the row is
+    /// moved to `paused` immediately, and the run abandons itself when it reaches the point of starting.
+    private var cancelRequested = Set<String>()
+
+    /// True once, then cleared — a second download of the same title is a NEW run and must not inherit
+    /// an old cancellation.
+    private func consumeCancelRequest(itemId: String) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return cancelRequested.remove(itemId) != nil
+    }
+
+    /// Mark a cancelled row `paused`, keeping the bytes that arrived.
+    ///
+    /// ⚠ **ONLY if the record is not already `ready`.** A Cancel tapped at 99% races
+    /// `didFinishDownloadingTo`; without this guard the row for a file that is already whole would be
+    /// written back to `paused` — turning a finished film into one that has to be fetched again. The
+    /// store is the cheaper thing to lose than a whole download, and the two writes must not fight.
+    /// ⚠ Cancelling is NOT deleting (the function above `cancel` says so): the partial is kept, because
+    /// that partial is what makes "resume" mean something tomorrow.
+    private func markCancelled(itemId: String, container: String?) {
+        guard let store, var record = store.record(itemId) else { return }
+        if record.state == .ready { return }
+        record.state = .paused
+        record.bytes = store.diskState(itemId, container: container ?? record.container).partialBytes ?? 0
+        record.lastError = "Cancelled — the bytes so far are kept."
+        try? store.upsert(record)
+        RKMLog.info("offline row marked paused after a cancel — " + OfflineFormat.bytes(record.bytes)
+                    + " kept", category: .offline)
+    }
     private var backgroundCompletion: (() -> Void)?
     private var cookieMirrorStarted = false
     private var restored = false
@@ -305,6 +340,18 @@ final class OfflineDownloads: NSObject, ObservableObject {
         do {
             let record = try await plan(itemId: itemId, title: title, mode: mode, api: api, store: store,
                                         attempt: attempt, correlation: correlation)
+
+            // ⚠⚠ (A) THE CANCELLATION WINDOW, closed here. `plan()` publishes the row as
+            // `.downloading` before `ensurePackaged`, and that poll can run for minutes — so a Cancel
+            // tapped during packaging had no task to stop and the run carried on to start one. When the
+            // intent is present the run ABANDONS: `false` is the same answer every other "no task was
+            // started" path in this function gives, and the row is already `paused` (written by
+            // `cancel(itemId:)`), so the page has already been told.
+            if consumeCancelRequest(itemId: record.stored.itemId) {
+                RKMLog.info("offline run abandoned before a task existed — cancelled while still packaging",
+                            category: .offline, correlation: correlation)
+                return false
+            }
 
             // The one place a download is turned into a task.
             let fileURL = try requireFileURL(api: api, itemId: itemId, mode: record.stored.mode)
@@ -507,12 +554,39 @@ final class OfflineDownloads: NSObject, ObservableObject {
 
     /// Stop downloading but KEEP what arrived — a cancel is not a delete, and the partial is what makes
     /// "resume" mean something tomorrow.
+    ///
+    /// ⚠ **Two paths, and BOTH must produce a state change the page can see (2026-09-18).** His report:
+    /// *"Cancel has no effect — the download continues and the UI state doesn't change."* The page's own
+    /// half was correct; this method and the task delegate were not:
+    ///
+    ///   1. **A task exists** → cancel it. The row is written `paused` when `didCompleteWithError`
+    ///      reports the cancellation (`NSURLErrorCancelled`), which is the only place that knows the
+    ///      transfer really stopped.
+    ///   2. **No task yet** — the packaging window (see `cancelRequested`) → there is nothing to stop,
+    ///      so record the INTENT (the run abandons instead of starting), write the row `paused` and
+    ///      publish, so the control flips NOW rather than when the server finishes remuxing.
+    ///
+    /// ⚠ Before this, case 2 returned silently and the download ran to completion.
     func cancel(itemId: String) {
-        guard let identifier = taskIdentifier(for: itemId) else { return }
-        session.getAllTasks { tasks in
-            for task in tasks where task.taskIdentifier == identifier { task.cancel() }
+        lock.lock()
+        let identifier = taskIdentifiers[itemId]
+        if identifier == nil { cancelRequested.insert(itemId) }
+        lock.unlock()
+
+        if let identifier {
+            session.getAllTasks { tasks in
+                for task in tasks where task.taskIdentifier == identifier { task.cancel() }
+            }
+            RKMLog.info("offline download cancelled by the user — the bytes so far are kept", category: .offline)
+            return
         }
-        RKMLog.info("offline download cancelled by the user — the bytes so far are kept", category: .offline)
+
+        RKMLog.info("offline cancel arrived before any task existed (still packaging) — it will not start, "
+                    + "and the bytes so far are kept", category: .offline)
+        if let store, let record = store.record(itemId) {
+            markCancelled(itemId: itemId, container: record.container)
+        }
+        publish()
     }
 
     /// Retry a stopped row, from where it stopped.
@@ -1046,8 +1120,14 @@ extension OfflineDownloads: URLSessionDownloadDelegate {
         let nsError = error as NSError
 
         if nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled {
-            RKMLog.info("offline task cancelled (task \(identifier))", category: .offline,
+            RKMLog.info("offline task cancelled (task " + String(identifier) + ")", category: .offline,
                         correlation: context.correlation)
+            // ⚠⚠ (B) A CANCELLED TASK MUST WRITE ITS STATE. This branch used to log and `return`: the
+            // store was never told, `defer { publish() }` rebuilt the rows from unchanged records, so the
+            // planner returned `.nothing` and the page was told nothing — its Cancel tile and its frozen
+            // progress ring stayed exactly as they were. Marking the row here is what gives `decide`
+            // something to emit, and the page then flips Cancel → Resume with no JS change at all.
+            markCancelled(itemId: context.itemId, container: context.container)
             return
         }
         let failure = OfflineAPI.transportFailure(from: error).asFailure

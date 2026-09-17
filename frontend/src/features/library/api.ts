@@ -1,5 +1,18 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../lib/api/client";
+import { toast } from "../watchlist/toast";
+
+/**
+ * The server's sentence, or the error's own message if there is one.
+ *
+ * ⚠ LOCAL on purpose: the identical one-liner lives in `watchlist/actions.ts`, and importing it from
+ * there would create a cycle — `actions.ts` already imports THIS file for `useMutateItemState`. A pure
+ * one-line expression is not the kind of rule this architecture is protecting (nothing can drift about
+ * "is this an Error"); a circular import is a real hazard.
+ */
+function failureMessage(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
+}
 
 export function useLibraryItems() {
   return useQuery({ queryKey: ["library", "items"], queryFn: api.getLibraryItems });
@@ -86,5 +99,17 @@ export function useMutateItemState() {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["library"] });
     },
+    /**
+     * ⚠ **A FAILED TAP MUST SAY SO.** His report (2026-09-17, on the phone): *"on tap the button
+     * itself shows no state change or feedback"*. The tile he tapped was working — the request was
+     * simply never acknowledged, and when it fails NOTHING happens at all: no toast, no revert, no
+     * clue. That is indistinguishable from a dead button, so the failure is now surfaced with the
+     * server's own sentence.
+     *
+     * ⚠ It lives HERE rather than in the calling component because every watched toggle in the app
+     * goes through this one hook (the header tile, the ⋯ menu, the outlet's handler) — one place to
+     * get it right, and no surface can forget.
+     */
+    onError: (e) => toast("Couldn't update", failureMessage(e), "err"),
   });
 }

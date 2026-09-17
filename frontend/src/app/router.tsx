@@ -70,7 +70,7 @@ export const router = createBrowserRouter([
           },
           { path: "movies", element: <desktop.LibraryKindRedirect kind="movies" /> },
           { path: "shows", element: <desktop.LibraryKindRedirect kind="tvshows" /> },
-          { path: "item/:itemId", element: <desktop.ItemDetailPage /> },
+          { path: "item/:itemId", element: <Screen desktop={<desktop.ItemDetailPage />} mobile={<mobile.DetailScreen />} /> },
         ],
       },
       { path: "discover", element: <desktop.DiscoverView /> },
@@ -84,9 +84,14 @@ export const router = createBrowserRouter([
         children: [{ index: true, element: <desktop.DownloadsView /> }],
       },
       { path: "suggest", element: <desktop.SuggestView /> },
-      // Global search lives in the top bar (GLOBAL_SEARCH_PLAN) — the old
-      // standalone /search results page was removed; deep links land Home.
-      { path: "search", element: <Navigate to="/library/home" replace /> },
+      // ⚠ M3: the phone gets a real search SCREEN here (the palette in the top bar is a
+      // keyboard-first dropdown — see `mobile/SearchScreen.tsx`). The desktop answer is unchanged:
+      // the old standalone /search page was removed with GLOBAL_SEARCH_PLAN, so a deep link still
+      // lands Home, and `Screen` renders exactly one of the two branches (§3.3).
+      {
+        path: "search",
+        element: <Screen desktop={<Navigate to="/library/home" replace />} mobile={<mobile.SearchScreen />} />,
+      },
     ],
   },
 ]);

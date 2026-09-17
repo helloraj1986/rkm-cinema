@@ -6,9 +6,11 @@ import {
   cardMetaLine,
   continueWatchingItems,
   detailInProgress,
+  detailMetaBits,
   detailPrimaryLabel,
   detailResumePercent,
   episodeItemCode,
+  episodeProgress,
   filterLibraryItems,
   heroEyebrow,
   heroPrimaryLabel,
@@ -27,6 +29,8 @@ import {
   libraryIconFor,
   libraryNavEntries,
   libraryViewFromParams,
+  MORE_ACTION_COPY,
+  moreActionsFor,
   mountedCount,
   needsMoreRows,
   nextExtraCount,
@@ -38,8 +42,10 @@ import {
   ratingText,
   resumePercent,
   scanFailure,
+  seriesPlayLabel,
   seriesTargetForEpisode,
   similarItemToResult,
+  withoutHero,
 } from "./lib";
 
 const base: MediaItem = {
@@ -722,5 +728,159 @@ describe("the Home hero's labels (M3)", () => {
 
   it("never leaves a trailing space when the episode has no code", () => {
     expect(heroPrimaryLabel({ isEpisode: true, episodeCode: "", isSeries: false, percent: 0 })).toBe("Play");
+  });
+});
+
+describe("episodeProgress (M4 · E6)", () => {
+  const ep = (played: boolean, pos: number, runtime: number) => ({
+    played,
+    playback_position: pos,
+    runtime,
+  });
+
+  it("reads a half-watched episode as a percent AND a countdown", () => {
+    const p = episodeProgress(ep(false, 1200, 3600));
+    expect(p.percent).toBe(33);
+    expect(p.inProgress).toBe(true);
+    expect(p.remainingLabel).toBe("40m left");
+  });
+
+  it("an episode 2 seconds from the end says 1m left — never 0m left", () => {
+    expect(episodeProgress(ep(false, 3598, 3600)).remainingLabel).toBe("1m left");
+  });
+
+  it("⚠ NEVER divides by an unknown runtime — 0%, and no countdown", () => {
+    const p = episodeProgress(ep(false, 900, 0));
+    expect(p.percent).toBe(0);
+    expect(p.inProgress).toBe(true); // it IS mid-play; there is just nothing to count down against
+    expect(p.remainingLabel).toBe("");
+  });
+
+  it("a finished episode is not in progress and has no countdown, even with a position left over", () => {
+    const p = episodeProgress(ep(true, 1800, 3600));
+    expect(p.inProgress).toBe(false);
+    expect(p.remainingLabel).toBe("");
+  });
+
+  it("an untouched episode is 0% and not in progress", () => {
+    const p = episodeProgress(ep(false, 0, 3600));
+    expect(p.percent).toBe(0);
+    expect(p.inProgress).toBe(false);
+    expect(p.remainingLabel).toBe("");
+  });
+
+  it("clamps at 100 — a position past the runtime is not 104%", () => {
+    expect(episodeProgress(ep(false, 4000, 3600)).percent).toBe(100);
+  });
+
+  it("treats a missing position as zero rather than NaN", () => {
+    const p = episodeProgress({ played: false, playback_position: undefined as unknown as number, runtime: 3600 });
+    expect(p.percent).toBe(0);
+    expect(p.inProgress).toBe(false);
+  });
+});
+
+describe("moreActionsFor (M4 · E10 — which secondaries the ⋯ offers)", () => {
+  const facts = (over: Partial<Parameters<typeof moreActionsFor>[0]> = {}) => ({
+    isSeries: false, inProgress: false, played: false, hasExternalLink: false, ...over,
+  });
+
+  it("offers a restart ONLY on a movie that is mid-play", () => {
+    expect(moreActionsFor(facts({ inProgress: true }))).toEqual(["restart"]);
+    expect(moreActionsFor(facts())).toEqual([]); // untouched film: nothing to restart
+  });
+
+  it("⚠ never offers a restart on a series — that verb belongs to an episode", () => {
+    expect(moreActionsFor(facts({ isSeries: true, inProgress: true }))).toEqual([]);
+  });
+
+  it("offers 'Mark as unplayed' only when it is played", () => {
+    expect(moreActionsFor(facts({ played: true }))).toEqual(["untoggle"]);
+    // ⚠ ORDER is part of the rule: restart first, exactly as the desktop's three spreads emitted them.
+    expect(moreActionsFor(facts({ played: true, inProgress: true }))).toEqual(["restart", "untoggle"]);
+  });
+
+  it("offers the external link only when the item carries one", () => {
+    expect(moreActionsFor(facts({ hasExternalLink: true }))).toEqual(["jellyfin"]);
+  });
+
+  it("is deterministic in order — the menu may not reshuffle between renders", () => {
+    const all = facts({ played: true, inProgress: true, hasExternalLink: true });
+    expect(moreActionsFor(all)).toEqual(["restart", "untoggle", "jellyfin"]);
+    expect(moreActionsFor(all)).toEqual(moreActionsFor(all));
+  });
+
+  it("has copy for every key it can return", () => {
+    const keys = moreActionsFor(facts({ played: true, inProgress: true, hasExternalLink: true }));
+    for (const key of keys) {
+      expect(MORE_ACTION_COPY[key].label.length).toBeGreaterThan(3);
+      expect(MORE_ACTION_COPY[key].icon).toBeTruthy();
+    }
+  });
+});
+
+describe("withoutHero (2026-09-17 — the rail excludes what the hero shows)", () => {
+  const item = (id: string, title = id): MediaItem =>
+    ({ item_id: id, title, type: "movie", played: false, playback_position: 60, runtime: 3600 } as MediaItem);
+
+  it("removes the hero's own card from the rail", () => {
+    const items = [item("a"), item("b"), item("c")];
+    expect(withoutHero(items, item("b")).map((i) => i.item_id)).toEqual(["a", "c"]);
+  });
+
+  it("⚠ matches by ID, never by position — the hero is not always first", () => {
+    // A `slice(1)` (or "drop the first") implementation passes the case above and fails this one.
+    const items = [item("a"), item("b"), item("c")];
+    expect(withoutHero(items, item("c")).map((i) => i.item_id)).toEqual(["a", "b"]);
+  });
+
+  it("keeps every other title, in order, including same-titled ones", () => {
+    const items = [item("a", "Sholay"), item("b", "Sholay"), item("c", "Dune")];
+    expect(withoutHero(items, item("a", "Sholay")).map((i) => i.item_id)).toEqual(["b", "c"]);
+  });
+
+  it("removes nothing when there is no hero (or the hero has no id)", () => {
+    const items = [item("a"), item("b")];
+    expect(withoutHero(items, null)).toEqual(items);
+    expect(withoutHero(items, { title: "no id" } as MediaItem)).toEqual(items);
+  });
+
+  it("cannot return a longer list, and survives empty input", () => {
+    const items = [item("a")];
+    expect(withoutHero(items, item("zzz"))).toHaveLength(1);
+    expect(withoutHero([], item("a"))).toEqual([]);
+    expect(withoutHero([], null)).toEqual([]);
+  });
+});
+
+describe("the detail page's shared rules (M4)", () => {
+  it("seriesPlayLabel names the next episode's verb, or replays the first, or just plays", () => {
+    const ep = (over: Partial<{ season: number; episode: number; playback_position: number }> = {}) => ({
+      season: 1, episode: 2, playback_position: 0, ...over,
+    });
+    expect(seriesPlayLabel(ep({ playback_position: 1200 }), null)).toBe("Resume S1E2");
+    expect(seriesPlayLabel(ep(), null)).toBe("Play S1E2");
+    // ⚠ Nothing next to play: the FIRST episode is a replay (the series was finished), and a series
+    // with no episodes at all still says something a person can press.
+    expect(seriesPlayLabel(null, ep({ episode: 1 }))).toBe("Replay S1E1");
+    expect(seriesPlayLabel(null, null)).toBe("Play");
+  });
+
+  it("detailMetaBits drops unknown parts instead of leaving separators", () => {
+    expect(
+      detailMetaBits({ year: 1975, runtimeSec: 8640, isSeries: false, seasonCount: 0, certification: "PG" }),
+    ).toEqual(["1975", "2h 24m", "PG"]);
+    // A series shows its season count where a movie shows its runtime.
+    expect(
+      detailMetaBits({ year: 2025, runtimeSec: 0, isSeries: true, seasonCount: 2, certification: "" }),
+    ).toEqual(["2025", "2 seasons"]);
+    // ⚠ Nothing known: NO empty strings — the caller renders the parts it gets, so an empty part is
+    // a stray bullet between two dots in the UI.
+    expect(
+      detailMetaBits({ year: null, runtimeSec: 0, isSeries: false, seasonCount: 0, certification: null }),
+    ).toEqual([]);
+    expect(
+      detailMetaBits({ year: 2025, runtimeSec: 0, isSeries: true, seasonCount: 1, certification: null }),
+    ).toEqual(["2025", "1 season"]);
   });
 });

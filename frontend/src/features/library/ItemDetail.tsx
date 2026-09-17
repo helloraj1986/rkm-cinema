@@ -1,5 +1,4 @@
-import { useEffect, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useState, type ButtonHTMLAttributes, type ReactNode } from "react";
 import {
   api,
   type DetailPeople,
@@ -10,6 +9,8 @@ import {
 } from "../../lib/api/client";
 import { useItemDetail, useLibraryItems } from "./api";
 import { SimilarRow } from "./SimilarRow";
+import { initials } from "../auth/lib";
+import { useAutoPlayDeepLink } from "./useAutoPlayDeepLink";
 import { useEpisodes } from "../playback/api";
 import {
   episodeCode,
@@ -22,17 +23,26 @@ import {
 } from "../playback/lib";
 import {
   artTone,
+  DETAIL_NOT_FOUND_SUB,
+  DETAIL_NOT_FOUND_TITLE,
+  DETAIL_PARTIAL_WARNING,
   detailInProgress,
+  detailMetaBits,
   detailPrimaryLabel,
   detailResumePercent,
+  episodeProgress,
   fmtRuntime,
   isSeries,
+  MORE_ACTION_COPY,
+  moreActionsFor,
   personHeadshotUrl,
   posterUrl,
   ratingText,
+  seriesPlayLabel,
 } from "./lib";
 import { Icon } from "../../components/ui/Icon";
 import { IconAction, ICON_ACTION_CLASS } from "../../components/ui/IconAction";
+import { WatchedAction } from "./WatchedAction";
 import { PopupMenu } from "../../components/ui/PopupMenu";
 import { DownloadAction, DownloadNotice } from "../offline/DownloadButton";
 
@@ -45,9 +55,9 @@ function EpisodeRow({
   queue: QueueEntry[];
   onPlay: (ep: EpisodeShape, queue: QueueEntry[]) => void;
 }) {
-  const percent =
-    ep.runtime > 0 ? Math.min(100, Math.round(((ep.playback_position || 0) / ep.runtime) * 100)) : 0;
-  const inProgress = !ep.played && ep.playback_position > 0;
+  // ⚠ The episode's progress is NOT computed here (M4 · extraction E6): `episodeProgress` owns the
+  // arithmetic and the readout, so the phone's episode list and this row cannot disagree.
+  const { percent, inProgress, remainingLabel } = episodeProgress(ep);
   return (
     <div
       className={`flex items-center gap-4 rounded-xl border p-2.5 pr-3 transition-colors ${
@@ -87,7 +97,7 @@ function EpisodeRow({
           </span>
         ) : inProgress ? (
           <span className="mt-0.5 text-xs text-zinc-400">
-            {percent}% watched · {fmtRuntime(Math.max(1, ep.runtime - (ep.playback_position || 0)))} left
+            {percent}% watched · {remainingLabel}
           </span>
         ) : (
           <span className="mt-0.5 text-xs text-zinc-500">{fmtRuntime(ep.runtime) || "Not watched"}</span>
@@ -113,13 +123,11 @@ function PersonHead({
 }) {
   const [errored, setErrored] = useState(false);
   const src = person.has_image && !errored ? personHeadshotUrl(person.id) : null;
-  const initials = (person.name || fallbackName || "?")
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((p) => p[0])
-    .join("")
-    .toUpperCase();
+  // ⚠ ONE initials rule (M4 · extraction E7). This was a second copy of the whole thing — split,
+  // filter, slice, join, uppercase — written here and already owned by `auth/lib.ts::initials()`,
+  // the function the header chip uses. Two copies is how "Rajeev Kumar" comes to read "RK" in the
+  // header and something else on a person card once either one is touched.
+  const label = initials(person.name || fallbackName || "");
   return (
     <div className="flex w-[72px] shrink-0 flex-col items-center gap-1.5 text-center">
       <div className="grid h-[72px] w-[72px] place-items-center overflow-hidden rounded-full bg-surface-3 text-sm font-bold text-zinc-300 ring-1 ring-white/10">
@@ -132,7 +140,7 @@ function PersonHead({
             onError={() => setErrored(true)}
           />
         ) : (
-          <span aria-hidden="true">{initials}</span>
+          <span aria-hidden="true">{label}</span>
         )}
       </div>
       <span className="line-clamp-1 w-full text-[11px] font-medium text-zinc-200" title={person.name}>
@@ -227,20 +235,18 @@ export function ItemDetailContent({
   const target = tv ? nextPlayableEpisode(episodes) : null;
   const firstEp = episodes[0];
   const seriesPlayEp = target ?? firstEp ?? null;
-  const seriesLabel = target
-    ? `${(target.playback_position || 0) > 0 ? "Resume" : "Play"} ${episodeCode(target)}`
-    : firstEp
-      ? `Replay ${episodeCode(firstEp)}`
-      : "Play";
+  const seriesLabel = seriesPlayLabel(target, firstEp);
 
   const poster = posterUrl({ item_id: itemId });
   const backdrop = d?.has_backdrop ? api.backdropUrl(itemId, 1920) : null;
   const percent = detailResumePercent(d?.play, runtimeSec);
-  const metaBits = [
-    d?.year != null ? String(d.year) : item?.year != null ? String(item.year) : "",
-    !tv ? fmtRuntime(runtimeSec) : groups.length > 0 ? `${groups.length} season${groups.length > 1 ? "s" : ""}` : "",
-    d?.official_rating || "",
-  ].filter(Boolean);
+  const metaBits = detailMetaBits({
+    year: d?.year ?? item?.year,
+    runtimeSec,
+    isSeries: tv,
+    seasonCount: groups.length,
+    certification: d?.official_rating,
+  });
   const rating = ratingText(d?.community_rating);
   const people = d?.people;
 
@@ -248,31 +254,34 @@ export function ItemDetailContent({
   // list has no match — render the grid-style fallback instead of a blank page.
   const notFound = !isLoading && isError && !item && !d;
 
-  // Global-search deep link (?play=1[&episode={id}]): start playback as soon as
-  // the data this item needs is ready, then clear the params so Back/refresh
-  // don't replay it. Fires once per mount (remounts on item change via key).
-  const [searchParams, setSearchParams] = useSearchParams();
-  const autoPlayedRef = useRef(false);
-  useEffect(() => {
-    if (searchParams.get("play") !== "1" || autoPlayedRef.current) return;
-    if (tv) {
-      const epId = searchParams.get("episode");
-      const targetEp = epId ? episodes.find((e) => e.id === epId) ?? null : seriesPlayEp;
-      if (!targetEp) return; // wait for the episode list
-      autoPlayedRef.current = true;
-      onPlayEpisode(targetEp, queue);
-    } else if (d) {
-      autoPlayedRef.current = true;
-      onPlayMovie(itemId, d.name ?? title, detailInProgress(d?.play) ? resumeSec : 0, runtimeSec);
-    } else {
-      return; // wait for the detail probe
-    }
-    const next = new URLSearchParams(searchParams);
-    next.delete("play");
-    next.delete("episode");
-    setSearchParams(next, { replace: true });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams, tv, d, episodes, itemId, title, resumeSec, runtimeSec, seriesPlayEp]);
+  // Global-search deep link (?play=1[&episode={id}]): start playback as soon as the
+  // data this item needs is ready, then clear the params so Back/refresh don't
+  // replay it. ⚠ ONE implementation, shared with the phone's detail screen
+  // (M4 · extraction E11) — "wait for the episodes, then clear the params" is not
+  // a rule two screens may each own.
+  useAutoPlayDeepLink({
+    itemId,
+    isSeries: tv,
+    detail: d,
+    episodes,
+    seriesPlayEp,
+    queue,
+    resumeSec,
+    runtimeSec,
+    title: d?.name ?? item?.title ?? "Unknown",
+    onPlayMovie,
+    onPlayEpisode,
+  });
+
+  // ⚠ Which secondaries the ⋯ offers is `moreActionsFor` (M4 · extraction E10): the phone's More
+  // sheet reads the same three keys and the same copy, so the two surfaces cannot disagree about
+  // when "Play from beginning" or "Mark as unplayed" exists.
+  const moreActions = moreActionsFor({
+    isSeries: tv,
+    inProgress: detailInProgress(d?.play),
+    played,
+    hasExternalLink: Boolean(item?.jellyfin_url),
+  });
 
   if (isLoading && !d && !item) {
     return (
@@ -303,8 +312,8 @@ export function ItemDetailContent({
             <Icon name="film" size={24} />
           </div>
           <div className="max-w-sm">
-            <p className="text-[15px] font-semibold text-zinc-200">We couldn't find that title in the library.</p>
-            <p className="mt-1 text-sm text-zinc-500">It may have been removed or the link is stale.</p>
+            <p className="text-[15px] font-semibold text-zinc-200">{DETAIL_NOT_FOUND_TITLE}</p>
+            <p className="mt-1 text-sm text-zinc-500">{DETAIL_NOT_FOUND_SUB}</p>
           </div>
           <ActionButton variant="primary" onClick={onBack}>
             <Icon name="back" size={15} />
@@ -416,7 +425,7 @@ export function ItemDetailContent({
                 )}
 
                 {isError && !d && !notFound && (
-                  <p className="mt-2 text-xs text-red-400">Couldn't load full details — playing still works.</p>
+                  <p className="mt-2 text-xs text-red-400">{DETAIL_PARTIAL_WARNING}</p>
                 )}
 
                 {/* ⚠ THE ACTION AREA — ONE dominant verb, then icon tiles, then a caption line.
@@ -470,15 +479,11 @@ export function ItemDetailContent({
                   ) : null}
 
                   <div className="flex items-start gap-2">
-                    {onToggleWatched && item ? (
-                      <IconAction
-                        icon="check"
-                        label="Watched"
-                        active={played}
-                        title={played ? "Mark as unplayed" : "Mark as watched"}
-                        onClick={() => onToggleWatched({ ...item, played })}
-                      />
-                    ) : null}
+                    {/* ⚠ ONE Watched control (`WatchedAction`), shared with the phone's screen — it
+                        carries its own on/off label, its `Saving…` state and its failure toast, which
+                        is what his device report asked for (KNOWN_ISSUES §1). It is NOT a handler
+                        prop any more: a caller that passes its own handler can forget the feedback. */}
+                    {item ? <WatchedAction item={item} played={played} /> : null}
 
                     {/* Offline download (B4, NATIVE_FEEL plan §4.6). ⚠ It renders NOTHING in a
                         browser: `window.__rkmOffline` exists only inside the iOS shell, and a
@@ -491,45 +496,20 @@ export function ItemDetailContent({
                     <PopupMenu
                       label={`More actions for ${title}`}
                       triggerClassName={ICON_ACTION_CLASS}
-                      items={[
-                        ...(!tv && detailInProgress(d?.play)
-                          ? [
-                              {
-                                key: "restart",
-                                label: "Play from beginning",
-                                icon: "play" as const,
-                                onSelect: () =>
-                                  onPlayMovie(
-                                    itemId,
-                                    d?.name ?? item?.title ?? "Unknown",
-                                    0,
-                                    runtimeSec,
-                                  ),
-                              },
-                            ]
-                          : []),
-                        ...(onToggleWatched && item && item.played
-                          ? [
-                              {
-                                key: "untoggle",
-                                label: "Mark as unplayed",
-                                icon: "check" as const,
-                                onSelect: () => onToggleWatched({ ...item, played }),
-                              },
-                            ]
-                          : []),
-                        ...(item?.jellyfin_url
-                          ? [
-                              {
-                                key: "jellyfin",
-                                label: "Open in Jellyfin",
-                                icon: "external" as const,
-                                onSelect: () =>
-                                  window.open(item.jellyfin_url as string, "_blank", "noopener,noreferrer"),
-                              },
-                            ]
-                          : []),
-                      ]}
+                      items={moreActions.map((key) => ({
+                        key,
+                        label: MORE_ACTION_COPY[key].label,
+                        icon: MORE_ACTION_COPY[key].icon,
+                        onSelect: () => {
+                          if (key === "restart") {
+                            onPlayMovie(itemId, d?.name ?? item?.title ?? "Unknown", 0, runtimeSec);
+                          } else if (key === "untoggle") {
+                            if (item) onToggleWatched?.({ ...item, played });
+                          } else if (item?.jellyfin_url) {
+                            window.open(item.jellyfin_url as string, "_blank", "noopener,noreferrer");
+                          }
+                        },
+                      }))}
                     >
                       <Icon name="more" size={19} />
                       <span className="max-w-16 truncate">More</span>

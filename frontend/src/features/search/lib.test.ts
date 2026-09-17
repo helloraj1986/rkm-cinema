@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
-import type { GlobalOwnedRow } from "../../lib/api/client";
+import type { GlobalDiscoveryRow, GlobalOwnedRow } from "../../lib/api/client";
 import {
-  actionLabel, artUrl, codeOf, detailsTarget, kindWord, metaLine, playTarget,
+  actionLabel, artUrl, codeOf, detailsTarget, discoveryEntryStub, discoveryToSuggestItem, kindWord,
+  metaLine, noMatchesText, parseRecent, playTarget, pushRecent, RECENT_MAX,
 } from "./lib";
 
 const base: GlobalOwnedRow = {
@@ -56,5 +57,84 @@ describe("global search helpers (player parity + state copy)", () => {
   });
   it("artUrl builds the poster proxy", () => {
     expect(artUrl("abc")).toBe("/api/jellyfin/poster?id=abc&width=92");
+  });
+});
+
+describe("the phone search screen's rules (M3)", () => {
+  it("echoes the query in the no-matches sentence — a typo stays visible", () => {
+    expect(noMatchesText("sholai")).toBe("No matches for “sholai”.");
+  });
+
+  it("parseRecent survives junk instead of rendering it", () => {
+    // ⚠ Every one of these is a value the app itself could have written, or a person could have
+    // edited by hand: the screen must show NOTHING rather than "[object Object]" under a heading.
+    expect(parseRecent(null)).toEqual([]);
+    expect(parseRecent("")).toEqual([]);
+    expect(parseRecent("not json at all")).toEqual([]);
+    expect(parseRecent("{\"a\":1}")).toEqual([]);
+    expect(parseRecent('["sholay", 7, null, "", "   ", {"q":"x"}]')).toEqual(["sholay"]);
+  });
+
+  it("parseRecent dedupes case-insensitively and keeps the newest spelling", () => {
+    expect(parseRecent('["Sholay","sholay","SHOLAY"]')).toEqual(["Sholay"]);
+    expect(parseRecent('["b","a","b"]')).toEqual(["b", "a"]);
+  });
+
+  it("parseRecent caps the list at RECENT_MAX", () => {
+    const many = JSON.stringify(Array.from({ length: RECENT_MAX + 4 }, (_, i) => `q${i}`));
+    expect(parseRecent(many)).toHaveLength(RECENT_MAX);
+  });
+
+  it("pushRecent puts the new query first and moves a repeat up", () => {
+    expect(pushRecent(["a", "b"], "c")).toEqual(["c", "a", "b"]);
+    expect(pushRecent(["a", "b"], "b")).toEqual(["b", "a"]);
+    expect(pushRecent(["a", "B"], "b")).toEqual(["b", "a"]); // the latest SPELLING wins
+  });
+
+  it("pushRecent ignores an empty query — a blank line is not a search", () => {
+    expect(pushRecent(["a"], "   ")).toEqual(["a"]);
+    expect(pushRecent(["a"], "")).toEqual(["a"]);
+  });
+
+  it("pushRecent never grows past RECENT_MAX", () => {
+    const full = Array.from({ length: RECENT_MAX }, (_, i) => `q${i}`);
+    const next = pushRecent(full, "new");
+    expect(next).toHaveLength(RECENT_MAX);
+    expect(next[0]).toBe("new");
+  });
+});
+
+describe("discovery rows → the shared action language (M3)", () => {
+  const disc: GlobalDiscoveryRow = {
+    tmdb_id: 12259, media_type: "movie", title: "Sholay", year: 1975,
+    poster: "/p.jpg", overview: "Two friends.", in_watchlist: false,
+  };
+
+  it("becomes a SuggestResult the shared detail sheet/card can read", () => {
+    const item = discoveryToSuggestItem(disc, true);
+    expect(item.tmdb_id).toBe(12259);
+    expect(item.title).toBe("Sholay");
+    expect(item.year).toBe(1975);
+    expect(item.media_type).toBe("movie");
+    expect(item.in_watchlist).toBe(true);
+    // ⚠ Scores are NOT invented from the row's absence of one.
+    expect(item.tmdb_score).toBe(0);
+    expect(item.vote_count).toBe(0);
+    expect(item.in_library).toBe(false);
+  });
+
+  it("becomes a WatchlistEntry stub that names the canonical media id", () => {
+    const entry = discoveryEntryStub(disc);
+    expect(entry.tmdbId).toBe(12259);
+    expect(entry.type).toBe("movie");
+    expect(entry.source).toBe("search");
+    // ⚠ imdbId stays EMPTY: filling it in would make the *arr search match by IMDb id instead of by
+    // the TMDB id the user actually picked (the drift the same stub had to fix for the palette).
+    expect(entry.imdbId).toBe("");
+  });
+
+  it("a TV discovery row requests TV, not a movie", () => {
+    expect(discoveryEntryStub({ ...disc, media_type: "tv" }).type).toBe("tv");
+    expect(discoveryToSuggestItem({ ...disc, media_type: "tv" }, false).media_type).toBe("tv");
   });
 });

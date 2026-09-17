@@ -76,22 +76,54 @@ enum OfflineHTTPVerdict: Equatable {
 
     var needsSignIn: Bool { self == .signInRequired || self == .refused }
 
-    /// What the Downloads screen (B4) and the HUD say. ⚠ A failure with no sentence is a failure the
-    /// user cannot act on, and the reason the *status* is always spelled out here.
-    func sentence(detail: String?) -> String {
-        let suffix = (detail?.isEmpty == false) ? " (\(detail!))" : ""
+    /// What the STATUS ALONE can say. ⚠ Every one of these is a claim about the server made from a
+    /// number, which is exactly why `sentence(detail:)` reaches for one only when the server sent no
+    /// words of its own — see the warning there.
+    var cannedSentence: String {
         switch self {
         case .success: return "ok"
-        case .packaging: return "The server is still packaging this title" + suffix
+        case .packaging: return "The server is still packaging this title"
         case .neverPrepared: return "This title has not been prepared on the server yet"
         case .gone: return "The server no longer has the file for this title"
         case .rangeNotSatisfiable:
             return "The server rejected the resume point — the download will start again from the beginning"
         case .signInRequired: return "Sign in again to continue downloading"
-        case .refused: return "The server refused this download" + suffix
-        case .storageFull: return "The server's download storage is full" + suffix
-        case .serverError: return "The server had an error" + suffix
-        case .unexpected(let code): return "Unexpected answer from the server (HTTP \(code))" + suffix
+        case .refused: return "The server refused this download"
+        case .storageFull: return "The server's download storage is full"
+        case .serverError: return "The server had an error"
+        case .unexpected(let code): return "Unexpected answer from the server (HTTP \(code))"
+        }
+    }
+
+    /// What the Downloads screen (B4) and the HUD say. ⚠ A failure with no sentence is a failure the
+    /// user cannot act on, and the reason the *status* is always spelled out here.
+    ///
+    /// ⚠⚠ **THE SERVER'S OWN SENTENCE WINS WHEN IT SENDS ONE** (his report, 2026-09-18: *"for the
+    /// offline download the ios still have these logs, where it says storage is full"* — the server had
+    /// stopped lying on 2026-09-17 and the phone had not). A status cannot tell the two `507`s apart:
+    ///
+    ///   * *"the staging disk is full"* is a real disk, and the only case where "full" is true; while
+    ///   * *"this title alone is about 4.3 GB, which is larger than the entire offline budget of 0.0 GB
+    ///     (RKM_OFFLINE_MAX_BYTES)"* is a policy number smaller than a film — nothing is full, and the
+    ///     knob that fixes it is named nowhere in the canned sentence.
+    ///
+    /// Our own routes phrase `detail` as a whole sentence naming the way out
+    /// (`backend/api/routes/offline.py`), so preferring it costs nothing and stops the client re-telling
+    /// the very lie the server stopped telling. A status with no body (`416` is one:
+    /// `offline.py:273` responds with headers only) has no words to prefer, so the canned sentence is
+    /// still what a bare status falls back to.
+    ///
+    /// ⚠ **`unexpected` is the one exception**, and deliberately: there is no canned claim for the server
+    /// to correct, and the CODE is the whole diagnostic — so the code leads and the detail rides along.
+    func sentence(detail: String?) -> String {
+        switch self {
+        case .success:
+            return "ok"
+        case .unexpected:
+            return cannedSentence + ((detail?.isEmpty == false) ? " — \(detail!)" : "")
+        default:
+            if let detail, !detail.isEmpty { return detail }
+            return cannedSentence
         }
     }
 }
@@ -509,7 +541,12 @@ struct OfflineRetryPolicy: Equatable {
 /// A download's failure, as the downloader sees it: a status verdict, a transport failure, or a
 /// local problem (no space, an unreadable part file). One type, so the retry question has one answer.
 enum OfflineFailure: Equatable {
-    case http(OfflineHTTPVerdict)
+    /// ⚠ **The server's own words ride along** (`detail`) rather than being discarded here. The verdict
+    /// alone cannot tell the two `507`s apart — one is a full disk and the other is a budget smaller than
+    /// a film — and the sentence the user acts on is built from them (`sentence` below). It was dropped at
+    /// this exact line until 2026-09-18, which is why his phone said "storage is full" while the server
+    /// was saying something both truer and more useful.
+    case http(OfflineHTTPVerdict, detail: String? = nil)
     case transport(OfflineTransportFailure)
     /// ⚠ Never retried automatically: the device needs attention (no space, a refused id), and a
     /// retry loop over a full disk is how a home screen fills with spinners.
@@ -517,7 +554,7 @@ enum OfflineFailure: Equatable {
 
     var isRetryable: Bool {
         switch self {
-        case .http(let verdict): return verdict.isRetryable
+        case .http(let verdict, _): return verdict.isRetryable
         case .transport(let failure): return failure.isRetryable
         case .local: return false
         }
@@ -525,7 +562,7 @@ enum OfflineFailure: Equatable {
 
     var needsSignIn: Bool {
         switch self {
-        case .http(let verdict): return verdict.needsSignIn
+        case .http(let verdict, _): return verdict.needsSignIn
         case .transport, .local: return false
         }
     }
@@ -534,14 +571,14 @@ enum OfflineFailure: Equatable {
     /// have taken ten minutes to arrive.
     var restartsFromZero: Bool {
         switch self {
-        case .http(let verdict): return verdict.restartsFromZero
+        case .http(let verdict, _): return verdict.restartsFromZero
         case .transport, .local: return false
         }
     }
 
     var sentence: String {
         switch self {
-        case .http(let verdict): return verdict.sentence(detail: nil)
+        case .http(let verdict, let detail): return verdict.sentence(detail: detail)
         case .transport(let failure): return failure.sentence
         case .local(let reason): return reason
         }

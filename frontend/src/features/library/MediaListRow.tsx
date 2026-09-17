@@ -1,3 +1,4 @@
+import { memo } from "react";
 import type { MediaItem } from "../../lib/api/client";
 import {
   artTone,
@@ -20,8 +21,13 @@ import { Icon } from "../../components/ui/Icon";
  *
  * Columns follow what the frozen list payload truly carries: rating is NOT a
  * column here (list items have no community rating; only the detail does).
+ *
+ * ⚠ MEMOISED for the same reason as `MediaCard` (M3 progressive mounting): the compact list is the
+ * OTHER half of a 713-row folder, and without this every growth step re-renders every row already
+ * mounted. Safe under the same precondition — an item is never mutated in place in this app, and
+ * every state change arrives as a new object through `invalidateQueries`.
  */
-export function MediaListRow({
+function MediaListRowBase({
   item,
   onQuickPlay,
   onOpenDetail,
@@ -129,3 +135,6 @@ export function MediaListRow({
     </div>
   );
 }
+
+/** ⚠ Exported memoised — see the ⚠ note on `MediaListRowBase` (M3 progressive mounting). */
+export const MediaListRow = memo(MediaListRowBase);

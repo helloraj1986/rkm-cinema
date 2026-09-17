@@ -484,6 +484,62 @@ export function resumePercent(item: MediaItem): number {
   return Math.min(100, Math.round((pos / rt) * 100));
 }
 
+// ---------------------------------------- Progressive mounting (M3 · the latency cure)
+/**
+ * ⚠ WHY THIS EXISTS, measured — not a hunch. `tools/measure_library_latency.py` tapped the real
+ * Movies folder (713 titles) against the live stack at 390×844, inside the SPA so the query cache
+ * behaves as it does under a thumb. The tap that made **zero requests** (React Query answering from
+ * memory) still took **1.7–2.0 s**, and CDP attributed it: **Script 2.4 s · Layout 0.5 s ·
+ * RecalcStyle 0.3 s**, with `setAttribute` alone 814 ms. All 713 cards landed in ONE synchronous
+ * commit (`t_first == t_all`), because `LibraryFolderView` mapped the whole list at once — so the
+ * main thread was held for the entire render on EVERY visit, which is the "extra second to
+ * populate" reported from the phone.
+ *
+ * The cure is to mount a screenful first and grow the list in idle steps. ⚠ It is NOT virtualisation
+ * (the rows all end up mounted eventually, so the page is exactly as tall and as scrollable as it
+ * always was): it removes the ONE long commit, which is the whole of the felt cost, and it does not
+ * touch a single row's geometry — which is what makes it safe to land on the desktop view too.
+ *
+ * `FIRST_PAINT_CARDS` = 48 covers the first screen everywhere the app renders: 390px is 3 columns
+ * and the widest desktop (1720px, `minmax(158px,1fr)`) is ~10, so 48 is 4–16 rows, i.e. always
+ * past the fold.
+ */
+export const FIRST_PAINT_CARDS = 48;
+
+/** How many rows each later step adds. Small enough that one step cannot be a long task. */
+export const MOUNT_STEP = 48;
+
+/** What the first paint mounts for a list of `total` rows. */
+export function firstMountCount(total: number, first: number = FIRST_PAINT_CARDS): number {
+  return Math.min(Math.max(total, 0), Math.max(first, 0));
+}
+
+/** The count actually mounted: the first screen, plus everything grown since (clamped to the list). */
+export function mountedCount(total: number, extra: number, first: number = FIRST_PAINT_CARDS): number {
+  return Math.min(Math.max(total, 0), firstMountCount(total, first) + Math.max(extra, 0));
+}
+
+/**
+ * The next EXTRA count — rows beyond the first paint. ⚠ Expressed as `extra` rather than as a
+ * total on purpose: a total would have to carry the first-paint number around, and a late-arriving
+ * `total` (the query answering after mount) would then render a partially-grown list instead of a
+ * full first screen. This way the first screen is free and only the growth is state.
+ */
+export function nextExtraCount(
+  extra: number,
+  total: number,
+  first: number = FIRST_PAINT_CARDS,
+  step: number = MOUNT_STEP,
+): number {
+  const room = Math.max(Math.max(total, 0) - firstMountCount(total, first), 0);
+  return Math.min(room, Math.max(extra, 0) + Math.max(step, 0));
+}
+
+/** Anything left to mount? The growth loop's own stopping rule. */
+export function needsMoreRows(shown: number, total: number): boolean {
+  return Math.max(shown, 0) < Math.max(total, 0);
+}
+
 /**
  * The Recently Added set (M3 · extraction E4): the server's recent list, minus any row without
  * an id — a row with no id cannot be opened or played, so it is dropped rather than rendered as

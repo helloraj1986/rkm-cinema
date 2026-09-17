@@ -41,6 +41,25 @@ const FOLDER = params.get("folder") === "1";
 //: OTHER non-administrator state (a member is the first). The library reads still answer, because
 //: the point is that the VIEW renders and still offers nothing.
 const SIGNED_OUT = params.get("signedout") === "1";
+//: ⚠ How many rows the folder stub answers with (M3 · windowing gate). The real Movies folder
+//: answered 713 the day the latency was measured, and the whole point of the mounting rule is
+//: that a list of that size must NOT be mounted in one commit — so the gate needs that count,
+//: not a one-item stub. `rows=713` makes the frame the same shape as the phone.
+const ROWS = Math.max(0, Number(params.get("rows") || 0) || 0);
+//: ⚠ Which view mode the folder frame opens in (M3 · mounting gate). `LibraryFolderView` reads
+//: `view` from its search params, and the compact list is a DIFFERENT map over the same 713 rows —
+//: a gate that only ever sees the grid would leave half the wiring unmeasured.
+const VIEW = params.get("view") || "";
+
+/** `rows` synthetic titles that look like the real ones (a year, a runtime, a poster id). */
+const syntheticRows = (n: number) =>
+  Array.from({ length: n }, (_, i) => ({
+    ...MOVIE,
+    item_id: `row-${i}`,
+    title: `Title ${String(i + 1).padStart(4, "0")}`,
+    year: 1990 + (i % 30),
+    playback_position: i % 5 === 0 ? 600 : 0,
+  }));
 
 const PROFILE = {
   id: ADMIN ? "uid-admin" : "uid-kid",
@@ -120,7 +139,8 @@ window.fetch = (async (input: RequestInfo | URL, init: RequestInit = {}) => {
     });
   }
   if (path.startsWith("/api/library/folders/")) {
-    return send({ provider: "jellyfin", items: EMPTY ? [] : [MOVIE], folder_id: "f1", warnings: [] });
+    const items = EMPTY ? [] : ROWS > 0 ? syntheticRows(ROWS) : [MOVIE];
+    return send({ provider: "jellyfin", items, folder_id: "f1", warnings: [] });
   }
   // -- the route under test -----------------------------------------------------------------
   if (path === "/api/library/scan") {
@@ -155,7 +175,7 @@ function Frame() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <MemoryRouter initialEntries={[FOLDER ? "/library/folder/f1" : "/library/home"]}>
+        <MemoryRouter initialEntries={[FOLDER ? `/library/folder/f1${VIEW ? `?view=${VIEW}` : ""}` : "/library/home"]}>
           <div className="min-h-dvh bg-canvas text-zinc-100">
             <Routes>
               <Route path="/library" element={<LibraryLayout />}>

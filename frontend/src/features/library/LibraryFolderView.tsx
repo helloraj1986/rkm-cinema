@@ -16,6 +16,7 @@ import {
 import { MediaCard } from "./MediaCard";
 import { MediaListRow } from "./MediaListRow";
 import { LibraryToolbar } from "./LibraryToolbar";
+import { useProgressiveMount } from "./useProgressiveMount";
 import { useLibraryOutlet } from "./LibraryLayout";
 import { toast } from "../watchlist/toast";
 import { Icon } from "../../components/ui/Icon";
@@ -77,6 +78,9 @@ export function LibraryFolderView() {
   const list = filterLibraryItems(folderItems, { genre: parsed.genre, sort: parsed.sort });
   const filtered = parsed.genre !== "";
   const provider = items.data?.provider ?? null;
+  // ⚠ The reset key is the LIST'S IDENTITY, not its length — a genre filter over a 713-row folder
+  // must paint its own rows immediately, and switching back must not mount 713 in one commit.
+  const mounted = useProgressiveMount(list.length, `${folderId}|${parsed.genre}|${parsed.sort}`);
 
   const runScan = () => {
     scan.mutate(undefined, {
@@ -195,9 +199,13 @@ export function LibraryFolderView() {
         </div>
       ) : (
         <>
+          {/* ⚠ `mounted` is the progressive mount (M3): the first screenful renders immediately and
+              the rest grows in idle steps, because mapping all 713 rows in ONE commit held the main
+              thread for 1.7–2.0 s on every tap (measured — see lib.ts). Nothing is ever unmounted,
+              so the page keeps its exact height and every row stays reachable by scrolling. */}
           {view === "compact" ? (
             <div className="flex flex-col gap-1.5" data-testid="compact-list">
-              {list.map((item) => (
+              {list.slice(0, mounted).map((item) => (
                 <MediaListRow
                   key={item.item_id}
                   item={item}
@@ -208,7 +216,7 @@ export function LibraryFolderView() {
             </div>
           ) : (
             <div className="grid grid-cols-[repeat(auto-fill,minmax(158px,1fr))] gap-x-4 gap-y-7">
-              {list.map((item) => (
+              {list.slice(0, mounted).map((item) => (
                 <MediaCard
                   key={item.item_id}
                   item={item}

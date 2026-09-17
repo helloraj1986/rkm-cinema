@@ -1,3 +1,4 @@
+import { memo } from "react";
 import type { MediaItem } from "../../lib/api/client";
 import {
   artTone,
@@ -53,8 +54,19 @@ function MarkerBadge({ marker }: { marker: Marker }) {
  * hover overlay reveals a centered ▶ (movies play now / series open episodes)
  * and a compact watched toggle; a 3px amber progress bar sits on the poster's
  * bottom edge. `fluid` fills a CSS-grid track instead of the fixed rail width.
+ *
+ * ⚠ MEMOISED, and it is not a micro-optimisation — it is what makes progressive mounting (M3) free.
+ * Every growth step re-renders the folder view, and without a memo React re-runs this component for
+ * EVERY card already on screen (a new element object means new props, so React's own bail-out cannot
+ * fire) — 48 rows mounted per step but up to 672 re-rendered, i.e. the cost grows with the square of
+ * the steps. Measured on the real 713-title folder: 15.5 s to finish mounting without this line.
+ *
+ * ⚠ The precondition that makes it SAFE: an item is never mutated in place anywhere in the app
+ * (checked), and every state change arrives through `invalidateQueries`, so a changed row is a NEW
+ * object and shallow comparison sees the difference. If a future change ever edits an item in place,
+ * this memo would show a stale card — that is the trade, and it is written down here on purpose.
  */
-export function MediaCard({
+function MediaCardBase({
   item,
   onQuickPlay,
   onOpenDetail,
@@ -83,7 +95,9 @@ export function MediaCard({
 
   return (
     <article
-      className={`group relative rounded-[10px] ${fluid ? "w-full min-w-0" : "w-44 shrink-0"}`}
+      className={`group relative rounded-[10px] [content-visibility:auto] [contain-intrinsic-size:auto_320px] ${
+        fluid ? "w-full min-w-0" : "w-44 shrink-0"
+      }`}
       data-testid="media-card"
     >
       {/* Transparent whole-card button — clicking anywhere opens the item page.
@@ -106,6 +120,7 @@ export function MediaCard({
           <img
             src={src}
             loading="lazy"
+            decoding="async"
             referrerPolicy="no-referrer"
             onError={(e) => {
               (e.currentTarget as HTMLImageElement).style.display = "none";
@@ -232,3 +247,6 @@ export function MediaCard({
     </article>
   );
 }
+
+/** ⚠ Exported memoised — see the ⚠ note on `MediaCardBase` (M3 progressive mounting). */
+export const MediaCard = memo(MediaCardBase);

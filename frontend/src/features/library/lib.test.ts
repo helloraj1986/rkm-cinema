@@ -11,6 +11,8 @@ import {
   episodeItemCode,
   filterLibraryItems,
   filterLibraryRows,
+  firstMountCount,
+  FIRST_PAINT_CARDS,
   fmtRuntime,
   folderCountLabel,
   isContinueWatching,
@@ -23,6 +25,9 @@ import {
   libraryIconFor,
   libraryNavEntries,
   libraryViewFromParams,
+  mountedCount,
+  needsMoreRows,
+  nextExtraCount,
   personHeadshotUrl,
   pickHomeHero,
   playbackMarker,
@@ -637,5 +642,62 @@ describe("recentlyAddedItems (M3 · E4)", () => {
   it("answers [] before the query has data", () => {
     expect(recentlyAddedItems(undefined)).toEqual([]);
     expect(recentlyAddedItems(null)).toEqual([]);
+  });
+});
+
+/**
+ * M3 · progressive mounting — the rule that removed the 1.7–2.0 s tap.
+ *
+ * ⚠ These tests exist to make "713 rows in one commit" IMPOSSIBLE rather than merely unlikely:
+ * `LibraryFolderView` used to map the whole list, and the first paint mounting the entire folder is
+ * exactly the bug. The first case below is the falsification — if `FIRST_PAINT_CARDS` ever equals
+ * `total`, or `firstMountCount` is bypassed, it goes RED.
+ */
+describe("progressive mounting (M3)", () => {
+  const TOTAL = 713;
+
+  it("the FIRST paint mounts a screenful, never the whole folder", () => {
+    expect(firstMountCount(TOTAL)).toBe(48);
+    expect(firstMountCount(TOTAL)).toBeLessThan(TOTAL);
+    expect(mountedCount(TOTAL, 0)).toBe(48);
+  });
+
+  it("grows to exactly the list, in steps, and never past it", () => {
+    let extra = 0;
+    const seen: number[] = [mountedCount(TOTAL, extra)];
+    for (let i = 0; i < 100 && needsMoreRows(mountedCount(TOTAL, extra), TOTAL); i += 1) {
+      extra = nextExtraCount(extra, TOTAL);
+      seen.push(mountedCount(TOTAL, extra));
+    }
+    expect(seen[0]).toBe(48);
+    expect(seen[1]).toBe(96);
+    expect(seen[seen.length - 1]).toBe(TOTAL);
+    expect(Math.max(...seen)).toBe(TOTAL);
+    // ⚠ monotonic, and no single step is the whole list
+    for (let i = 1; i < seen.length; i += 1) {
+      expect(seen[i]).toBeGreaterThanOrEqual(seen[i - 1]);
+      expect(seen[i] - seen[i - 1]).toBeLessThanOrEqual(48);
+    }
+  });
+
+  it("a list shorter than a screenful mounts whole and never grows", () => {
+    expect(mountedCount(30, 0)).toBe(30);
+    expect(firstMountCount(30)).toBe(30);
+    expect(needsMoreRows(30, 30)).toBe(false);
+    expect(nextExtraCount(0, 30)).toBe(0);
+    expect(nextExtraCount(0, 0)).toBe(0);
+  });
+
+  it("answers 0 — not NaN or negative — for the shapes a query has before it answers", () => {
+    expect(firstMountCount(0)).toBe(0);
+    expect(mountedCount(0, 0)).toBe(0);
+    expect(mountedCount(-5, -5)).toBe(0);
+    expect(mountedCount(TOTAL, -5)).toBe(48);   // a negative offset must not UNMOUNT the first screen
+    expect(nextExtraCount(-5, TOTAL)).toBe(48); // nor make growth go backwards
+  });
+
+  it("⚠ CANNOT exceed the list even if the growth state is wrong", () => {
+    expect(mountedCount(TOTAL, 99999)).toBe(TOTAL);
+    expect(mountedCount(30, 99999)).toBe(30);
   });
 });

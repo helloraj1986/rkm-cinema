@@ -253,6 +253,13 @@ nobody can find is a feature nobody has. Settings → Search gains one card, mir
    the palette and the phone's list. ⚠ Only after phase 2 has been seen on his library.
 5. **Image**: add `model2vec` to `requirements.txt` and bake the model into the image at build time
    (`HF_HOME` in the image), so the container needs no network at runtime for the fallback.
+   ⚠ **Measured install sizes** (site-packages delta in a clean venv, 2026-09-18): `model2vec` and
+   its six small dependencies add **125.9 MB**, and the baked model is **59 MB** — call it
+   **~185 MB** of image for the whole feature. For contrast, the same measurement for
+   `fastembed` + `bge-small-en-v1.5` is **212.1 MB** of wheels before its model, plus onnxruntime's
+   runtime footprint (733 MB resident, §3.0). ⚠ The earlier draft of this plan said "~59 MB of
+   weights + the wheel", which was vague enough to read as "the feature is nearly free": it is not,
+   it is ~185 MB of image, and that is still 10× cheaper than the torch route it replaces.
 
 ## §7 What could NOT be measured here, and the risk each one carries
 

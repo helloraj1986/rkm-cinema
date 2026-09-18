@@ -11,6 +11,11 @@ import RKMServerKit
 /// ⚠ The failure path is the point of this type. A `WKWebView` that fails to load shows a blank
 /// page and says nothing, so a typo'd address — or a server that is simply off — looks
 /// indistinguishable from a broken app (`apple/ios/README.md`).
+///
+/// ⚠⚠ AND SINCE ADR-0012 THE FAILURE PATH IS A LADDER, NOT A VERDICT: a failed load no longer means
+/// "unreachable" straight away. The live app is asked first, the device's own cached copy of it is asked
+/// second, and only then is the server declared unreachable. That ordering is `ShellLaunchLadder`
+/// (pure, executed on Linux), and this type is the WebKit half that carries it out.
 final class WebShellModel: ObservableObject {
 
     enum LoadState: Equatable {
@@ -35,6 +40,11 @@ final class WebShellModel: ObservableObject {
     @Published private(set) var cookieSummary: String = "unknown"
     @Published private(set) var loadAttempts = 0
 
+    /// ⚠ ADR-0012 — WHICH attempt is serving the page: the live app, or the copy this device holds.
+    /// Published and logged, because the debug overlay reads the log and `LOGGING.md` §4 makes the
+    /// overlay the surface a screenshot and the file log are joined on.
+    @Published private(set) var bootStep: ShellBootStep = .fresh
+
     let address: ServerAddress
 
     /// Called on a **main-frame** navigation failure. `AppModel` turns this into the unreachable
@@ -42,6 +52,11 @@ final class WebShellModel: ObservableObject {
     var onUnreachable: ((UnreachableInfo) -> Void)?
 
     private(set) weak var webView: WKWebView?
+
+    /// ⚠ ADR-0012: the ladder the loads advance — live app → the device's own copy → the error screen.
+    /// ⚠ It is a STORED property, not a local, because "have we already spent the cached attempt?" is
+    /// state that has to survive between two `didFail` callbacks. Reset by every `load()`.
+    private var ladder = ShellLaunchLadder()
 
     /// `WebKitErrorDomain` 102 — "frame load interrupted by policy change". WebKit cancels loads
     /// for all sorts of benign reasons, and flipping to a scary screen on one of those would be
@@ -59,19 +74,90 @@ final class WebShellModel: ObservableObject {
         load()
     }
 
+    /// ⚠ THE ONE ENTRY POINT for a launch and for a reload, and it always begins at the FRESH step —
+    /// which is the whole "no permanent stickiness to the cached copy" rule (ADR-0012 D4).
     func load() {
+        ladder.reset()
+        RKMLog.info("shell boot: step \(ladder.step.label) — the live app is asked first", category: .nav)
+        performLoad()
+    }
+
+    /// ⚠ NOT `webView.reload()` any more, and the difference is load-bearing: `reload()` re-sends the
+    /// LAST request, so reloading a page that was booted from the device's own copy would re-read that
+    /// copy even with the network back up. This goes through `load()`, so a reload is a fresh climb of
+    /// the ladder and the live app wins again.
+    func reload() {
+        RKMLog.info("reload requested — back to the fresh attempt", category: .nav)
+        load()
+    }
+
+    /// Carry out the step the ladder is on.
+    ///
+    /// ⚠ The ONLY place a shell `URLRequest` is built, so the step → cache-policy mapping exists once
+    /// (ADR-0012 D2) and the ladder stays pure enough to run on Linux.
+    private func performLoad() {
         guard let webView else { return }
         loadAttempts += 1
         let identifier = CorrelationID.next()
         state = .loading
-        RKMLog.info("load #\(loadAttempts) → \(address.displayString)", category: .nav, correlation: identifier)
-        webView.load(URLRequest(url: address.url))
+        bootStep = ladder.step
+
+        // ⭐⭐ ADR-0012 D7/D8 — THE OFFLINE STEP HANDS OVER THE APP'S OWN COPY, and this is the whole point
+        // of the phase. With no network there is no WebKit cache entry to ask for (measured on his phone:
+        // the ~1.1 MB bundle is never STORED, so a launch with the Wi-Fi off painted nothing), so the app
+        // serves the document it holds — with the SERVER as its base URL, which is measured to keep the
+        // page's origin, its cookies, its `/api/*` and A1's persisted query cache.
+        // ⚠ Falls through to the cache-first URL load below when there is no usable store: a device that
+        // has never been online is a normal state, and this degrades rather than failing.
+        if ladder.step == .cached, let stored = storedShellDocument() {
+            RKMLog.info("load #\(loadAttempts) → \(address.displayString) · step cached"
+                        + " · handing over the app's own shell (\(stored.count) B)",
+                        category: .nav, correlation: identifier)
+            webView.loadHTMLString(stored, baseURL: address.url)
+            return
+        }
+
+        var request = URLRequest(url: address.url)
+        // ⚠ `returnCacheDataElseLoad` ONLY at the cached step, because it SKIPS revalidation: at `fresh`
+        // it would serve a superseded document whose hashed bundle the last deploy deleted, and
+        // `/assets/` answers `=404` for exactly that (by design — see `nginx/default.conf`).
+        request.cachePolicy = ladder.step.asksCacheFirst ? .returnCacheDataElseLoad : .useProtocolCachePolicy
+
+        RKMLog.info("load #\(loadAttempts) → \(address.displayString) · step \(ladder.step.label)"
+                    + (ladder.step.asksCacheFirst ? " · cache-first (the device's own copy)" : " · revalidating"),
+                    category: .nav, correlation: identifier)
+        webView.load(request)
     }
 
-    func reload() {
-        guard let webView else { return }
-        RKMLog.info("reload requested", category: .nav)
-        webView.reload()
+    /// The app's own copy of the shell, or `nil` when there is nothing usable — **the ONE place that
+    /// decision is made** (`ShellStoreRules.choice` is pure and falsified; this only supplies the facts).
+    ///
+    /// ⚠ `requiredAssets` is computed from the STORED document, which is already rewritten — and it still
+    /// works, because the rewritten references (`rkm-asset://app/assets/index-*.js`) contain the
+    /// `/assets/index-*.js` the rule looks for. ⚠ That is load-bearing and pinned by a check in
+    /// `offline-core-tests/main.swift`, because a rewrite that hid the asset names would silently defeat
+    /// the pair rule and let an incomplete store be rendered.
+    private func storedShellDocument() -> String? {
+        guard let document = ShellStore.readDocument() else { return nil }
+        let required = ShellStoreRules.requiredAssets(document: document)
+        let choice = ShellStoreRules.choice(manifest: ShellStore.manifest(),
+                                            requiredAssets: required,
+                                            serverAddress: ShellStore.addressKey(for: address))
+        guard choice == .storedShell else {
+            RKMLog.info("shell store: not usable this launch (\(required.count) asset(s) wanted)", category: .web)
+            return nil
+        }
+        return document
+    }
+
+    /// ⚠ Its own name on purpose: the `describe(_:)` further down takes a `URL?`, and an overload that
+    /// shadowed it would be a trap for whoever reads this next.
+    private func shellRefreshDescription(_ outcome: ShellFetcher.Outcome) -> String {
+        switch outcome {
+        case .stored(let assets): return "kept \(assets) asset(s)"
+        case .unchanged: return "already current"
+        case .failed(let why): return "not kept — \(why)"
+        }
     }
 
     // MARK: - Navigation delegate callbacks
@@ -94,6 +180,18 @@ final class WebShellModel: ObservableObject {
         // already has appear on screen the moment it can draw them — and it is production behaviour, not
         // probe scaffolding.
         OfflineBridge.shared.pageDidLoad()
+
+        // ⭐ ADR-0012 D8 — a successful LIVE load is the one moment the app knows which shell the server
+        // is serving, so it is the moment the app's own copy is brought up to date. ⚠ Only at the `fresh`
+        // step: a launch served from the store has, by definition, no server to talk to.
+        // ⚠ Fire-and-forget: the page is already painted, and a refresh that fails changes nothing it can
+        // see (the store it already had stays valid — the fetch is all-or-nothing).
+        if bootStep == .fresh {
+            Task { [address] in
+                let outcome = await ShellFetcher.refresh(address: address)
+                RKMLog.info("shell refresh: \(shellRefreshDescription(outcome))", category: .web)
+            }
+        }
         #if DEBUG
         // ⚠ Phase B3's live probe hangs off this: its bridge half needs a LIVE page (it installs a listener
         // in it), and the page is only live once a navigation has finished. No-op without the launch
@@ -106,17 +204,47 @@ final class WebShellModel: ObservableObject {
         let nsError = error as NSError
         // ⚠ The domain and code are the diagnosis — "The operation couldn't be completed" is not.
         let detail = "\(nsError.domain) \(nsError.code) — \(nsError.localizedDescription)"
+        let failure: ShellBootFailure = isBenignCancellation(nsError) ? .benignCancellation : .transport(detail)
 
-        if isBenignCancellation(nsError) {
-            RKMLog.verbose("navigation cancelled (benign, ignored): \(detail)", category: .nav)
+        // ⚠ The LADDER decides, rather than this function — including the rule that a benign cancellation
+        // does not move it (ADR-0012 D5). Asking it here is what keeps that rule in one place.
+        //
+        // ⚠ And there is no dedupe by "which load was this?" because there is nothing to dedupe: WebKit
+        // reports either `didFailProvisionalNavigation` (before the response) or `didFail` (after it) for a
+        // given navigation, never both. The case that WOULD matter — a navigation cancelled for WebKit's own
+        // reasons advancing the ladder and spending the one cached attempt — is what D5 covers instead.
+        let step = ladder.next(after: failure)
+
+        if case .benignCancellation = failure {
+            RKMLog.verbose("navigation cancelled (benign, ignored): \(detail) · step stays \(step.label)",
+                           category: .nav)
             return
         }
 
-        RKMLog.error("navigation failed: \(detail) (main frame: \(isMainFrame))", category: .nav)
+        RKMLog.error("navigation failed: \(detail) (main frame: \(isMainFrame)) · step \(step.label)",
+                     category: .nav)
 
         guard isMainFrame else { return }
-        state = .failed(detail)
-        onUnreachable?(UnreachableInfo(address: address, detail: detail))
+
+        switch step {
+        case .cached:
+            // ⚠⚠ ADR-0012 — the whole point of the phase. The server did not answer, so ask the DEVICE.
+            // A0 made the shell storable (`no-cache` on the document, `immutable` on the hashed bundles),
+            // so this is what paints the app with the Wi-Fi off instead of "Can't reach this server".
+            RKMLog.info("the server did not answer — trying the copy of the app this device holds",
+                        category: .nav)
+            performLoad()
+
+        case .unreachable:
+            state = .failed(detail)
+            onUnreachable?(UnreachableInfo(address: address, detail: detail))
+
+        case .fresh:
+            // ⚠ Unreachable BY CONSTRUCTION: `next(after:)` never returns the step that just failed, so
+            // this branch is a bug rather than a state — and reloading from here is precisely the loop
+            // the ladder's shape exists to make impossible.
+            RKMLog.error("the launch ladder returned the step that just failed — not reloading", category: .nav)
+        }
     }
 
     /// A crashed web-content process is its own kind of blank screen, and it is common enough

@@ -39,6 +39,7 @@ import tempfile
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 OFFLINE = REPO / "apple" / "ios" / "RKMCinema" / "Offline"
+SHELL = REPO / "apple" / "ios" / "RKMCinema" / "Shell"
 PURE_SOURCES = [
     OFFLINE / "OfflineManifest.swift",
     OFFLINE / "OfflinePlan.swift",
@@ -51,6 +52,13 @@ PURE_SOURCES = [
     # ⚠ The Range suite itself, shared with the app's own DEBUG probe, so the Mac round tests exactly the
     # cases that were executed here.
     OFFLINE / "OfflineProbeCases.swift",
+    # ⚠ ADR-0012 — the cold-launch ladder (live app → the device's own copy → the error screen). Not an
+    # offline-DOWNLOAD rule, but the same discipline applies: the decision is pure, so it is RUN here
+    # rather than argued about, and the WebKit half in `WebShellModel.swift` only carries out the answer.
+    SHELL / "ShellLaunchPlan.swift",
+    # ADR-0012 D7/D8 (plan §0c, S1) — the app-owned shell's rules: which assets a document needs, where
+    # their URLs point, and whether a stored copy may be used at all.
+    SHELL / "ShellStorePlan.swift",
 ]
 HARNESS = REPO / "apple" / "scripts" / "offline-core-tests" / "main.swift"
 
@@ -368,6 +376,101 @@ MUTATIONS: list[tuple[str, str, str, str, str]] = [
      "        let live = Set(current)\n        return previous.filter { !live.contains($0) }.sorted()",
      "        return []",
      "⚠ a deleted title is announced, and in a deterministic order"),
+    # ==============================================================================================
+    # ADR-0012 — the cold-launch ladder. ⚠ Same discipline, and the same reason it lives here: with the
+    # Wi-Fi off the app has exactly one shot at the cached copy, so "when is it spent, and what happens
+    # after" is a rule that must be RUN, not reviewed. Each mutation is a REVERT of one rule.
+    # ==============================================================================================
+    ("the benign-cancellation rule", "ShellLaunchPlan.swift",
+     "        if case .benignCancellation = failure {",
+     "        if false {",
+     "a benign cancellation does NOT spend the cached attempt"),
+    ("the fresh-to-cached step", "ShellLaunchPlan.swift",
+     "        case .fresh: step = .cached",
+     "        case .fresh: step = .unreachable",
+     "a transport failure tries the device's own copy"),
+    ("which step asks the cache first", "ShellLaunchPlan.swift",
+     "    var asksCacheFirst: Bool { self == .cached }",
+     "    var asksCacheFirst: Bool { self != .unreachable }",
+     "the fresh attempt revalidates"),
+    ("the cached-to-unreachable step", "ShellLaunchPlan.swift",
+     "        case .cached: step = .unreachable",
+     "        case .cached: break",
+     "when the cached copy cannot boot either, the app says so"),
+    ("the terminal unreachable step", "ShellLaunchPlan.swift",
+     "        case .unreachable: break   // terminal, and idempotent: no loop, and no second screen.",
+     "        case .unreachable: step = .fresh",
+     "and it is terminal"),
+    ("the reset to the fresh attempt", "ShellLaunchPlan.swift",
+     "        step = .fresh",
+     "        step = .unreachable",
+     "a new launch starts at the fresh attempt again"),
+    ("the logged step spelling", "ShellLaunchPlan.swift",
+     "    var label: String { rawValue }",
+     '    var label: String { self == .cached ? "cache" : rawValue }',
+     "the three steps have the spelling the log and the HUD use"),
+    ("what the unreachable step means", "ShellLaunchPlan.swift",
+     "    var loads: Bool { self != .unreachable }",
+     "    var loads: Bool { true }",
+     "the unreachable step is a SCREEN"),
+    # ==============================================================================================
+    # ADR-0012 D7/D8 — the APP-OWNED SHELL's rules (plan §0c, phase S1). Each entry reverts ONE rule and
+    # the check it protects must go red: these decide whether a cold launch with no network paints the
+    # app, paints an empty page, or paints the wrong app.
+    # ==============================================================================================
+    ("the /assets/ prefix rule", "ShellStorePlan.swift",
+     "        guard path.hasPrefix(assetPrefix) else { return false }",
+     "        guard true else { return false }",
+     # ⚠ The label that only THIS rule can produce — `/favicon.svg` is refused by the extension whitelist
+     # as well, which is how this mutation survived its first run.
+     "⚠ a .js OUTSIDE /assets/ is refused"),
+    ("the path-traversal refusal", "ShellStorePlan.swift",
+     '        guard !name.isEmpty, !name.contains("/"), !name.contains("..") else { return false }',
+     "        guard !name.isEmpty else { return false }",
+     # ⚠ Likewise: `../secret.js` is refused by the character whitelist too, so the case that needs the
+     # `..` guard is one made only of legal characters.
+     "refuses /assets/..js as a file name"),
+    ("the extension whitelist", "ShellStorePlan.swift",
+     "        return storableExtensions.contains(ext)",
+     "        return true",
+     "refuses /assets/x.txt as a file name"),
+    ("the de-duplication", "ShellStorePlan.swift",
+     "                if seen.insert(path).inserted { ordered.append(path) }",
+     "                ordered.append(path)",
+     "an asset named twice is fetched once"),
+    ("the document-first order", "ShellStorePlan.swift",
+     "        for text in [document] + javascriptBodies {",
+     "        for text in javascriptBodies + [document] {",
+     "the document's own asset references, in document order"),
+    ("the quoted-reference rule", "ShellStorePlan.swift",
+     '                out = out.replacingOccurrences(of: "\\(quote)\\(path)\\(quote)",\n'
+     '                                               with: "\\(quote)\\(storedURL(path: path, scheme: scheme))\\(quote)")',
+     '                out = out.replacingOccurrences(of: path,\n'
+     '                                               with: storedURL(path: path, scheme: scheme))',
+     "a bare mention in prose is NOT a reference"),
+    ("the manifest version rule", "ShellStorePlan.swift",
+     "        guard manifest.version == ShellStoreManifest.currentVersion else { return .cacheFirstURL }",
+     "        guard true else { return .cacheFirstURL }",
+     "a manifest from a NEWER build is refused"),
+    ("the same-server rule", "ShellStorePlan.swift",
+     "        guard manifest.serverAddress == serverAddress else { return .cacheFirstURL }",
+     "        guard true else { return .cacheFirstURL }",
+     "a store fetched from ANOTHER server is dropped"),
+    ("the empty-document rule", "ShellStorePlan.swift",
+     "        guard manifest.documentBytes > 0 else { return .cacheFirstURL }",
+     "        guard manifest.documentBytes >= 0 else { return .cacheFirstURL }",
+     "an empty stored document is not a shell"),
+    ("the complete-pair rule", "ShellStorePlan.swift",
+     "        guard requiredAssets.allSatisfy({ stored.contains($0) }) else { return .cacheFirstURL }",
+     "        guard true else { return .cacheFirstURL }",
+     "a document whose bundle is missing is NOT usable"),
+    # ⚠ S2 (ADR-0012 D7): the store reads the asset set back OUT of a document that is already
+    # rewritten, and this pattern is what finds them. Widened, it matches prose and attribute names
+    # as well — the required set stops describing the bundle.
+    ("the asset pattern the store looks for", "ShellStorePlan.swift",
+     '        let pattern = "\\(assetPrefix)[A-Za-z0-9._-]+"',
+     '        let pattern = "[A-Za-z0-9._-]+"',
+     "the document's own asset references, in document order"),
 ]
 
 

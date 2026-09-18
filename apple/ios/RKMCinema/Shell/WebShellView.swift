@@ -56,6 +56,13 @@ struct WebShellView: UIViewRepresentable {
                                           name: OfflineBridge.handlerName)
         controller.addUserScript(OfflineBridgeScript.userScript())
 
+        // ⚠ ADR-0012 D7 — the app's own copy of the shell's assets. ⚠ Registered ALWAYS, not only on the
+        // offline path: the handler is inert until something asks for a `rkm-asset://` URL, which only the
+        // stored document does, and a handler registered conditionally is one that is missing exactly when
+        // it is needed (`apple/WORKFLOW.md` §8b: a deallocated scheme handler fails in SILENCE).
+        configuration.setURLSchemeHandler(ShellAssetSchemeHandler.shared,
+                                          forURLScheme: ShellAssetSchemeHandler.scheme)
+
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator

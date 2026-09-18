@@ -1,4 +1,197 @@
-## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-19, session 6) · branches **`dev`** and **`main`** — BOTH carry everything below (identical trees) · tree clean, pushed
+## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-19, session 7) · branch **`feat/offline-cold-launch`** — cut from `dev`, ⚠ **NOT merged** (this one needs his Mac round before anything moves) · ⚠ **the working tree is on THAT branch**, so that is what `.\rkm-cinema.ps1 apply` would build (and nothing here needs `apply` — see the handover)
+
+**Say this first:** *"continue rkm-cinema — pick up the RESUME-HERE block."* Then read this,
+`KNOWN_ISSUES.md`'s status table, and the session-6 block below (it is now HISTORY, and its three
+device items are **carried forward** in NEXT STEPS — nothing in it was dropped).
+
+⚠ **A doc cannot name its own tip and neither can a merge commit name itself.** `git log --oneline -3`
+is the honest answer; never trust a SHA written in a doc.
+
+### Part 1 — the offline-shell plan was read against the REPO, and most of it was already built
+
+He asked: *"FOR RKM-CINEMA APP CAN WE CHECK FOR THE docs/OFFLINE_SHELL_PLAN.md and see what can be
+implemented for our project ... everything needs to be done in a new branch from dev"*. The document had
+sitting untracked in the tree since 2026-09-18 (session 6 recorded it as *not theirs*), so this session
+read it against the code first — and **two of its four phases plus its whole "separate track" already
+existed**:
+
+| The plan asked for | Found in the repo |
+|---|---|
+| **Phase C** — a persisted query cache | ✅ BUILT 2026-09-14 as **A1** (`frontend/src/lib/query/persist.ts`, gated by `tools/check_query_cache.py`) |
+| **Phase D, tier 1** — posters with no network | ✅ already the artwork policy (`max-age=604800, stale-while-revalidate=604800` + ETag) |
+| **§5a** — "does it transcode compatible MKV?" | ✅ done, and it was **worse than the plan guessed**: 13 of 13 real MP4s were being fully re-copied (ADR-0007 D3, 2026-09-16) |
+| **Phases A + B** — a `WKURLSchemeHandler` + a synced `ShellCache/` | ⚠ not built, and **not needed as written** — that would be a second cache of bytes the WebView already stores (A0's `no-cache` document + `immutable` hashed assets). ⚠ And its premise was wrong: a failed probe does **not** leave a blank WebView, it lands on the native *"Can't reach this server"* |
+
+⚠ **His decision, from a form, on that finding:** build **① the re-scoped cold-launch shell** (not the
+plan's phases A/B), on a branch cut from `dev`. The four options offered were ① cold-launch (chosen),
+② posters/subtitles into a downloaded bundle, ③ the §5b packaging/transfer pipeline, ④ docs only.
+
+The plan document is now **tracked**, and carries the reconciliation as its own §0a/§0b rather than being
+silently rewritten: a plan whose header still says "proposed" is a plan the next session starts building.
+
+### Part 2 — BUILT: the cold-launch ladder — the live app first, the DEVICE's own copy second, "Can't reach this server" last
+
+**The gap was never a missing cache. It was that nothing ever asked for one.** With the Wi-Fi off the app
+asked the network once, was refused, and went straight to the unreachable screen — while A0 (2026-09-14)
+had already made the shell *storable* and A1 had already made the ROWS survive. E2 had already answered
+the service-worker question (`navigator.serviceWorker` is absent in this WebView, on a secure origin too),
+so the HTTP cache is the offline-shell story and there was nothing to build for it except the question.
+
+* **NEW `apple/ios/RKMCinema/Shell/ShellLaunchPlan.swift`** — pure Foundation, no WebKit, no `URLRequest`:
+  `ShellBootStep` (`fresh`/`cached`/`unreachable`, with `asksCacheFirst` and `loads`), `ShellBootFailure`
+  (`benignCancellation` vs `transport`), and `ShellLaunchLadder.next(after:)`. The same split as
+  `OfflineServerCore.plan`: the decision is pure, so `check-offline-core.py` **runs** it on Linux, and the
+  WebKit half only carries out the answer.
+* **Changed `apple/ios/RKMCinema/Shell/WebShellModel.swift`** — `load()` resets the ladder and always
+  starts at `fresh`; `performLoad()` is the ONE place a shell `URLRequest` is built (step → cache policy);
+  `didFail` asks the ladder instead of deciding; `reload()` now goes through `load()` (⚠ `webView.reload()`
+  re-sent the LAST request, so a reload of a cached-booted page would have re-read the cache with the
+  network back up). New `bootStep` published for the log/HUD.
+* ⚠ **`frontend/`, `backend/`, `nginx/` and `Config/Info.plist`: NOTHING changed.** No new route, no bridge
+  bump (seam 2 stays `v1`), no bundled UI. This is entirely inside the app.
+* **NEW `docs/adr/ADR-0012-cold-launch-offline-shell.md`** — the six decisions (D1 order · D2 `cacheFirst`
+  only at the cached step, because that policy SKIPS revalidation and a superseded document names a hashed
+  bundle the deploy deleted, and `/assets/` answers `=404` for exactly that · D3 no scheme handler, no
+  `ShellCache/`, one mechanism per job · D4 per-launch, reset by `load()` · D5 a benign cancellation never
+  spends the cached attempt · D6 the page is not told which step served it).
+* **Gates extended, not invented:** `apple/scripts/check-offline-core.py` gained the file in
+  `PURE_SOURCES` plus **8 new mutations** (each rule reverted one at a time, the matching check required to
+  go red) and `offline-core-tests/main.swift` a `cold launch` section (15 checks);
+  `check-apple-typecheck.sh` gained a `Shell/` loop for the new file.
+
+### Gates, measured this session
+
+| Gate | Result |
+|---|---|
+| `python3 apple/scripts/check-offline-core.py` | **PASS — 532 checks, 0 failures** |
+| `python3 apple/scripts/check-offline-core.py --falsify` | **8/8 new rules reverted, each went RED on its own check** (full run: 75 mutations, no survivors) |
+| `bash apple/scripts/check-apple-typecheck.sh` | **PASS** — every file typechecks (⚠ `ShellLaunchPlan.swift` included; `WebShellModel.swift` cannot be, see below) |
+| `swiftc -parse apple/ios/RKMCinema/Shell/ShellLaunchPlan.swift` | clean |
+| `python3 apple/scripts/check-imports.py` | 33 files, **no missing framework imports** |
+| `python3 tools/check_md_links.py` | all links resolve |
+
+⚠ **No frontend/backend gate was re-run, because no frontend or backend file changed** — saying so is the
+point: a native phase that claims `vitest 589` would be claiming someone else's run.
+
+### ⚠ What is NOT verified — and it is the whole point of the Mac round
+
+**Does WKWebView serve a cached top-level DOCUMENT when the origin is unreachable?** `.returnCacheDataElseLoad`
+is the API for exactly that and the document IS storable (A0), but no sandbox can run WebKit, and E1's
+lesson is that WebKit's behaviour here is **measured, not inferred**. So:
+
+* ⚠ **`WebShellModel.swift` has never been compiled or run.** It is the file carrying the ladder out, and
+  SwiftUI/WebKit are not stubbable in the committed scaffold — **measured, not assumed:** adding it to
+  `check-apple-typecheck.sh` as an experiment gives **8 errors, none about this change** (the committed
+  `WKWebView` stub has no `load`/`title`/`configuration`, `UnreachableInfo` is in `App/`, the DEBUG probe is
+  `#if DEBUG`). ⚠ Making it checkable means growing the stub scaffold, which is a separate change with its
+  own risk — a stub kinder than the real API is a gate that cannot fail. So the Mac is its first build.
+* ⚠ **If the device does NOT paint**, the honest conclusion is that this WebView refuses a cached document
+  for an unreachable origin, and the answer becomes the scheme handler the plan proposed — which ADR-0012
+  therefore records as *not chosen yet*, not as wrong.
+
+### ⚠ HIS DEVICE ROUND (2026-09-19): item 4 did NOT happen — and the ladder is not the reason (measured)
+
+He ran the test on the iPhone with the Wi-Fi off and got **a blank screen**, twice: once cold, and once
+immediately after a successful online visit (so the shell's bytes had just been fetched). What the overlay
+screenshot and the log actually show:
+
+| Evidence | Reading |
+|---|---|
+| `the server did not answer — trying the copy…` → `load #2` → `didFinish / : title "RKM Cinema"` → `web page ready` | ✅ **The ladder works.** With no network the shell asks the DEVICE and the DOCUMENT comes back from its cache — the phase's core claim, observed on hardware. |
+| HUD `net —` (the "newest request" field is a dash) | ⚠ **The page made ZERO requests** — no `/api/auth/me`, no `/api/config` ⇒ React never booted. |
+| `last` still shows the *navigation* failure, and no `jserror` line exists | Nothing in the page threw. A `<script src>` that fails to load logs nothing at all — this is that signature. |
+| The overlay covers 380×586pt of the 402×874pt screen; outside it the page is a flat `#08090b` (the app's `--bg`) with **zero** bright pixels | No header, no bottom nav, no "Checking your session…" spinner, no text: an empty canvas wearing the app's own background. |
+
+⚠ **So: the document is served from the device, its ~1.1 MB `/assets/index-*.js` is not** — and because the
+app's script never runs, nothing paints. ⚠ The online-then-immediately-offline test rules out "the cache had
+aged out": the bytes had been fetched seconds earlier and still did not come back. The leading (unproven)
+explanation is that **WebKit's disk cache does not keep a single ~1.1 MB response** — the document (1.6 KB)
+is kept. ADR-0012 D3 assumed the HTTP cache is a shell store; on this evidence it is a shell store for a
+SMALL document only.
+
+**Consequence: `feat/offline-cold-launch` stays UNMERGED.** The next step is to make the shell app-owned —
+a durable copy of the document + its assets in `Application Support/`, loaded with the server as the base
+URL so the page's origin (and therefore the session cookie, `/api/*`, and A1's persisted query cache) does
+not move. ⚠ ADR-0012 D3 must be corrected in that ADR, not silently.
+
+### ⭐ THE SPIKE ANSWERED IT (2026-09-19, same session) — the fix is the CHEAP shape
+
+Throwaway branch **`spike/shell-origin`** (⚠ NOT to be merged; the record is `apple/SPIKE_SHELL_ORIGIN.md`
+and the tool is `tools/check_spike_shell.py`). Run on his iPhone from Xcode's console — ⚠ **the debug
+overlay CLIPS every line it shows, so it could not carry the answer; the console could.**
+
+| Question | Answer |
+|---|---|
+| does `loadHTMLString(html, baseURL: <server>)` keep the SERVER's origin? | ⭐ **YES** — `origin` is the server's exactly, `/api/status` 200 and **`/api/auth/me` 200** (the cookie travelled; `cookieChars: 0` is just HttpOnly) |
+| does a MODULE SCRIPT load from a `WKURLSchemeHandler`? | ⭐ **YES** — `serving /probe.js as text/javascript, 106 B`, and `moduleNow: ok @ rkm-spike-asset://spike/probe.js` (its own `import.meta.url` proves WebKit treated it as a module) |
+| does that document share the app's `localStorage`? | ⭐⭐ **YES** — `ls: ok`, `lsKeys: 4`, **`lsSeesQueryCache: true`** ⇒ A1's persisted rows come back with it |
+| does a custom-scheme DOCUMENT load (the fallback)? | It does (`origin rkm-spike-asset://spike`, `secure: true`) — **not needed** |
+
+**⇒ ADR-0012 gains D7/D8**: the shell becomes APP-OWNED (the document + its assets in
+`Application Support/ShellCache/`, the document handed to the page with the server as its base URL, the
+assets rewritten to a custom scheme) — and ⚠ **the page's origin does not move**, so there is no CORS work,
+no cookie plumbing, no api change, and A1's origin-keyed cache is untouched. The ladder itself is unchanged:
+only what the `cached` step LOADS changes.
+
+Phases are written into `docs/OFFLINE_SHELL_PLAN.md` §0c: **S1** the store's rules (pure, Linux, no round) ·
+**S2** the native half (one Mac round) · **S3** the Wi-Fi-off device test.
+
+⚠ **And a defect the round exposed in a SHARED doc:** `apple/LOGGING.md` §7's
+`log stream --device --subsystem …` **does not run on his Mac** — `log stream` has no `--device` flag
+(his terminal's usage output is pasted in the session). The working route on a physical device is Xcode's
+console, or Console.app → Devices. ⚠ **That doc is owed a fix** and the fix belongs on `dev`, not on this
+branch's throwaway spike.
+
+### ⭐ S3 PASSED (2026-09-19) — his iPhone, with no media server reachable
+
+His words: *"the ios shell launches with no media server connected"*. That closes **§18 #9**, the last gap
+in "it works offline": a cold launch with nothing to talk to now **paints**, and it carries the library
+rows, because the `cached` step hands the page the app's own copy of the document with the server as its
+base URL (measured to keep the origin, the cookie, `/api/*` and A1's snapshot).
+
+⚠ Outstanding before it is finished: the 86-mutation falsification run, then the merge to `dev` — which is
+his call.
+
+### ✅ S2 BUILT (2026-09-19) — the native half: the app now HOLDS its own shell
+
+`Shell/ShellStore.swift` (the container `Application Support/ShellCache/`, atomic writes, the manifest as
+the commit point) · `Shell/ShellFetcher.swift` (refresh after a successful LIVE load — **all-or-nothing**,
+so a mid-deploy 404 cannot overwrite a good shell) · `Shell/ShellAssetSchemeHandler.swift`
+(`rkm-asset://app/assets/<name>` served from the container, `*` CORS as the spike measured, `no-store`).
+The ladder's `cached` step now hands the page the stored document with the **server as its base URL** —
+which the spike measured to keep the origin, the cookie, `/api/*` and A1's snapshot — and the handler is
+registered **always**, not conditionally.
+
+⚠ **Two real defects the sandbox gates caught before his round:** `check-apple-typecheck.sh` failed the
+build on a `let` URL receiving a mutating `setResourceValues` (a genuine Mac build failure), and the
+falsification run reported two of S1's rules passing *for the wrong reason* (`/favicon.svg` was also
+refused by the extension whitelist; `../secret.js` also by the character whitelist) — both fixtures are now
+cases only the intended rule can fail.
+
+Gates: `check-offline-core.py` **558 checks, 0 failures** · typecheck PASS (all three new files) ·
+`check-imports.py` 37 files · `check_md_links.py` clean · ⚠ the 86-mutation falsification run is in flight
+and its result is recorded when it lands.
+
+### NEXT STEPS, in order
+
+1. **His Mac round for S3** — `./apple/scripts/mac-round.sh ios`, then the Wi-Fi-off force-quit relaunch.
+   Expected: the app **paints, with its rows**; `shell refresh: kept 2 asset(s)` at the fresh step;
+   `handing over the app's own shell (N B)` at the cached one. The Wi-Fi-off test that said "it does not
+   paint" should finally say it paints.
+2. **His phone** (carried forward from session 6, all still open) — the Cancel fix's Swift half (§7a), the
+   Sheet tap fix (session 6 Part 1), and §9's caption placement.
+3. **§7 (c) — PARKED** (session 6 Part 6). The plan is on `feat/request-candidate-ids`; phase 2 needs his
+   real Radarr sample before anything is built against the fakes.
+4. **Plan §6 phase 4** (semantic search) — label the semantic rows before Phase 7's metrics loop.
+
+⚠ **Still not done, deliberately** — the offline-shell plan's two genuine remainders, neither started:
+posters **and subtitles captured into a downloaded title's bundle** (ADR-0010 limit 1), and §5b's
+packaging/transfer pipeline (breaks ADR-0008 D4's atomic publish; needs its own decision *and* a
+measurement, neither of which exists).
+
+---
+
+## ⚡ [HISTORY — session 7 above is now the resume point; its three device items are carried forward there] (2026-09-19, session 6) · branches **`dev`** and **`main`** — BOTH carry everything below (identical trees) · tree clean, pushed
 
 **Say this first:** *"continue rkm-cinema — pick up the RESUME-HERE block."* Then read this and
 `KNOWN_ISSUES.md`'s status table (the live list of open defects and their state).

@@ -86,6 +86,27 @@ final class WKWebView {
         _ = completionHandler
         return ()
     }
+
+    // ⚠ S2 (ADR-0012 D7): the stored shell is handed to the web view as a STRING with the server as its
+    // base URL. Mimicked as WebKit declares it — a stub kinder than the real API is a gate that cannot
+    // fail (`ARCHITECTURE.md` §17.6).
+    func loadHTMLString(_ string: String, baseURL: URL?) -> WKNavigation? { nil }
+    func load(_ request: URLRequest) -> WKNavigation? { nil }
+}
+
+/// ⚠ S2: the real WebKit protocol, member for member, so `ShellAssetSchemeHandler` is typechecked here
+/// instead of on the Mac.
+protocol WKURLSchemeTask: AnyObject {
+    var request: URLRequest { get }
+    func didReceive(_ response: URLResponse)
+    func didReceive(_ data: Data)
+    func didFinish()
+    func didFailWithError(_ error: Error)
+}
+
+protocol WKURLSchemeHandler: AnyObject {
+    func webView(_ webView: WKWebView, start urlSchemeTask: WKURLSchemeTask)
+    func webView(_ webView: WKWebView, stop urlSchemeTask: WKURLSchemeTask)
 }
 
 final class WKScriptMessage {

@@ -328,6 +328,10 @@ function buttonsIn(scope: Element | null): string[] {
       buttons: buttonsIn(panel),
       summary: panel ? [...panel.querySelectorAll("span")].map((s) => (s.textContent || "").trim()) : [],
       status: text("[data-testid^='download-status-'], [role='dialog'] p"),
+      // ⚠ The PRE-COMMIT affordance, addressed by its own hook. The old probe read EVERY `<span>` in the
+      // panel, which is how a whole requirement (plan §4.6) went missing without a single check noticing:
+      // the assertion was satisfied by metadata spans, so nothing pointed at the sentence itself.
+      affordance: text("[data-testid='download-affordance']"),
     },
     downloads: {
       summary: text("[data-testid='downloads-summary']"),

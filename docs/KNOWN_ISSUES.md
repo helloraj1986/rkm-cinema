@@ -239,50 +239,9 @@ fails on whichever scenario runs LAST, and moves on the next run.
 | `tools/check_item_modal.py` | H | **FIXED 2026-09-19 — the recorded symptom had already MOVED.** Re-measured at HEAD: **H passes** and the failure was now **J** (`the library view never rendered`). Same cause: five heavy navigations on ONE page; the failing scenario moved between runs (J one run, H the next, `Page.goto: Page crashed` on a third) — which is the whole of the "at least partly flaky" note. Fixed the same way; **3 consecutive green runs**; falsified by removing the dialog's body portal → J RED with the exact geometry (`above: True`, scrim `2320x63`), and `--expect-broken` reports *"OK (falsified as expected): 2 problem(s) with the fix absent"*. |
 | `tools/check_touch_actions.py` | phone, `watched` target | **OPEN — his decision**, unchanged. The tool still asserts the poster's watched TOGGLE (`button[aria-label^="Mark as"]`), which the **accepted #2 rule deleted**: the details view owns the watched control and the poster only REFLECTS status (`features/library/MediaCard.tsx`, `tools/check_poster_watched.py`). **STALE, not a regression.** The fix is one line — drop the `watched` entry from `TARGETS`, or invert it to assert the toggle's ABSENCE — but which one states what the phone's poster actions now ARE, so it stays his call rather than being quietly rewritten. Its other scenarios (`cta`, `menu`, `compact_row`, the desktop hover direction) pass. |
 
-⚠ **A THIRD failing check was found by the same method, in the same session, and it is NOT tool-side** —
-`tools/check_offline_page.py` scenario 2 fails at HEAD for a real reason. It is recorded separately in
-**§9** below, and the check stays RED until he decides.
-
----
-
-## 9 · The detail page says NOTHING about a download before you commit to it
-
-Found 2026-09-19 while diagnosing a check that fails at HEAD (`tools/check_offline_page.py` scenario 2,
-"the iOS shell, nothing downloaded"). ⚠ **Caused by neither the tool nor this session's merges** — the
-failure is byte-identical with the merges and without them, and with the tool at `HEAD`.
-
-**What the app does now.** On a title with no download, the detail page offers `Download` and says
-nothing about what that costs. The real render, taken from the check's own probe:
-
-> `Movie 8.1/ 10 … 1975 3h 24m PG Action Drama Unwatched Unwatched Download` — no rendition, no size.
-
-**Why — one grep proves it.** `downloadSummary()` (`features/offline/lib.ts:466`) still builds exactly
-the right sentence (*"Remux · MKV · H264 · about 2.10 GB"*, pinned by `lib.test.ts:279`), and
-`useDownloadFacts` still computes it (`DownloadButton.tsx:133`) — but **nothing renders it**: the key is
-returned and destructured by neither `DownloadAction` (the tile) nor `DownloadNotice` (the line under
-the row). The identifier `summary` appears in that file at line 133 and in one comment, and nowhere else.
-
-**When it went.** Most probably the 2026-09-17 action-row reorganisation, whose own comment explains the
-split — *"the report belongs on its own line under that row… the row was measuring a button AND a
-sentence"*. The report line was built (`DownloadNotice`); the pre-commit LABEL appears to have gone with
-it. ⚠ That is an inference from the comment, **not a bisect** — nobody has run one.
-
-**What it contradicts — three things, which is why it is recorded rather than quietly deleted:**
-`docs/NATIVE_FEEL_AND_OFFLINE_PLAN.md` §4.6 (*"The label under the Download button: the rendition and
-the size, before he commits"*), the still-green unit expectation of that exact string, and scenario 2 of
-the offline browser check, which is RED on it today.
-
-**His decision, one of two:**
-
-* **Restore it.** The control is a TILE now, so the natural home is a caption under the action row
-  beside the status line `DownloadNotice` already owns — **not** back inside the button that the
-  reorganisation deliberately emptied. Plan §4.6 then holds and the check goes green.
-* **Drop it.** Then the requirement goes with it: delete `downloadSummary`, its unit assertions, and
-  scenario 2's two assertions — and say in the plan that the size is quoted only once a download exists.
-
-⚠ **Not fixed here, deliberately.** WHERE that line belongs is a UI decision inside a row he has already
-reorganised once to his own taste, and re-adding it silently would move that row a second time without
-him asking. ⚠ The RED check is the defect, not the tool — do not "fix" it by weakening the assertion.
-
-
-
+⚠ **A THIRD failing check was found by the same method in the same session — and that one was NOT
+tool-side.** `tools/check_offline_page.py` scenario 2 was RED because the app had genuinely lost the
+pre-commit size/rendition label (plan §4.6). He chose to RESTORE it (2026-09-19), it is fixed, and the
+record — with the diagnosis — is in `PROGRESS.md`. The check is GREEN again, and it no longer anchors on
+"any `<span>` in the panel": it addresses the affordance element by its own `data-testid`, because the
+loose probe is what let a whole requirement vanish unnoticed.

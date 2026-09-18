@@ -95,30 +95,39 @@ stays** — his report, reproduced headlessly and labelled as the contract it is
 `.paused` on a real cancel. `cancel=fixed` is a stub of the FIXED shell, not the shell. **§7a's Swift half
 is still his phone's to confirm** — that check needs a Mac and a thumb, and nothing here has either.
 
-### ⚠ NEW DEFECT FOUND while building it — a THIRD failing check, and this one is NOT tool-side
+### Part 4 — §9 FIXED, on his decision: the pre-commit affordance is back
 
-`tools/check_offline_page.py` scenario 2 fails at HEAD. ⚠ **Reproduced identically with the merges and
-without them, and with the tool at `HEAD`** — so it is neither the merge nor the tool.
+He chose **restore** (2026-09-19), with the placement named: *a caption under the action row, where the
+status line already lives* — not back inside the button the reorganisation deliberately emptied.
 
-**The detail page no longer states the rendition or the size before you commit to a download.**
-`downloadSummary()` still builds the right sentence and `useDownloadFacts` still computes it, but
-**nothing renders it** — the key is destructured by neither `DownloadAction` nor `DownloadNotice`. Plan
-§4.6 requires that label, its unit test is still green, and the browser check is RED on it.
+| Piece | Change |
+|---|---|
+| `features/offline/DownloadButton.tsx` | `DownloadNotice` now destructures `summary` and renders it — `data-testid="download-affordance"` — **only when there is no row**. With a row, its own status already carries the mode, and two sentences about one file is exactly how the row became "all over the place". ⚠ `summary` is also in the early-return condition now: with nothing downloaded the affordance IS the whole report, so `return null` was taking the only sentence off the screen. |
+| Both surfaces | `DownloadNotice` is the ONE component rendered by the desktop `ItemDetail.tsx` **and** the phone `layouts/mobile/DetailScreen.tsx` — so the caption appears on both without a second implementation. |
+| `frontend/harness/offline-frame.tsx` | the probe gains `detail.affordance`, addressing that element. ⚠ The old probe joined **every `<span>` in the panel**, which is how a whole requirement (plan §4.6) vanished without one check noticing — the assertion was satisfied by metadata spans. |
+| `tools/check_offline_page.py` scenario 2 | same two strings as before ("Remux", "about 2.10 GB") plus the "no 1080p claimed" rule, now anchored on the element. ⚠ Not a weakened assertion — it is STRICTER: absent or empty, the red now reads `''`. |
 
-⚠ **Deliberately NOT fixed**: where that line belongs is a UI decision inside an action row he has
-already reorganised once to his own taste. Recorded as **`KNOWN_ISSUES` §9** with both exits. The RED
-check stays RED — that red IS the defect.
+**Evidence.** `8 scenarios, 0 problem(s)` — PASS, from RED at HEAD. Falsified both directions: with the
+caption's render removed (`(null as unknown) ?`), scenario 2 goes RED on exactly those two checks and the
+message shows `''`; restored → green. `check_library_scan` and `check_item_modal` re-run green in the same
+tree, and both are unaffected by this change.
+
+**Gates:** `tsc --noEmit` clean · vitest **589 / 23 files** · build ✓ · 65 doc links resolve.
+
+⚠ **His device round still decides whether the line reads well**, and where it sits relative to the pinned
+bar on the phone. ⚠ It is a headless measurement of a real component, not a thumb on glass.
 
 ### NEXT STEPS, in order
 
-1. **His three decisions** — §7 **(c)** (an id on each 409 candidate, so the ambiguity list is pickable),
-   §8's stale `check_touch_actions.py` entry (delete it or invert it), and §9 (restore the pre-commit
-   size/rendition label, or drop the requirement and its assertions with it).
-2. **His phone** — the Cancel fix's Swift half (§7a) is still device-unverified, and the Sheet tap fix
-   from Part 1 is too.
-3. **Plan §6 phase 4** — label the semantic rows (`match_type == "semantic"` already travels end to
+1. **§7 (c) — the pickable 409 list.** Decided 2026-09-19: carry an id (ideally `tmdbId`) on each
+   candidate and accept a chosen one on the request path. ⚠ A BACKEND phase, and the project's cycle puts
+   the plan doc in the FIRST commit — see `docs/SEMANTIC_SEARCH_PLAN.md` for the shape.
+2. **§8's stale `check_touch_actions.py` entry.** Decided 2026-09-19: **invert it** — assert the poster
+   watched toggle's ABSENCE, so it goes red if the toggle ever comes back. ⚠ Not yet done.
+3. **His phone** — the Cancel fix's Swift half (§7a), the Sheet tap fix (Part 1), and now the §9 caption's
+   placement.
+4. **Plan §6 phase 4** — label the semantic rows (`match_type == "semantic"` already travels end to
    end) before Phase 7's metrics loop calibrates `SEMANTIC_MIN_COS` and the 0.4 trigger.
-4. The device rounds the blocks below still list as unverified.
 
 ⚠ **Untracked and NOT mine:** `docs/OFFLINE_SHELL_PLAN.md` (a cold-launch offline shell plan, design
 improvement #9) appeared in the working tree at 19:06 UTC on 2026-09-18 — mid-session, written by another

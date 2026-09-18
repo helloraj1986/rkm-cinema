@@ -193,9 +193,12 @@ export function DownloadAction({ itemId, title }: { itemId: string; title: strin
  * it reads as a caption for the row above it rather than as another control.
  */
 export function DownloadNotice({ itemId }: { itemId: string }) {
-  const { available, row, warning, note, notice } = useDownloadFacts(itemId, "");
+  const { available, row, summary, warning, note, notice } = useDownloadFacts(itemId, "");
   if (!available) return null;
-  if (!row && !warning && !note && !notice) return null;
+  // ⚠ `summary` belongs in this condition: with NOTHING downloaded the affordance IS the whole report
+  // (plan §4.6 — "the rendition and the size, before he commits"), and returning null here is what took
+  // the only sentence this line had to offer back off the screen (KNOWN_ISSUES §9).
+  if (!row && !summary && !warning && !note && !notice) return null;
 
   return (
     <>
@@ -206,6 +209,14 @@ export function DownloadNotice({ itemId }: { itemId: string }) {
               you could change here. */}
           {rowStatusText(row)}
           {row.mode ? ` · ${modeLabel(row.mode)}` : ""}
+        </p>
+      ) : summary ? (
+        /* ⚠ The PRE-COMMIT affordance, and it is deliberately NOT shown once a row exists: the row's own
+           status already carries the mode, and two sentences about the same file is exactly how this row
+           became "all over the place". `data-testid` because the browser check must point at THIS line —
+           the old "any span on the panel contains Remux" probe is what let the line disappear unnoticed. */
+        <p data-testid="download-affordance" className="w-full text-[11px] text-zinc-500">
+          {summary}
         </p>
       ) : null}
       {warning ? <p className="w-full text-[11px] text-amber-300/90">{warning}</p> : null}

@@ -133,10 +133,15 @@ def scenario_affordance(page: Page, shots: str | None) -> dict:
     check(data["nav"] == ["/downloads"], f"the navigation offers Downloads (got {data['nav']})")
     buttons = data["detail"]["buttons"]
     check(any("Download" in b for b in buttons), f"the detail page offers Download (buttons: {buttons})")
-    summary = " ".join(data["detail"]["summary"])
-    check("Remux" in summary, f"the rendition is named (remux) — {summary[:120]!r}")
-    check("about 2.10 GB" in summary, f"the size is quoted as the server's ESTIMATE — {summary[:120]!r}")
-    check("1080p" not in summary, "no resolution is claimed that the server never sent")
+    # ⚠ The anchor is the affordance ELEMENT, not "any span on the panel". The old probe joined every
+    # <span> on the page, so it was satisfied by metadata spans while the requirement it was written for
+    # — plan §4.6, "the rendition and the size, before he commits" — was silently gone (KNOWN_ISSUES §9).
+    # Same two strings, one precise home: if the line is absent the element's text is '' and this goes RED.
+    affordance = data["detail"]["affordance"]
+    check("Remux" in affordance, f"the rendition is named before he commits (remux) — {affordance!r}")
+    check("about 2.10 GB" in affordance,
+          f"…and the size is quoted as the server's ESTIMATE — {affordance!r}")
+    check("1080p" not in affordance, "no resolution is claimed that the server never sent")
     check(
         [c for c in data["commands"] if c.get("c") == "download"] == [],
         "nothing was downloaded by merely looking at the page",

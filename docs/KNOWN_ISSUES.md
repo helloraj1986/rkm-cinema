@@ -222,21 +222,22 @@ Swift compiled or run, and nothing anywhere taps Cancel. Specifically:
 
 ---
 
-## 8 · Two harness checks fail AT HEAD — not his report, found while gating the #2 sweep
+## 8 · Harness checks not clean at HEAD — TWO FIXED 2026-09-19, the third is his decision
 
 Found 2026-09-18 by running the neighbouring browser checks after the poster-watched sweep. **Both were
-measured against a STASHED tree (i.e. at `bedfd67`, with the sweep absent), so neither is caused by it**
-— recorded here so they are not rediscovered as new, and so each gets its own investigation.
+measured against a STASHED tree (i.e. at `bedfd67`, with the sweep absent), so neither was caused by it.**
 
-| Check | Scenario | What it does |
+⚠ **Both of the first two turned out to be TOOL-SIDE, not app defects — and both are now fixed**
+(2026-09-19, session 6; full record in `PROGRESS.md`). The app behaviour those scenarios assert was
+correct all along — measured, not assumed. They are kept here with their outcome, because the *lesson*
+is what the next session needs: a check that shares one browser page across many heavy navigations
+fails on whichever scenario runs LAST, and moves on the next run.
+
+| Check | Scenario | State |
 |---|---|---|
-| `tools/check_library_scan.py` | G — `?signedout=1` | `window.__probe is not a function`: the frame never rendered, so the two "the control is not offered" assertions in that scenario are **vacuous**. A–F all pass. |
-| `tools/check_item_modal.py` | H | `Esc closed the player only — the modal stayed behind it` (1 problem) — and a second run of the same check died earlier with `Page.goto: Page crashed`, so this one is at least partly flaky. ⚠ H is the scenario that guards the `canEscapeClose` fix, so a real failure there would mean Escape handling regressed. |
-| `tools/check_touch_actions.py` | phone, `watched` target | `the watched toggle is not in the DOM at all` — ⚠ **STALE, not a regression, and recorded 2026-09-18 (session 5).** The tool still asserts the poster's watched TOGGLE (`button[aria-label^="Mark as"]`), which the **accepted #2 rule deleted**: the details view owns the watched control and the poster only REFLECTS status (`features/library/MediaCard.tsx`, `tools/check_poster_watched.py`). The check's premise is gone, so the fix is one line — drop the `watched` entry from `TARGETS`, or invert it to assert the toggle's ABSENCE — but which one is a decision about what the phone's poster actions now are, so it is left standing and named here rather than quietly rewritten. Its other scenarios (`cta`, `menu`, `compact_row`, and the desktop hover direction) pass. |
-
-⚠ Undiagnosed: **none of these** has been read past its own output. Nothing in the poster-watched sweep touches
-either frame's components (`LibraryHomeView`/`LibraryFolderView` render `MediaCard`, which is what this
-change edited — that is why they were run).
+| `tools/check_library_scan.py` | G — `?signedout=1` | **FIXED 2026-09-19.** Not the app: seven navigations on ONE page exhausted the browser's sockets (`net::ERR_INSUFFICIENT_RESOURCES` measured on the module requests), `library-frame.tsx` never executed, `window.__probe` was never defined — and G is LAST, which is why G was the scenario that died. Now a fresh page per scenario, and a readiness failure is REPORTED instead of crashing the run with a traceback. G's assertions run for real and PASS (7/7). Falsified: gate mutated to `return true` → C, D, E, G RED; unloadable frame → 9 named problems, exit 1, no traceback. |
+| `tools/check_item_modal.py` | H | **FIXED 2026-09-19 — the recorded symptom had already MOVED.** Re-measured at HEAD: **H passes** and the failure was now **J** (`the library view never rendered`). Same cause: five heavy navigations on ONE page; the failing scenario moved between runs (J one run, H the next, `Page.goto: Page crashed` on a third) — which is the whole of the "at least partly flaky" note. Fixed the same way; **3 consecutive green runs**; falsified by removing the dialog's body portal → J RED with the exact geometry (`above: True`, scrim `2320x63`), and `--expect-broken` reports *"OK (falsified as expected): 2 problem(s) with the fix absent"*. |
+| `tools/check_touch_actions.py` | phone, `watched` target | **OPEN — his decision**, unchanged. The tool still asserts the poster's watched TOGGLE (`button[aria-label^="Mark as"]`), which the **accepted #2 rule deleted**: the details view owns the watched control and the poster only REFLECTS status (`features/library/MediaCard.tsx`, `tools/check_poster_watched.py`). **STALE, not a regression.** The fix is one line — drop the `watched` entry from `TARGETS`, or invert it to assert the toggle's ABSENCE — but which one states what the phone's poster actions now ARE, so it stays his call rather than being quietly rewritten. Its other scenarios (`cta`, `menu`, `compact_row`, the desktop hover direction) pass. |
 
 
 

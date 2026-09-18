@@ -26,6 +26,25 @@ Run against the vite dev server:
 
     cd frontend && npx vite --port 5199 --strictPort &
     python3 tools/check_library_scan.py [--shots DIR]
+
+⚠ TWO TOOL-SIDE FACTS, both found by diagnosing scenario G failing at HEAD (2026-09-19), and both
+fixed here. Neither was a defect in the app — G's assertions, run for real, PASS.
+
+1. **Seven navigations on ONE page exhaust the browser's socket budget.** Measured: the frame's module
+   requests began dying with `net::ERR_INSUFFICIENT_RESOURCES`, so `library-frame.tsx` never executed,
+   `window.__probe` was never defined — and because G is LAST, G was the scenario that failed. It was
+   never G's semantics, and it is why this looked like a flake. Each scenario now gets a FRESH page
+   which is closed afterwards. ⚠ Do not "optimise" this back into one shared page.
+2. **A readiness failure used to crash the run.** `_wait_for` records its failure cleanly and returns
+   False, but `open_frame` ignored that and went straight to `page.evaluate("window.__probe()")` — so
+   the run died with an uncaught `TypeError` and a traceback, burying the reason it had just written.
+   `open_frame` now returns None and the scenario SKIPS its own assertions. ⚠ That is NOT a weakening:
+   the readiness failure is itself a recorded problem, so the run still exits 1 — falsified by pointing
+   the tool at a base where the frame cannot load (9 named problems, exit 1, no traceback).
+
+⚠ FALSIFIED, both directions, 2026-09-19: with `mayScanLibrary` mutated to `return true`, C, D, E and G
+went RED (5 problems, exit 1) while A, B and F correctly stayed green; after reverting, 7/7 green. ⚠ The
+mutation must be re-served by RESTARTING vite — the watcher does not fire on this mount.
 """
 from __future__ import annotations
 
@@ -70,24 +89,32 @@ def open_frame(page: Page, base: str, query: str, shots: str, name: str) -> dict
     # The view's OWN first read, whichever view the frame mounted: the home view reads
     # `/api/library/items`, the folder view reads `/api/library/folders/{id}/items`. Waiting on the
     # wrong path times out on the folder scenario.
-    _wait_for(
+    if not _wait_for(
         page,
         "() => (window.__probe().calls || []).some(c => c.url === '/api/library/items' || "
         "/^\\/api\\/library\\/folders\\/.+\\/items$/.test(c.url))",
         15,
         f"{name}: the view never made its own library read — the frame did not render, so every "
         "'the control is not offered' assertion below would be vacuous",
-    )
+    ):
+        # ⚠ Returning a probe here is impossible AND the next line would raise TypeError, which
+        # aborts the whole run and buries the reason. The readiness failure above is already
+        # recorded as a problem (so the run still FAILS); the scenario's own assertions are then
+        # SKIPPED rather than evaluated against a page that never rendered them.
+        print(f"  SKIP: {name}'s assertions — see the readiness failure above")
+        return None
     # ⚠ This one is a REAL assertion, not just readiness: the scan rule reads the profile's
     # `is_admin`, so if this query stops being asked, an ADMINISTRATOR is never offered the control
     # either. Requiring it means the "not offered" scenarios cannot pass by never asking.
-    _wait_for(
+    if not _wait_for(
         page,
         "() => (window.__probe().calls || []).some(c => c.url === '/api/auth/profiles')",
         15,
         f"{name}: the frame never asked /api/auth/profiles — the scan rule reads that answer, so "
         "without the query nobody (administrator included) can be offered the control",
-    )
+    ):
+        print(f"  SKIP: {name}'s assertions — see the readiness failure above")
+        return None
     page.wait_for_timeout(700)
     if shots:
         page.screenshot(path=f"{shots}/library-scan-{name}.png", full_page=True)
@@ -104,6 +131,8 @@ def rendered(probe: dict, needle: str, where: str) -> None:
 def scenario_a_administrator_hero(page: Page, base: str, shots: str) -> None:
     print("A — an administrator with titles: the hero offers the scan")
     probe = open_frame(page, base, "admin=1", shots, "admin-hero")
+    if probe is None:
+        return
     rendered(probe, "The Matrix", "A")
     check(probe["hasScanControl"],
           "A: an administrator must be OFFERED the scan control on the home view")
@@ -114,6 +143,8 @@ def scenario_a_administrator_hero(page: Page, base: str, shots: str) -> None:
 def scenario_b_administrator_empty(page: Page, base: str, shots: str) -> None:
     print("B — an administrator with an EMPTY library: the empty state offers the scan")
     probe = open_frame(page, base, "admin=1&empty=1", shots, "admin-empty")
+    if probe is None:
+        return
     rendered(probe, "library is empty", "B")
     check(probe["hasScanControl"],
           "B: with nothing in the library the scan button is the ONLY action an administrator has; "
@@ -125,6 +156,8 @@ def scenario_b_administrator_empty(page: Page, base: str, shots: str) -> None:
 def scenario_c_member_with_titles(page: Page, base: str, shots: str) -> None:
     print("C — a member with titles: no scan control, and no scan call")
     probe = open_frame(page, base, "admin=0", shots, "member-hero")
+    if probe is None:
+        return
     rendered(probe, "The Matrix", "C")
     check(not probe["hasScanControl"],
           "C: a member must NOT be offered the scan control — the route answers 403 for them")
@@ -137,6 +170,8 @@ def scenario_c_member_with_titles(page: Page, base: str, shots: str) -> None:
 def scenario_d_member_empty(page: Page, base: str, shots: str) -> None:
     print("D — a member with an EMPTY library: told who can scan instead of given a button")
     probe = open_frame(page, base, "admin=0&empty=1", shots, "member-empty")
+    if probe is None:
+        return
     rendered(probe, "library is empty", "D")
     check(not probe["hasScanControl"], "D: a member must not be offered the scan button")
     check("administrator" in probe["body"],
@@ -149,6 +184,8 @@ def scenario_d_member_empty(page: Page, base: str, shots: str) -> None:
 def scenario_e_member_folder_view(page: Page, base: str, shots: str) -> None:
     print("E — a member on a library FOLDER: no scan control there either")
     probe = open_frame(page, base, "admin=0&folder=1&empty=1", shots, "member-folder")
+    if probe is None:
+        return
     rendered(probe, "Movies", "E")
     check(not probe["hasScanControl"],
           "E: the folder view carries its own copy of the control; it must be gated the same way")
@@ -166,7 +203,10 @@ def scenario_f_administrator_can_still_scan(page: Page, base: str, shots: str) -
         return
     button.click()
     page.wait_for_timeout(700)
-    probe = page.evaluate("window.__probe()")
+    probe = page.evaluate("() => (window.__probe ? window.__probe() : null)")
+    if probe is None:
+        check(False, "F: window.__probe is gone after the click — the frame did not survive it")
+        return
     check(len(probe["scanCalls"]) == 1,
           f"F: clicking the control must fire exactly one /api/library/scan call, "
           f"got {probe['scanCalls']}")
@@ -183,6 +223,8 @@ def scenario_g_signed_out(page: Page, base: str, shots: str) -> None:
     """
     print("G — a signed-out visitor: the library renders, and still no scan control")
     probe = open_frame(page, base, "signedout=1", shots, "signed-out")
+    if probe is None:
+        return
     rendered(probe, "The Matrix", "G")
     check(not probe["hasScanControl"],
           "G: a signed-out caller is refused by the route and must not be offered its control")
@@ -200,23 +242,28 @@ def main() -> int:
 
     with sync_playwright() as p:
         browser = p.chromium.launch()
-        page = browser.new_page(viewport={"width": 1280, "height": 900})
         errors: list[str] = []
-        page.on("pageerror", lambda e: errors.append(str(e)))
 
-        scenario_a_administrator_hero(page, args.base, args.shots)
-        page.goto("about:blank")
-        scenario_b_administrator_empty(page, args.base, args.shots)
-        page.goto("about:blank")
-        scenario_c_member_with_titles(page, args.base, args.shots)
-        page.goto("about:blank")
-        scenario_d_member_empty(page, args.base, args.shots)
-        page.goto("about:blank")
-        scenario_e_member_folder_view(page, args.base, args.shots)
-        page.goto("about:blank")
-        scenario_f_administrator_can_still_scan(page, args.base, args.shots)
-        page.goto("about:blank")
-        scenario_g_signed_out(page, args.base, args.shots)
+        SCENARIOS = (
+            ("A", scenario_a_administrator_hero),
+            ("B", scenario_b_administrator_empty),
+            ("C", scenario_c_member_with_titles),
+            ("D", scenario_d_member_empty),
+            ("E", scenario_e_member_folder_view),
+            ("F", scenario_f_administrator_can_still_scan),
+            ("G", scenario_g_signed_out),
+        )
+        for label, fn in SCENARIOS:
+            # ⚠ A FRESH page per scenario, closed afterwards. Seven navigations on ONE page exhaust
+            # the browser's socket budget — measured: the module requests then die with
+            # `net::ERR_INSUFFICIENT_RESOURCES`, the frame never executes, and the LAST scenario
+            # fails for a reason that has nothing to do with what it asserts.
+            page = browser.new_page(viewport={"width": 1280, "height": 900})
+            page.on("pageerror", lambda e, lab=label: errors.append(f"{lab}: {e}"))
+            try:
+                fn(page, args.base, args.shots)
+            finally:
+                page.close()
 
         if errors:
             check(False, f"page errors: {errors}")

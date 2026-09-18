@@ -6,7 +6,7 @@
 ⚠ **A doc cannot name its own tip and neither can a merge commit name itself.** `git log --oneline -3`
 is the honest answer; never trust a SHA written in a doc.
 
-### What this session did: merged the two open branches on HIS word, and nothing else
+### Part 1 — merged the two open branches on HIS word
 
 He accepted both on the UI (2026-09-19 AEST): *"these two are working merge them on main and dev."*
 Both branched from `dev` @ `47d2966`, and **the only file they both touched was this one** — so the
@@ -49,10 +49,31 @@ difference** (39 of them this time; `git diff --stat` showed `0 insertions(+), 0
 `git -c core.fileMode=false status|checkout|merge|diff …`, and read the number of changed **lines**,
 not the number of changed **files**, before believing a tree is dirty.
 
+### Part 2 — §8's first two items: both TOOL-side, both fixed (his instruction: *"continue with block 3"*)
+
+⚠ **Neither was an app defect, and neither was what §8 recorded.** Both were the same defect class inside
+the checks themselves: **one browser page shared across many heavy navigations**. It exhausts the
+browser's socket budget, the frame's module dies with `net::ERR_INSUFFICIENT_RESOURCES`, `window.__probe`
+is never defined, and **whichever scenario runs LAST is the one that fails** — so the failing scenario
+MOVED between runs. That is the entire explanation of §8's "at least partly flaky".
+
+| Tool | What was measured | Fix | Falsification |
+|---|---|---|---|
+| `tools/check_library_scan.py` | Scenario G: `window.__probe is not a function` — 7 navigations on one page; G is last, so G died. The frame's module requests showed `net::ERR_INSUFFICIENT_RESOURCES` verbatim. | A fresh page per scenario, closed after (`finally`). Also: `open_frame` ignored `_wait_for`'s `False` and called `page.evaluate("window.__probe()")` anyway — crashing the whole run with a traceback and burying the reason it had just written. It now returns `None` and the scenario SKIPS its assertions. ⚠ **Not a weakening**: the readiness failure is itself a recorded problem, so the run still exits 1. | `mayScanLibrary` mutated to `return true` → **C, D, E, G RED (5 problems, exit 1)**, A/B/F correctly green; reverted → **7/7 green**. Guard: pointed at an unloadable base → **9 named problems, exit 1, no traceback** (the original crashed mid-run). |
+| `tools/check_item_modal.py` | ⚠ **Re-measured at HEAD: H PASSES and the failure had already moved to J** (`the library view never rendered`) — 5 heavy navigations on one page, same cause. | Same fresh-page-per-scenario fix. | **3 consecutive green runs.** Falsified by removing the dialog's body portal (`((x: any) => x)`): J RED with the exact geometry — `above: True`, scrim `2320x63` for a 2560×1440 viewport — and the tool's own `--expect-broken` reports *"OK (falsified as expected): 2 problem(s) with the fix absent"*; reverted → green again. |
+
+⚠ **Both mutations must be re-served by RESTARTING vite** — the watcher does not fire on this mount, so a
+"passing" run against un-restarted vite proves nothing. Each was confirmed served (or reverted) by curling
+the module (`grep -c` for the mutation / `return isAdmin === true`) before the run that matters.
+
+⚠ **Nothing else was touched**: no app source, backend, or Swift changed. Every assertion in both checks is
+byte-identical to what it was — only *when a page is created* and *what happens when a frame never loads*.
+`check_touch_actions.py`'s stale `watched` entry is untouched and remains his call (§8).
+
 ### NEXT STEPS, in order
 
-1. **`KNOWN_ISSUES` §8's two harness failures** (`check_library_scan` G, `check_item_modal` H) —
-   undiagnosed, no device needed; and §7a's prerequisite, a harness stub that can express "paused".
+1. **`KNOWN_ISSUES` §7a's prerequisite** — a harness stub that can express "paused", which is the only
+   path to an off-device regression test for the Cancel defect. ⚠ §8's two harness failures are CLOSED.
 2. **His two decisions** — §7 **(c)** (carry an id on each 409 candidate so the ambiguity list becomes
    pickable) and §8's stale `check_touch_actions.py` entry (delete it or invert it to assert absence).
 3. **Plan §6 phase 4** — label the semantic rows (`match_type == "semantic"` already travels end to

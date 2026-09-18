@@ -35,6 +35,12 @@ Run the dev server first (see frontend/harness/README.md):
     cd frontend && npx vite --port 5199 --strictPort
     python3 tools/check_item_modal.py [--shots DIR]
     python3 tools/check_item_modal.py --expect-broken     # falsification direction
+
+⚠ ONE TOOL-SIDE FACT (found 2026-09-19 while diagnosing the "at least partly flaky" record in
+KNOWN_ISSUES §8): five navigations on ONE page exhausted the browser's sockets, the frame's module
+requests died with `net::ERR_INSUFFICIENT_RESOURCES`, and whichever scenario ran LAST was the one that
+failed — so the failing scenario MOVED between runs (J one run, H the next, a `Page.goto: Page crashed`
+on a third). Each scenario now gets a FRESH page, closed afterwards. ⚠ Do not merge them back.
 """
 from __future__ import annotations
 
@@ -332,20 +338,29 @@ def main() -> int:
 
     with sync_playwright() as p:
         browser = p.chromium.launch()
-        # 2560 wide: the viewport where the old PAGE treatment read as a right-hand panel (his report).
-        page = browser.new_page(viewport={"width": 2560, "height": 1440})
         errors: list[str] = []
-        page.on("pageerror", lambda e: errors.append(str(e)))
 
-        scenario_a_search_result(page, args.base, args.shots)
-        page.goto("about:blank")
-        scenario_i_card_click(page, args.base, args.shots)
-        page.goto("about:blank")
-        scenario_g_deep_link(page, args.base, args.shots)
-        page.goto("about:blank")
-        scenario_j_discovery_no_poster(page, args.base, args.shots)
-        page.goto("about:blank")
-        scenario_h_player_layering(page, args.base, args.shots)
+        # 2560 wide: the viewport where the old PAGE treatment read as a right-hand panel (his report).
+        SCENARIOS = (
+            ("A–F", scenario_a_search_result),
+            ("I", scenario_i_card_click),
+            ("G", scenario_g_deep_link),
+            ("J", scenario_j_discovery_no_poster),
+            ("H", scenario_h_player_layering),
+        )
+        for label, fn in SCENARIOS:
+            # ⚠ A FRESH page per scenario, closed afterwards. Five heavy navigations on ONE page
+            # exhaust the browser's socket budget — measured on the sibling check the same day
+            # (2026-09-19): module requests begin dying with `net::ERR_INSUFFICIENT_RESOURCES`, the
+            # frame never executes, and whichever scenario happens to run LATE is the one that fails.
+            # That is why this check was recorded as "at least partly flaky": the failing scenario
+            # moved between runs. ⚠ Do not "optimise" this back into one shared page.
+            page = browser.new_page(viewport={"width": 2560, "height": 1440})
+            page.on("pageerror", lambda e, lab=label: errors.append(f"{lab}: {e}"))
+            try:
+                fn(page, args.base, args.shots)
+            finally:
+                page.close()
 
         if errors:
             check(False, f"page errors: {errors}")

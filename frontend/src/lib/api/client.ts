@@ -668,6 +668,13 @@ export interface GlobalSearchShape {
   results: UnifiedResult[];
 }
 
+/** GET/POST /api/search/prefs — how THIS profile wants search ranked
+ *  (SEARCH_IMPROVEMENT_PLAN Phase 5). Per profile, never per account. */
+export interface SearchPrefsShape {
+  personalized: boolean;
+  profile_name: string;
+}
+
 /** POST /api/suggest filter payload (legacy suggestState.filters). */
 export interface SuggestFilters {
   media_type: "all" | "movie" | "tv";
@@ -1188,6 +1195,12 @@ export const api = {
    *  `signal` lets a superseded keystroke's request be cancelled (Phase 4). */
   searchGlobal: (q: string, signal?: AbortSignal) =>
     getJson<GlobalSearchShape>(`/search/global?q=${encodeURIComponent(q)}`, { signal }),
+  /** This profile's search preferences (Phase 5). */
+  getSearchPrefs: () => getJson<SearchPrefsShape>("/search/prefs"),
+  /** Set this profile's search preferences. ⚠ The profile is taken from the
+   *  session server-side — the body can never name whose setting it is. */
+  setSearchPrefs: (personalized: boolean) =>
+    postJson<SearchPrefsShape>("/search/prefs", { personalized }),
   /** TMDB discover by taste filters. */
   suggest: (filters: SuggestFilters) => postJson<SuggestShape>("/suggest", filters),
   /** Full TMDB + IMDb detail for one suggested title (card-click modal). */

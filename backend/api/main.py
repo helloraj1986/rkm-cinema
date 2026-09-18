@@ -9,6 +9,7 @@ from api.routes import health, config, status, download, search, library, qualit
 from api.routes import auth as auth_routes
 from api.routes import admin_users as admin_users_routes
 from api.routes import search_global as search_global_routes
+from api.routes import search_prefs as search_prefs_routes
 from api.routes import jellyfin_poster as jellyfin_poster_routes
 from api.routes import jellyfin_stream as jellyfin_stream_routes
 from api.routes import jellyfin_hls as jellyfin_hls_routes
@@ -85,6 +86,7 @@ def create_app() -> FastAPI:
     app.include_router(download.router, prefix="/api", dependencies=SESSION_SCOPED)
     app.include_router(search.router, prefix="/api", dependencies=SESSION_SCOPED)
     app.include_router(search_global_routes.router, prefix="/api", dependencies=SESSION_SCOPED)
+    app.include_router(search_prefs_routes.router, prefix="/api", dependencies=SESSION_SCOPED)
     app.include_router(library.router, prefix="/api", dependencies=SESSION_SCOPED)
     app.include_router(quality.router, prefix="/api", dependencies=SESSION_SCOPED)
     app.include_router(jellyfin_poster_routes.router, prefix="/api", dependencies=SESSION_SCOPED)

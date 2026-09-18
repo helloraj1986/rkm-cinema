@@ -446,6 +446,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/search/prefs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Search Prefs
+         * @description This viewer's search preferences (the default when they have never chosen).
+         */
+        get: operations["get_search_prefs_api_search_prefs_get"];
+        put?: never;
+        /**
+         * Set Search Prefs
+         * @description Switch taste-biased ranking on or off for this profile.
+         */
+        post: operations["set_search_prefs_api_search_prefs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/library/folders": {
         parameters: {
             query?: never;
@@ -1650,6 +1674,8 @@ export interface components {
              * @default false
              */
             in_watchlist: boolean;
+            /** Genres */
+            genres?: string[];
             /** Ranges */
             ranges?: number[][];
             /**
@@ -2199,6 +2225,37 @@ export interface components {
             collections?: components["schemas"]["GlobalHint"][];
             /** Discovery */
             discovery?: components["schemas"]["GlobalDiscoveryRow"][];
+        };
+        /**
+         * SearchPrefsResponse
+         * @description ``GET /api/search/prefs`` — how THIS viewer wants search ranked.
+         *
+         *     ⚠ Per PROFILE, not per account: the app's identity model separates the account
+         *     that signed in from the profile that is watching (§11), and taste belongs to the
+         *     person watching.
+         */
+        SearchPrefsResponse: {
+            /**
+             * Personalized
+             * @default true
+             */
+            personalized: boolean;
+            /**
+             * Profile Name
+             * @default
+             */
+            profile_name: string;
+        };
+        /**
+         * SearchPrefsUpdate
+         * @description ``POST /api/search/prefs`` — set the one preference search has.
+         */
+        SearchPrefsUpdate: {
+            /**
+             * Personalized
+             * @default true
+             */
+            personalized: boolean;
         };
         /** SearchResponse */
         SearchResponse: {
@@ -3230,6 +3287,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SearchGlobalResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_search_prefs_api_search_prefs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchPrefsResponse"];
+                };
+            };
+        };
+    };
+    set_search_prefs_api_search_prefs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SearchPrefsUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchPrefsResponse"];
                 };
             };
             /** @description Validation Error */

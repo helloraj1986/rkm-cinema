@@ -617,6 +617,62 @@
         }
       }
     },
+    "/api/search/prefs": {
+      "get": {
+        "summary": "Get Search Prefs",
+        "description": "This viewer's search preferences (the default when they have never chosen).",
+        "operationId": "get_search_prefs_api_search_prefs_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchPrefsResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Set Search Prefs",
+        "description": "Switch taste-biased ranking on or off for this profile.",
+        "operationId": "set_search_prefs_api_search_prefs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SearchPrefsUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchPrefsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/library/folders": {
       "get": {
         "summary": "Get Library Folders",
@@ -2739,6 +2795,13 @@
             "title": "In Watchlist",
             "default": false
           },
+          "genres": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Genres"
+          },
           "ranges": {
             "items": {
               "items": {
@@ -3799,6 +3862,35 @@
           "query"
         ],
         "title": "SearchGlobalResponse"
+      },
+      "SearchPrefsResponse": {
+        "properties": {
+          "personalized": {
+            "type": "boolean",
+            "title": "Personalized",
+            "default": true
+          },
+          "profile_name": {
+            "type": "string",
+            "title": "Profile Name",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "SearchPrefsResponse",
+        "description": "``GET /api/search/prefs`` \u2014 how THIS viewer wants search ranked.\n\n\u26a0 Per PROFILE, not per account: the app's identity model separates the account\nthat signed in from the profile that is watching (\u00a711), and taste belongs to the\nperson watching."
+      },
+      "SearchPrefsUpdate": {
+        "properties": {
+          "personalized": {
+            "type": "boolean",
+            "title": "Personalized",
+            "default": true
+          }
+        },
+        "type": "object",
+        "title": "SearchPrefsUpdate",
+        "description": "``POST /api/search/prefs`` \u2014 set the one preference search has."
       },
       "SearchResponse": {
         "properties": {

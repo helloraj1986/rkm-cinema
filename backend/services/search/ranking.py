@@ -31,6 +31,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Sequence
 
+from services.search.affinity import Affinity
 from services.search.scoring import (
     EXACT_TITLE_SCORE,
     row_fields,
@@ -246,8 +247,15 @@ def _rank_hints(query: str, groups: dict[str, Sequence[dict]], *, query_year: in
 
 def _rank_discovery(query: str, rows: Sequence[dict], owned: Sequence[dict],
                     *, query_year: int | None,
-                    query_year_range: tuple[int, int] | None = None) -> list[RankedRow]:
-    """External candidates for titles the library does NOT have."""
+                    query_year_range: tuple[int, int] | None = None,
+                    affinity: Affinity | None = None) -> list[RankedRow]:
+    """External candidates for titles the library does NOT have.
+
+    ⚠ This is the ONLY place taste is applied (SEARCH_IMPROVEMENT_PLAN Phase 5). The
+    question personalization answers — "which of these should I watch next?" — is
+    only asked about titles he does not already have; re-ordering his OWN library by
+    taste would make a search for a film he owns feel like it ignored him.
+    """
     rows = list(rows or [])
     out: list[RankedRow] = []
     for index, row in enumerate(rows):
@@ -256,8 +264,9 @@ def _rank_discovery(query: str, rows: Sequence[dict], owned: Sequence[dict],
         scored = score_item(query, row_fields(row), query_year=query_year,
                             query_year_range=query_year_range,
                             item_year=row.get("year"), item=row)
+        taste = affinity.bonus(row.get("genres")) if affinity is not None else 0.0
         out.append(RankedRow(
-            score=scored.score + _provider_bias(index, len(rows)),
+            score=scored.score + _provider_bias(index, len(rows)) + taste,
             source="tmdb",
             kind=_discovery_kind(row),
             payload=row,
@@ -289,7 +298,8 @@ def _identity(row: "RankedRow") -> str:
 def rank_all(query: str, *, owned: Sequence[dict] = (), watchlist: Sequence[dict] = (),
              discovery: Sequence[dict] = (), hints: dict[str, Sequence[dict]] | None = None,
              query_year: int | None = None,
-             query_year_range: tuple[int, int] | None = None) -> list[RankedRow]:
+             query_year_range: tuple[int, int] | None = None,
+             affinity: Affinity | None = None) -> list[RankedRow]:
     """ONE ranked list across every source, highest relevance first.
 
     Ordering is by ``score`` descending, then by :data:`SOURCE_ORDER`, then by
@@ -324,7 +334,7 @@ def rank_all(query: str, *, owned: Sequence[dict] = (), watchlist: Sequence[dict
     rows.extend(_rank_hints(query, hints or {}, query_year=query_year,
                             query_year_range=query_year_range))
     rows.extend(_rank_discovery(query, discovery_rows, owned_seq, query_year=query_year,
-                                query_year_range=query_year_range))
+                                query_year_range=query_year_range, affinity=affinity))
 
     rows.sort(key=lambda r: (-r.score, SOURCE_ORDER.get(r.source, 99),
                              str(r.payload.get("title") or r.payload.get("name") or ""),

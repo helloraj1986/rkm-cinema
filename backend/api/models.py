@@ -319,6 +319,27 @@ class UnifiedResult(BaseModel):
     payload: Dict[str, Any] = Field(default_factory=dict)
 
 
+# --------------------------------------------------------------------------- search preferences
+class SearchPrefsResponse(BaseModel):
+    """``GET /api/search/prefs`` — how THIS viewer wants search ranked.
+
+    ⚠ Per PROFILE, not per account: the app's identity model separates the account
+    that signed in from the profile that is watching (§11), and taste belongs to the
+    person watching.
+    """
+
+    #: True = results are biased toward what this viewer has watched. Default ON.
+    personalized: bool = True
+    #: Who the setting applies to, so the UI can say whose it is.
+    profile_name: str = ""
+
+
+class SearchPrefsUpdate(BaseModel):
+    """``POST /api/search/prefs`` — set the one preference search has."""
+
+    personalized: bool = True
+
+
 # --------------------------------------------------------------------------- global search
 class GlobalEpisodeFacts(BaseModel):
     """Target for a series "Continue / Play" primary action (GLOBAL_SEARCH_PLAN)."""
@@ -383,6 +404,10 @@ class GlobalDiscoveryRow(BaseModel):
     #: True when the title is already on the watchlist (server truth — the UI
     #: then offers Download/Details instead of "Add to watchlist").
     in_watchlist: bool = False
+    #: Genre NAMES, resolved from TMDB's numeric ``genre_ids`` (Phase 5). Needed by
+    #: taste-based ranking and shown by the card. Additive: TMDB's own search
+    #: response carries ids only, and an unknown id is dropped rather than guessed at.
+    genres: List[str] = Field(default_factory=list)
     #: [start, end) offsets into ``title`` that the query matched (Phase 4).
     ranges: List[List[int]] = Field(default_factory=list)
     #: exact | prefix | fuzzy | containment | token | none

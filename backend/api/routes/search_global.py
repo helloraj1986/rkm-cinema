@@ -44,6 +44,7 @@ from fastapi import APIRouter, Query
 from api.models import (
     SearchGlobalResponse, GlobalOwnedRow, GlobalHint, GlobalDiscoveryRow, UnifiedResult,
 )
+from api.session import current_session
 from config.settings import get_config
 from core.cache import TTLCache
 from services.global_search import (
@@ -51,8 +52,10 @@ from services.global_search import (
     owned_state, owned_strong_match,
 )
 from services.library import build_library_service
+from services.search.affinity import Affinity, MAX_HISTORY, build_affinity, empty_affinity
 from services.search.query_parser import ParsedQuery, best_person_match, parse_query
 from services.search.ranking import rank_all
+from services.search_prefs import SearchPrefsStore
 from services.tmdb import TMDBService
 from services.watchlist import WatchlistService
 
@@ -231,6 +234,14 @@ def search_global(q: str = Query(default="", min_length=1)):
     # acquire what he already has.
     if cfg.has_tmdb() and len(query) >= MIN_TMDB_QUERY_LEN:
         watchlist_tmdb = _tmdb_ids(watchlist_raw)
+        # TMDB's search rows carry numeric ``genre_ids`` only; the id→name map is
+        # cached 6h by the service. Needed for taste ranking below, and additive on
+        # the response — an unmapped id is dropped rather than guessed at.
+        try:
+            genre_names = TMDBService(config=cfg).genre_names()
+        except Exception as e:  # noqa: BLE001
+            logger.warning("TMDB genre map unavailable (%s) — discovery rows carry no genres", e)
+            genre_names = {}
         try:
             for res in _tmdb_search_cached(cfg, query, parsed.media_type)[:DISCOVERY_LIMIT]:
                 mtype = res.get("media_type")
@@ -246,6 +257,7 @@ def search_global(q: str = Query(default="", min_length=1)):
                               if res.get("poster_path") else "",
                     "overview": str(res.get("overview") or ""),
                     "in_watchlist": int(res.get("id") or 0) in watchlist_tmdb,
+                    "genres": _genre_names(res.get("genre_ids"), genre_names),
                 }
                 if candidate["tmdb_id"] and not is_duplicate_discovery(candidate, owned_raw):
                     payload["discovery"].append(GlobalDiscoveryRow(**candidate))
@@ -253,9 +265,53 @@ def search_global(q: str = Query(default="", min_length=1)):
             # Degrade to library-only, but never silently (api log shows why).
             logger.error("Live TMDB global search failed for %r: %s", query, e)
 
-    payload["results"] = _ranked(parsed, owned_raw, watchlist_raw, payload, hints)
+    payload["results"] = _ranked(parsed, owned_raw, watchlist_raw, payload, hints,
+                                 affinity=_taste(cfg, service))
     _attach_spans(payload)
     return SearchGlobalResponse(**payload)
+
+
+def _genre_names(genre_ids, names: dict) -> list[str]:
+    """TMDB numeric genre ids → names, dropping anything the map does not know."""
+    out: list[str] = []
+    for gid in genre_ids or []:
+        try:
+            name = names.get(int(gid))
+        except (TypeError, ValueError):
+            continue
+        if name:
+            out.append(str(name))
+    return out
+
+
+def _taste(cfg, service) -> Affinity:
+    """This viewer's genre affinity — or an EMPTY one when they asked for neutral search.
+
+    ⚠ Three separate reasons land on the same value, and that is deliberate: an empty
+    Affinity is a WORKING value, not a special case (``affinity.py``), so "switched
+    off", "nothing watched yet" and "the library call failed" all take the identical
+    code path through the ranker. A personalization failure must never be able to
+    fail a search, and it must never be able to change a result either.
+    """
+    if service is None:
+        return empty_affinity()
+    try:
+        ctx = current_session()
+        profile_id = ctx.profile_id() if ctx is not None else ""
+        if not SearchPrefsStore().personalized(profile_id):
+            return empty_affinity()
+    except Exception as e:  # noqa: BLE001
+        # An unreadable preference file must not silently switch personalization ON,
+        # so this defaults to neutral — the plan's own "some users want neutral
+        # search" answer is the safe direction to fail in.
+        logger.warning("search preferences unavailable (%s) — ranking neutrally", e)
+        return empty_affinity()
+    try:
+        watched = (service.recently_watched(limit=MAX_HISTORY) or {}).get("items") or []
+    except Exception as e:  # noqa: BLE001
+        logger.warning("watched-history lookup failed (%s) — ranking neutrally", e)
+        return empty_affinity()
+    return build_affinity(watched)
 
 
 def _attach_spans(payload: dict) -> None:
@@ -307,7 +363,8 @@ def _person_for(parsed: ParsedQuery, people: list[dict]) -> str:
 
 
 def _ranked(parsed: ParsedQuery, owned_raw: list[dict], watchlist_raw: list[dict],
-            payload: dict, hints: dict[str, list[dict]]) -> list[UnifiedResult]:
+            payload: dict, hints: dict[str, list[dict]],
+            affinity=None) -> list[UnifiedResult]:
     """One ranked list across every source (SEARCH_IMPROVEMENT_PLAN Phase 2).
 
     ⚠ Discovery rows are passed as the MODELS already built for ``payload`` (so the
@@ -327,6 +384,7 @@ def _ranked(parsed: ParsedQuery, owned_raw: list[dict], watchlist_raw: list[dict
             hints=hints,
             query_year=parsed.year,
             query_year_range=parsed.year_range,
+            affinity=affinity,
         )
     except Exception as e:  # noqa: BLE001
         # ⚠ Ranking is additive: if it fails, the response still carries the

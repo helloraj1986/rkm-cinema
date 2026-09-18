@@ -197,6 +197,12 @@ class _FakeService:
     def episodes(self, series_id, limit=1000):
         return {"provider": "jellyfin", "episodes": self._eps}
 
+    def recently_watched(self, limit=12):
+        # ⚠ Phase 5 reads this for taste ranking. A stub that LACKS it makes the route
+        # log a warning and rank neutrally on every call, which buries a real failure
+        # in the noise — so every fake here answers it.
+        return {"provider": "jellyfin", "items": []}
+
     def items_by_person(self, pid, limit=6):
         return {"provider": "jellyfin", "items": self._person_rows}
 

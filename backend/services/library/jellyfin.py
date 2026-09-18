@@ -175,6 +175,63 @@ class JellyfinLibraryProvider(LibraryProvider):
                     return out
         return out
 
+    def index_rows(self, limit: Optional[int] = None) -> list[dict]:
+        """Every Movie + Series with the text the SEMANTIC index needs (Phase 6, one call).
+
+        ⚠ **A DEDICATED fetch, deliberately.** ``_get_items`` — which feeds the poster wall, search
+        and Continue Watching for every screen in the app — asks for
+        ``PrimaryImageAspectRatio,ProductionYear,ProviderIds,UserData,Genres,DateCreated`` and NOT
+        ``Overview``. Adding the synopsis there would grow every one of those payloads by roughly
+        600 KB per 2 000 titles, to serve a fallback that runs on a minority of queries. One extra
+        request, made only when an index is actually built, is the cheaper trade.
+
+        ⚠ **Profile-scoped like every other read here**: the identity comes from ``_user_id()`` (the
+        session's, §11), so this can only ever return titles THIS profile may see — which is what
+        makes the per-profile index in ``services/search/semantic.py`` correct rather than a promise.
+
+        Returns ``[{item_id, title, year, genres, overview, kind}]`` — no playback facts, because
+        the index is about what a title IS, not where he stopped watching it.
+        """
+        if not self._configured():
+            return []
+        user_id = self._user_id()
+        if not user_id:
+            return []
+        url = (f"{self.config.JELLYFIN_URL}/Users/{user_id}/Items"
+               f"?api_key={self._api_token()}"
+               f"&Recursive=true&IncludeItemTypes=Movie,Series"
+               f"&Fields=Overview,Genres,ProductionYear")
+        out: list[dict] = []
+        try:
+            for raw in self._fetch_raw(url):
+                item_id = str(raw.get("Id") or "")
+                title = str(raw.get("Name") or "")
+                if not item_id or not title:
+                    # ⚠ A row without an id cannot be offered again by the app; a row without a
+                    # title indexes as nothing. Both are dropped rather than guessed at.
+                    continue
+                year = raw.get("ProductionYear")
+                series = str(raw.get("Type") or "") == "Series"
+                out.append({
+                    # ⚠ The SAME id under both names, on purpose: `item_id` is what the index keys on
+                    # (`semantic.row_id`) and `id` is what the ranked/spans path keys on
+                    # (`_attach_spans` matches an owned ranked row to its grouped row by `id`). Those
+                    # two helpers are older than this feature, and one row shape has to satisfy both.
+                    "id": item_id,
+                    "item_id": item_id,
+                    "title": title,
+                    "year": int(year) if str(year or "").isdigit() else None,
+                    "genres": [str(g) for g in (raw.get("Genres") or [])],
+                    "overview": str(raw.get("Overview") or ""),
+                    "kind": "show" if series else "movie",
+                })
+                if limit and len(out) >= limit:
+                    break
+        except Exception as e:
+            logger.warning("Jellyfin index_rows failed: %s", e)
+            return []
+        return out
+
     # ------------------------------------------------- configurable libraries
     # MEDIA_LIBRARIES_PLAN Phase 2: the server's OWN library folders (Virtual
     # Folders) are the source of truth for configured MEDIA_LIBRARY_N_PATH.

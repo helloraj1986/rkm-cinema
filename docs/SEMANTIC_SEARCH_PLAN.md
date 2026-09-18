@@ -90,8 +90,24 @@ mood.** Query 1 and 2 lead with the right film; query 3 gets one of three. That 
 capability, it is *strictly better than today's empty result*, and it is why §9's labelling phase
 matters — a semantic row must not be presented as if it matched what he typed.
 
-## §4 Design
+## §3.1 What it actually returns, end to end (measured AFTER the plan, with the REAL model)
 
+The route called with the real model and a 10-title stub library, `has_tmdb=False`, on a warm process:
+
+| Query | Row the app shows first | All five semantic rows, best first |
+|---|---|---|
+| `something with a twist ending` | **Inception** (0.323) | Inception, Hereditary, Se7en, When Harry Met Sally, Interstellar |
+| `movies like Inception` | **Inception** (0.340) | Inception, The Matrix, Interstellar, Planet Earth, The Dark Knight |
+| `feel good comedy for the family` | **When Harry Met Sally** (0.331) | When Harry Met Sally, The Dark Knight, The Grand Budapest Hotel, Toy Story, Hereditary |
+| `the dark knight` | *(fallback did not fire)* | — exact owned title, nothing to rescue |
+| `th` | *(fallback did not fire)* | — below the length floor |
+
+⚠ Read the third row honestly: *The Dark Knight* in second place for a family comedy is wrong, and it
+is the same weakness §3's probe showed. Three of five are right. **This is a fallback for queries that
+return NOTHING today**, so it is an improvement on an empty screen — but it is not a recommendation
+engine, and that is why §6 phase 4 labels the rows instead of passing them off as matches.
+
+## §4 Design
 ### 4.1 The index — per profile, in process, lazily, fingerprinted
 
 ```
@@ -130,9 +146,17 @@ def is_conversational(query) -> bool                    # ≥6 words OR a phrase
 def should_use_semantic(query, top_score) -> bool       # long enough AND (weak OR conversational)
 ```
 
-* `top_score` is the highest score in the **lexical** ranked list (owned + watchlist + hints +
-  TMDB discovery), taken BEFORE any semantic row is added. That is what makes §4.4's invariant
-  provable: if a semantic row could ever be present, the top lexical score was < 0.4 by definition.
+* `top_score` is the highest score in the **lexical** ranked list over the sources that mean "a title
+  matched" — ``owned`` and ``tmdb`` — taken BEFORE any semantic row is added. That is what makes
+  §4.4's invariant provable: if a semantic row could ever be present, the top lexical score was < 0.4
+  by definition.
+* ⚠⚠ **The ACQUISITION QUEUE is deliberately not among those sources, and this was measured after the
+  plan was first committed.** His queue holds 471 rows; against *"something with a twist ending"* two
+  of them fuzzy-match at **0.742** — *"Teach You a Lesson"* and *"A Toxic Love Story"*, both printed
+  by the real scorer. That is a false positive ABOVE the containment tier, and reading the whole
+  ranked list meant a mood query never reached the embeddings whenever the queue happened to contain
+  something vaguely similar. The queue is not an answer to "do I have this?", so it is not consulted
+  in either direction — pinned by two route tests, and falsified as a mutation.
 * ⚠ **A length floor is a THIRD condition, and it was missing from the first draft of this section —
   caught by falsifying the plan's own claims before committing it.** The route's
   `MIN_TMDB_QUERY_LEN` gates only the TMDB half: a 2-character query still runs the local library
@@ -208,7 +232,7 @@ nobody can find is a feature nobody has. Settings → Search gains one card, mir
 | **His library size** (no Jellyfin in this sandbox) | build time and memory scale with it | 2 000 titles measured at 0.55 s / 130 MB. Even 10 000 is ≈ 3 s / ~200 MB, once per process. |
 | **His box's CPU** | the measured numbers are this container's | model2vec is numpy-only and linear in texts; there is no torch thread pool to fight. |
 | **Whether his queries actually trigger it** | a fallback that never fires is dead code | §3's probe used HIS two example queries, and `top_score < 0.4` on a 4-word descriptive query is expected — but only his usage settles it. The switch makes it visible either way. |
-| Live search latency end-to-end | not measurable without his Jellyfin | the route was already synchronous and TMDB-bound; this adds work ONLY on a triggered query, and 17 ms when the index is warm. |
+| Live search latency end-to-end | not measurable without his Jellyfin | ⚠ **Measured after the plan was committed, with the real model and the real route over a 10-title stub library**: the fallback's own cost is not visible against the route's existing work — median delta over 5 warm runs **−4 ms** (i.e. inside the noise of a 300–500 ms route dominated by scoring his 471-row queue), against a measured **17 ms** for the embedding search itself over 2 000 indexed titles. The FIRST triggered search on a cold process pays the model load (~3.4 s) plus the index build (0.55 s for 2 000 titles). |
 
 ## §8 Acceptance (what "done" looks like, in falsifiable terms)
 

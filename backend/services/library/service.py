@@ -477,6 +477,22 @@ class LibraryService:
                 return {"provider": p.name, "items": items}
         return {"provider": None, "items": []}
 
+    def index_rows(self, limit: Optional[int] = None) -> list[dict]:
+        """Semantic index source rows: the first provider that returns any (Phase 6).
+
+        ⚠ Returns ROWS, not a ``{"provider": …}`` envelope — the index has no use for which provider
+        answered, and the route has no business knowing.
+        """
+        for p in self._providers:
+            try:
+                rows = p.index_rows(limit=limit) or []
+            except Exception as e:
+                logger.warning("index_rows failed for %s: %s", p.name, e)
+                continue
+            if rows:
+                return rows
+        return []
+
     def continue_watching(self, limit: int = 12) -> dict:
         """Continue Watching row: ``{"provider": str|None, "items": [...]}``."""
         for p in self._providers:

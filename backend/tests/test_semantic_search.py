@@ -317,3 +317,44 @@ def test_an_encoder_that_explodes_does_not_fail_the_search(monkeypatch):
         raise RuntimeError("the model file is corrupt")
 
     assert semantic.semantic_hits("p", "movies like inception", LIBRARY, encoder=explode) == []
+
+
+def test_rows_are_fetched_once_per_profile_within_the_ttl(monkeypatch):
+    """⚠ The row fetch is the expensive half (one Jellyfin request with every synopsis), so the TTL
+    is what stops a triggered search repeating it — while the FINGERPRINT still decides whether the
+    vectors are rebuilt."""
+    semantic.clear_cache()
+    calls = []
+    rows = list(LIBRARY)
+
+    def fetch():
+        calls.append(1)
+        return rows
+
+    first = semantic.cached_index_rows("p", fetch, now=1000.0)
+    again = semantic.cached_index_rows("p", fetch, now=1000.0 + semantic.ROWS_TTL_SECONDS - 1)
+    after = semantic.cached_index_rows("p", fetch, now=1000.0 + semantic.ROWS_TTL_SECONDS + 1)
+
+    assert len(first) == len(LIBRARY) and len(again) == len(LIBRARY)
+    assert len(calls) == 2, "the TTL did not suppress the second fetch"
+    assert len(after) == len(LIBRARY)
+    # and a DIFFERENT profile has its own rows: one cache entry per owner, never shared
+    semantic.cached_index_rows("other", lambda: [HEREDITARY], now=1000.0)
+    assert set(semantic._ROWS) == {"p", "other"}  # noqa: SLF001
+
+
+def test_a_failing_row_fetch_is_empty_not_an_exception():
+    def boom():
+        raise RuntimeError("jellyfin is down")
+
+    assert semantic.cached_index_rows("p", boom) == []
+
+
+def test_a_request_with_no_published_session_still_has_an_owner():
+    """⚠ The app resolves an unscoped request through its OWN default account — one library — so one
+    key is honest there. `get_index` still refuses a truly empty id, so a caller that forgot to
+    resolve an owner cannot accidentally share the default index."""
+    assert semantic.index_owner("") == semantic.DEFAULT_IDENTITY_KEY
+    assert semantic.index_owner("profile-a") == "profile-a"
+    assert semantic.get_index("", LIBRARY, encoder=fake_encoder) is None
+    assert semantic.get_index(semantic.index_owner(""), LIBRARY, encoder=fake_encoder) is not None

@@ -52,9 +52,11 @@ __all__ = [
     "SEMANTIC_LIMIT",
     "SemanticIndex",
     "available",
+    "cached_index_rows",
     "clear_cache",
     "fingerprint",
     "get_index",
+    "index_owner",
     "index_text",
     "is_conversational",
     "row_id",
@@ -92,6 +94,29 @@ TITLE_MATCH_FLOOR = TOKEN_SCORE
 #: library is ~2 MB of vectors, and the second slot is what stops a household switch from paying the
 #: build twice. Not a leak — a stated bound.
 MAX_CACHED_INDEXES = 2
+
+#: How long the ROWS an index is built from may be reused, per profile.
+#:
+#: ⚠ The two guards do different jobs and both are needed: the FINGERPRINT answers "is this still the
+#: same library?" and can only do that from the rows, while the TTL bounds how often we PAY to ask.
+#: Without it every triggered search on this box repeats a Jellyfin request carrying every synopsis.
+#: The cost of the TTL is stated rather than hidden: a title added in the last five minutes is not
+#: semantically findable yet — the same staleness the app already accepts for its TMDB search cache.
+ROWS_TTL_SECONDS = 300
+
+#: The key used when a request has NO published session (auth disabled, or a direct call).
+#:
+#: ⚠ Not a fudge: with no session the app resolves media calls through its OWN default account —
+#: ``JellyfinLibraryProvider._user_id()`` falls back to the first account — so there is exactly one
+#: library behind that key, and one key is honest. A profile ALWAYS has an id, so no profile can
+#: collide with this value, and :func:`get_index` still refuses ``""`` outright.
+DEFAULT_IDENTITY_KEY = "<no-profile>"
+
+
+def index_owner(profile_id: str) -> str:
+    """The cache key this request's index belongs to (see :data:`DEFAULT_IDENTITY_KEY`)."""
+    key = str(profile_id or "").strip()
+    return key or DEFAULT_IDENTITY_KEY
 
 EncodeFn = Callable[[Sequence[str]], Any]
 """``texts -> (n, dims) array``. Injected in tests; the real one is :func:`_model_encode`."""
@@ -298,11 +323,42 @@ class SemanticIndex:
 _CACHE: "OrderedDict[tuple[str, str], SemanticIndex]" = OrderedDict()
 _cache_lock = threading.Lock()
 
+_ROWS: dict[str, tuple[float, tuple[dict, ...]]] = {}
+_rows_lock = threading.Lock()
+
 
 def clear_cache() -> None:
-    """Drop every cached index (a library change, or a test)."""
+    """Drop every cached index AND every cached row set (a library change, or a test)."""
     with _cache_lock:
         _CACHE.clear()
+    with _rows_lock:
+        _ROWS.clear()
+
+
+def cached_index_rows(profile_id: str, fetch: Callable[[], Sequence[dict]], *,
+                      ttl: float = ROWS_TTL_SECONDS, now: Optional[float] = None) -> list[dict]:
+    """The rows an index would be built from, fetched at most once per ``ttl`` per profile.
+
+    ⚠ ``fetch`` is the expensive half on his box — one Jellyfin request carrying every synopsis in
+    the library — and a triggered search would otherwise pay it every single time. A failure inside
+    ``fetch`` returns ``[]`` (never raises): a search must answer.
+    """
+    import time as _time
+
+    key = index_owner(profile_id)
+    stamp = _time.monotonic() if now is None else float(now)
+    with _rows_lock:
+        hit = _ROWS.get(key)
+        if hit is not None and stamp - hit[0] < ttl:
+            return list(hit[1])
+    try:
+        rows = [row for row in (fetch() or ()) if isinstance(row, dict)]
+    except Exception as e:  # noqa: BLE001
+        logger.warning("semantic index rows could not be fetched (%s)", e)
+        return []
+    with _rows_lock:
+        _ROWS[key] = (stamp, tuple(rows))
+    return rows
 
 
 def get_index(profile_id: str, rows: Sequence[dict], *,

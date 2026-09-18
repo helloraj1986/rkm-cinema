@@ -7,6 +7,7 @@ whole external half on `strong_match = score >= EXACT_TITLE_SCORE`, so owning
 *Matrix Reloaded*, no *Animatrix*. The gate is gone and a ranked list carries the
 order instead.
 """
+import pytest
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -143,19 +144,48 @@ def test_every_row_carries_its_provenance_and_why_it_matched():
     assert "provider_ids" not in owned_row.to_dict()["payload"] or True  # payload is verbatim
 
 
-def test_ranking_is_deterministic():
-    """Two identical queries must not reshuffle — the list is sorted by score,
-    then source, then title, never by dict iteration order."""
-    # Two rows with the SAME title and the SAME score: only the identity tie-break
-    # can order them, and it must give the same answer whichever way they arrive.
-    def rows(order):
-        return [{"tmdb_id": tid, "media_type": "movie", "title": "Dune", "year": 2021}
-                for tid in order]
+def test_ranking_is_deterministic_for_the_same_input():
+    """The same rows in the same order must always give the same list.
 
-    first = rank_all("dune", owned=[], discovery=rows([2, 1]))
-    second = rank_all("dune", owned=[], discovery=rows([1, 2]))
-    assert [r.score for r in first] == [r.score for r in second]
-    assert [r.payload["tmdb_id"] for r in first] == [r.payload["tmdb_id"] for r in second] == [1, 2]
+    ⚠ The invariant is determinism, NOT order-independence: which row arrives
+    first from a provider is itself meaningful (it is that provider's relevance),
+    and the list deliberately preserves it between equal scores.
+    """
+    rows = [{"tmdb_id": 2, "media_type": "movie", "title": "Dune", "year": 2021},
+            {"tmdb_id": 1, "media_type": "movie", "title": "Dune", "year": 1984}]
+    first = rank_all("dune", owned=[], discovery=[dict(r) for r in rows])
+    second = rank_all("dune", owned=[], discovery=[dict(r) for r in rows])
+    assert [(r.score, r.payload["tmdb_id"]) for r in first] == \
+           [(r.score, r.payload["tmdb_id"]) for r in second]
+    # …and it is not alphabetical: a perfectly-tied set keeps PROVIDER order.
+    assert [r.payload["tmdb_id"] for r in first] == [2, 1]
+
+
+def test_equal_relevance_keeps_the_providers_order():
+    """⚠ Without the provider-order bias a query the scorer cannot see — a bare
+    decade like "90s", where every row scores 0 — would be sorted ALPHABETICALLY,
+    discarding TMDB's own ranking and returning a worse list than the one already
+    in hand."""
+    provider_order = [
+        {"tmdb_id": 3, "media_type": "movie", "title": "Zulu", "year": 1964},
+        {"tmdb_id": 2, "media_type": "movie", "title": "Alien", "year": 1979},
+    ]
+    ranked = rank_all("90s", owned=[], discovery=provider_order)
+    assert [r.payload["title"] for r in ranked] == ["Zulu", "Alien"]
+
+
+def test_cross_source_ties_are_broken_by_source_order_not_by_insertion():
+    """⚠ A bonus-free tie is the only place SOURCE_ORDER can decide anything, and
+    that is exactly where an unstable sort would otherwise show through.
+
+    A collection named Dune and a TMDB row named Dune score identically; the hint
+    is the more useful thing to click first (it browses the shelf), so it wins.
+    """
+    ranked = rank_all("dune",
+                      discovery=[{"tmdb_id": 9, "media_type": "movie", "title": "Dune", "year": 2021}],
+                      hints={"collection": [{"id": "c1", "name": "Dune", "kind": "collection"}]})
+    assert [r.score for r in ranked][0] == pytest.approx(ranked[1].score, abs=1e-3)
+    assert [r.source for r in ranked] == ["hint", "tmdb"]
 
 
 def test_to_dict_is_json_ready():
@@ -204,7 +234,10 @@ def _route_env(lib_service, tmdb_rows=(), watchlist_rows=(), counter=None):
     cfg = SimpleNamespace()
     cfg.has_tmdb = lambda: True
 
-    def search_multi(q):
+    def search_multi(q, media_type=None):
+        # ⚠ media_type is Phase 3's filter (SEARCH_IMPROVEMENT_PLAN); the stub has to
+        # accept it or the route's external half raises and degrades to empty, which
+        # looks like a ranking failure rather than a stub that is out of date.
         if counter is not None:
             counter.append(q)
         return list(tmdb_rows)

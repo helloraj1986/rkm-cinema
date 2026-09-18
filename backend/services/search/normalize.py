@@ -32,18 +32,34 @@ def normalize_title(raw: Any) -> str:
     return _SPACES.sub(" ", s)
 
 
-def year_factor(query_year: int | None, title_year: Any) -> float:
-    """Multiplier for a title match given both years.
+def year_factor(query_year: int | None, title_year: Any, *,
+                year_range: tuple[int, int] | None = None) -> float:
+    """Multiplier for a title match given the year the QUERY asked for.
 
     Unknown on EITHER side is neutral (1.0) — the app must not punish a title for
     metadata the library did not carry, which is exactly the bug that hid the
     real *Sholay* on 2026-09-13.
+
+    ``year_range`` (a decade, from the query parser) takes precedence over
+    ``query_year`` when both are somehow present; it is the same 1.0 / mismatch
+    answer, so a decade is a boost-or-penalty rather than a hard filter.
     """
     try:
-        y1 = int(query_year) if query_year is not None else None
         y2 = int(title_year) if title_year is not None else None
     except (TypeError, ValueError):
         return 1.0
-    if y1 is None or y2 is None:
+    if y2 is None:
+        return 1.0
+    if year_range is not None:
+        try:
+            lo, hi = int(year_range[0]), int(year_range[1])
+        except (TypeError, ValueError, IndexError):
+            return 1.0
+        return 1.0 if lo <= y2 <= hi else YEAR_MISMATCH_FACTOR
+    try:
+        y1 = int(query_year) if query_year is not None else None
+    except (TypeError, ValueError):
+        return 1.0
+    if y1 is None:
         return 1.0
     return 1.0 if y1 == y2 else YEAR_MISMATCH_FACTOR

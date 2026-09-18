@@ -100,16 +100,18 @@ def _length_ratio(a: str, b: str) -> float:
     return min(len(a), len(b)) / max(len(a), len(b))
 
 
-def _combine(score: float, query_year: int | None, title_year: Any) -> float:
+def _combine(score: float, query_year: int | None, title_year: Any,
+             year_range: tuple[int, int] | None = None) -> float:
     """Apply the year factor and the floor, in ONE place for both entry points."""
     if score <= 0.0:
         return 0.0
-    scored = score * year_factor(query_year, title_year)
+    scored = score * year_factor(query_year, title_year, year_range=year_range)
     return scored if scored >= FUZZY_FLOOR else 0.0
 
 
 def fuzzy_title_score(query: str, candidate: Any, *, query_year: int | None = None,
-                      title_year: Any = None) -> float:
+                      title_year: Any = None,
+                      query_year_range: tuple[int, int] | None = None) -> float:
     """0.0–``FUZZY_CEILING`` relevance for a near-miss TITLE, else 0.0.
 
     Returns 0.0 (never a guess) when the dependency is absent, the query is too
@@ -129,9 +131,9 @@ def fuzzy_title_score(query: str, candidate: Any, *, query_year: int | None = No
     if not q or not c or len(q) < MIN_FUZZY_LEN:
         return 0.0
     if q == c:
-        return _combine(1.0, query_year, title_year)
+        return _combine(1.0, query_year, title_year, query_year_range)
     if c.startswith(q):
-        return _combine(0.9, query_year, title_year)
+        return _combine(0.9, query_year, title_year, query_year_range)
 
     best = 0.0
     # (a) The whole string, when the two are plausibly the same words.
@@ -146,7 +148,7 @@ def fuzzy_title_score(query: str, candidate: Any, *, query_year: int | None = No
             continue
         best = max(best, (fuzz.WRatio(q, word) / 100.0) * TOKEN_QUERY_SCALE)
 
-    return _combine(best * _RATIO_SCALE, query_year, title_year)
+    return _combine(best * _RATIO_SCALE, query_year, title_year, query_year_range)
 
 
 def fuzzy_name_score(query: str, candidate: Any) -> float:

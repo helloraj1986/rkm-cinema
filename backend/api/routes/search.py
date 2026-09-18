@@ -20,6 +20,7 @@ from fastapi import APIRouter, Query
 from api.models import SearchResponse, SearchResult
 from config.settings import get_config
 from services import WatchlistService
+from services.search.query_parser import parse_query
 from services.search.scoring import row_fields, score_item
 from services.tmdb import TMDBService
 
@@ -72,7 +73,11 @@ def _tmdb_candidate(result: dict) -> dict:
 def search(q: str = Query(default="", min_length=1)):
     """Search the watchlist and TMDB, ranked by continuous relevance."""
     cfg = get_config()
-    query = q.strip()
+    # ⚠ Parse BEFORE matching (Phase 3): "tom hanks movies 1994" is a person, a
+    # type and a year — matched as one literal string it finds nothing, because
+    # that string appears in no title anywhere.
+    parsed = parse_query(q.strip())
+    query = parsed.scoring_query
 
     wl = WatchlistService()
     data = wl.load()
@@ -80,7 +85,8 @@ def search(q: str = Query(default="", min_length=1)):
     # ---- Local watchlist matches: SCORED and ranked (Phase 1/2), not substring-tested.
     scored_local = []
     for entry in data.pending + data.recommended:
-        scored = score_item(query, watchlist_fields(entry), item_year=entry.year, item=entry)
+        scored = score_item(query, watchlist_fields(entry), item_year=entry.year, item=entry,
+                            query_year=parsed.year, query_year_range=parsed.year_range)
         if scored.score >= MIN_WATCHLIST_SCORE:
             scored_local.append(scored)
     scored_local.sort(key=lambda s: -s.score)
@@ -106,9 +112,11 @@ def search(q: str = Query(default="", min_length=1)):
     if live_key:
         try:
             scored_live = []
-            for result in TMDBService(config=cfg).search_multi(query)[:TMDB_LIMIT]:
+            for result in TMDBService(config=cfg).search_multi(
+                    query, media_type=parsed.media_type)[:TMDB_LIMIT]:
                 candidate = _tmdb_candidate(result)
-                scored = score_item(query, row_fields(candidate), item_year=candidate["year"])
+                scored = score_item(query, row_fields(candidate), item_year=candidate["year"],
+                                    query_year=parsed.year, query_year_range=parsed.year_range)
                 scored_live.append((scored, candidate))
             # ⚠ Stable sort: TMDB's own order is the tie-break, so a row it ranked
             # first is never demoted by our scorer failing to see the match.

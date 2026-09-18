@@ -346,7 +346,7 @@ class TMDBService:
             })
         return out
 
-    def search_multi(self, query: str) -> list[Dict[str, Any]]:
+    def search_multi(self, query: str, media_type: Optional[str] = None) -> list[Dict[str, Any]]:
         """Live multi-type search (movies + TV) through the shared HTTP client.
 
         Lightweight and uncached — /api/search should stay fresh. Returns raw
@@ -359,11 +359,20 @@ class TMDBService:
         / Accept, no retry) while every other TMDB path via this client worked
         — suggest returned live rows from the same container, search returned
         [] and ``except Exception: pass`` hid the 4xx.
+
+        ``media_type`` (SEARCH_IMPROVEMENT_PLAN Phase 3) narrows the search to
+        TMDB's TYPE-SPECIFIC endpoint — /search/movie or /search/tv instead of
+        /search/multi — which is the only way to stop "the office" returning the
+        film, or a band's name returning a documentary about it. ⚠ Additive: the
+        default ``None`` is byte-for-byte the previous behaviour. The type-specific
+        endpoints omit ``media_type`` on each row, so it is stamped on here — the
+        route's contract is that every returned row carries one.
         """
         if not query or not query.strip():
             return []
+        endpoint = {"movie": "search/movie", "tv": "search/tv"}.get(media_type or "", "search/multi")
         try:
-            data = self._request("search/multi", {
+            data = self._request(endpoint, {
                 "query": query.strip(),
                 "include_adult": "false",
                 "language": "en-US",
@@ -372,10 +381,16 @@ class TMDBService:
         except Exception as e:
             logger.error("TMDB multi-search failed for %r: %s", query, e)
             raise
-        return [
-            r for r in (data.get("results") or [])
-            if (r.get("media_type") or "") in ("movie", "tv")
-        ]
+        raw = data.get("results") or []
+        if endpoint == "search/multi":
+            return [r for r in raw if (r.get("media_type") or "") in ("movie", "tv")]
+        out: list[Dict[str, Any]] = []
+        for r in raw:
+            row = dict(r)
+            row.setdefault("media_type", media_type)
+            if row.get("media_type") == media_type:
+                out.append(row)
+        return out
 
     def search_movie(self, title: str, year: Optional[int] = None) -> Optional[Dict[str, Any]]:
         """Search for a movie by title and year (cached)."""

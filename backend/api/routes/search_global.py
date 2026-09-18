@@ -51,6 +51,7 @@ from services.global_search import (
     owned_state, owned_strong_match,
 )
 from services.library import build_library_service
+from services.search.query_parser import ParsedQuery, best_person_match, parse_query
 from services.search.ranking import rank_all
 from services.tmdb import TMDBService
 from services.watchlist import WatchlistService
@@ -72,18 +73,21 @@ SEARCH_CACHE_TTL = 300
 _search_cache: TTLCache[list] = TTLCache(default_ttl=SEARCH_CACHE_TTL)
 
 
-def _tmdb_search_cached(cfg, query: str) -> list:
+def _tmdb_search_cached(cfg, query: str, media_type: str | None = None) -> list:
     """``TMDBService.search_multi`` for *query*, cached per normalised query for ``SEARCH_CACHE_TTL``.
 
     ``search_multi`` itself stays uncached on purpose (the legacy /api/search must read fresh), so the
     cache lives here — on the ONE path where the same query is asked repeatedly as he types. A
     transport failure raises (and is NOT cached), which the caller degrades on explicitly.
     """
-    key = f"search_multi:{normalize_title(query)}"
+    # ⚠ The media type is part of the key: "the office" as a film and "the office"
+    # as a series are two different searches, and a shared key would serve one the
+    # other's rows for five minutes.
+    key = f"search_multi:{media_type or 'any'}:{normalize_title(query)}"
     hit = _search_cache.get(key)
     if hit is not None:
         return hit
-    rows = list(TMDBService(config=cfg).search_multi(query))
+    rows = list(TMDBService(config=cfg).search_multi(query, media_type=media_type))
     return _search_cache.set(key, rows) or rows
 
 
@@ -137,9 +141,13 @@ def _tmdb_ids(rows: list[dict]) -> set[int]:
 def search_global(q: str = Query(default="", min_length=1)):
     """Library-first global search: owned rows + hints + deduped TMDB discovery."""
     cfg = get_config()
-    query = q.strip()
+    # ⚠ Parse BEFORE anything is searched (Phase 3): "tom hanks movies 1994" is a
+    # person and a year and the word "movies", and matching it as one literal
+    # string finds nothing, because that string is in no title anywhere.
+    parsed = parse_query(q.strip())
+    query = parsed.scoring_query
     payload = {
-        "query": query,
+        "query": q.strip(),
         "provider": None,
         "tmdb_key": cfg.has_tmdb(),
         "strong_match": False,
@@ -190,10 +198,16 @@ def search_global(q: str = Query(default="", min_length=1)):
                 id=str(c.get("id", "")), name=str(c.get("name", "")), kind="collection", year=c.get("year")))
 
         # Actor/director drill-down: titles featuring the top Person hint.
+        #
+        # ⚠ Phase 3: when the QUERY named somebody ("nolan"), that person is
+        # preferred over whatever the provider happened to list first — the whole
+        # point of extracting a person hint is to connect the query to this path
+        # deliberately rather than by luck of the ordering.
         people = found.get("people") or []
         if people:
+            target = _person_for(parsed, people) or str(people[0].get("id", ""))
             try:
-                person_rows = (service.items_by_person(str(people[0].get("id", "")), limit=6) or {}).get("items") or []
+                person_rows = (service.items_by_person(target, limit=6) or {}).get("items") or []
                 for row in person_rows:
                     owned_raw.append(row)
                     payload["person_titles"].append(GlobalOwnedRow(**_to_owned(row)))
@@ -209,7 +223,7 @@ def search_global(q: str = Query(default="", min_length=1)):
     if cfg.has_tmdb():
         watchlist_tmdb = _tmdb_ids(watchlist_raw)
         try:
-            for res in _tmdb_search_cached(cfg, query)[:DISCOVERY_LIMIT]:
+            for res in _tmdb_search_cached(cfg, query, parsed.media_type)[:DISCOVERY_LIMIT]:
                 mtype = res.get("media_type")
                 if mtype not in ("movie", "tv"):
                     continue
@@ -230,11 +244,30 @@ def search_global(q: str = Query(default="", min_length=1)):
             # Degrade to library-only, but never silently (api log shows why).
             logger.error("Live TMDB global search failed for %r: %s", query, e)
 
-    payload["results"] = _ranked(query, owned_raw, watchlist_raw, payload, hints)
+    payload["results"] = _ranked(parsed, owned_raw, watchlist_raw, payload, hints)
     return SearchGlobalResponse(**payload)
 
 
-def _ranked(query: str, owned_raw: list[dict], watchlist_raw: list[dict],
+def _person_for(parsed: ParsedQuery, people: list[dict]) -> str:
+    """The provider Person id the query named, else "".
+
+    Matched on the PARSED TERMS, not the raw query: "nolan movies 2000" names
+    Christopher Nolan, and comparing the whole string against "Christopher Nolan"
+    scores far too low to clear the threshold.
+    """
+    if not people:
+        return ""
+    names = [str(p.get("name") or "") for p in people]
+    hit = parsed.person_hint or best_person_match(parsed.title_terms, names)
+    if not hit:
+        return ""
+    for p in people:
+        if str(p.get("name") or "") == hit:
+            return str(p.get("id") or "")
+    return ""
+
+
+def _ranked(parsed: ParsedQuery, owned_raw: list[dict], watchlist_raw: list[dict],
             payload: dict, hints: dict[str, list[dict]]) -> list[UnifiedResult]:
     """One ranked list across every source (SEARCH_IMPROVEMENT_PLAN Phase 2).
 
@@ -248,15 +281,17 @@ def _ranked(query: str, owned_raw: list[dict], watchlist_raw: list[dict],
     """
     try:
         ranked = rank_all(
-            query,
+            parsed.scoring_query,
             owned=owned_raw,
             watchlist=watchlist_raw,
             discovery=[d.model_dump() for d in payload["discovery"]],
             hints=hints,
+            query_year=parsed.year,
+            query_year_range=parsed.year_range,
         )
     except Exception as e:  # noqa: BLE001
         # ⚠ Ranking is additive: if it fails, the response still carries the
         # per-source arrays a pre-Phase-2 client reads. Never fail a search over it.
-        logger.error("unified ranking failed for %r: %s", query, e)
+        logger.error("unified ranking failed for %r: %s", parsed.raw, e)
         return []
     return [UnifiedResult(**row.to_dict()) for row in ranked]

@@ -209,7 +209,9 @@ def _token_coverage(query: str, text: Any) -> float:
 
 
 def title_relevance(query: str, candidate: Any, *, query_year: int | None = None,
-                    title_year: Any = None) -> tuple[float, str, list[tuple[int, int]]]:
+                    title_year: Any = None,
+                    query_year_range: tuple[int, int] | None = None
+                    ) -> tuple[float, str, list[tuple[int, int]]]:
     """Continuous 0.0–1.0 relevance of ONE title field, with its match kind.
 
     Every applicable tier is evaluated and the STRONGEST one wins, so the result
@@ -235,7 +237,7 @@ def title_relevance(query: str, candidate: Any, *, query_year: int | None = None
     if not q or not c:
         return 0.0, "none", []
 
-    factor = year_factor(query_year, title_year)
+    factor = year_factor(query_year, title_year, year_range=query_year_range)
     tiers: list[tuple[float, str]] = []
     if q == c:
         tiers.append((1.0 * factor, "exact"))
@@ -250,7 +252,8 @@ def title_relevance(query: str, candidate: Any, *, query_year: int | None = None
         # Only reach for typo tolerance when the query is not literally present:
         # a fuzzy ratio on a clean substring is substring-sensitive, and letting
         # it compete with containment is what flattened the sequel distinction.
-        fuzzy = fuzzy_title_score(query, candidate, query_year=query_year, title_year=title_year)
+        fuzzy = fuzzy_title_score(query, candidate, query_year=query_year, title_year=title_year,
+                                  query_year_range=query_year_range)
         if fuzzy > 0.0:
             tiers.append((fuzzy, "fuzzy"))
         words = q.split()
@@ -299,7 +302,9 @@ def _year_relevance(query: str, value: Any) -> tuple[float, str, list[tuple[int,
 
 
 def _field_relevance(name: str, query: str, value: Any, *, query_year: int | None,
-                     title_year: Any) -> tuple[float, str, list[tuple[int, int]]]:
+                     title_year: Any,
+                     query_year_range: tuple[int, int] | None = None
+                     ) -> tuple[float, str, list[tuple[int, int]]]:
     """Relevance of one item field, dispatching on what KIND of field it is."""
     if name == "year":
         return _year_relevance(query, value)
@@ -311,11 +316,13 @@ def _field_relevance(name: str, query: str, value: Any, *, query_year: int | Non
     if name in LABEL_FIELDS:
         score, kind, rng = title_relevance(query, value)
         return score, kind, rng
-    return title_relevance(query, value, query_year=query_year, title_year=title_year)
+    return title_relevance(query, value, query_year=query_year, title_year=title_year,
+                           query_year_range=query_year_range)
 
 
 def score_item(query: str, fields: Mapping[str, Any], *,
                weights: FieldWeight | None = None, query_year: int | None = None,
+               query_year_range: tuple[int, int] | None = None,
                item_year: int | None = None, item: object = None) -> ScoredResult:
     """Score ONE item against ``query`` across its searchable ``fields``.
 
@@ -344,7 +351,8 @@ def score_item(query: str, fields: Mapping[str, Any], *,
         for v in values:
             if not v:
                 continue
-            cand = _field_relevance(name, query, v, query_year=query_year, title_year=item_year)
+            cand = _field_relevance(name, query, v, query_year=query_year, title_year=item_year,
+                                    query_year_range=query_year_range)
             if cand[0] > best[0]:
                 best = cand
         if best[0] > 0.0:
@@ -397,7 +405,8 @@ def row_fields(row: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def best_relevance(rows: Iterable[dict], query: str, *, weights: FieldWeight | None = None,
-                   query_year: int | None = None) -> float:
+                   query_year: int | None = None,
+                   query_year_range: tuple[int, int] | None = None) -> float:
     """Highest :func:`score_item` score across ``rows``.
 
     The continuous twin of :func:`owned_strong_match`, for callers that need a
@@ -406,6 +415,7 @@ def best_relevance(rows: Iterable[dict], query: str, *, weights: FieldWeight | N
     best = 0.0
     for row in rows or []:
         scored = score_item(query, row_fields(row), weights=weights, query_year=query_year,
+                            query_year_range=query_year_range,
                             item_year=row.get("year"), item=row)
         best = max(best, scored.score)
     return best

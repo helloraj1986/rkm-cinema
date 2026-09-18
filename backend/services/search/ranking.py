@@ -71,6 +71,13 @@ WATCHLIST_BONUS = OWNED_BONUS * 0.5
 #: coming, then navigation hints, then discovery.
 SOURCE_ORDER = {"owned": 0, "watchlist": 1, "hint": 2, "tmdb": 3}
 
+#: ⚠ A score difference too small to change any tier, added so that rows of EQUAL
+#: relevance keep the order their PROVIDER put them in. Without it, a query the
+#: scorer cannot see (a bare decade like "90s", where every row scores 0) would be
+#: sorted ALPHABETICALLY — throwing away TMDB's own relevance ranking and showing
+#: a worse list than the one that was already in hand.
+PROVIDER_ORDER_EPSILON = 1e-6
+
 
 @dataclass
 class RankedRow:
@@ -141,7 +148,8 @@ def _discovery_kind(candidate: dict) -> str:
     return "show" if candidate.get("media_type") == "tv" else "movie"
 
 
-def _rank_owned(query: str, rows: Sequence[dict], *, query_year: int | None) -> list[RankedRow]:
+def _rank_owned(query: str, rows: Sequence[dict], *, query_year: int | None,
+                query_year_range: tuple[int, int] | None = None) -> list[RankedRow]:
     """Every owned row the provider returned, scored and bonused.
 
     ⚠ Rows are NOT filtered by relevance here. Jellyfin already decided they match
@@ -149,12 +157,14 @@ def _rank_owned(query: str, rows: Sequence[dict], *, query_year: int | None) -> 
     dropping a row our scorer happens to score 0 would silently remove content the
     library actually found. They simply rank at the bottom via ``OWNED_BONUS``.
     """
+    rows = list(rows or [])
     out: list[RankedRow] = []
-    for row in rows or []:
+    for index, row in enumerate(rows):
         scored = score_item(query, row_fields(row), query_year=query_year,
+                            query_year_range=query_year_range,
                             item_year=row.get("year"), item=row)
         out.append(RankedRow(
-            score=scored.score + OWNED_BONUS,
+            score=scored.score + OWNED_BONUS + _provider_bias(index, len(rows)),
             source="owned",
             kind=_owned_kind(row),
             payload=row,
@@ -166,7 +176,8 @@ def _rank_owned(query: str, rows: Sequence[dict], *, query_year: int | None) -> 
 
 
 def _rank_watchlist(query: str, rows: Sequence[dict], taken: set[int],
-                    *, query_year: int | None) -> list[RankedRow]:
+                    *, query_year: int | None,
+                    query_year_range: tuple[int, int] | None = None) -> list[RankedRow]:
     """Acquisition-queue entries, minus anything already covered by a better source.
 
     ⚠ Deduped by TMDB id against ``taken`` (the owned rows plus the discovery rows
@@ -174,8 +185,9 @@ def _rank_watchlist(query: str, rows: Sequence[dict], taken: set[int],
     results must appear ONCE, and the discovery row already carries
     ``in_watchlist`` — showing both would read as two different films.
     """
+    rows = list(rows or [])
     out: list[RankedRow] = []
-    for row in rows or []:
+    for index, row in enumerate(rows):
         try:
             tmdb_id = int(row.get("tmdbId") or row.get("tmdb_id") or 0)
         except (TypeError, ValueError):
@@ -183,6 +195,7 @@ def _rank_watchlist(query: str, rows: Sequence[dict], taken: set[int],
         if tmdb_id and tmdb_id in taken:
             continue
         scored = score_item(query, row_fields(row), query_year=query_year,
+                            query_year_range=query_year_range,
                             item_year=row.get("year"), item=row)
         if scored.score <= 0.0:
             # ⚠ A watchlist entry only belongs in the list when the QUERY matched
@@ -193,7 +206,7 @@ def _rank_watchlist(query: str, rows: Sequence[dict], taken: set[int],
         if tmdb_id:
             taken.add(tmdb_id)
         out.append(RankedRow(
-            score=scored.score + WATCHLIST_BONUS,
+            score=scored.score + WATCHLIST_BONUS + _provider_bias(index, len(rows)),
             source="watchlist",
             kind="show" if row.get("isSeries") else "movie",
             payload=row,
@@ -204,7 +217,8 @@ def _rank_watchlist(query: str, rows: Sequence[dict], taken: set[int],
     return out
 
 
-def _rank_hints(query: str, groups: dict[str, Sequence[dict]], *, query_year: int | None) -> list[RankedRow]:
+def _rank_hints(query: str, groups: dict[str, Sequence[dict]], *, query_year: int | None,
+                query_year_range: tuple[int, int] | None = None) -> list[RankedRow]:
     """People / genres / collections, scored in the SAME list as the titles.
 
     The plan's point: these were three top-level arrays the frontend had to
@@ -212,12 +226,14 @@ def _rank_hints(query: str, groups: dict[str, Sequence[dict]], *, query_year: in
     order the server decided, instead of re-deriving relevance in the UI.
     """
     out: list[RankedRow] = []
-    for kind, rows in (groups or {}).items():
-        for row in rows or []:
+    for kind, raw_rows in (groups or {}).items():
+        rows = list(raw_rows or [])
+        for index, row in enumerate(rows):
             name = str(row.get("name") or "")
-            scored = score_item(query, {"title": name}, query_year=query_year, item=row)
+            scored = score_item(query, {"title": name}, query_year=query_year,
+                                query_year_range=query_year_range, item=row)
             out.append(RankedRow(
-                score=scored.score,
+                score=scored.score + _provider_bias(index, len(rows)),
                 source="hint",
                 kind=kind,
                 payload=dict(row),
@@ -229,16 +245,19 @@ def _rank_hints(query: str, groups: dict[str, Sequence[dict]], *, query_year: in
 
 
 def _rank_discovery(query: str, rows: Sequence[dict], owned: Sequence[dict],
-                    *, query_year: int | None) -> list[RankedRow]:
+                    *, query_year: int | None,
+                    query_year_range: tuple[int, int] | None = None) -> list[RankedRow]:
     """External candidates for titles the library does NOT have."""
+    rows = list(rows or [])
     out: list[RankedRow] = []
-    for row in rows or []:
+    for index, row in enumerate(rows):
         if is_duplicate_discovery(dict(row), owned):
             continue
         scored = score_item(query, row_fields(row), query_year=query_year,
+                            query_year_range=query_year_range,
                             item_year=row.get("year"), item=row)
         out.append(RankedRow(
-            score=scored.score,
+            score=scored.score + _provider_bias(index, len(rows)),
             source="tmdb",
             kind=_discovery_kind(row),
             payload=row,
@@ -249,12 +268,19 @@ def _rank_discovery(query: str, rows: Sequence[dict], owned: Sequence[dict],
     return out
 
 
+def _provider_bias(index: int, total: int) -> float:
+    """A vanishing bias that preserves the PROVIDER's order between equal scores."""
+    return (total - index) * PROVIDER_ORDER_EPSILON
+
+
 def _identity(row: "RankedRow") -> str:
     """A stable per-row key for the sort, so two identical queries cannot reshuffle.
 
-    ⚠ Without this a tie fell through to Python's stable sort, i.e. to the order
-    the PROVIDER happened to return — which changes when TMDB reorders its results,
-    making the same search look different on two consecutive days.
+    ⚠ The FINAL guard. :func:`_provider_bias` already separates rows within one
+    source, so this is unreachable while that exists — it is kept because a sort
+    key that is total is the property that matters: a tie falling through to
+    Python's stable sort is a tie falling through to insertion order, which is how
+    the list reshuffled between two identical queries.
     """
     payload = row.payload or {}
     return str(payload.get("tmdb_id") or payload.get("tmdbId") or payload.get("id") or "")
@@ -262,7 +288,8 @@ def _identity(row: "RankedRow") -> str:
 
 def rank_all(query: str, *, owned: Sequence[dict] = (), watchlist: Sequence[dict] = (),
              discovery: Sequence[dict] = (), hints: dict[str, Sequence[dict]] | None = None,
-             query_year: int | None = None) -> list[RankedRow]:
+             query_year: int | None = None,
+             query_year_range: tuple[int, int] | None = None) -> list[RankedRow]:
     """ONE ranked list across every source, highest relevance first.
 
     Ordering is by ``score`` descending, then by :data:`SOURCE_ORDER`, then by
@@ -290,10 +317,14 @@ def rank_all(query: str, *, owned: Sequence[dict] = (), watchlist: Sequence[dict
             continue
 
     rows: list[RankedRow] = []
-    rows.extend(_rank_owned(query, owned_seq, query_year=query_year))
-    rows.extend(_rank_watchlist(query, watchlist or (), taken, query_year=query_year))
-    rows.extend(_rank_hints(query, hints or {}, query_year=query_year))
-    rows.extend(_rank_discovery(query, discovery_rows, owned_seq, query_year=query_year))
+    rows.extend(_rank_owned(query, owned_seq, query_year=query_year,
+                            query_year_range=query_year_range))
+    rows.extend(_rank_watchlist(query, watchlist or (), taken, query_year=query_year,
+                               query_year_range=query_year_range))
+    rows.extend(_rank_hints(query, hints or {}, query_year=query_year,
+                            query_year_range=query_year_range))
+    rows.extend(_rank_discovery(query, discovery_rows, owned_seq, query_year=query_year,
+                                query_year_range=query_year_range))
 
     rows.sort(key=lambda r: (-r.score, SOURCE_ORDER.get(r.source, 99),
                              str(r.payload.get("title") or r.payload.get("name") or ""),

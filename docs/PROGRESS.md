@@ -1,4 +1,8 @@
-## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-18, after session 3) · branch **`feat/mobile-m3-library`** · tip **`0c6076f`** · **5 commits ahead of `dev`** (M3+M4 merged; tree clean, pushed)
+## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-18, after session 3) · branch **`feat/mobile-m3-library`** · **6 commits ahead of `dev`** (M3+M4 merged; tree clean, pushed)
+
+⚠ **The tip:** this line rides a docs-only commit, so `git log -1` is always one commit past the code
+named here — the **measured code tip is `0c6076f`** (`test(mobile): measure the detail screen with a tool
+that can fail`). `git log --oneline -3` is the honest answer; do not trust a SHA written in a doc.
 
 ⚠ **An agent starting here: read [`ARCHITECTURE.md`](ARCHITECTURE.md) §0 first** — one document now, with
 the reading order, the five rules, the deployed inventory (§2.1), "where do I change X" (§14) and every

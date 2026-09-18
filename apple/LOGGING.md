@@ -131,22 +131,30 @@ gets pushed to git and pasted into chats.
 
 **Primary — live, from the Mac while he tests:**
 
+⚠⚠ **THERE IS NO `log stream --device` ON macOS. Measured 2026-09-19 on his Mac (Xcode 26.6): the command
+fails with `log: unrecognized option '--device'`, and neither `--device` nor `--device-udid` appears in
+`log stream --help`. `log stream` streams THIS MACHINE only — it has never been able to reach a phone.**
+The earlier note here claiming it was verified on the iPad was wrong, and it cost him a round; the two
+routes that do work are below, and the first one is verified.
+
 ```bash
-# tvOS device, one area only (or drop both filters for everything)
-log stream --device --subsystem com.helloraj1986.rkmcinema --level debug \
-  --predicate 'category == "playback"' | tee ~/dev/rkm-cinema/apple/logs/tv-$(date +%Y%m%d-%H%M%S).log
+# THE SIMULATOR is the one case where a Mac streams directly. One area only, or drop both filters.
+log stream --subsystem com.helloraj1986.rkmcinema --level debug \
+  --predicate 'category == "playback"' | tee ~/dev/rkm-cinema/apple/logs/sim-$(date +%Y%m%d-%H%M%S).log
 ```
 
-⚠ **`--device` needs exactly one device attached.** With more than one (an iPhone and an iPad, say) it
-refuses; get the UDID from `xcrun devicectl list devices` (or Xcode → Window → Devices and Simulators)
-and use `--device-udid <UDID>` instead. ✅ Verified on the iPad 2026-09-14: Xcode 26.6 (SDK 26.5) streams
-from an **iPadOS 27** device without complaint, so a device newer than the SDK is not a problem here.
+**On a PHYSICAL device, in order of convenience:**
+
+1. **Xcode's console** — the Debug area (**⌘⇧Y** if hidden) while the app runs from **⌘R**, with the filter
+   field at the bottom-right of the console pane. ✅ **Verified 2026-09-19**: the whole `SPIKE SUMMARY`
+   line was read back this way. ⚠ It clips nothing (unlike the overlay, which truncates every line).
+2. **Console.app** → sidebar → **Devices** → the device → **Start**, same filter.
 
 ⚠⚠ **ON A PHYSICAL DEVICE THE *FILE* LOG IS NOT ON THE MAC'S DISK — the simulator's
 `get_app_container` trick does not apply.** Three ways to get at it, in order of convenience:
 
 1. **The overlay** (why §4 exists): a screenshot carries the correlation id and the last error.
-2. **The live stream above** — same lines, no file needed.
+2. **Xcode's console or Console.app** — same lines, no file needed.
 3. **The file itself**, when a whole run has to be read offline: Xcode → **Window → Devices and
    Simulators** → the device → **Installed Apps** → `RKMCinema` → **⚙ → Download Container…** → then, in
    Terminal (adjust the path to wherever it landed):

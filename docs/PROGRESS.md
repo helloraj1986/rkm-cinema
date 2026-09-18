@@ -70,15 +70,60 @@ the module (`grep -c` for the mutation / `return isAdmin === true`) before the r
 byte-identical to what it was — only *when a page is created* and *what happens when a frame never loads*.
 `check_touch_actions.py`'s stale `watched` entry is untouched and remains his call (§8).
 
+### Part 3 — §7a's prerequisite, built: the harness can now express "paused"
+
+⚠ §7a said the Cancel defect "could not be verified here" partly because **the stub could not express a
+cancel at all**: `offline-frame.tsx` pushed `{c:"cancel"}` and resolved, stopping no timer and emitting no
+`state` event. A stub that cannot say "the item is now paused" makes any off-device cancel test a lie.
+
+**The stub now models the NATIVE side, both ways, behind `?cancel=`** — because what the page learns about
+a download comes FROM the shell, and a page cannot be tested against a shell that is more helpful than the
+real one:
+
+| Mode | Models | What the page can do |
+|---|---|---|
+| `cancel=fixed` (default) | today's Swift: the record is written `paused` **first**, then a `state` event arrives (two separate arrivals, as the real bridge has them) | the row leaves "downloading" and offers Resume |
+| `cancel=silent` | the **PRE-FIX** Swift (§7a defects A + B): accepted, and nothing at all comes back | nothing — which is his report |
+
+**Scenario 7 (`tools/check_offline_page.py`) now passes, and asserts:** one tap sends **exactly one**
+`cancel` command for the right title; the row follows the `paused` event; **the 500 MB it already held is
+kept** (a cancel is not a delete); Cancel is replaced by Resume; the row reads
+`500 MB of 2.10 GB — resumable`. Then, against the silent shell: **the row cannot move and the Cancel tile
+stays** — his report, reproduced headlessly and labelled as the contract it is.
+
+⚠ **What this does NOT prove, and the scenario says so in its own docstring:** that the Swift writes
+`.paused` on a real cancel. `cancel=fixed` is a stub of the FIXED shell, not the shell. **§7a's Swift half
+is still his phone's to confirm** — that check needs a Mac and a thumb, and nothing here has either.
+
+### ⚠ NEW DEFECT FOUND while building it — a THIRD failing check, and this one is NOT tool-side
+
+`tools/check_offline_page.py` scenario 2 fails at HEAD. ⚠ **Reproduced identically with the merges and
+without them, and with the tool at `HEAD`** — so it is neither the merge nor the tool.
+
+**The detail page no longer states the rendition or the size before you commit to a download.**
+`downloadSummary()` still builds the right sentence and `useDownloadFacts` still computes it, but
+**nothing renders it** — the key is destructured by neither `DownloadAction` nor `DownloadNotice`. Plan
+§4.6 requires that label, its unit test is still green, and the browser check is RED on it.
+
+⚠ **Deliberately NOT fixed**: where that line belongs is a UI decision inside an action row he has
+already reorganised once to his own taste. Recorded as **`KNOWN_ISSUES` §9** with both exits. The RED
+check stays RED — that red IS the defect.
+
 ### NEXT STEPS, in order
 
-1. **`KNOWN_ISSUES` §7a's prerequisite** — a harness stub that can express "paused", which is the only
-   path to an off-device regression test for the Cancel defect. ⚠ §8's two harness failures are CLOSED.
-2. **His two decisions** — §7 **(c)** (carry an id on each 409 candidate so the ambiguity list becomes
-   pickable) and §8's stale `check_touch_actions.py` entry (delete it or invert it to assert absence).
+1. **His three decisions** — §7 **(c)** (an id on each 409 candidate, so the ambiguity list is pickable),
+   §8's stale `check_touch_actions.py` entry (delete it or invert it), and §9 (restore the pre-commit
+   size/rendition label, or drop the requirement and its assertions with it).
+2. **His phone** — the Cancel fix's Swift half (§7a) is still device-unverified, and the Sheet tap fix
+   from Part 1 is too.
 3. **Plan §6 phase 4** — label the semantic rows (`match_type == "semantic"` already travels end to
    end) before Phase 7's metrics loop calibrates `SEMANTIC_MIN_COS` and the 0.4 trigger.
 4. The device rounds the blocks below still list as unverified.
+
+⚠ **Untracked and NOT mine:** `docs/OFFLINE_SHELL_PLAN.md` (a cold-launch offline shell plan, design
+improvement #9) appeared in the working tree at 19:06 UTC on 2026-09-18 — mid-session, written by another
+session/agent on the same checkout. It is left untracked and uncommitted here, deliberately: it is not
+this session's work and nobody asked for it to be reviewed or landed.
 
 ---
 

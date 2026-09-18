@@ -43,6 +43,14 @@ const WITH_BUNDLE = params.get("bundle") !== "0";
 const API_DOWN = params.get("api") === "down";
 const MEDIA = params.get("media") !== "0";
 const ROUTE = params.get("route") ?? "/library/item/m-sholay";
+//: ⚠ What the NATIVE side does when the page asks it to cancel — the page cannot decide this, and it
+//: is the whole of KNOWN_ISSUES §7a. `fixed` (default) models today's Swift: the record is written
+//: `paused` and a `state` event follows, so the row leaves "downloading" and offers Resume. `silent`
+//: models the PRE-FIX Swift: the command is accepted and NOTHING comes back — no event, no state, no
+//: error — so the row stays "downloading" with a live Cancel tile and a frozen ring, which is exactly
+//: what he reported. ⚠ The stub MUST be able to express both, or no off-device test can tell the
+//: defect from the fix, and a "passing" cancel test would only prove the stub was optimistic.
+const CANCEL = params.get("cancel") ?? "fixed";
 
 const PROFILE = {
   id: "uid-admin", name: "rkm", is_admin: true, has_password: true, disabled: false, last_login: "",
@@ -147,6 +155,28 @@ if (WITH_BRIDGE) {
     },
     cancel(itemId: string) {
       bridge.commands.push({ c: "cancel", itemId });
+      if (CANCEL === "silent") {
+        // ⚠ The PRE-FIX shell (KNOWN_ISSUES §7a, defects A and B): accepted, and then nothing at all.
+        // It is not an error and not a refusal — there is simply no second arrival, which is precisely
+        // why the page could not react to it.
+        return reply({ accepted: "cancel" });
+      }
+      const row = (bridge.items as Array<Record<string, unknown>>).find((each) => each.itemId === itemId);
+      if (row) {
+        // The record is written `paused` FIRST (as `OfflineDownloads.cancel` now does, guarded on "not
+        // already ready"), and the event follows it — two separate arrivals, which is the shape the
+        // real bridge has. A page that only worked when they were synchronous would be measuring this
+        // stub rather than the app.
+        row.state = "paused";
+        row.url = null;
+        setTimeout(() => {
+          bridge.emit({
+            v: 1, e: "state", itemId,
+            title: row.title, state: "paused", bytes: row.bytes, totalBytes: row.totalBytes,
+            mode: row.mode, error: null, url: null,
+          });
+        }, 60);
+      }
       return reply({ accepted: "cancel" });
     },
     remove(itemId: string) {

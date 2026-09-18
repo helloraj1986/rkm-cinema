@@ -338,6 +338,80 @@ def scenario_unreachable_server(page: Page, shots: str | None) -> None:
     check(str(data["nav"]) == "['/downloads']", f"and the navigation still reaches them ({data['nav']})")
 
 
+def scenario_cancel(page: Page, shots: str | None) -> None:
+    """⚠ KNOWN_ISSUES §7a — "Cancel has no effect".
+
+    He reported the SYMPTOM on his phone; the cause was in the SWIFT half (a cancel during the
+    packaging window had nothing to cancel, and a real cancel never wrote `.paused`, so no event was
+    ever planned). ⚠ Be honest about what this scenario can and cannot prove:
+
+    * it PROVES the page half of the contract — one tap sends exactly one `cancel` command, and when
+      the shell answers with a `paused` state the row really moves (Cancel -> Resume, bytes kept);
+    * it REPRODUCES his report headlessly against a shell that answers nothing, which is the evidence
+      that the page could not have fixed this on its own;
+    * it CANNOT prove the Swift writes `.paused` on a real cancel. That is `?cancel=fixed` — a stub of
+      the FIXED shell, not the shell. No Mac, no simulator, nothing here taps a real Cancel.
+    """
+    print("\n7. cancelling a download: the command, the row after the shell answers — and when it says nothing")
+
+    # ---- (a) the FIXED shell: cancel -> the record is written paused -> the row moves
+    open_frame(page, "bridge=1&cancel=fixed", shots, "cancel-fixed")
+    page.get_by_role("button", name="Download").first.click()
+    _wait_for(page, "window.__bridge.commands.some(c => c.c === 'download')", timeout=5_000)
+    page.evaluate(
+        """window.__announce([{ itemId: 'm-sholay', title: 'Sholay', state: 'downloading',
+             bytes: 500_000_000, totalBytes: 2_100_000_000, mode: 'remux', error: null, url: null,
+             contentType: null }])"""
+    )
+    _wait_for(page, "window.__probe().rows[0] && window.__probe().rows[0].state === 'downloading'")
+    running = page.evaluate("window.__probe()")
+    check("Cancel" in " ".join(running["detail"]["buttons"]),
+          f"a running download offers Cancel (buttons: {running['detail']['buttons']})")
+
+    page.get_by_role("button", name="Cancel").first.click()
+    _wait_for(page, "window.__bridge.commands.some(c => c.c === 'cancel')", timeout=5_000)
+    cancels = [c for c in page.evaluate("window.__bridge.commands") if c.get("c") == "cancel"]
+    check(len(cancels) == 1, f"exactly ONE cancel command reaches the shell (got {len(cancels)}: {cancels})")
+    check(bool(cancels) and cancels[0].get("itemId") == "m-sholay",
+          f"…for the title being cancelled ({cancels})")
+
+    _wait_for(page, "window.__probe().rows[0] && window.__probe().rows[0].state === 'paused'", timeout=5_000)
+    paused = page.evaluate("window.__probe()")
+    row = paused["rows"][0]
+    check(row["state"] == "paused", f"the row follows the shell's state event ({row})")
+    check(row["bytes"] == 500_000_000,
+          f"the bytes it already held are KEPT — a cancel is not a delete ({row['bytes']})")
+    buttons = " ".join(paused["detail"]["buttons"])
+    check("Cancel" not in buttons, f"the Cancel tile is gone once the row is paused ({buttons!r})")
+    check("Resume" in buttons, f"…and Resume has replaced it ({buttons!r})")
+    check("500 MB of 2.10 GB — resumable" in paused["body"],
+          f"and the row says what it holds: {paused['body'][-220:]!r}")
+
+    # ---- (b) the PRE-FIX shell: accepted, and silent — his report, reproduced
+    print("   …then the same tap against a shell that answers NOTHING (the pre-fix behaviour)")
+    open_frame(page, "bridge=1&cancel=silent", shots, "cancel-silent")
+    page.get_by_role("button", name="Download").first.click()
+    _wait_for(page, "window.__bridge.commands.some(c => c.c === 'download')", timeout=5_000)
+    page.evaluate(
+        """window.__announce([{ itemId: 'm-sholay', title: 'Sholay', state: 'downloading',
+             bytes: 500_000_000, totalBytes: 2_100_000_000, mode: 'remux', error: null, url: null,
+             contentType: null }])"""
+    )
+    _wait_for(page, "window.__probe().rows[0] && window.__probe().rows[0].state === 'downloading'")
+    page.get_by_role("button", name="Cancel").first.click()
+    _wait_for(page, "window.__bridge.commands.some(c => c.c === 'cancel')", timeout=5_000)
+    page.wait_for_timeout(900)          # long enough for any event the shell might have sent
+    stuck = page.evaluate("window.__probe()")
+    stuck_row = stuck["rows"][0] if stuck["rows"] else {}
+    # ⚠ This is a CONTRACT assertion, not an endorsement: the page's whole knowledge of the download
+    # comes FROM the shell. With no second arrival it cannot move, and must not pretend to. It pins
+    # where §7a lives — the fix belongs in Swift, and this is the app's shape until the shell speaks.
+    check(stuck_row.get("state") == "downloading",
+          f"⚠ with a SILENT shell the row cannot move — his report reproduced: {stuck_row}")
+    check("Cancel" in " ".join(stuck["detail"]["buttons"]),
+          f"…the Cancel tile stays, which is the frozen ring he described ({stuck['detail']['buttons']})")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--shots", help="directory to write screenshots into")
@@ -365,6 +439,7 @@ def main() -> int:
             scenario_downloads_screen,
             scenario_progress_spool,
             scenario_unreachable_server,
+            scenario_cancel,
         ):
             page = browser.new_page(viewport={"width": 1280, "height": 900})
             page.on("pageerror", lambda exc: errors.append(str(exc)))

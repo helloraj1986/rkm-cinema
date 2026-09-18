@@ -367,10 +367,51 @@ export class ApiError extends Error {
      * the first to need this: a 502 with no body rendered as an HTTP trace.)
      */
     public detail: string | null = null,
+    /**
+     * The server's `detail` as an OBJECT, when that is what it sent (2026-09-18).
+     *
+     * ⚠ A 409 from `POST /api/media/{id}/request` is `{"detail": {"message", "candidates"}}` — the
+     * sentence AND a "pick one" list. `detail` above keeps the sentence (every screen that already
+     * reads it keeps working, unchanged); this carries the rest, which used to be **discarded**:
+     * the candidates never reached the browser, so a "which one did you mean?" list could not be
+     * rendered even though the server had already sent it.
+     *
+     * ⚠ `null` for a string detail — so "the server sent structure" is distinguishable from "the
+     * server sent a sentence", and a caller never has to re-parse a message to find out.
+     */
+    public payload: Record<string, unknown> | null = null,
   ) {
     super(message);
     this.name = "ApiError";
   }
+}
+
+/** One ambiguous-match row from a 409 (title/year only — the server sends no id yet). */
+export interface AmbiguousCandidate {
+  title: string;
+  year: number | null;
+}
+
+/**
+ * The "pick one" list from an ambiguous request, or `[]`.
+ *
+ * ⚠ Pure and total: it takes `unknown` because it is handed a caught error, and a screen must never
+ * have to `try` around it or guess at the shape. Rows that are not `{title: string}` are DROPPED
+ * rather than rendered as "undefined" — the server currently sends title/year only (it carries no
+ * id, which is why the list is read-only; see `KNOWN_ISSUES` §7).
+ */
+export function ambiguousCandidates(err: unknown): AmbiguousCandidate[] {
+  const payload = err instanceof ApiError ? err.payload : null;
+  const list = payload?.candidates;
+  if (!Array.isArray(list)) return [];
+  const out: AmbiguousCandidate[] = [];
+  for (const row of list) {
+    if (!row || typeof row !== "object") continue;
+    const { title, year } = row as { title?: unknown; year?: unknown };
+    if (typeof title !== "string" || !title) continue;
+    out.push({ title, year: typeof year === "number" ? year : null });
+  }
+  return out;
 }
 
 // ----------------------------------------------------------------- auth
@@ -852,7 +893,7 @@ async function request<T>(path: string, init: RequestInit, options: RequestOptio
     if (!options.skipAuthRedirect) {
       noteUnauthorized(res.status, res.headers.get(AUTH_PROBLEM_HEADER), failure.message);
     }
-    throw new ApiError(res.status, failure.message, failure.detail);
+    throw new ApiError(res.status, failure.message, failure.detail, failure.payload);
   }
   // ⚠⚠ **A 204 IS A SUCCESS WITH NO BODY — and `res.json()` REJECTS on one** ("Unexpected end of JSON
   // input"), so without this line a route that answers 204 turns every SUCCESS into a failure.
@@ -934,18 +975,26 @@ async function deleteJson<T>(path: string, body: unknown, options: RequestOption
 async function errorDetail(
   res: Response,
   fallback: string,
-): Promise<{ message: string; detail: string | null }> {
+): Promise<{ message: string; detail: string | null; payload: Record<string, unknown> | null }> {
   try {
     const d = await res.json();
-    if (d && typeof d.detail === "string" && d.detail) return { message: d.detail, detail: d.detail };
-    if (d && typeof d.detail?.message === "string" && d.detail.message) {
-      return { message: d.detail.message, detail: d.detail.message };
+    if (d && typeof d.detail === "string" && d.detail) {
+      return { message: d.detail, detail: d.detail, payload: null };
     }
-    if (d && typeof d.message === "string" && d.message) return { message: d.message, detail: d.message };
+    if (d && typeof d.detail?.message === "string" && d.detail.message) {
+      // ⚠ The structured branch (2026-09-18). The sentence is still the message — that always
+      // worked — but the REST of the object (`candidates`, on a 409) is now carried instead of
+      // being dropped on the floor. This is the difference between "two titles matched" and
+      // "two titles matched — here they are".
+      return { message: d.detail.message, detail: d.detail.message, payload: d.detail };
+    }
+    if (d && typeof d.message === "string" && d.message) {
+      return { message: d.message, detail: d.message, payload: null };
+    }
   } catch {
     /* body not JSON — use the fallback */
   }
-  return { message: `${fallback} -> ${res.status}`, detail: null };
+  return { message: `${fallback} -> ${res.status}`, detail: null, payload: null };
 }
 
 /** Playback-progress payload for /api/jellyfin/progress (mirrors legacy reportProgress). */

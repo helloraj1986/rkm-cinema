@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import {
+  ambiguousCandidates,
   api,
   ApiError,
   resetUnauthorizedCooldown,
@@ -280,5 +281,83 @@ describe("the api's 401 taxonomy", () => {
 
     expect(stale).toHaveBeenCalledTimes(1);
     expect(signOut).not.toHaveBeenCalled();
+  });
+});
+
+// ------------------------------------ a 409's "pick one" candidates (2026-09-18, his RequestSheet)
+// ⚠ KNOWN_ISSUES §7 said the sentence itself never reached the browser. Measured against the real
+// code, that was WRONG — `errorDetail` has always lifted `detail.message`, so the sentence arrived.
+// What was actually dropped is the REST of the object: `candidates`. "Two titles matched" is a
+// sentence; "two titles matched — Sholay (1975) or The Sholay Girl (2019)" is a choice, and only the
+// second one can be rendered.
+describe("a 409's candidates survive to the caller", () => {
+  let calls: { url: string; init: RequestInit }[];
+
+  function stubFetch(status: number, body?: unknown) {
+    calls = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: unknown, init: RequestInit = {}) => {
+        calls.push({ url: String(input), init });
+        return new Response(body === undefined ? null : JSON.stringify(body), {
+          status,
+          headers: { "content-type": "application/json" },
+        });
+      }),
+    );
+  }
+
+  beforeEach(() => {
+    resetUnauthorizedCooldown();
+    setUnauthorizedHandler(null);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    resetUnauthorizedCooldown();
+    setUnauthorizedHandler(null);
+  });
+
+  it("carries the server's sentence AND the candidate list", async () => {
+    stubFetch(409, {
+      detail: {
+        message: "Two titles matched — pick one",
+        candidates: [
+          { title: "Sholay", year: 1975 },
+          { title: "The Sholay Girl", year: 2019 },
+        ],
+      },
+    });
+
+    const err = await api.getItemDetail("x").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).message).toBe("Two titles matched — pick one");
+    expect(ambiguousCandidates(err).map((c) => c.title)).toEqual(["Sholay", "The Sholay Girl"]);
+    expect(ambiguousCandidates(err)[0].year).toBe(1975);
+  });
+
+  it("a plain string detail is still just a sentence, with no candidates", async () => {
+    stubFetch(409, { detail: "Something needs deciding" });
+    const err = await api.getItemDetail("x").catch((e: unknown) => e);
+    expect((err as ApiError).message).toBe("Something needs deciding");
+    expect(ambiguousCandidates(err)).toEqual([]);
+  });
+
+  it("a malformed candidate list yields [] rather than throwing", async () => {
+    stubFetch(409, { detail: { message: "pick one", candidates: "not a list" } });
+    const err = await api.getItemDetail("x").catch((e: unknown) => e);
+    expect(ambiguousCandidates(err)).toEqual([]);
+  });
+
+  it("candidates without a usable title are dropped, not rendered as blanks", () => {
+    const err = new ApiError(409, "pick one", "pick one", {
+      candidates: [{ title: "Real" }, { year: 2001 }, { title: "" }, { title: "Also real", year: 1999 }],
+    });
+    expect(ambiguousCandidates(err).map((c) => c.title)).toEqual(["Real", "Also real"]);
+  });
+
+  it("is empty for an error that is not an ApiError at all", () => {
+    expect(ambiguousCandidates(new Error("nope"))).toEqual([]);
+    expect(ambiguousCandidates(null)).toEqual([]);
   });
 });

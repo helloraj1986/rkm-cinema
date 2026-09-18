@@ -142,6 +142,16 @@ Phases are written into `docs/OFFLINE_SHELL_PLAN.md` §0c: **S1** the store's ru
 console, or Console.app → Devices. ⚠ **That doc is owed a fix** and the fix belongs on `dev`, not on this
 branch's throwaway spike.
 
+### ⭐ S3 PASSED (2026-09-19) — his iPhone, with no media server reachable
+
+His words: *"the ios shell launches with no media server connected"*. That closes **§18 #9**, the last gap
+in "it works offline": a cold launch with nothing to talk to now **paints**, and it carries the library
+rows, because the `cached` step hands the page the app's own copy of the document with the server as its
+base URL (measured to keep the origin, the cookie, `/api/*` and A1's snapshot).
+
+⚠ Outstanding before it is finished: the 86-mutation falsification run, then the merge to `dev` — which is
+his call.
+
 ### ✅ S2 BUILT (2026-09-19) — the native half: the app now HOLDS its own shell
 
 `Shell/ShellStore.swift` (the container `Application Support/ShellCache/`, atomic writes, the manifest as

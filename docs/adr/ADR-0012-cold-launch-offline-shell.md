@@ -1,8 +1,13 @@
 # ADR-0012: the cold-launch offline shell — ask the device before declaring the server unreachable
 
-- **Status:** Accepted · ✅ **built 2026-09-19** — the pure ladder is executed and falsified on Linux
-  (`apple/scripts/check-offline-core.py --falsify`, 8 rules reverted); the WebKit half is written and
-  typecheck-clean.
+- **Status:** Accepted · ✅ **built 2026-09-19, and ✅✅ VERIFIED ON THE DEVICE 2026-09-19** — his iPhone,
+  with no media server reachable: *"the ios shell launches with no media server connected"*. That is the
+  whole of §18 #9 — the last gap in "it works offline" — and the app paints **with its library rows**,
+  because the `cached` step hands the page the app's own copy of the document with the server as its base
+  URL. ⚠ Still on `feat/offline-cold-launch`: the merge is his call.
+- ✅ The pure rules are executed and falsified on Linux (`apple/scripts/check-offline-core.py --falsify`,
+  every rule reverted one at a time); the WebKit half is typecheck-clean, and the round above is its
+  behaviour.
 - ⚠⚠ **AND THE DEVICE ROUND ON 2026-09-19 SAYS THE MECHANISM IS NOT SUFFICIENT — read §"The device round"
   before relying on D3.** The ladder works exactly as designed (a cold launch with no network DOES load the
   document from the device), but the app still does not paint, because the shell's ~1.1 MB script does not

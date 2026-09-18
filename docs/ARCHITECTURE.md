@@ -863,9 +863,12 @@ index, and where the truth lives.
   2026-09-18 and cost a run.
 - **#10 — bigger, not smaller.** `PROGRESS.md` is ~5,700 lines and is still the first file the next
   session reads.
-- **#9 — ⚠ BUILT, NOT MERGED, AND NOT VERIFIED ON A DEVICE** (2026-09-19, `feat/offline-cold-launch`,
-  ADR-0012) — and **not** the way this row proposed: a launch ladder in the shell rather than a
-  `WKURLSchemeHandler` + a synced `ShellCache/`. His Mac round decides whether it does what it claims.
+- **#9 — ✅ DONE AND VERIFIED ON A DEVICE** (2026-09-19, `feat/offline-cold-launch`, ADR-0012) — and **not**
+  the way this row proposed, in two measured steps: a launch ladder in the shell (the device's own copy is
+  asked before the server is declared unreachable), then an app-owned copy of the shell for the assets
+  WebKit refuses to store — a response larger than roughly 5% of its disk cache is never written, so the
+  ~1.1 MB bundle was simply not there offline. His iPhone, no media server reachable: the app launches and
+  **paints, with its rows**. ⚠ The merge is his call.
 - **#2 · #3 · #4 · #5 · #6 · #8 — unchanged** (nothing has landed since this list was written).
 
 **In one line:** do **1** and **7** next (both are test-infrastructure, both pay back immediately), take

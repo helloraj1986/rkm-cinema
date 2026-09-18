@@ -168,11 +168,45 @@ enum WebInstrumentation {
         return null;
       };
 
+      // ---------------------------------------------------------------- capability probe (E2)
+      // ⚠ EXPERIMENT E2 of `docs/NATIVE_FEEL_AND_OFFLINE_PLAN.md` §5, and it is one line of log
+      // because the answer decides a workstream: WebKit's position has been that a WKWebView gets
+      // Service Workers only for **app-bound domains**, which is a BUILD-TIME list — and this app's
+      // address is typed at runtime and can be any host. If `sw=false` here, A0's cache headers ARE
+      // the offline-shell story and no service-worker work is planned at all.
+      //
+      // Sent through the console path on purpose: no second event route, so `grep '\[rkm-caps\]'`
+      // over `rkm-ios.log` is the whole answer.
+      function capabilityProbe() {
+        var facts = [];
+        try { facts.push('sw=' + ('serviceWorker' in navigator)); } catch (e) { facts.push('sw=?'); }
+        try { facts.push('fullscreen=' + document.fullscreenEnabled); } catch (e) { facts.push('fullscreen=?'); }
+        try { facts.push('origin=' + window.location.origin); } catch (e) {}
+        try {
+          facts.push('persist=' + (navigator.storage && navigator.storage.persisted ? 'probe' : 'none'));
+        } catch (e) {}
+        send({ t: 'console', lv: 'log', m: '[rkm-caps] ' + facts.join(' ') });
+        try {
+          if (navigator.storage && navigator.storage.estimate) {
+            navigator.storage.estimate().then(function (estimate) {
+              send({ t: 'console', lv: 'log',
+                     m: '[rkm-caps] storage quota=' + estimate.quota + ' usage=' + estimate.usage });
+            });
+          }
+          if (navigator.storage && navigator.storage.persisted) {
+            navigator.storage.persisted().then(function (granted) {
+              send({ t: 'console', lv: 'log', m: '[rkm-caps] persistent storage granted=' + granted });
+            });
+          }
+        } catch (e) { /* the answer is the absence of a line */ }
+      }
+
       // ---------------------------------------------------------------- ready
       document.addEventListener('DOMContentLoaded', function () {
         send({ t: 'ready', hr: String(window.location.href),
                w: window.innerWidth, h: window.innerHeight,
                ua: String(navigator.userAgent) });
+        try { capabilityProbe(); } catch (e) { /* never break the page */ }
       });
     })();
     """#

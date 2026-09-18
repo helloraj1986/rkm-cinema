@@ -42,9 +42,19 @@ handoff block, which said "6 commits ahead of `dev`", had been read past. It car
 - `tools/check_detail_mobile.py` — the M4 detail measurement tool.
 - the ONE-architecture-document consolidation (`b48d6c7`) + `docs/archive/` + `docs/SEARCH.md`.
 
-⚠ `spike/offline-loopback` still holds 14 unmerged commits. §13 puts `spike/*` OUT of the flow by
-convention, so that is a DECISION, not an oversight — it does carry real `apple/` tooling fixes
-(`mac-round.sh` step 5, the E1/E2 gate). Decide deliberately or leave it.
+⚠ **`spike/offline-loopback` IS MERGED (his call, 2026-09-18) — deliberately, and FOR REFERENCE
+ONLY.** ⚠⚠ Do NOT read its code as live: the branch's own commit header says THROWAWAY — NOT TO BE
+MERGED, its 751 lines of Swift sit under `apple/ios/RKMCinema/Spike/`, and `SpikeSchemeHandler.swift`
+is the custom-scheme approach the spike **measured and rejected** for media (`mediaError=code=4`).
+`LoopbackServer.swift` is a prototype of `OfflineServer.swift`, which the real offline feature already
+ships in production form.
+
+⚠ **Before this merge, everything USEFUL from that branch was already on `dev`** — verified file by
+file: `mac-round.sh` byte-identical, `test-mac-round.sh` present, `SPIKE_E1_E2.md` present,
+`check_spike_e1_e2.py` present. It landed via the cherry-pick to `perf/persistent-query-cache`, which
+is itself already merged. So the merge added the spike Swift and NOTHING else — 795 lines, no fixes.
+The lesson: an "unmerged branch" can be carrying nothing you do not already have; check the FILES,
+not the branch list.
 
 ### ⚠ NOT VERIFIED ON HIS DEVICE — do not describe any of it as working
 

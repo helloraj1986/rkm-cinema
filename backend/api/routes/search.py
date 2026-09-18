@@ -33,6 +33,11 @@ WATCHLIST_LIMIT = 6
 #: How many live TMDB rows the response carries (unchanged from before).
 TMDB_LIMIT = 8
 
+#: ⚠ Shortest query allowed to reach TMDB (Phase 4) — see the global route for why.
+#: Declared here rather than imported so this legacy endpoint does not gain a
+#: dependency on the newer module; the two are pinned to the same value by a test.
+MIN_TMDB_QUERY_LEN = 3
+
 #: ⚠ Rows below this are DROPPED rather than ranked. It replaces the old
 #: substring test's implicit "either it contained the query or it did not":
 #: 0.2 keeps a real hit in any single field (a synopsis-only hit lands at 0.25)
@@ -108,8 +113,13 @@ def search(q: str = Query(default="", min_length=1)):
     # such headers and was rejected by TMDB's edge from the deployed container,
     # silently returning empty results (bare `except: pass`).
     live: list[SearchResult] = []
+    # ⚠ Phase 4: a 1–2 character query is a PREFIX, not a search. TMDB answers one
+    # with noise and it is the round-trip that would fire on every keystroke.
+    # ⚠ `tmdbKey` still reports whether TMDB is CONFIGURED — it is a contract field
+    # the UI reads as "discovery is off, library only", and a short query is not
+    # that. Only the CALL is gated.
     live_key = cfg.has_tmdb()
-    if live_key:
+    if live_key and len(query) >= MIN_TMDB_QUERY_LEN:
         try:
             scored_live = []
             for result in TMDBService(config=cfg).search_multi(

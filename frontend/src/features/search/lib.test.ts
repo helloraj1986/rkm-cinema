@@ -1,8 +1,9 @@
 import { describe, it, expect } from "vitest";
 import type { GlobalDiscoveryRow, GlobalOwnedRow } from "../../lib/api/client";
 import {
-  actionLabel, artUrl, codeOf, detailsTarget, discoveryEntryStub, discoveryToSuggestItem, kindWord,
-  metaLine, noMatchesText, parseRecent, playTarget, pushRecent, RECENT_MAX,
+  actionLabel, artUrl, codeOf, detailsTarget, discoveryEntryStub, discoveryToSuggestItem,
+  highlightParts, kindWord, metaLine, noMatchesText, normaliseRanges, parseRecent, playTarget,
+  pushRecent, RECENT_MAX,
 } from "./lib";
 
 const base: GlobalOwnedRow = {
@@ -136,5 +137,58 @@ describe("discovery rows → the shared action language (M3)", () => {
   it("a TV discovery row requests TV, not a movie", () => {
     expect(discoveryEntryStub({ ...disc, media_type: "tv" }).type).toBe("tv");
     expect(discoveryToSuggestItem({ ...disc, media_type: "tv" }, false).media_type).toBe("tv");
+  });
+});
+
+
+describe("highlighting the query's matched span (SEARCH_IMPROVEMENT_PLAN Phase 4)", () => {
+  it("splits a title around the span the SERVER reported", () => {
+    // "dark" inside "The Dark Knight" — the offsets are character positions, not words.
+    expect(highlightParts("The Dark Knight", [[4, 8]])).toEqual([
+      { text: "The ", hit: false },
+      { text: "Dark", hit: true },
+      { text: " Knight", hit: false },
+    ]);
+  });
+
+  it("never loses a character, wherever the span sits", () => {
+    const reassembled = (text: string, ranges: number[][]) =>
+      highlightParts(text, ranges).map((p) => p.text).join("");
+    expect(reassembled("The Dark Knight", [[0, 3]])).toBe("The Dark Knight");
+    expect(reassembled("The Dark Knight", [[4, 8]])).toBe("The Dark Knight");
+    expect(reassembled("The Dark Knight", [[11, 15]])).toBe("The Dark Knight");
+  });
+
+  it("returns ONE plain part when there is nothing to highlight", () => {
+    // ⚠ The fuzzy case: "the dark knght" matched this title, but the query is not IN it.
+    expect(highlightParts("The Dark Knight", [])).toEqual([{ text: "The Dark Knight", hit: false }]);
+    expect(highlightParts("The Dark Knight", null)).toEqual([{ text: "The Dark Knight", hit: false }]);
+    expect(highlightParts("The Dark Knight", undefined)).toEqual([{ text: "The Dark Knight", hit: false }]);
+  });
+
+  it("drops spans it cannot trust rather than bolding the wrong letters", () => {
+    // These are numbers that arrived over the wire and are applied to a title they
+    // came with — a bad one must be ignored, not rendered.
+    expect(normaliseRanges("The Dark Knight", [[11, 4]])).toEqual([]);   // reversed
+    expect(normaliseRanges("The Dark Knight", [[8, 8]])).toEqual([]);    // empty
+    expect(normaliseRanges("The Dark Knight", [[-5, 3]])).toEqual([[0, 3]]); // clamped at 0
+    expect(normaliseRanges("The Dark Knight", [[11, 99]])).toEqual([[11, 15]]); // clamped at len
+    expect(normaliseRanges("The Dark Knight", [[40, 50]])).toEqual([]);  // entirely past the end
+    expect(normaliseRanges("The Dark Knight", [[1.5, 3]])).toEqual([]);  // not integers
+    expect(normaliseRanges("The Dark Knight", [[0, "x"] as unknown as number[]])).toEqual([]);
+    expect(normaliseRanges("The Dark Knight", [null as unknown as number[]])).toEqual([]);
+  });
+
+  it("sorts and merges overlapping spans", () => {
+    expect(normaliseRanges("The Dark Knight", [[4, 8], [0, 3]])).toEqual([[0, 3], [4, 8]]);
+    expect(normaliseRanges("The Dark Knight", [[4, 8], [6, 11]])).toEqual([[4, 11]]);
+    // "The Dark Knight" — indices 4..10 inclusive are "Dark Kn".
+    expect(highlightParts("The Dark Knight", [[4, 8], [6, 11]]).map((p) => p.text))
+      .toEqual(["The ", "Dark Kn", "ight"]);
+  });
+
+  it("survives a title that has no characters at all", () => {
+    expect(normaliseRanges("", [[0, 3]])).toEqual([]);
+    expect(highlightParts("")).toEqual([]);
   });
 });

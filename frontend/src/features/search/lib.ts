@@ -114,6 +114,73 @@ export function noMatchesText(query: string): string {
   return `No matches for “${query}”.`;
 }
 
+// ---------------------------------------- Matched-span highlighting (M4 · Phase 4)
+/**
+ * ⚠ SEARCH_IMPROVEMENT_PLAN Phase 4. The SERVER decides which part of a title the
+ * query matched (`ranges`, `[start, end)` into the displayed title) and sends the
+ * spans with the row; the UI's only job is to emphasise them. A client that
+ * re-found the substring itself would be a SECOND implementation of the scorer's
+ * decision — and it would disagree the moment the match was fuzzy ("the dark
+ * knght" has no substring to find in "The Dark Knight").
+ *
+ * ⚠ This parses numbers that arrived over the wire and are applied to a title that
+ * came with them, so it is defensive by construction: anything that is not a
+ * well-formed, in-bounds, non-empty span is dropped rather than trusted. A wrong
+ * range does not merely fail to highlight — it bolds the wrong letters of a title.
+ */
+export interface HighlightPart {
+  text: string;
+  hit: boolean;
+}
+
+export function normaliseRanges(
+  text: string,
+  ranges?: readonly (readonly number[])[] | null,
+): Array<[number, number]> {
+  const length = String(text ?? "").length;
+  if (!length || !Array.isArray(ranges)) return [];
+  const clean: Array<[number, number]> = [];
+  for (const raw of ranges) {
+    if (!Array.isArray(raw) || raw.length < 2) continue;
+    const start = Number(raw[0]);
+    const end = Number(raw[1]);
+    if (!Number.isInteger(start) || !Number.isInteger(end)) continue;
+    const a = Math.max(0, start);
+    const b = Math.min(length, end);
+    if (b <= a) continue; // empty, reversed, or entirely out of bounds
+    clean.push([a, b]);
+  }
+  // Sorted and merged, so two overlapping spans cannot produce a doubled or
+  // reordered title — the segments are concatenated back together in order.
+  clean.sort((x, y) => x[0] - y[0]);
+  const merged: Array<[number, number]> = [];
+  for (const span of clean) {
+    const last = merged[merged.length - 1];
+    if (last && span[0] <= last[1]) last[1] = Math.max(last[1], span[1]);
+    else merged.push([...span] as [number, number]);
+  }
+  return merged;
+}
+
+/** Split a title into alternating plain/emphasised parts. Never loses a character. */
+export function highlightParts(
+  text: string,
+  ranges?: readonly (readonly number[])[] | null,
+): HighlightPart[] {
+  const value = String(text ?? "");
+  const spans = normaliseRanges(value, ranges);
+  if (!spans.length) return value ? [{ text: value, hit: false }] : [];
+  const out: HighlightPart[] = [];
+  let cursor = 0;
+  for (const [start, end] of spans) {
+    if (start > cursor) out.push({ text: value.slice(cursor, start), hit: false });
+    out.push({ text: value.slice(start, end), hit: true });
+    cursor = end;
+  }
+  if (cursor < value.length) out.push({ text: value.slice(cursor), hit: false });
+  return out;
+}
+
 // ---------------------------------------- Recent searches (M3 · the phone's RECENT row)
 /** Where the phone's recent queries live. Versioned: a shape change is a new key, never a migration. */
 export const RECENT_KEY = "rkm.recentSearches.v1";

@@ -65,6 +65,13 @@ SHOW_ENRICH_LIMIT = 3
 #: How many external candidates the overlay shows (§ his report: "top 5–6").
 DISCOVERY_LIMIT = 6
 
+#: ⚠ Shortest query that is allowed to reach TMDB (SEARCH_IMPROVEMENT_PLAN Phase 4).
+#: Below this the search is served from the library and the acquisition queue only.
+#: Two characters are not a search — they are a prefix, and TMDB answers one with
+#: noise (a large fraction of the catalogue starts with "th"). It is also the
+#: request that would otherwise fire on EVERY keystroke of every word typed.
+MIN_TMDB_QUERY_LEN = 3
+
 #: ⚠ The external half is cached, the LOCAL half never is. Metadata search is stable for minutes and
 #: the user retypes the same query as they refine it; playback state (progress, next episode) is stale
 #: in seconds, so caching the merged response would show him an old resume position. The client's
@@ -218,9 +225,11 @@ def search_global(q: str = Query(default="", min_length=1)):
         # query is a different work (see EXACT_TITLE_SCORE) — but it no longer suppresses anything.
         payload["strong_match"] = owned_strong_match(owned_raw, query) >= EXACT_TITLE_SCORE
 
-    # ⚠ NO GATE on strong_match (Phase 2). The external half runs whenever TMDB is configured; the
-    # only thing that keeps a row out is dedupe — it must never offer to acquire what he already has.
-    if cfg.has_tmdb():
+    # ⚠ NO GATE on strong_match (Phase 2). The external half runs whenever TMDB is
+    # configured and the query is long enough to be worth asking about (Phase 4);
+    # the only other thing that keeps a row out is dedupe — it must never offer to
+    # acquire what he already has.
+    if cfg.has_tmdb() and len(query) >= MIN_TMDB_QUERY_LEN:
         watchlist_tmdb = _tmdb_ids(watchlist_raw)
         try:
             for res in _tmdb_search_cached(cfg, query, parsed.media_type)[:DISCOVERY_LIMIT]:
@@ -245,7 +254,37 @@ def search_global(q: str = Query(default="", min_length=1)):
             logger.error("Live TMDB global search failed for %r: %s", query, e)
 
     payload["results"] = _ranked(parsed, owned_raw, watchlist_raw, payload, hints)
+    _attach_spans(payload)
     return SearchGlobalResponse(**payload)
+
+
+def _attach_spans(payload: dict) -> None:
+    """Copy each ranked row's match span onto the per-source array row it came from.
+
+    ⚠ The grouped UI (library / titles-with-person / discover) renders `items` and
+    `discovery`, NOT `results`, and those arrays are built before ranking runs. So
+    the span has to be carried across, or the client would have to re-find the
+    matched substring itself — a second implementation of the scorer's decision,
+    which is exactly the duplication this codebase forbids. Matched by identity
+    (owned → item id, discovery → tmdb id), which is stable: the ranked payload for
+    an owned row IS the provider row.
+    """
+    spans: dict[tuple[str, object], UnifiedResult] = {}
+    for row in payload.get("results") or []:
+        if row.source == "owned":
+            spans[("owned", row.payload.get("id"))] = row
+        elif row.source == "tmdb":
+            spans[("tmdb", row.payload.get("tmdb_id"))] = row
+    for item in payload.get("items") or []:
+        hit = spans.get(("owned", item.id))
+        if hit is not None:
+            item.ranges = [list(r) for r in hit.ranges]
+            item.match_type = hit.match_type
+    for disc in payload.get("discovery") or []:
+        hit = spans.get(("tmdb", disc.tmdb_id))
+        if hit is not None:
+            disc.ranges = [list(r) for r in hit.ranges]
+            disc.match_type = hit.match_type
 
 
 def _person_for(parsed: ParsedQuery, people: list[dict]) -> str:

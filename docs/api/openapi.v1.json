@@ -2738,6 +2738,21 @@
             "type": "boolean",
             "title": "In Watchlist",
             "default": false
+          },
+          "ranges": {
+            "items": {
+              "items": {
+                "type": "integer"
+              },
+              "type": "array"
+            },
+            "type": "array",
+            "title": "Ranges"
+          },
+          "match_type": {
+            "type": "string",
+            "title": "Match Type",
+            "default": "none"
           }
         },
         "type": "object",
@@ -2960,6 +2975,21 @@
                 "type": "null"
               }
             ]
+          },
+          "ranges": {
+            "items": {
+              "items": {
+                "type": "integer"
+              },
+              "type": "array"
+            },
+            "type": "array",
+            "title": "Ranges"
+          },
+          "match_type": {
+            "type": "string",
+            "title": "Match Type",
+            "default": "none"
           }
         },
         "type": "object",

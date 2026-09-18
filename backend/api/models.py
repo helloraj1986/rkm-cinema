@@ -354,6 +354,12 @@ class GlobalOwnedRow(BaseModel):
     state: str = "watch"
     remaining: Optional[int] = None
     next_episode: Optional[GlobalEpisodeFacts] = None
+    #: [start, end) offsets into ``title`` that the query matched (Phase 4), so the UI can
+    #: emphasise the span instead of highlighting a substring it guessed. Additive; empty when the
+    #: row was not scored (or matched only on a field that is not displayed).
+    ranges: List[List[int]] = Field(default_factory=list)
+    #: exact | prefix | fuzzy | containment | token | none
+    match_type: str = "none"
 
 
 class GlobalHint(BaseModel):
@@ -377,6 +383,10 @@ class GlobalDiscoveryRow(BaseModel):
     #: True when the title is already on the watchlist (server truth — the UI
     #: then offers Download/Details instead of "Add to watchlist").
     in_watchlist: bool = False
+    #: [start, end) offsets into ``title`` that the query matched (Phase 4).
+    ranges: List[List[int]] = Field(default_factory=list)
+    #: exact | prefix | fuzzy | containment | token | none
+    match_type: str = "none"
 
 
 class SearchGlobalResponse(BaseModel):

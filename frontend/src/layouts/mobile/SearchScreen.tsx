@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { Icon } from "../../components/ui/Icon";
+import { HighlightedTitle } from "../../features/search/HighlightedTitle";
 import { useGlobalSearch } from "../../features/search/api";
 import {
   actionLabel,
@@ -289,7 +290,14 @@ function OwnedRowM({
           className="h-14 w-10 shrink-0 rounded-md bg-surface-3 object-cover ring-1 ring-white/[.06]"
         />
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-[14px] font-semibold text-zinc-100">{row.title}</span>
+          {/* ⚠ The matched span comes from the SERVER (`row.ranges`); the phone does not search
+              the title again — a second implementation of that decision is what this directory is
+              banned from holding (§3.4). The component is shared with the palette. */}
+          <HighlightedTitle
+            text={row.title}
+            ranges={row.ranges}
+            className="block truncate text-[14px] font-semibold text-zinc-100"
+          />
           <span className="block truncate text-[12px] text-zinc-500">{metaLine(row)}</span>
         </span>
       </button>
@@ -380,7 +388,11 @@ function DiscoveryRowM({
         </span>
       )}
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[14px] font-semibold text-zinc-100">{disc.title}</span>
+        <HighlightedTitle
+          text={disc.title}
+          ranges={disc.ranges}
+          className="block truncate text-[14px] font-semibold text-zinc-100"
+        />
         <span className="block truncate text-[12px] text-zinc-500">
           {disc.media_type === "tv" ? "TV Show" : "Movie"}
           {disc.year ? ` · ${disc.year}` : ""}

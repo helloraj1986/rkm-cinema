@@ -1650,6 +1650,13 @@ export interface components {
              * @default false
              */
             in_watchlist: boolean;
+            /** Ranges */
+            ranges?: number[][];
+            /**
+             * Match Type
+             * @default none
+             */
+            match_type: string;
         };
         /**
          * GlobalEpisodeFacts
@@ -1747,6 +1754,13 @@ export interface components {
             /** Remaining */
             remaining?: number | null;
             next_episode?: components["schemas"]["GlobalEpisodeFacts"] | null;
+            /** Ranges */
+            ranges?: number[][];
+            /**
+             * Match Type
+             * @default none
+             */
+            match_type: string;
         };
         /** HTTPValidationError */
         HTTPValidationError: {

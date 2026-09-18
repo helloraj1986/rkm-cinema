@@ -222,26 +222,17 @@ Swift compiled or run, and nothing anywhere taps Cancel. Specifically:
 
 ---
 
-## 8 · Harness checks not clean at HEAD — TWO FIXED 2026-09-19, the third is his decision
+## 8 · CLOSED 2026-09-19 — the three harness faults (records in `PROGRESS.md`)
 
-Found 2026-09-18 by running the neighbouring browser checks after the poster-watched sweep. **Both were
-measured against a STASHED tree (i.e. at `bedfd67`, with the sweep absent), so neither was caused by it.**
+All three are fixed, and **none of them was ever an app defect except the third**:
 
-⚠ **Both of the first two turned out to be TOOL-SIDE, not app defects — and both are now fixed**
-(2026-09-19, session 6; full record in `PROGRESS.md`). The app behaviour those scenarios assert was
-correct all along — measured, not assumed. They are kept here with their outcome, because the *lesson*
-is what the next session needs: a check that shares one browser page across many heavy navigations
-fails on whichever scenario runs LAST, and moves on the next run.
-
-| Check | Scenario | State |
+| Check | Was | Now |
 |---|---|---|
-| `tools/check_library_scan.py` | G — `?signedout=1` | **FIXED 2026-09-19.** Not the app: seven navigations on ONE page exhausted the browser's sockets (`net::ERR_INSUFFICIENT_RESOURCES` measured on the module requests), `library-frame.tsx` never executed, `window.__probe` was never defined — and G is LAST, which is why G was the scenario that died. Now a fresh page per scenario, and a readiness failure is REPORTED instead of crashing the run with a traceback. G's assertions run for real and PASS (7/7). Falsified: gate mutated to `return true` → C, D, E, G RED; unloadable frame → 9 named problems, exit 1, no traceback. |
-| `tools/check_item_modal.py` | H | **FIXED 2026-09-19 — the recorded symptom had already MOVED.** Re-measured at HEAD: **H passes** and the failure was now **J** (`the library view never rendered`). Same cause: five heavy navigations on ONE page; the failing scenario moved between runs (J one run, H the next, `Page.goto: Page crashed` on a third) — which is the whole of the "at least partly flaky" note. Fixed the same way; **3 consecutive green runs**; falsified by removing the dialog's body portal → J RED with the exact geometry (`above: True`, scrim `2320x63`), and `--expect-broken` reports *"OK (falsified as expected): 2 problem(s) with the fix absent"*. |
-| `tools/check_touch_actions.py` | phone, `watched` target | **OPEN — his decision**, unchanged. The tool still asserts the poster's watched TOGGLE (`button[aria-label^="Mark as"]`), which the **accepted #2 rule deleted**: the details view owns the watched control and the poster only REFLECTS status (`features/library/MediaCard.tsx`, `tools/check_poster_watched.py`). **STALE, not a regression.** The fix is one line — drop the `watched` entry from `TARGETS`, or invert it to assert the toggle's ABSENCE — but which one states what the phone's poster actions now ARE, so it stays his call rather than being quietly rewritten. Its other scenarios (`cta`, `menu`, `compact_row`, the desktop hover direction) pass. |
+| `tools/check_library_scan.py` G | one page shared across 7 navigations → sockets exhausted (`net::ERR_INSUFFICIENT_RESOURCES`), frame never ran, and G failed because it is LAST | fixed; 7/7, falsified both ways |
+| `tools/check_item_modal.py` H | same cause (5 heavy navigations). ⚠ The recorded symptom had already MOVED to J — re-measure before repairing | fixed; 3 consecutive green runs; falsified via the dialog portal |
+| `tools/check_touch_actions.py` watched | asserted a poster watched TOGGLE his accepted #2 rule deleted | **INVERTED on his decision** — it now asserts the toggle's ABSENCE, and `--selftest` proves a returning toggle goes RED |
 
-⚠ **A THIRD failing check was found by the same method in the same session — and that one was NOT
-tool-side.** `tools/check_offline_page.py` scenario 2 was RED because the app had genuinely lost the
-pre-commit size/rendition label (plan §4.6). He chose to RESTORE it (2026-09-19), it is fixed, and the
-record — with the diagnosis — is in `PROGRESS.md`. The check is GREEN again, and it no longer anchors on
-"any `<span>` in the panel": it addresses the affordance element by its own `data-testid`, because the
-loose probe is what let a whole requirement vanish unnoticed.
+⚠ **The lesson, kept because the next session will meet it again:** a check whose SUBJECT was deliberately
+deleted must be inverted, not left failing and not quietly deleted — an inverted check is the only thing
+that keeps a deleted control deleted. And a check that shares one page across many navigations fails on
+whichever scenario runs last, so the failing scenario MOVES.

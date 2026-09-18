@@ -117,16 +117,39 @@ tree, and both are unaffected by this change.
 ⚠ **His device round still decides whether the line reads well**, and where it sits relative to the pinned
 bar on the phone. ⚠ It is a headless measurement of a real component, not a thumb on glass.
 
+### Part 5 — §8's last item, INVERTED on his decision: the poster's watched toggle must never return
+
+He chose **invert**: assert the toggle's ABSENCE, so the check goes red if it ever comes back.
+
+`tools/check_touch_actions.py` had been failing at HEAD because it still asserted a poster watched TOGGLE
+that his accepted #2 rule deleted — the details view owns that control and the poster only REFLECTS status.
+`assert_touch_report` now asserts the two actions that DO exist (`▶/Episodes`, `⋯`) and then that
+`report.get("watched") is None`. ⚠ **The order is the point**: the two positive assertions prove the poster
+really rendered before the third claims something is MISSING from it — a frame that never painted would
+pass an absence check for free, which is the failure mode this file has already been burned by.
+
+⚠ The `TARGETS` selector was **kept** — it is what DETECTS the return — and the file's byte-identical
+`cta`/`menu`/`compact_*` selectors were restored from `HEAD` after a tool-side escaping mistake, so nothing
+but the intended lines changed. The status MARKER on a played poster is a different thing and still belongs
+to `tools/check_poster_watched.py`.
+
+**Evidence.** `--selftest` **7/7**, including the new case *"the poster's watched TOGGLE is back — REJECT"*;
+the real run **PASSES** and prints `watched None` beside the two live actions. ⚠ What was NOT falsified at
+the browser level: re-adding the toggle to `MediaCard` would need the deleted sweep re-introduced, so the
+falsification here is the tool's own mutation fixture — which is exactly what that fixture is for.
+
+⚠ **`KNOWN_ISSUES` §8 is now CLOSED** — all three of its items are fixed or inverted, and the section is
+kept as a closure record rather than deleted, because the lesson (invert a check whose subject was
+deliberately removed; re-measure before repairing) is what the next session needs.
+
 ### NEXT STEPS, in order
 
 1. **§7 (c) — the pickable 409 list.** Decided 2026-09-19: carry an id (ideally `tmdbId`) on each
    candidate and accept a chosen one on the request path. ⚠ A BACKEND phase, and the project's cycle puts
    the plan doc in the FIRST commit — see `docs/SEMANTIC_SEARCH_PLAN.md` for the shape.
-2. **§8's stale `check_touch_actions.py` entry.** Decided 2026-09-19: **invert it** — assert the poster
-   watched toggle's ABSENCE, so it goes red if the toggle ever comes back. ⚠ Not yet done.
-3. **His phone** — the Cancel fix's Swift half (§7a), the Sheet tap fix (Part 1), and now the §9 caption's
+2. **His phone** — the Cancel fix's Swift half (§7a), the Sheet tap fix (Part 1), and the §9 caption's
    placement.
-4. **Plan §6 phase 4** — label the semantic rows (`match_type == "semantic"` already travels end to
+3. **Plan §6 phase 4** — label the semantic rows (`match_type == "semantic"` already travels end to
    end) before Phase 7's metrics loop calibrates `SEMANTIC_MIN_COS` and the 0.4 trigger.
 
 ⚠ **Untracked and NOT mine:** `docs/OFFLINE_SHELL_PLAN.md` (a cold-launch offline shell plan, design

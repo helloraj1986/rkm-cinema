@@ -19,7 +19,9 @@ as before.
   A. no_hover      ⚠ the emulated phone REALLY has no hover (`(hover: none)` matches) — asserted
                    BEFORE anything else, because without it every other assertion below passes
                    vacuously on a desktop browser that can always hover
-  B. visible       on that phone the ▶/Episodes button, the watched toggle and the ⋯ are rendered
+  B. visible       on that phone the ▶/Episodes button and the ⋯ are rendered — and NO watched
+                   TOGGLE exists on the poster at all (inverted 2026-09-19: the details view owns
+                   it — see assert_touch_report)
                    (opacity > 0, pointer-events not `none`, a real box)
   C. tappable      a real TOUCH on ⋯ opens its menu — visible is not the same as reachable
   D. compact       the compact list's ▶ is visible on touch too (a second map over the same rows)
@@ -52,6 +54,12 @@ NEEDS_HOVER_QUERY = "(hover: hover) and (pointer: fine)"
 MENU_SELECTOR = 'button[aria-label^="More actions"]'
 
 #: The action surfaces §7.3 names, as (label, JS that returns the element to measure).
+#: ⚠ `watched` is INVERTED as of 2026-09-19 (his decision, `KNOWN_ISSUES` §8). It is no longer a
+#: target measured as visible — it is the control that must NOT exist. The accepted answer to his #2
+#: report (2026-09-18) is that the DETAILS view owns the watched control and the poster only REFLECTS
+#: status, so a poster watched TOGGLE is the "two green ticks" report coming back. Keep the selector:
+#: it is what DETECTS the return. ⚠ The status MARKER on a played poster is a different thing and must
+#: stay — `tools/check_poster_watched.py` owns that side.
 TARGETS = {
     "cta": "document.querySelector('[data-testid=\"media-card-cta\"]')?.closest('button')",
     "watched": "document.querySelector('button[aria-label^=\"Mark as\"]')",
@@ -133,10 +141,22 @@ def assert_hidden(name: str, label: str, state: dict | None) -> None:
 
 
 def assert_touch_report(name: str, report: dict) -> None:
-    """A phone: no hover, and every action reachable."""
+    """A phone: no hover, every ACTION reachable — and NO watched control on the poster.
+
+    ⚠ The last one is INVERTED (2026-09-19, his decision, KNOWN_ISSUES §8). His accepted #2 answer is
+    that the DETAILS view owns the watched control and the poster only REFLECTS status, so a poster
+    watched TOGGLE is a defect rather than a target. This goes RED if one ever comes back, which is the
+    only thing that keeps a deleted control deleted.
+    """
     assert_visible(name, "the ▶/Episodes action", report.get("cta"))
-    assert_visible(name, "the watched toggle", report.get("watched"))
     assert_visible(name, "the ⋯ menu", report.get("menu"))
+    # ⚠ Not vacuous, and the ORDER is why: the two assertions above prove the POSTER really rendered
+    # before this one claims something is MISSING from it. A frame that never painted would pass an
+    # absence check for free — which is the exact failure mode this file has been burned by.
+    check(report.get("watched") is None,
+          f"{name}: the poster offers a WATCHED TOGGLE again ({report.get('watched')}) — the details view "
+          f"owns that control and the poster only reflects status (his #2 rule, 2026-09-18), so a poster "
+          f"toggle is the 'two green ticks' report coming back")
 
 
 def assert_desktop_report(name: str, report: dict) -> None:
@@ -154,16 +174,19 @@ def selftest() -> int:
     cases = [
         ("a phone with every action visible and tappable — ACCEPT",
          assert_touch_report, "phone",
-         {"cta": visible, "watched": visible, "menu": visible}, True),
+         {"cta": visible, "menu": visible, "watched": None}, True),
+        ("…but the poster's watched TOGGLE is back — REJECT (his #2 rule, inverted 2026-09-19)",
+         assert_touch_report, "phone",
+         {"cta": visible, "menu": visible, "watched": visible}, False),
         ("a hover-only action still hidden on the phone — REJECT",
          assert_touch_report, "phone",
-         {"cta": invisible, "watched": visible, "menu": visible}, False),
+         {"cta": invisible, "menu": visible, "watched": None}, False),
         ("opacity 1 but pointer-events none (a painted, untappable button) — REJECT",
          assert_touch_report, "phone",
-         {"cta": ghost, "watched": visible, "menu": visible}, False),
+         {"cta": ghost, "menu": visible, "watched": None}, False),
         ("an action missing from the DOM entirely — REJECT",
          assert_touch_report, "phone",
-         {"cta": None, "watched": visible, "menu": visible}, False),
+         {"cta": None, "menu": visible, "watched": None}, False),
         ("a mouse with actions hidden until hover, then visible — ACCEPT",
          assert_desktop_report, "desktop",
          {"cta": invisible, "menu": invisible, "cta_hover": visible, "menu_hover": visible}, True),

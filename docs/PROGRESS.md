@@ -149,8 +149,11 @@ in "it works offline": a cold launch with nothing to talk to now **paints**, and
 rows, because the `cached` step hands the page the app's own copy of the document with the server as its
 base URL (measured to keep the origin, the cookie, `/api/*` and A1's snapshot).
 
-⚠ Outstanding before it is finished: the 86-mutation falsification run, then the merge to `dev` — which is
-his call.
+✅ **MERGED 2026-09-19: `dev` and `main` are both at `2e2155e`** — `main` fast-forwarded to `dev`, never a
+merge commit into `main`. The falsification run that gated the merge reported **86/86 rules reverted, every
+one red on the check it protects**; one anchor was then found non-unique and tightened, and re-verified in
+place (its four checks down, exit 1) — which is why the final tip gets a fresh run rather than a claim
+inherited from the run before it.
 
 ### ✅ S2 BUILT (2026-09-19) — the native half: the app now HOLDS its own shell
 

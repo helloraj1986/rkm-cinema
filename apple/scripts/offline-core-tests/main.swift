@@ -1199,6 +1199,51 @@ checkEqual(json(OfflineEventPayload.state(itemId: "i1", title: "Heat", state: "f
                 .jsonObject).contains("\"error\":\"gone\""), true,
            "a state event carries the reason the user needs")
 
+// MARK: - The cold-launch ladder (ADR-0012)
+
+// ⚠ Why this is here and not in the app: with the Wi-Fi off the app has exactly ONE shot at the copy of
+// the shell the device already holds. `ShellLaunchLadder` decides when that shot is spent and what
+// happens after it fails — so it is pure, and these are the checks that fail when the rule goes.
+
+section("cold launch")
+
+checkEqual(ShellBootStep.allCases.map(\.label), ["fresh", "cached", "unreachable"],
+           "⚠ the three steps have the spelling the log and the HUD use")
+
+var ladder = ShellLaunchLadder()
+checkEqual(ladder.step, .fresh, "a launch begins with the live app, never the cached copy")
+checkEqual(ladder.step.asksCacheFirst, false, "the fresh attempt revalidates — a working network must always win")
+checkEqual(ladder.step.loads, true, "the fresh step is an attempt, and it is the first one")
+
+let refused = ShellBootFailure.transport("NSURLErrorDomain -1004 — Could not connect to the server")
+let offline = ShellBootFailure.transport("NSURLErrorDomain -1009 — the internet connection appears to be offline")
+
+checkEqual(ladder.next(after: .benignCancellation), .fresh,
+           "⚠ a benign cancellation does NOT spend the cached attempt")
+checkEqual(ladder.step, .fresh, "…and it does not move the ladder either")
+
+checkEqual(ladder.next(after: refused), .cached, "a transport failure tries the device's own copy")
+checkEqual(ladder.step.asksCacheFirst, true,
+           "…and that step is the one that asks the cache to answer without the network")
+checkEqual(ladder.next(after: .benignCancellation), .cached,
+           "a benign cancellation at the cached step does not move it either")
+
+checkEqual(ladder.next(after: offline), .unreachable,
+           "when the cached copy cannot boot either, the app says so")
+checkEqual(ladder.step.loads, false, "the unreachable step is a SCREEN — it loads nothing")
+checkEqual(ladder.next(after: offline), .unreachable,
+           "⚠ and it is terminal: a failure at unreachable stays unreachable, so there is no loop")
+
+ladder.reset()
+checkEqual(ladder.step, .fresh, "⚠ a new launch starts at the fresh attempt again — there is no stickiness")
+
+// A whole launch, driven the way the app drives it: the live app refuses, the cached copy refuses.
+var launch = ShellLaunchLadder()
+launch.next(after: refused)
+checkEqual(launch.next(after: offline), .unreachable, "two failures is the whole ladder")
+launch.reset()
+checkEqual(launch.next(after: refused), .cached, "…and the next launch gets its cached attempt back")
+
 // MARK: - Verdict
 
 print("")

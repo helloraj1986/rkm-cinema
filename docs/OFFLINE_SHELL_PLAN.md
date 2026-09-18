@@ -1,7 +1,11 @@
 # Cold-Launch Offline Shell — Implementation Plan
 
-> **Status:** proposed. Implements design-improvement **#9** from `ARCHITECTURE.md` §18
-> ("An offline SHELL for cold launch"), previously "only if he wants cold-launch offline."
+> **Status:** ⚠ **RE-SCOPED, and its core BUILT, 2026-09-19** — phases **A**, **B** and **E** were
+> replaced by **ADR-0012** on branch `feat/offline-cold-launch` (a launch ladder in the shell, **not** a
+> scheme handler + a synced `ShellCache/`), and **C**, **D's first tier** and **§5a were already built
+> before this plan was written** — re-read **§0a** before building anything from this file. Implements
+> design-improvement **#9** from `ARCHITECTURE.md` §18 ("An offline SHELL for cold launch"), previously
+> "only if he wants cold-launch offline."
 > Last written: 2026-09-19, against `ARCHITECTURE.md` verified 2026-09-18.
 
 ## 0. The problem, precisely
@@ -21,6 +25,38 @@ Neither touches Seam 1 (`page → api`) or Seam 2 (`page ↔ native` bridge) con
 
 ---
 
+## 0a. ⚠ Re-read against the repo before building — do NOT rebuild any of this
+
+The plan was re-read on 2026-09-19, the day its phase started. **Two of its four phases and the whole of
+its "separate track" were already done**, and the scheme handler it proposed had already been measured out
+for the kind of load it was meant for:
+
+| This plan asked for | State found in the repo |
+|---|---|
+| **Phase C** — a persisted query cache, so a cold launch has rows to paint | ✅ **BUILT 2026-09-14** as A1: `frontend/src/lib/query/persist.ts` (localStorage, profile-gated, 24 h max age, 1.5 MB cap, never throws), wired in `main.tsx`, ~30 vitest cases + `tools/check_query_cache.py` |
+| **Phase D, first tier** — posters visible with no network | ✅ **Already the artwork policy**: `max-age=604800, stale-while-revalidate=604800` with an ETag (nginx's nested artwork location + the api's own `ARTWORK_POLICY`), so a poster wall browsed within the week paints from the device |
+| **Phase A** — a `WKURLSchemeHandler` serving the document and its assets | ⚠ **Not built, and not needed as written** — see §0b. A0 made the shell *storable*; the WebView's own HTTP cache is the cache this phase proposed to build by hand |
+| **Phase B** — diff-and-sync on every successful live load | ⚠ **Not built, and obsoleted**: content-hashed `immutable` assets plus a revalidating document **is** sync-on-load. A second cache would store the same bytes under a second staleness rule |
+| **§5a** — audit whether compatible MKV is being transcoded | ✅ **Done, and it was worse than this plan guessed** — the live B1 gate found ordinary MP4s arriving as `"mov,mp4,m4a,3gp,3g2,mj2"` and **13 of 13** of them being fully re-copied. Fixed 2026-09-16; `choose_mode()` now matches the container by FAMILY (ADR-0007 D3) |
+| **§5b** — pipeline packaging + transfer | ⚠ **NOT built, and deliberately not built here.** It breaks ADR-0008 D4's atomic-publish invariant (the artefact becomes servable while `ffmpeg` is still writing it), so it needs its own decision *and* the measurement this plan asks for. ⚠ No packaging-vs-transfer split has ever been recorded, so "measure first" is still step one |
+
+## 0b. Why the DOCUMENT does not need a scheme handler
+
+E1 (B0 spike, 2026-09-16) measured `WKURLSchemeHandler` out **for media** — `mediaError=code=4` *with* the
+bytes served. A document is a different risk profile, which was this plan's own caveat — but the question
+turned out not to need answering, because the premise underneath it was out of date:
+
+* `nginx/default.conf` serves `/` with `Cache-Control: no-cache` — revalidated on every load, but **stored**.
+  It used to be `no-store`, which forbids keeping the document at all, and *that* is what made an offline
+  launch impossible by construction.
+* `/assets/*` is `immutable` for a year, keyed by Vite's content hash.
+
+Those are exactly the two properties a hand-built shell cache would have to reproduce. So what was missing
+was never the cache — it was that **nothing ever asked for it**: the app asked the network, was refused, and
+went straight to *"Can't reach this server"*. ADR-0012 is that question, asked in the right order.
+
+---
+
 ## 1. Decisions to make first (write these as an ADR before coding)
 
 Per your own convention (§20): a load-bearing, expensive-to-reverse choice gets an ADR. This one qualifies — it changes the "one live SPA, no bundled UI, every deploy reaches the phone instantly" invariant in §17.1.
@@ -37,7 +73,7 @@ Per your own convention (§20): a load-bearing, expensive-to-reverse choice gets
 
 ## 2. Phased plan
 
-### Phase A — Reachability-gated shell load (the core of #9)
+### Phase A — ⚠ SUPERSEDED by ADR-0012: the launch ladder loads the cached document without a scheme handler
 
 **Goal:** cold launch with no network paints *something* instead of a blank WebView / spinner-forever.
 
@@ -49,7 +85,7 @@ Per your own convention (§20): a load-bearing, expensive-to-reverse choice gets
 
 **Files likely touched:** `apple/ios/RKMCinema/Server/*`, `apple/ios/RKMCinema/App/AppDelegate.swift`, a new `apple/ios/RKMCinema/Offline/ShellCache.swift`.
 
-### Phase B — Sync-on-successful-live-load
+### Phase B — ⚠ NOT BUILT, and obsoleted: hashed `immutable` assets + a revalidating document IS sync-on-load
 
 **Goal:** the local shell copy never gets meaningfully stale, and stays additive to the existing "app can be older than the page" tolerance.
 
@@ -59,7 +95,7 @@ Per your own convention (§20): a load-bearing, expensive-to-reverse choice gets
 
 **Files likely touched:** `apple/ios/RKMCinema/Offline/ShellCache.swift` (extends Phase A), possibly a tiny additive endpoint or reuse of the existing `/assets/*` immutable-cache headers (§2) to make diffing cheap.
 
-### Phase C — Data for the shell to paint (persisted query cache)
+### Phase C — ✅ ALREADY BUILT 2026-09-14 as A1 — see §0a. Nothing to do here.
 
 **Goal:** once the shell paints, it has *something* to show — not just chrome around empty lists.
 
@@ -70,7 +106,7 @@ Per your own convention (§20): a load-bearing, expensive-to-reverse choice gets
 
 **Files likely touched:** `frontend/src/lib/api/client.ts` or a new `frontend/src/lib/queryPersist.ts`, wherever `QueryClientProvider` is set up in `frontend/src/app/`.
 
-### Phase D — Poster caching
+### Phase D — ⚠ Tier 1 already ships (artwork policy, §0a). Tier 2 — posters and subtitles captured INTO a downloaded title's bundle — is still open: `ADR-0010` limit 1.
 
 **Goal:** the "Plex-like" browsing experience — posters visible with zero network.
 
@@ -80,7 +116,7 @@ Per your own convention (§20): a load-bearing, expensive-to-reverse choice gets
 
 **Files likely touched:** `Offline/OfflineDownloads.swift`, `Offline/OfflineServer.swift`, `frontend/src/features/library/*` (poster URL construction).
 
-### Phase E — Write the ADR
+### Phase E — ✅ DONE as `adr/ADR-0012-cold-launch-offline-shell.md` — and read it, because the decisions taken differ from §1 (no scheme handler, no shell cache, no sync)
 
 - [ ] `docs/adr/ADR-00XX-cold-launch-offline-shell.md` — capture the five decisions in §1 above, the reachability-first rule, and explicitly note this is **additive to §17.1's "one live SPA" model**, not a replacement of it (there is still exactly one UI; this just lets a synced copy of it stand in when the original is unreachable).
 - [ ] Update `ARCHITECTURE.md` §18 item #9's status from "not started" to point at the new ADR, per your own documentation convention (§21.2 — mark what supersedes what).
@@ -97,13 +133,15 @@ Per your own convention (§20): a load-bearing, expensive-to-reverse choice gets
 
 **A → C → B → D → E.** Reachability-gated load with a hand-bundled or one-shot-synced shell (skip the diffing sophistication of Phase B at first) gets you a working demo fastest, and proves out the riskiest unknown (whether the scheme-handler approach is actually safe for documents, not just ruled out for media) before you invest in the sync machinery. Do the transcode-mode audit in §5 first — it's unrelated to this plan and cheaper to fix first.
 
+> ⚠ **What actually happened (2026-09-19):** A, B and C were moot before the order could matter — C was already built (A1), A and B were replaced by ADR-0012, and §5a was already fixed. The only thing this order got right was the *instinct*: build the cheap part first and prove the risky unknown before investing in machinery. See §0a/§0b.
+
 ---
 
 ## 5. Separate track: fast download & play
 
 Independent of the offline-shell work above — this is about making an individual download/playback fast, not about working with no network. Two distinct levers.
 
-### 5a. Fast play — skip transcode when you can (cheapest fix, do this first)
+### 5a. Fast play — skip transcode when you can (cheapest fix, do this first) — ✅ ALREADY DONE, see §0a
 
 Per §17.4, packaging is always `remux OR transcode` via `ffmpeg` — never a raw copy, because most of the library is `.mkv` and AVFoundation (what plays the `<video>` tag under WKWebView) can't demux MKV at all, compatible codecs or not.
 

@@ -28,6 +28,7 @@ export PATH="/opt/swift/usr/bin:$PATH"
 
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
 SRC="$REPO/apple/ios/RKMCinema/Offline"
+SHELL_SRC="$REPO/apple/ios/RKMCinema/Shell"
 STUBS="$REPO/apple/scripts/typecheck-stubs/Stubs.swift"
 TMP="${RKM_TYPECHECK_TMP:-$HOME/tmp}/rkm-typecheck"
 MODULES="$REPO/apple/Shared/.build/x86_64-unknown-linux-gnu/debug/Modules"
@@ -67,6 +68,19 @@ for name in OfflineManifest OfflinePlan CookieHeader OfflineHTTP OfflineBridgeCo
       cp "$SRC/$name.swift" "$TMP/$name.swift"
       ;;
   esac
+  WORK+=("$TMP/$name.swift")
+done
+
+# ⚠ ADR-0012 — the cold-launch ladder. It lives in `Shell/`, not `Offline/`, so it needs its own loop; and
+# it is Foundation-only on purpose (no WebKit, no `URLRequest`), which is why it typechecks here with no
+# synthetic import and no filtered error. ⚠ `WebShellModel.swift`, which CARRIES THE LADDER OUT, cannot be
+# checked here — SwiftUI and WebKit are not stubbable in this scaffold — so that half is the Mac round's
+# business, and saying so is the reason files are listed one at a time.
+for name in ShellLaunchPlan; do
+  if [ ! -f "$SHELL_SRC/$name.swift" ]; then
+    echo "missing source: $SHELL_SRC/$name.swift"; exit 3
+  fi
+  cp "$SHELL_SRC/$name.swift" "$TMP/$name.swift"
   WORK+=("$TMP/$name.swift")
 done
 

@@ -39,6 +39,7 @@ import tempfile
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 OFFLINE = REPO / "apple" / "ios" / "RKMCinema" / "Offline"
+SHELL = REPO / "apple" / "ios" / "RKMCinema" / "Shell"
 PURE_SOURCES = [
     OFFLINE / "OfflineManifest.swift",
     OFFLINE / "OfflinePlan.swift",
@@ -51,6 +52,10 @@ PURE_SOURCES = [
     # ⚠ The Range suite itself, shared with the app's own DEBUG probe, so the Mac round tests exactly the
     # cases that were executed here.
     OFFLINE / "OfflineProbeCases.swift",
+    # ⚠ ADR-0012 — the cold-launch ladder (live app → the device's own copy → the error screen). Not an
+    # offline-DOWNLOAD rule, but the same discipline applies: the decision is pure, so it is RUN here
+    # rather than argued about, and the WebKit half in `WebShellModel.swift` only carries out the answer.
+    SHELL / "ShellLaunchPlan.swift",
 ]
 HARNESS = REPO / "apple" / "scripts" / "offline-core-tests" / "main.swift"
 
@@ -368,6 +373,43 @@ MUTATIONS: list[tuple[str, str, str, str, str]] = [
      "        let live = Set(current)\n        return previous.filter { !live.contains($0) }.sorted()",
      "        return []",
      "⚠ a deleted title is announced, and in a deterministic order"),
+    # ==============================================================================================
+    # ADR-0012 — the cold-launch ladder. ⚠ Same discipline, and the same reason it lives here: with the
+    # Wi-Fi off the app has exactly one shot at the cached copy, so "when is it spent, and what happens
+    # after" is a rule that must be RUN, not reviewed. Each mutation is a REVERT of one rule.
+    # ==============================================================================================
+    ("the benign-cancellation rule", "ShellLaunchPlan.swift",
+     "        if case .benignCancellation = failure {",
+     "        if false {",
+     "a benign cancellation does NOT spend the cached attempt"),
+    ("the fresh-to-cached step", "ShellLaunchPlan.swift",
+     "        case .fresh: step = .cached",
+     "        case .fresh: step = .unreachable",
+     "a transport failure tries the device's own copy"),
+    ("which step asks the cache first", "ShellLaunchPlan.swift",
+     "    var asksCacheFirst: Bool { self == .cached }",
+     "    var asksCacheFirst: Bool { self != .unreachable }",
+     "the fresh attempt revalidates"),
+    ("the cached-to-unreachable step", "ShellLaunchPlan.swift",
+     "        case .cached: step = .unreachable",
+     "        case .cached: break",
+     "when the cached copy cannot boot either, the app says so"),
+    ("the terminal unreachable step", "ShellLaunchPlan.swift",
+     "        case .unreachable: break   // terminal, and idempotent: no loop, and no second screen.",
+     "        case .unreachable: step = .fresh",
+     "and it is terminal"),
+    ("the reset to the fresh attempt", "ShellLaunchPlan.swift",
+     "        step = .fresh",
+     "        step = .unreachable",
+     "a new launch starts at the fresh attempt again"),
+    ("the logged step spelling", "ShellLaunchPlan.swift",
+     "    var label: String { rawValue }",
+     '    var label: String { self == .cached ? "cache" : rawValue }',
+     "the three steps have the spelling the log and the HUD use"),
+    ("what the unreachable step means", "ShellLaunchPlan.swift",
+     "    var loads: Bool { self != .unreachable }",
+     "    var loads: Bool { true }",
+     "the unreachable step is a SCREEN"),
 ]
 
 

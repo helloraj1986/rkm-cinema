@@ -697,6 +697,8 @@ The iOS app has **no bundled UI and no API client of its own**. It:
 - ⚠ **tvOS cannot use this seam at all** — tvOS has no WebKit. `tvos/` will be a *real* client: its own
   SwiftUI views plus an API client generated from `docs/api/openapi.v1.json`, and it additionally needs
   the bearer-token work (no browser session exists there). Nothing is built yet; do not assume it.
+- ⚠ **A cold launch with no network boots the copy the WebView already holds** (ADR-0012) — not a blank
+  page, and still not a bundled UI: `apply` remains the whole deploy.
 
 ### 17.2 What the shell adds — the capability table
 
@@ -804,7 +806,8 @@ app never sees it.
   **and** the loopback server outright. Read `Config/Info.plist`'s comment before touching it.
 - ⚠ **There is no service worker** (E2: `navigator.serviceWorker` is absent on this WebView, on a secure
   origin as well as the app's). The offline-SHELL story is therefore the HTTP cache headers in
-  `nginx/default.conf` + the persisted query cache (A1) — not a SW.
+  `nginx/default.conf` + the persisted query cache (A1) + the **cold-launch ladder** (ADR-0012: a launch
+  asks the copy the WebView already holds before it declares the server unreachable) — not a SW.
 - ⚠ **A web view with a socket is not a page.** Between `attach` and the first `didFinish` there is no
   document, and `evaluateJavaScript` against it THROWS. The bridge tracks `pageIsReady`; skipping events
   there loses nothing because a page load re-announces every title (ADR-0009 D7a).
@@ -835,7 +838,7 @@ is an argument about what the CURRENT design makes easy to get wrong.
 | **6** | **Decide what "my downloads" means on a SHARED device** | The file is the household's, not the profile's (ADR-0007 D6): on the family iPad, one person's downloads are visible to the next. Today the row shows the title only, so it is not a leak of *content* — but it is a product decision that is currently implicit | product call + medium work | His call |
 | **7** | **One shared `tools/harness.py`** (frame loading · dev-server freshness · **a fresh page per scenario**) | Every browser tool re-implements this, and each re-implementation has had the same two failures: a stale module served by a non-watching dev server, and a frame that never mounts because a previous scenario left a `<video>` playing. Both cost real time today | half an evening | **Do first** |
 | **8** | **Generate `ROUTE_LEVELS`** from the router declarations (a `level=` argument on each `@router.get`) | The inventory is hand-maintained, and it exists (correctly) to make a missing protection decision a test failure. Generating it removes the one way it can be wrong | small | Next api phase |
-| **9** | **An offline SHELL for cold launch** (a `WKURLSchemeHandler` serving the DOCUMENT and assets from the app's container) | E1 measured custom schemes out for **media** — but a document is not media. Today, a cold launch with no network depends on WebKit's HTTP cache and may not paint at all, which is the last gap in "it works offline" | medium-high, needs a Mac round | Only if he wants cold-launch offline |
+| **9** | **An offline SHELL for cold launch** — ✅ **BUILT 2026-09-19, but as a LAUNCH LADDER rather than the scheme handler proposed here** (ADR-0012): the live app is asked first, the copy the WebView already holds second, "Can't reach this server" last. ⚠ The `WKURLSchemeHandler` + `ShellCache/` this row proposed was **not** built: it is a second cache of bytes WebKit already stores, and E1 had already measured custom schemes out for media | the last gap in "it works offline". ⚠ **The device half is unverified until a Mac round** — does WKWebView serve a cached DOCUMENT for an unreachable origin? E1's lesson is that this is measured, not inferred | ⚠ **much smaller than costed here** — no sync, no eviction, no scheme handler; the header policy (A0) and the persisted cache (A1) already existed | ⚠ **Built on `feat/offline-cold-launch`, NOT merged — his Mac round is the last step** |
 | **10** | **Split `PROGRESS.md`** into a short current-state page + a history archive | It is ~5,100 lines and the file the next session reads first. The rationale already lives in ADRs; the status file can be a page, not a book | small | Housekeeping |
 
 **⚠ What I would NOT change:** the single React UI, the "one implementation per business rule" layering,
@@ -860,11 +863,14 @@ index, and where the truth lives.
   2026-09-18 and cost a run.
 - **#10 — bigger, not smaller.** `PROGRESS.md` is ~5,700 lines and is still the first file the next
   session reads.
-- **#2 · #3 · #4 · #5 · #6 · #8 · #9 — unchanged** (nothing has landed since this list was written).
+- **#9 — ⚠ BUILT, NOT MERGED, AND NOT VERIFIED ON A DEVICE** (2026-09-19, `feat/offline-cold-launch`,
+  ADR-0012) — and **not** the way this row proposed: a launch ladder in the shell rather than a
+  `WKURLSchemeHandler` + a synced `ShellCache/`. His Mac round decides whether it does what it claims.
+- **#2 · #3 · #4 · #5 · #6 · #8 — unchanged** (nothing has landed since this list was written).
 
 **In one line:** do **1** and **7** next (both are test-infrastructure, both pay back immediately), take
-**2 · 3 · 4** with B5, put **5** on the critical path to tvOS, and treat **6** and **9** as your product
-decisions rather than engineering ones.
+**2 · 3 · 4** with B5, put **5** on the critical path to tvOS, and treat **6** as your product decision
+rather than an engineering one.
 
 ---
 
@@ -923,6 +929,7 @@ is never quietly edited, because the reason it existed is part of the record.
 | [0009](adr/ADR-0009-offline-loopback-server.md) | The **loopback server**: a token, a byte range, and decisions taken in pure code (§17.3) |
 | [0010](adr/ADR-0010-offline-page.md) | The offline PAGE: a capability it must not assume, and a **progress queue that must never rewind** (§17.4c) |
 | [0011](adr/ADR-0011-mobile-layout-shells.md) | **Two layout shells in one app**, chosen by the viewport alone (§12) — and `mobile/**` may hold no rule |
+| [0012](adr/ADR-0012-cold-launch-offline-shell.md) | **The cold-launch ladder**: the live app first, the copy the WebView already holds second, "unreachable" last (§17.4/§17.6) |
 
 ---
 

@@ -7,6 +7,7 @@ import { useAddToWatchlist } from "../watchlist/api";
 import { useCardActions } from "../watchlist/actions";
 import { toast } from "../watchlist/toast";
 import { SuggestDetailModal } from "../suggest/SuggestDetailModal";
+import { HighlightedTitle } from "./HighlightedTitle";
 import { useGlobalSearch } from "./api";
 import {
   actionLabel,
@@ -341,7 +342,13 @@ function OwnedRow({
     >
       <img src={artUrl(row.id)} alt="" loading="lazy" className="h-14 w-10 shrink-0 rounded-md bg-surface-3 object-cover ring-1 ring-white/[.06]" />
       <div className="min-w-0 flex-1">
-        <div className="truncate text-[13px] font-semibold text-zinc-100">{row.title}</div>
+        {/* ⚠ `ranges` comes from the SERVER — the client never re-finds the match, because for a
+            fuzzy hit ("the dark knght" → this title) there is no substring to find. Phase 4. */}
+        <HighlightedTitle
+          text={row.title}
+          ranges={row.ranges}
+          className="block truncate text-[13px] font-semibold text-zinc-100"
+        />
         <div className="truncate text-[11px] text-zinc-500">{metaLine(row)}</div>
       </div>
       {/* One component, one size token: the pair may differ only in fill and weight (his report,
@@ -433,7 +440,11 @@ function DiscoveryRow({
         </span>
       )}
       <div className="min-w-0 flex-1">
-        <div className="truncate text-[13px] font-semibold text-zinc-100">{disc.title}</div>
+        <HighlightedTitle
+          text={disc.title}
+          ranges={disc.ranges}
+          className="block truncate text-[13px] font-semibold text-zinc-100"
+        />
         <div className="truncate text-[11px] text-zinc-500">
           {KIND_TEXT[disc.media_type] ?? "Title"}
           {disc.year ? ` · ${disc.year}` : ""}

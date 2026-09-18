@@ -609,6 +609,10 @@ export interface GlobalOwnedRow {
   state: string;
   remaining?: number | null;
   next_episode?: GlobalNextEpisode | null;
+  /** `[start, end)` into `title` that the query matched (Phase 4). Absent/empty → no highlight. */
+  ranges?: number[][] | null;
+  /** exact | prefix | fuzzy | containment | token | none */
+  match_type?: string;
 }
 
 /** Intent hint (Person / Genre / BoxSet collection). */
@@ -629,6 +633,22 @@ export interface GlobalDiscoveryRow {
   overview: string;
   /** True when already on the watchlist (server truth → Download/Details). */
   in_watchlist?: boolean;
+  /** `[start, end)` into `title` that the query matched (Phase 4). */
+  ranges?: number[][] | null;
+  /** exact | prefix | fuzzy | containment | token | none */
+  match_type?: string;
+}
+
+/** One row of the ranked list (SEARCH_IMPROVEMENT_PLAN Phase 2). Additive — the
+ *  per-source arrays above remain, and the grouped UI still renders those. */
+export interface UnifiedResult {
+  score: number;
+  source: "owned" | "watchlist" | "tmdb" | "hint";
+  kind: "movie" | "show" | "episode" | "person" | "genre" | "collection";
+  matched_fields: string[];
+  match_type: string;
+  ranges: number[][];
+  payload: Record<string, unknown>;
 }
 
 /** GET /api/search/global?q= response. */
@@ -643,6 +663,16 @@ export interface GlobalSearchShape {
   genres: GlobalHint[];
   collections: GlobalHint[];
   discovery: GlobalDiscoveryRow[];
+  /** ⚠ The authoritative ORDER (Phase 2). Every source scored on one continuous
+   *  scale and interleaved. The arrays above are unchanged and still populated. */
+  results: UnifiedResult[];
+}
+
+/** GET/POST /api/search/prefs — how THIS profile wants search ranked
+ *  (SEARCH_IMPROVEMENT_PLAN Phase 5). Per profile, never per account. */
+export interface SearchPrefsShape {
+  personalized: boolean;
+  profile_name: string;
 }
 
 /** POST /api/suggest filter payload (legacy suggestState.filters). */
@@ -804,6 +834,8 @@ function noteUnauthorized(status: number, problem: string | null, detail: string
  */
 export interface RequestOptions {
   skipAuthRedirect?: boolean;
+  /** Caller-owned cancellation (SEARCH_IMPROVEMENT_PLAN Phase 4). */
+  signal?: AbortSignal;
 }
 
 async function request<T>(path: string, init: RequestInit, options: RequestOptions): Promise<T> {
@@ -836,10 +868,33 @@ async function request<T>(path: string, init: RequestInit, options: RequestOptio
   return (await res.json()) as T;
 }
 
+/**
+ * One signal that fires when EITHER the caller aborts or the timeout expires.
+ *
+ * ⚠ Hand-rolled rather than `AbortSignal.any`: `any` is a 2024 addition and this app is loaded by a
+ * WKWebView with a much older floor. A `typeof`-guarded call would leave the timeout switched OFF on
+ * exactly those clients, so a hung request would never give up — a silent regression in the one place
+ * every API call goes through.
+ */
+function combineSignals(timeoutSignal: AbortSignal, callerSignal?: AbortSignal): AbortSignal {
+  if (!callerSignal) return timeoutSignal;
+  const ctrl = new AbortController();
+  if (callerSignal.aborted) ctrl.abort(callerSignal.reason);
+  else if (timeoutSignal.aborted) ctrl.abort(timeoutSignal.reason);
+  else {
+    callerSignal.addEventListener("abort", () => ctrl.abort(callerSignal.reason), { once: true });
+    timeoutSignal.addEventListener("abort", () => ctrl.abort(timeoutSignal.reason), { once: true });
+  }
+  return ctrl.signal;
+}
+
 async function getJson<T>(path: string, options: RequestOptions = {}): Promise<T> {
   return request<T>(
     path,
-    { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(20_000) },
+    {
+      headers: { Accept: "application/json" },
+      signal: combineSignals(AbortSignal.timeout(20_000), options.signal),
+    },
     options,
   );
 }
@@ -1136,8 +1191,16 @@ export const api = {
   getWatchlistResources: () => getJson<WatchlistResourcesShape>("/watchlist"),
   /** Combined watchlist + TMDB search (legacy header combobox API). */
   search: (q: string) => getJson<SearchShape>(`/search?q=${encodeURIComponent(q)}`),
-  /** Library-first global search (top-bar command palette). */
-  searchGlobal: (q: string) => getJson<GlobalSearchShape>(`/search/global?q=${encodeURIComponent(q)}`),
+  /** Library-first global search (top-bar command palette).
+   *  `signal` lets a superseded keystroke's request be cancelled (Phase 4). */
+  searchGlobal: (q: string, signal?: AbortSignal) =>
+    getJson<GlobalSearchShape>(`/search/global?q=${encodeURIComponent(q)}`, { signal }),
+  /** This profile's search preferences (Phase 5). */
+  getSearchPrefs: () => getJson<SearchPrefsShape>("/search/prefs"),
+  /** Set this profile's search preferences. ⚠ The profile is taken from the
+   *  session server-side — the body can never name whose setting it is. */
+  setSearchPrefs: (personalized: boolean) =>
+    postJson<SearchPrefsShape>("/search/prefs", { personalized }),
   /** TMDB discover by taste filters. */
   suggest: (filters: SuggestFilters) => postJson<SuggestShape>("/suggest", filters),
   /** Full TMDB + IMDb detail for one suggested title (card-click modal). */

@@ -197,6 +197,12 @@ class _FakeService:
     def episodes(self, series_id, limit=1000):
         return {"provider": "jellyfin", "episodes": self._eps}
 
+    def recently_watched(self, limit=12):
+        # ⚠ Phase 5 reads this for taste ranking. A stub that LACKS it makes the route
+        # log a warning and rank neutrally on every call, which buries a real failure
+        # in the noise — so every fake here answers it.
+        return {"provider": "jellyfin", "items": []}
+
     def items_by_person(self, pid, limit=6):
         return {"provider": "jellyfin", "items": self._person_rows}
 
@@ -210,7 +216,10 @@ def _route_env(lib_service, tmdb_rows=(), counter=None):
     cfg = SimpleNamespace()
     cfg.has_tmdb = lambda: True
 
-    def search_multi(q):
+    def search_multi(q, media_type=None):
+        # ⚠ media_type is Phase 3's filter (SEARCH_IMPROVEMENT_PLAN); the stub has to
+        # accept it or the route's external half raises and degrades to empty, which
+        # looks like a ranking failure rather than a stub that is out of date.
         if counter is not None:
             counter.append(q)
         return list(tmdb_rows)

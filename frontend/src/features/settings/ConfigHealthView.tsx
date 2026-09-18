@@ -1,4 +1,5 @@
 import { useConfig, useHealth } from "./api";
+import { SearchPersonalizationCard } from "./SearchPersonalizationCard";
 import { useLibraryFolders } from "../library/api";
 import { libraryIconFor } from "../library/lib";
 import { Card } from "../../components/ui/Card";
@@ -135,6 +136,11 @@ export function ConfigHealthView() {
           );
         })}
       </div>
+
+      {/* Search (SEARCH_IMPROVEMENT_PLAN Phase 5). Sits with the other per-profile
+          settings rather than in the search surfaces themselves: it is a preference
+          about search, not a control in it. */}
+      <SearchPersonalizationCard />
 
       {/* Media libraries (MEDIA_LIBRARIES_PLAN): what the sidebar shows + why.
           Configured MEDIA_LIBRARY_N_NAME values; warnings make a misconfigured

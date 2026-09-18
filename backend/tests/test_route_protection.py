@@ -121,6 +121,8 @@ ROUTE_LEVELS: dict[str, str] = {
     "GET /api/quality": SESSION,
     "GET /api/search": SESSION,
     "GET /api/search/global": SESSION,
+    "GET /api/search/prefs": SESSION,
+    "POST /api/search/prefs": SESSION,
     "GET /api/status": SESSION,
     #    OFFLINE DOWNLOADS (plan §4.3, phase B1) — SESSION, and that is a decision:
     #    downloading a film to the iPad is a HOUSEHOLD feature, exactly like

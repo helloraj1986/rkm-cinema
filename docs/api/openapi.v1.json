@@ -536,7 +536,7 @@
     "/api/search": {
       "get": {
         "summary": "Search",
-        "description": "Search watchlist and TMDB.",
+        "description": "Search the watchlist and TMDB, ranked by continuous relevance.",
         "operationId": "search_api_search_get",
         "parameters": [
           {
@@ -600,6 +600,62 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/SearchGlobalResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/search/prefs": {
+      "get": {
+        "summary": "Get Search Prefs",
+        "description": "This viewer's search preferences (the default when they have never chosen).",
+        "operationId": "get_search_prefs_api_search_prefs_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchPrefsResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Set Search Prefs",
+        "description": "Switch taste-biased ranking on or off for this profile.",
+        "operationId": "set_search_prefs_api_search_prefs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SearchPrefsUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchPrefsResponse"
                 }
               }
             }
@@ -2738,6 +2794,28 @@
             "type": "boolean",
             "title": "In Watchlist",
             "default": false
+          },
+          "genres": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Genres"
+          },
+          "ranges": {
+            "items": {
+              "items": {
+                "type": "integer"
+              },
+              "type": "array"
+            },
+            "type": "array",
+            "title": "Ranges"
+          },
+          "match_type": {
+            "type": "string",
+            "title": "Match Type",
+            "default": "none"
           }
         },
         "type": "object",
@@ -2960,6 +3038,21 @@
                 "type": "null"
               }
             ]
+          },
+          "ranges": {
+            "items": {
+              "items": {
+                "type": "integer"
+              },
+              "type": "array"
+            },
+            "type": "array",
+            "title": "Ranges"
+          },
+          "match_type": {
+            "type": "string",
+            "title": "Match Type",
+            "default": "none"
           }
         },
         "type": "object",
@@ -3714,6 +3807,13 @@
             "title": "Strong Match",
             "default": false
           },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/UnifiedResult"
+            },
+            "type": "array",
+            "title": "Results"
+          },
           "items": {
             "items": {
               "$ref": "#/components/schemas/GlobalOwnedRow"
@@ -3762,6 +3862,35 @@
           "query"
         ],
         "title": "SearchGlobalResponse"
+      },
+      "SearchPrefsResponse": {
+        "properties": {
+          "personalized": {
+            "type": "boolean",
+            "title": "Personalized",
+            "default": true
+          },
+          "profile_name": {
+            "type": "string",
+            "title": "Profile Name",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "SearchPrefsResponse",
+        "description": "``GET /api/search/prefs`` \u2014 how THIS viewer wants search ranked.\n\n\u26a0 Per PROFILE, not per account: the app's identity model separates the account\nthat signed in from the profile that is watching (\u00a711), and taste belongs to the\nperson watching."
+      },
+      "SearchPrefsUpdate": {
+        "properties": {
+          "personalized": {
+            "type": "boolean",
+            "title": "Personalized",
+            "default": true
+          }
+        },
+        "type": "object",
+        "title": "SearchPrefsUpdate",
+        "description": "``POST /api/search/prefs`` \u2014 set the one preference search has."
       },
       "SearchResponse": {
         "properties": {
@@ -3866,6 +3995,24 @@
               }
             ],
             "title": "Voteaverage"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score"
+          },
+          "matchedFields": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Matchedfields"
           }
         },
         "type": "object",
@@ -4394,6 +4541,55 @@
         ],
         "title": "SuggestResult",
         "description": "One suggested title."
+      },
+      "UnifiedResult": {
+        "properties": {
+          "score": {
+            "type": "number",
+            "title": "Score",
+            "default": 0.0
+          },
+          "source": {
+            "type": "string",
+            "title": "Source",
+            "default": "owned"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind",
+            "default": "movie"
+          },
+          "matched_fields": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Matched Fields"
+          },
+          "match_type": {
+            "type": "string",
+            "title": "Match Type",
+            "default": "none"
+          },
+          "ranges": {
+            "items": {
+              "items": {
+                "type": "integer"
+              },
+              "type": "array"
+            },
+            "type": "array",
+            "title": "Ranges"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Payload"
+          }
+        },
+        "type": "object",
+        "title": "UnifiedResult",
+        "description": "One row of the ranked search list (SEARCH_IMPROVEMENT_PLAN Phase 2).\n\n``score`` is continuous and comparable WITHIN one response only. ``payload`` carries the\nexisting row shape for its ``source`` verbatim \u2014 a ``GlobalOwnedRow``, a ``GlobalDiscoveryRow``\nor a hint dict \u2014 so a client that can already render those needs no second renderer."
       },
       "ValidationError": {
         "properties": {

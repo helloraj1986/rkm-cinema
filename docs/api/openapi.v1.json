@@ -536,7 +536,7 @@
     "/api/search": {
       "get": {
         "summary": "Search",
-        "description": "Search watchlist and TMDB.",
+        "description": "Search the watchlist and TMDB, ranked by continuous relevance.",
         "operationId": "search_api_search_get",
         "parameters": [
           {
@@ -3714,6 +3714,13 @@
             "title": "Strong Match",
             "default": false
           },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/UnifiedResult"
+            },
+            "type": "array",
+            "title": "Results"
+          },
           "items": {
             "items": {
               "$ref": "#/components/schemas/GlobalOwnedRow"
@@ -3866,6 +3873,24 @@
               }
             ],
             "title": "Voteaverage"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score"
+          },
+          "matchedFields": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Matchedfields"
           }
         },
         "type": "object",
@@ -4394,6 +4419,55 @@
         ],
         "title": "SuggestResult",
         "description": "One suggested title."
+      },
+      "UnifiedResult": {
+        "properties": {
+          "score": {
+            "type": "number",
+            "title": "Score",
+            "default": 0.0
+          },
+          "source": {
+            "type": "string",
+            "title": "Source",
+            "default": "owned"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind",
+            "default": "movie"
+          },
+          "matched_fields": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Matched Fields"
+          },
+          "match_type": {
+            "type": "string",
+            "title": "Match Type",
+            "default": "none"
+          },
+          "ranges": {
+            "items": {
+              "items": {
+                "type": "integer"
+              },
+              "type": "array"
+            },
+            "type": "array",
+            "title": "Ranges"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Payload"
+          }
+        },
+        "type": "object",
+        "title": "UnifiedResult",
+        "description": "One row of the ranked search list (SEARCH_IMPROVEMENT_PLAN Phase 2).\n\n``score`` is continuous and comparable WITHIN one response only. ``payload`` carries the\nexisting row shape for its ``source`` verbatim \u2014 a ``GlobalOwnedRow``, a ``GlobalDiscoveryRow``\nor a hint dict \u2014 so a client that can already render those needs no second renderer."
       },
       "ValidationError": {
         "properties": {

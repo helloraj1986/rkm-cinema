@@ -105,6 +105,44 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/auth/profile/password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Change Own Password
+         * @description Change the password of **the profile in effect** — the person's own (plan §6, Phase 3).
+         *
+         *     Why this is a different route from ``POST /api/admin/users/{id}/password`` rather than a flag on
+         *     it: that one is the ADMINISTRATOR resetting somebody else (no old password needed, hence its
+         *     own permission gate), while this one is a person changing their own and therefore PROVES they
+         *     know the current one. Conflating them is how a self-service screen quietly becomes an escalation
+         *     path; keeping them apart means the credential that authorises each is obvious at the call site.
+         *
+         *     Rails:
+         *
+         *     * a session is required, and the target is the PROFILE's identity — ``context.profile_id()`` —
+         *       never a client-supplied id;
+         *     * the new password must be NON-EMPTY: an account is created without a password, not emptied
+         *       afterwards (the same rule the household route states) — otherwise anyone reaching a shared
+         *       device could remove the protection from a profile;
+         *     * the OLD password is required whenever the account has one, and **the media server is the
+         *       judge** of that — this route never decides it (a password-less account legitimately accepts
+         *       anything, including nothing);
+         *     * neither value is logged, echoed, or written anywhere in the app.
+         */
+        post: operations["change_own_password_api_auth_profile_password_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/logout": {
         parameters: {
             query?: never;
@@ -247,6 +285,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/users/{user_id}/rename": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rename User
+         * @description Rename an account — **the role is not the name** (plan §6, Phase 2).
+         *
+         *     Why this is safe to expose, stated plainly: a person is identified by their **id** everywhere
+         *     that matters — the session record, the provider's ``_user_id()``, the picker, every media
+         *     call — so a rename is a display change. It cannot grant or remove access (the account's policy
+         *     is carried through untouched, see ``rename_user`` in the provider), it cannot touch a password,
+         *     and it cannot move anybody's watch state.
+         *
+         *     It is still admin-only, because it is how somebody ELSE's account appears to everyone: a
+         *     member must not be able to rename the administrator.
+         *
+         *     ⚠ One honest consequence, not a bug: ``RKM_JELLYFIN_ADMIN_USER`` in ``.env`` keeps whatever it
+         *     says (it is a FIRST-RUN HINT for the wizard, never a lookup key — Phase 1). Renaming changes
+         *     nothing unless the stack is re-provisioned from an empty volume, at which point the wizard uses
+         *     the hint again and you would end up with a second, differently-named administrator.
+         */
+        post: operations["rename_user_api_admin_users__user_id__rename_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/users/{user_id}": {
         parameters: {
             query?: never;
@@ -343,7 +415,7 @@ export interface paths {
         };
         /**
          * Search
-         * @description Search watchlist and TMDB.
+         * @description Search the watchlist and TMDB, ranked by continuous relevance.
          */
         get: operations["search_api_search_get"];
         put?: never;
@@ -390,6 +462,12 @@ export interface paths {
          *     (names shown as-is, never the env keys), otherwise the server's OWN folder
          *     names (no hardcoded Movies/TV Shows). ``folders`` carries every server
          *     folder for reference; ``warnings`` surfaces config problems.
+         *
+         *     **Phase C (plan §4d):** while somebody ELSE's profile is selected, the provider hands back that
+         *     profile's own ``/UserViews`` and the list is resolved with :func:`visible_libraries` — the
+         *     profile's GRANTS, not the administrator's config. An ungranted configured library is omitted
+         *     (its PATH is not broken; this person simply may not see it) and ``warnings`` is empty for the
+         *     same reason: the administrator's config problems are not this person's screen.
          */
         get: operations["get_library_folders_api_library_folders_get"];
         put?: never;
@@ -556,6 +634,12 @@ export interface paths {
          *
          *     Mirrors the canonical ``POST /api/jobs/library_scan/run`` job so a plain GET
          *     (e.g. typing the URL) can force a scan. Returns the job result.
+         *
+         *     **Administrators only (Phase E, his decision 2026-09-13).** It forces a full scan of every
+         *     configured media library on the media server — expensive server-side work, not a request from
+         *     a member. ⚠ The UI's "Scan Library" control is hidden for a non-administrator by the same
+         *     rule (``mayManageHousehold``-style gating in the library views): the app does not OFFER what
+         *     this route refuses.
          */
         get: operations["scan_library_api_library_scan_get"];
         put?: never;
@@ -1170,11 +1254,150 @@ export interface paths {
          * Run Job Endpoint
          * @description Run a known job command by name and return its recorded result.
          *
-         *     Supported names: ``daily_watchlist`` (recommendation generation) and
-         *     ``reconcile`` (frequent status reconcile). Returns the JobResult shape.
+         *     Supported names: ``daily_watchlist`` (recommendation generation), ``reconcile``
+         *     (frequent status reconcile), ``add_watchlist`` (recommendation refresh) and
+         *     ``library_scan`` (a media-server library scan).
+         *
+         *     **Administrators only (Phase E, his decision 2026-09-13).** A generic job runner is an
+         *     operator verb: it starts server-side work on the media server and the *arr stack on the
+         *     caller's behalf, and it is the route that ``GET /api/library/scan`` mirrors. Gating the WHOLE
+         *     route (rather than a per-name allow-list) is deliberate — the default for an unknown or newly
+         *     added job name is then REFUSED rather than inherited, and a job added to the dict above cannot
+         *     quietly become member-reachable.
+         *
+         *     ⚠ **Known consequence, recorded rather than hidden:** ``add_watchlist`` is the one name a
+         *     member-facing feature was written for — ``frontend/src/features/watchlist/actions.ts::
+         *     refreshRecommendations`` posts here. That action is currently referenced by no view, so no
+         *     live surface changes today; when the "refresh recommendations" control is wired up it needs
+         *     its own member-facing route (the watchlist router is session-scoped), not this one.
          */
         post: operations["run_job_endpoint_api_jobs__name__run_post"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/offline/prepare": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Offline Prepare
+         * @description Package one title for download — idempotent, and it never blocks on the work.
+         *
+         *     Calling it twice for the same title returns the SAME artefact: a finished one is
+         *     returned untouched (``reused: true``) and one still being built returns
+         *     ``state: "packaging"`` instead of starting a second writer for the same file.
+         */
+        post: operations["offline_prepare_api_offline_prepare_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/offline/status/{item_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Offline Status
+         * @description Where this download is — answered from DISK, so it survives an api restart.
+         */
+        get: operations["offline_status_api_offline_status__item_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/offline/bundle/{item_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Offline Bundle
+         * @description Everything the device needs to write its own manifest — and to decide first.
+         *
+         *     ⚠ This call does NOT package anything, and the size it reports is an ESTIMATE
+         *     (``estimate_bytes``) taken from the library file. §4.2 asks for it before the
+         *     download is committed to: "this is 2.1 GB, you have 41 GB free". The real size
+         *     is only known once ``prepare`` has finished, and then it is ``size`` on
+         *     ``prepare``/``status``.
+         */
+        get: operations["offline_bundle_api_offline_bundle__item_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/offline/file/{item_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Offline File
+         * @description The artefact's bytes: ``200`` whole, ``206`` for a range, ``416`` when impossible.
+         *
+         *     The device downloads this once and afterwards serves the SAME bytes from its own
+         *     loopback server (that split is the whole point of the spike's two-network result:
+         *     a downloaded film must play with the tailnet down).
+         */
+        get: operations["offline_file_api_offline_file__item_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        /**
+         * Offline File Head
+         * @description The artefact's size, without its body — what a downloader asks FIRST.
+         *
+         *     A ``GET``-only FastAPI route answers HEAD with 405 (measured, §4.3), which would
+         *     turn "how big is this?" into a silent failure. This is that route.
+         */
+        head: operations["offline_file_head_api_offline_file__item_id__head"];
+        patch?: never;
+        trace?: never;
+    };
+    "/api/offline/{item_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Offline Delete
+         * @description Drop the staged copy. A ``direct`` (borrowed) rendition removes the RECORD only.
+         *
+         *     ⚠ "Delete this download" must never delete the household's media file — for a
+         *     direct-playable title the artefact IS the library file, so this route unlinks it
+         *     only when the manifest says we own it (``borrowed: false``).
+         */
+        delete: operations["offline_delete_api_offline__item_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1229,6 +1452,21 @@ export interface components {
             confirm_name: string;
         };
         /**
+         * AdminRenameUserRequest
+         * @description Rename an account. The ROLE is not the name (plan §6, Phase 2).
+         *
+         *     A person is identified by their id everywhere — the session, `_user_id()`, the picker — so a
+         *     rename changes how they are DISPLAYED and nothing else. ``name`` is trimmed and must be
+         *     non-empty; the route refuses a duplicate.
+         */
+        AdminRenameUserRequest: {
+            /**
+             * Name
+             * @default
+             */
+            name: string;
+        };
+        /**
          * AdminSetPasswordRequest
          * @description Set or reset another account's password. Never echoed anywhere.
          */
@@ -1267,6 +1505,26 @@ export interface components {
              * @default false
              */
             can_watch: boolean;
+        };
+        /**
+         * ChangePasswordRequest
+         * @description Change MY OWN password (plan §6, Phase 3).
+         *
+         *     ``current_password`` is the account's existing one — required by the media server whenever the
+         *     account HAS one, and accepted as anything (or blank) when it has none. The server is the judge;
+         *     this app never decides that for itself.
+         */
+        ChangePasswordRequest: {
+            /**
+             * Current Password
+             * @default
+             */
+            current_password: string;
+            /**
+             * New Password
+             * @default
+             */
+            new_password: string;
         };
         /** ConfigResponse */
         ConfigResponse: {
@@ -1366,7 +1624,7 @@ export interface components {
         };
         /**
          * GlobalDiscoveryRow
-         * @description TMDB discovery row — ONLY when no strong owned match exists.
+         * @description External-metadata row for a title the LIBRARY does not have (deduped server-side).
          */
         GlobalDiscoveryRow: {
             /** Tmdb Id */
@@ -1673,6 +1931,11 @@ export interface components {
              * @default
              */
             password: string;
+            /**
+             * Device Id
+             * @default
+             */
+            device_id: string;
         };
         /** LoginResponse */
         LoginResponse: {
@@ -1700,6 +1963,11 @@ export interface components {
              * @default true
              */
             on_own_profile: boolean;
+            /**
+             * Profile Selected
+             * @default false
+             */
+            profile_selected: boolean;
             /**
              * Expires
              * @default
@@ -1753,6 +2021,27 @@ export interface components {
             qbitName?: string | null;
         };
         /**
+         * OfflinePrepareRequest
+         * @description Ask the server to package one title for offline download (plan §4.3, phase B1).
+         *
+         *     ``mode`` defaults to ``auto``: the SERVER resolves the cheapest rendition that
+         *     will actually play (direct → remux → transcode_audio → transcode), because the
+         *     decision needs the media source's container/codecs and the device should not have
+         *     to guess. An explicit mode is honoured — the UI shows the cost of each.
+         */
+        OfflinePrepareRequest: {
+            /**
+             * Item Id
+             * @default
+             */
+            item_id: string;
+            /**
+             * Mode
+             * @default auto
+             */
+            mode: string;
+        };
+        /**
          * ProfileUser
          * @description One selectable profile, as the "Who's watching?" picker needs it.
          *
@@ -1799,6 +2088,11 @@ export interface components {
             /** Profiles */
             profiles?: components["schemas"]["ProfileUser"][];
             current?: components["schemas"]["ProfileUser"];
+            /**
+             * Profile Selected
+             * @default false
+             */
+            profile_selected: boolean;
             /**
              * Warning
              * @default
@@ -1877,6 +2171,8 @@ export interface components {
              * @default false
              */
             strong_match: boolean;
+            /** Results */
+            results?: components["schemas"]["UnifiedResult"][];
             /** Items */
             items?: components["schemas"]["GlobalOwnedRow"][];
             /** People */
@@ -1925,6 +2221,10 @@ export interface components {
             snippet: string;
             /** Voteaverage */
             voteAverage?: number | null;
+            /** Score */
+            score?: number | null;
+            /** Matchedfields */
+            matchedFields?: string[];
         };
         /**
          * SelectProfileRequest
@@ -2235,6 +2535,44 @@ export interface components {
              */
             in_library: boolean;
         };
+        /**
+         * UnifiedResult
+         * @description One row of the ranked search list (SEARCH_IMPROVEMENT_PLAN Phase 2).
+         *
+         *     ``score`` is continuous and comparable WITHIN one response only. ``payload`` carries the
+         *     existing row shape for its ``source`` verbatim — a ``GlobalOwnedRow``, a ``GlobalDiscoveryRow``
+         *     or a hint dict — so a client that can already render those needs no second renderer.
+         */
+        UnifiedResult: {
+            /**
+             * Score
+             * @default 0
+             */
+            score: number;
+            /**
+             * Source
+             * @default owned
+             */
+            source: string;
+            /**
+             * Kind
+             * @default movie
+             */
+            kind: string;
+            /** Matched Fields */
+            matched_fields?: string[];
+            /**
+             * Match Type
+             * @default none
+             */
+            match_type: string;
+            /** Ranges */
+            ranges?: number[][];
+            /** Payload */
+            payload?: {
+                [key: string]: unknown;
+            };
+        };
         /** ValidationError */
         ValidationError: {
             /** Location */
@@ -2470,6 +2808,39 @@ export interface operations {
             };
         };
     };
+    change_own_password_api_auth_profile_password_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChangePasswordRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     logout_api_auth_logout_post: {
         parameters: {
             query?: never;
@@ -2630,6 +3001,41 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["AdminSetPasswordRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rename_user_api_admin_users__user_id__rename_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminRenameUserRequest"];
             };
         };
         responses: {
@@ -3828,6 +4234,206 @@ export interface operations {
             header?: never;
             path: {
                 name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    offline_prepare_api_offline_prepare_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OfflinePrepareRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    offline_status_api_offline_status__item_id__get: {
+        parameters: {
+            query?: {
+                /** @description which rendition; default = the newest */
+                mode?: string | null;
+            };
+            header?: never;
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    offline_bundle_api_offline_bundle__item_id__get: {
+        parameters: {
+            query?: {
+                /** @description auto | direct | remux | transcode_audio | transcode */
+                mode?: string;
+            };
+            header?: never;
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    offline_file_api_offline_file__item_id__get: {
+        parameters: {
+            query?: {
+                mode?: string | null;
+            };
+            header?: never;
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    offline_file_head_api_offline_file__item_id__head: {
+        parameters: {
+            query?: {
+                mode?: string | null;
+            };
+            header?: never;
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    offline_delete_api_offline__item_id__delete: {
+        parameters: {
+            query?: {
+                mode?: string | null;
+            };
+            header?: never;
+            path: {
+                item_id: string;
             };
             cookie?: never;
         };

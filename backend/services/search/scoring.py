@@ -113,6 +113,7 @@ class FieldWeight:
     director: float = 4.0
     collection: float = 3.0
     genre: float = 2.0
+    year: float = 2.0
     overview: float = 1.0
 
     def of(self, name: str) -> float:
@@ -282,9 +283,26 @@ def name_relevance(query: str, candidate: Any) -> tuple[float, str]:
     return (fuzzy, "fuzzy") if fuzzy > 0.0 else (0.0, "none")
 
 
+def _year_relevance(query: str, value: Any) -> tuple[float, str, list[tuple[int, int]]]:
+    """A year matches EXACTLY or not at all.
+
+    ⚠ No fuzzy, no containment: ``"1994"`` is not a near-miss for ``"1993"``, and
+    fuzzing digits would make every year within one edit of the query a match.
+    Phase 3 turns a year the user typed into a proper filter/boost; this field
+    exists so a bare ``"2024"`` search still finds 2024's titles.
+    """
+    q = str(query or "").strip()
+    v = str(value or "").strip()
+    if not q or not v or q != v:
+        return 0.0, "none", []
+    return 1.0, "exact", []
+
+
 def _field_relevance(name: str, query: str, value: Any, *, query_year: int | None,
                      title_year: Any) -> tuple[float, str, list[tuple[int, int]]]:
     """Relevance of one item field, dispatching on what KIND of field it is."""
+    if name == "year":
+        return _year_relevance(query, value)
     if name in NAME_FIELDS:
         score, kind = name_relevance(query, value)
         return score, kind, []
@@ -373,6 +391,7 @@ def row_fields(row: Mapping[str, Any]) -> dict[str, Any]:
         "director": row.get("director"),
         "genre": row.get("genres"),
         "collection": row.get("collection"),
+        "year": row.get("year"),
         "overview": row.get("overview") or row.get("snippet"),
     }
 

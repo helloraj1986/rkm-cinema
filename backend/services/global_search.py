@@ -14,6 +14,7 @@ from typing import Iterable, Optional
 # unchanged. Relevance logic lives in ONE place; this file keeps only the global-search-specific rules
 # (the ownership gate, discovery dedupe, and the per-row action state).
 from services.search.normalize import normalize_title  # noqa: F401  (re-export)
+from services.search.ranking import is_duplicate_discovery  # noqa: F401  (re-export)
 from services.search.scoring import (  # noqa: F401  (re-export)
     EXACT_TITLE_SCORE,
     best_relevance,
@@ -21,32 +22,6 @@ from services.search.scoring import (  # noqa: F401  (re-export)
     score_item,
     title_match_score,
 )
-
-
-def is_duplicate_discovery(candidate: dict, owned: Iterable[dict]) -> bool:
-    """True when a TMDB candidate is already owned (drop it from DISCOVER).
-
-    Matches by TMDB provider id first — the strongest identity signal, always decisive — then by
-    title. ⚠ The title path needs ``EXACT_TITLE_SCORE``, not containment: an owned "Sholay —
-    Special Ops" would otherwise swallow the real "Sholay" (1975), and it does so **whenever the
-    owned row carries no year**, because the remake guard below cannot fire without two years
-    (measured 2026-09-13: dropped_as_duplicate=True for exactly that pair). Same-name remakes of a
-    different year remain distinct on both paths.
-    """
-    cand_tmdb = candidate.get("tmdb_id")
-    for row in owned or []:
-        pids = row.get("provider_ids") or {}
-        if cand_tmdb is not None:
-            try:
-                if int(pids.get("tmdb") or 0) == int(cand_tmdb):
-                    return True
-            except (TypeError, ValueError):
-                pass
-        score = title_match_score(candidate.get("title", ""), row.get("title", ""),
-                                  query_year=candidate.get("year"), title_year=row.get("year"))
-        if score >= EXACT_TITLE_SCORE:
-            return True
-    return False
 
 
 def next_episode_facts(episodes: Iterable[dict]) -> Optional[dict]:

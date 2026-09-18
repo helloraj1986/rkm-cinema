@@ -20,11 +20,21 @@ Two entry points, because the two jobs are genuinely different:
   matched by a fragment far more often than by a full name (``"pacino"`` must
   find ``"Al Pacino"``, ``"nolan"`` must find ``"Christopher Nolan"``).
 
-⚠ A short query is never fuzzed. Two or three characters are within typo
-distance of a large fraction of the alphabet, so fuzzy matching below
-``MIN_FUZZY_LEN`` would turn "th" into "every title containing t and h" — noise
-presented as relevance. Short queries are served by the prefix path instead
-(Phase 4).
+⚠ **Two guards exist to stop typo tolerance decaying into "everything matches
+everything"**, both measured rather than guessed:
+
+1. ``MIN_FUZZY_LEN`` — a 2-character query is within typo distance of a large
+   fraction of the alphabet. Short queries are served by the prefix path instead
+   (Phase 4).
+2. ``MIN_LENGTH_RATIO`` — **a typo barely changes the length of a title.** So a
+   4-character query is not a mistyping of a 28-character one; it is a different
+   string that happens to share a fragment. Without this guard ``"dune"`` scored
+   0.67 against *A Completely Unrelated Film* (``WRatio`` finds "uned" inside
+   "unrelated"), and every search quietly returned the whole library.
+
+Exact and prefix cases short-circuit to their tier values, so the tiers a caller
+sees are the same whether it uses this module directly or goes through
+``scoring.title_relevance``.
 """
 
 from __future__ import annotations
@@ -36,19 +46,32 @@ from services.search.normalize import normalize_title, year_factor
 
 logger = logging.getLogger("rkm.search.fuzzy")
 
-__all__ = ["FUZZY_CEILING", "FUZZY_FLOOR", "MIN_FUZZY_LEN", "fuzzy_name_score", "fuzzy_title_score"]
+__all__ = ["FUZZY_CEILING", "FUZZY_FLOOR", "MIN_FUZZY_LEN", "MIN_LENGTH_RATIO",
+           "available", "fuzzy_name_score", "fuzzy_title_score"]
 
 #: Below this the input is too short to distinguish a typo from a different word.
 MIN_FUZZY_LEN = 3
 
-#: ⚠ The cap that keeps the tiers honest: even a 100/100 fuzzy ratio (0.85 here)
-#: ranks BELOW a containment (0.75)? No — below exact (1.0) and prefix (0.9).
-#: Do not raise this above 0.9 without revisiting ``title_relevance``'s ordering.
+#: ⚠ How close in LENGTH two strings must be before a whole-string ratio is
+#: trusted. A typo barely changes a title's length, so this is the cheapest and
+#: most effective guard against substring-driven false positives. 0.6 admits
+#: "knght"→"knight" (0.83), "the dark knght"→"the dark knight" (0.93) and
+#: "schwarzeneger"→"schwarzenegger" (0.93), and rejects "dune"→"unrelated" (0.44).
+MIN_LENGTH_RATIO = 0.6
+
+#: ⚠ The cap that keeps the tiers honest: even a 100/100 fuzzy ratio is 0.85 here,
+#: which is BELOW prefix (0.90) and ABOVE containment (≤0.80). Do not raise it
+#: without revisiting ``scoring.title_relevance``'s documented ordering.
 FUZZY_CEILING = 0.85
 
 #: Results under this are dropped rather than ranked. Start value from the plan;
 #: it is the knob the Phase 7 metrics loop retunes.
 FUZZY_FLOOR = 0.55
+
+#: A near-miss on ONE WORD of a title is weaker evidence than a near-miss on the
+#: whole thing, so it is scaled down. Measured: "knght" → 0.70 against
+#: "The Dark Knight", under the 0.82 a full-title typo earns.
+TOKEN_QUERY_SCALE = 0.9
 
 _RATIO_SCALE = FUZZY_CEILING
 
@@ -70,6 +93,13 @@ def available() -> bool:
     return _AVAILABLE
 
 
+def _length_ratio(a: str, b: str) -> float:
+    """Shorter/longer, 0.0–1.0. 1.0 means the two are the same length."""
+    if not a or not b:
+        return 0.0
+    return min(len(a), len(b)) / max(len(a), len(b))
+
+
 def _combine(score: float, query_year: int | None, title_year: Any) -> float:
     """Apply the year factor and the floor, in ONE place for both entry points."""
     if score <= 0.0:
@@ -85,8 +115,12 @@ def fuzzy_title_score(query: str, candidate: Any, *, query_year: int | None = No
     Returns 0.0 (never a guess) when the dependency is absent, the query is too
     short to fuzz, or the best ratio sits below ``FUZZY_FLOOR``.
 
-    Exact and prefix cases short-circuit to their tier values so callers that use
-    this alone (not through ``title_relevance``) still get the right ordering.
+    Two shapes of near-miss are recognised:
+
+    * the WHOLE title is mistyped or reordered (lengths must be comparable); and
+    * ONE WORD of the title is mistyped (``"knght"`` for *The Dark Knight*), which
+      needs its own comparison because the whole-string ratio is diluted by the
+      words that match exactly.
     """
     if not _AVAILABLE:
         return 0.0
@@ -98,11 +132,21 @@ def fuzzy_title_score(query: str, candidate: Any, *, query_year: int | None = No
         return _combine(1.0, query_year, title_year)
     if c.startswith(q):
         return _combine(0.9, query_year, title_year)
-    # token_sort_ratio handles word-order differences ("knight dark" vs "dark knight");
-    # WRatio handles typos, partial matches and length differences.
-    ratio = fuzz.WRatio(q, c) / 100.0
-    token_ratio = fuzz.token_sort_ratio(q, c) / 100.0
-    return _combine(max(ratio, token_ratio) * _RATIO_SCALE, query_year, title_year)
+
+    best = 0.0
+    # (a) The whole string, when the two are plausibly the same words.
+    if _length_ratio(q, c) >= MIN_LENGTH_RATIO:
+        # token_sort_ratio handles word-order differences ("knight dark" vs "dark knight");
+        # WRatio handles typos, partial matches and length differences.
+        best = max(fuzz.WRatio(q, c), fuzz.token_sort_ratio(q, c)) / 100.0
+
+    # (b) One word of the title, when the query is close to THAT word.
+    for word in c.split():
+        if len(word) < MIN_FUZZY_LEN or _length_ratio(q, word) < MIN_LENGTH_RATIO:
+            continue
+        best = max(best, (fuzz.WRatio(q, word) / 100.0) * TOKEN_QUERY_SCALE)
+
+    return _combine(best * _RATIO_SCALE, query_year, title_year)
 
 
 def fuzzy_name_score(query: str, candidate: Any) -> float:
@@ -113,6 +157,11 @@ def fuzzy_name_score(query: str, candidate: Any) -> float:
     ``"Al Pacino"`` and ``"schwarzeneger"`` → ``"Arnold Schwarzenegger"`` work.
     A whole-string ratio would score both of those near zero and re-introduce the
     bug this phase exists to fix.
+
+    ⚠ The floor applies HERE too, not only on the title path: ``partial_ratio``
+    is substring-sensitive by design, so it reports ~0.24 for ``"pacino"`` against
+    ``"Meryl Streep"`` — a real number and a meaningless match. Without the floor a
+    query would come back carrying every actor in the library.
     """
     if not _AVAILABLE:
         return 0.0
@@ -122,9 +171,5 @@ def fuzzy_name_score(query: str, candidate: Any) -> float:
         return 0.0
     if q == c or q in c:
         return 0.9
-    # ⚠ The floor applies HERE too, not only on the title path: ``partial_ratio``
-    # is substring-sensitive by design, so it reports ~0.24 for "pacino" against
-    # "Meryl Streep" — real number, meaningless match. Without the floor a query
-    # would come back carrying every actor in the library.
     score = (fuzz.partial_ratio(q, c) / 100.0) * _RATIO_SCALE
     return score if score >= FUZZY_FLOOR else 0.0

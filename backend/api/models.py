@@ -281,6 +281,13 @@ class SearchResult(BaseModel):
     cast: List[str]
     snippet: str
     voteAverage: Optional[float] = None
+    #: Continuous relevance (SEARCH_IMPROVEMENT_PLAN Phase 2) — additive, so a client that ignores
+    #: it sees exactly the old shape. ⚠ A ranking key, not a percentage: 1.0 is a perfect title
+    #: match, and a bonused row may exceed it.
+    score: Optional[float] = None
+    #: Which fields the query actually hit ("title", "cast", "overview"…). Lets the UI explain WHY
+    #: a row is in the list instead of guessing.
+    matchedFields: List[str] = Field(default_factory=list)
 
 
 class SearchResponse(BaseModel):
@@ -288,6 +295,28 @@ class SearchResponse(BaseModel):
     tmdb: List[SearchResult]
     tmdbKey: bool
     servicesDown: bool
+
+
+# --------------------------------------------------------------------------- unified ranking
+class UnifiedResult(BaseModel):
+    """One row of the ranked search list (SEARCH_IMPROVEMENT_PLAN Phase 2).
+
+    ``score`` is continuous and comparable WITHIN one response only. ``payload`` carries the
+    existing row shape for its ``source`` verbatim — a ``GlobalOwnedRow``, a ``GlobalDiscoveryRow``
+    or a hint dict — so a client that can already render those needs no second renderer.
+    """
+
+    score: float = 0.0
+    #: owned | watchlist | tmdb | hint
+    source: str = "owned"
+    #: movie | show | episode | person | genre | collection
+    kind: str = "movie"
+    matched_fields: List[str] = Field(default_factory=list)
+    #: exact | prefix | fuzzy | containment | token | none
+    match_type: str = "none"
+    #: [start, end) offsets into the DISPLAYED title, for highlighting the matched span.
+    ranges: List[List[int]] = Field(default_factory=list)
+    payload: Dict[str, Any] = Field(default_factory=dict)
 
 
 # --------------------------------------------------------------------------- global search
@@ -356,10 +385,15 @@ class SearchGlobalResponse(BaseModel):
     #: Whether TMDB discovery is configured (False → discovery is empty by design).
     tmdb_key: bool = False
     #: An EXACT owned-title match exists (services.global_search.EXACT_TITLE_SCORE) → the library
-    #: already has what was asked for. ⚠ Clients must NOT gate the DISCOVER section on this: the
-    #: server already decides which discovery rows to send. A second copy of this rule in the UI is
-    #: exactly what hid the external results on 2026-09-13.
+    #: already has what was asked for. ⚠ This is now INFORMATIONAL ONLY (Phase 2): it no longer
+    #: gates discovery, and clients must not re-impose the gate. It is kept because it is part of
+    #: the frozen contract and it is genuinely useful (it says "you already have this").
     strong_match: bool = False
+    #: ⚠ The authoritative ORDER (SEARCH_IMPROVEMENT_PLAN Phase 2). Every source — owned rows,
+    #: acquisition-queue entries, people/genre/collection hints, TMDB discovery — scored on ONE
+    #: continuous scale and interleaved, instead of the four arrays above that each client had to
+    #: merge by hand. The arrays below remain, unchanged, so existing clients keep working.
+    results: List[UnifiedResult] = Field(default_factory=list)
     items: List[GlobalOwnedRow] = Field(default_factory=list)
     people: List[GlobalHint] = Field(default_factory=list)
     #: Owned titles featuring the top Person hint (actor/director drill-down).

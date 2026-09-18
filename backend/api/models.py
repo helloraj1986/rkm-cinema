@@ -330,14 +330,24 @@ class SearchPrefsResponse(BaseModel):
 
     #: True = results are biased toward what this viewer has watched. Default ON.
     personalized: bool = True
+    #: True = queries the string matcher cannot answer are ALSO searched by embeddings
+    #: (SEARCH_IMPROVEMENT_PLAN Phase 6). Default ON; see the plan for why.
+    semantic: bool = True
     #: Who the setting applies to, so the UI can say whose it is.
     profile_name: str = ""
 
 
 class SearchPrefsUpdate(BaseModel):
-    """``POST /api/search/prefs`` — set the one preference search has."""
+    """``POST /api/search/prefs`` — change one or both of search's two preferences.
 
-    personalized: bool = True
+    ⚠ **A field left out means DO NOT TOUCH IT** (`None`), and that is the whole reason they are
+    optional. A model that defaulted them to their DEFAULTS would make the two switches of one
+    profile's search overwrite each other: turning personalization off would silently turn the
+    embedding fallback back on, and the person would have no way to notice.
+    """
+
+    personalized: Optional[bool] = None
+    semantic: Optional[bool] = None
 
 
 # --------------------------------------------------------------------------- global search

@@ -94,6 +94,32 @@ def test_the_store_creates_its_directory(tmp_path):
     assert store.personalized("uid-a") is False
 
 
+# --------------------------------------------------------------------------- the Phase 6 switch
+def test_the_embedding_fallback_defaults_on_and_is_its_own_setting(tmp_path):
+    """⚠ Two switches of one profile's search, stored in ONE row — so each write must leave the
+    other alone. A writer that replaced the row wholesale would silently reset the other preference."""
+    store = _store(tmp_path)
+    assert store.semantic("uid-a") is True          # default for somebody who never chose
+    store.set_personalized("uid-a", False)
+    assert store.semantic("uid-a") is True, "changing one preference reset the other"
+    store.set_semantic("uid-a", False)
+    assert store.semantic("uid-a") is False
+    assert store.personalized("uid-a") is False, "…in both directions"
+    assert store.semantic("uid-b") is True          # per profile, like everything else here
+
+
+def test_a_non_boolean_embedding_setting_falls_back_to_the_default(tmp_path):
+    path = tmp_path / "search_prefs.json"
+    path.write_text(json.dumps({"users": {"uid-a": {"semantic": "yes"}}}), encoding="utf-8")
+    assert SearchPrefsStore(path=path).semantic("uid-a") is True
+
+
+def test_an_unknown_profile_id_is_refused_for_the_embedding_switch_too(tmp_path):
+    store = _store(tmp_path)
+    with pytest.raises(ValueError):
+        store.set_semantic("", False)
+
+
 # --------------------------------------------------------------------------- the routes
 def test_the_routes_read_and_write_this_profiles_preference(tmp_path, signed_in):
     """`signed_in` mints a real session; the store is isolated so no test can touch
@@ -118,6 +144,36 @@ def test_the_endpoint_reports_whose_setting_it_is(tmp_path, signed_in):
     c = signed_in(TestClient(api.main.app))
     with patch.object(route_mod, "SearchPrefsStore", lambda: _store(tmp_path)):
         assert c.get("/api/search/prefs").json()["profile_name"] != ""
+
+
+def test_a_partial_write_leaves_the_other_preference_alone(tmp_path, signed_in):
+    """⚠⚠ THE TRAP THIS ENDPOINT WOULD HAVE SHIPPED WITH. Both switches live in one stored row, and
+    the obvious request model (`personalized: bool = True`) would mean that turning personalization
+    OFF also turned the embedding fallback back ON — silently, and only for people who had chosen."""
+    from api.routes import search_prefs as route_mod
+    c = signed_in(TestClient(api.main.app))
+    with patch.object(route_mod, "SearchPrefsStore", lambda: _store(tmp_path)):
+        # turn the embedding fallback off, then personalization off, and neither may reset
+        assert c.post("/api/search/prefs", json={"semantic": False}).json()["semantic"] is False
+
+        after = c.post("/api/search/prefs", json={"personalized": False}).json()
+        assert after["personalized"] is False
+        assert after["semantic"] is False, "a partial write reset the other preference"
+
+        both = c.post("/api/search/prefs", json={"personalized": True, "semantic": True}).json()
+        assert both["personalized"] is True and both["semantic"] is True
+        assert c.get("/api/search/prefs").json()["semantic"] is True
+
+
+def test_a_request_that_changes_nothing_is_refused_rather_than_answered_200(tmp_path, signed_in):
+    """A body of `{}` is far more likely to be a client sending the wrong key names than an intent —
+    200 would leave that bug invisible."""
+    from api.routes import search_prefs as route_mod
+    c = signed_in(TestClient(api.main.app))
+    with patch.object(route_mod, "SearchPrefsStore", lambda: _store(tmp_path)):
+        resp = c.post("/api/search/prefs", json={})
+        assert resp.status_code == 400
+        assert "preference" in resp.json()["detail"]
 
 
 # --------------------------------------------------------------------------- taste in the ranking

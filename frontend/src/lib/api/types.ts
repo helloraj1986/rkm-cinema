@@ -455,13 +455,17 @@ export interface paths {
         };
         /**
          * Get Search Prefs
-         * @description This viewer's search preferences (the default when they have never chosen).
+         * @description This viewer's search preferences (the defaults when they have never chosen).
          */
         get: operations["get_search_prefs_api_search_prefs_get"];
         put?: never;
         /**
          * Set Search Prefs
-         * @description Switch taste-biased ranking on or off for this profile.
+         * @description Change this profile's search preferences — one of them, or both.
+         *
+         *     ⚠ **A field the request leaves out is NOT changed** (`SearchPrefsUpdate`'s own rule). The body
+         *     names values, never the profile; the response is always the SERVER's stored state, so the UI
+         *     positions its switches from what is stored rather than from what it sent.
          */
         post: operations["set_search_prefs_api_search_prefs_post"];
         delete?: never;
@@ -2241,6 +2245,11 @@ export interface components {
              */
             personalized: boolean;
             /**
+             * Semantic
+             * @default true
+             */
+            semantic: boolean;
+            /**
              * Profile Name
              * @default
              */
@@ -2248,14 +2257,18 @@ export interface components {
         };
         /**
          * SearchPrefsUpdate
-         * @description ``POST /api/search/prefs`` — set the one preference search has.
+         * @description ``POST /api/search/prefs`` — change one or both of search's two preferences.
+         *
+         *     ⚠ **A field left out means DO NOT TOUCH IT** (`None`), and that is the whole reason they are
+         *     optional. A model that defaulted them to their DEFAULTS would make the two switches of one
+         *     profile's search overwrite each other: turning personalization off would silently turn the
+         *     embedding fallback back on, and the person would have no way to notice.
          */
         SearchPrefsUpdate: {
-            /**
-             * Personalized
-             * @default true
-             */
-            personalized: boolean;
+            /** Personalized */
+            personalized?: boolean | null;
+            /** Semantic */
+            semantic?: boolean | null;
         };
         /** SearchResponse */
         SearchResponse: {

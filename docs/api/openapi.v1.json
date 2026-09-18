@@ -620,7 +620,7 @@
     "/api/search/prefs": {
       "get": {
         "summary": "Get Search Prefs",
-        "description": "This viewer's search preferences (the default when they have never chosen).",
+        "description": "This viewer's search preferences (the defaults when they have never chosen).",
         "operationId": "get_search_prefs_api_search_prefs_get",
         "responses": {
           "200": {
@@ -637,7 +637,7 @@
       },
       "post": {
         "summary": "Set Search Prefs",
-        "description": "Switch taste-biased ranking on or off for this profile.",
+        "description": "Change this profile's search preferences \u2014 one of them, or both.\n\n\u26a0 **A field the request leaves out is NOT changed** (`SearchPrefsUpdate`'s own rule). The body\nnames values, never the profile; the response is always the SERVER's stored state, so the UI\npositions its switches from what is stored rather than from what it sent.",
         "operationId": "set_search_prefs_api_search_prefs_post",
         "requestBody": {
           "content": {
@@ -3870,6 +3870,11 @@
             "title": "Personalized",
             "default": true
           },
+          "semantic": {
+            "type": "boolean",
+            "title": "Semantic",
+            "default": true
+          },
           "profile_name": {
             "type": "string",
             "title": "Profile Name",
@@ -3883,14 +3888,31 @@
       "SearchPrefsUpdate": {
         "properties": {
           "personalized": {
-            "type": "boolean",
-            "title": "Personalized",
-            "default": true
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Personalized"
+          },
+          "semantic": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Semantic"
           }
         },
         "type": "object",
         "title": "SearchPrefsUpdate",
-        "description": "``POST /api/search/prefs`` \u2014 set the one preference search has."
+        "description": "``POST /api/search/prefs`` \u2014 change one or both of search's two preferences.\n\n\u26a0 **A field left out means DO NOT TOUCH IT** (`None`), and that is the whole reason they are\noptional. A model that defaulted them to their DEFAULTS would make the two switches of one\nprofile's search overwrite each other: turning personalization off would silently turn the\nembedding fallback back on, and the person would have no way to notice."
       },
       "SearchResponse": {
         "properties": {

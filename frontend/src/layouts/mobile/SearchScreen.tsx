@@ -9,6 +9,7 @@ import {
   artUrl,
   detailsTarget,
   discoveryEntryStub,
+  discoveryToSuggestItem,
   metaLine,
   noMatchesText,
   playTarget,
@@ -20,6 +21,7 @@ import {
   type GlobalOwnedRow,
 } from "../../features/search/lib";
 import { useRecentSearches } from "../../features/search/recent";
+import { SuggestDetailSheet } from "../../features/suggest/SuggestDetailSheet";
 import { useAddToWatchlist } from "../../features/watchlist/api";
 import { useCardActions } from "../../features/watchlist/actions";
 import { toast } from "../../features/watchlist/toast";
@@ -58,6 +60,10 @@ export function SearchScreen() {
   const { data, isFetching, isError } = useGlobalSearch(debounced);
   const [added, setAdded] = useState<Record<number, boolean>>({});
   const [busy, setBusy] = useState<number | null>(null);
+  // The discovered title whose details are open. Local UI state, which is all this
+  // directory is allowed to hold (§3.4) — the payload and the actions come from
+  // `features/search/lib.ts` and the shared sheet.
+  const [detailDisc, setDetailDisc] = useState<GlobalDiscoveryRow | null>(null);
 
   useEffect(() => {
     const t = setTimeout(() => setDebounced(text.trim()), SEARCH_DEBOUNCE_MS);
@@ -211,11 +217,27 @@ export function SearchScreen() {
                   busy={busy === disc.tmdb_id}
                   onAdd={() => addDisc(disc)}
                   onDownload={() => cardActions.download(discoveryEntryStub(disc))}
+                  onOpen={() => setDetailDisc(disc)}
                 />
               ))}
             </section>
           ) : null}
         </div>
+      ) : null}
+
+      {/* ⚠ A discovered title has NO `/library/item/:itemId` page — it is a TMDB id, and the
+          library detail endpoint cannot answer for it. So the phone opens the shared suggest-detail
+          content in a Sheet. Before 2026-09-18 this row was deliberately untappable ("until M4's
+          sheet exists"), which is why tapping it did nothing at all. */}
+      {detailDisc ? (
+        <SuggestDetailSheet
+          item={discoveryToSuggestItem(detailDisc, inWatchlist(detailDisc))}
+          busyAdd={busy === detailDisc.tmdb_id}
+          busyDownload={false}
+          onAdd={() => addDisc(detailDisc)}
+          onDownload={() => cardActions.download(discoveryEntryStub(detailDisc))}
+          onClose={() => setDetailDisc(null)}
+        />
       ) : null}
     </div>
   );
@@ -356,9 +378,10 @@ function HintRowM({ hint, onGo }: { hint: GlobalHint; onGo: (path: string) => vo
  * is: "Add" while it is only on the watchlist, "Download" once the server knows about it. Both go
  * through the SAME mutation the desktop cards use, so "Add" cannot mean two different things.
  *
- * ⚠ Deliberately NOT tappable as a row: on the desktop, tapping a discovery row opens
- * `SuggestDetailModal` — a centred `Dialog`, which is the thing mobile replaces with a sheet. Until
- * M4's sheet exists, the honest phone answer is the action, not a desktop modal on a phone.
+ * ⚠ TWO ZONES, like the owned row above it (2026-09-18): the body opens the title's details, the
+ * trailing pill acts on it. This row used to be deliberately inert — "until M4's sheet exists" —
+ * which left a phone user able to ADD a film but not to look at it. The desktop has always opened
+ * its detail on row-tap, so this restores parity rather than inventing a behaviour.
  */
 function DiscoveryRowM({
   disc,
@@ -366,15 +389,24 @@ function DiscoveryRowM({
   busy,
   onAdd,
   onDownload,
+  onOpen,
 }: {
   disc: GlobalDiscoveryRow;
   added: boolean;
   busy: boolean;
   onAdd: () => void;
   onDownload: () => void;
+  onOpen: () => void;
 }) {
   return (
     <div className="flex items-center gap-3 rounded-xl border border-white/[.05] bg-surface/60 p-2.5">
+      <button
+        type="button"
+        onClick={onOpen}
+        data-testid="discovery-open"
+        aria-label={`Details for ${disc.title}`}
+        className="flex min-w-0 flex-1 items-center gap-3 text-left"
+      >
       {disc.poster ? (
         <img
           src={disc.poster}
@@ -399,6 +431,7 @@ function DiscoveryRowM({
           {added ? " · in watchlist" : " · not in your library"}
         </span>
       </span>
+      </button>
       {added ? (
         <button
           type="button"

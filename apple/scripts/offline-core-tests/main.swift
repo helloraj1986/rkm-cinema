@@ -1244,6 +1244,96 @@ checkEqual(launch.next(after: offline), .unreachable, "two failures is the whole
 launch.reset()
 checkEqual(launch.next(after: refused), .cached, "…and the next launch gets its cached attempt back")
 
+// MARK: - The app-owned shell's rules (ADR-0012 D7/D8 · plan §0c, phase S1)
+
+// ⚠ Why these are here: the shell is a DOCUMENT plus the assets it names, kept by the app and handed to
+// the page — so "which assets", "where do their URLs point" and "is the stored copy usable" are three
+// decisions that decide whether a cold launch with no network paints the app, paints an empty page, or
+// paints the WRONG app. Each rule below is reverted, one at a time, by `check-offline-core.py --falsify`.
+
+section("shell store")
+
+let shellDocument = """
+<!doctype html><html><head>
+<link rel="stylesheet" crossorigin href="/assets/index-DbZL-5sd.css">
+<script type="module" crossorigin src="/assets/index-UZQ_BGxK.js"></script>
+<link rel="icon" href="/favicon.svg">
+<link href="https://fonts.googleapis.com/css2?family=Inter" rel="stylesheet">
+</head><body><div id="root"></div></body></html>
+"""
+
+checkEqual(ShellStoreRules.requiredAssets(document: shellDocument),
+           ["/assets/index-DbZL-5sd.css", "/assets/index-UZQ_BGxK.js"],
+           "the document's own asset references, in document order")
+checkEqual(ShellStoreRules.requiredAssets(document: shellDocument + shellDocument).count, 2,
+           "an asset named twice is fetched once")
+checkEqual(ShellStoreRules.requiredAssets(document: shellDocument).contains("/favicon.svg"), false,
+           "a path outside /assets/ is not stored")
+checkEqual(ShellStoreRules.requiredAssets(document: shellDocument,
+                                         javascriptBodies: ["var p=\"/assets/chunk-9.js\";"]),
+           ["/assets/index-DbZL-5sd.css", "/assets/index-UZQ_BGxK.js", "/assets/chunk-9.js"],
+           "an asset named INSIDE the bundle is collected too (the day a build splits)")
+
+for unsafe in ["/assets/../secret.js", "/assets/sub/dir.js", "/assets/", "/assets/x.txt", "/assets/.js",
+               "/assets/index%2F..%2Fx.js"] {
+    checkEqual(ShellStoreRules.isStorableAssetPath(unsafe), false, "refuses \(unsafe) as a file name")
+}
+checkEqual(ShellStoreRules.isStorableAssetPath("/assets/index-UZQ_BGxK.js"), true,
+           "a plain hashed bundle is a storable name")
+
+let shellRewritten = ShellStoreRules.rewritten(document: shellDocument, scheme: "rkm-asset")
+check(shellRewritten.contains("\"rkm-asset://app/assets/index-UZQ_BGxK.js\""),
+      "the script reference is pointed at the app")
+check(shellRewritten.contains("\"rkm-asset://app/assets/index-DbZL-5sd.css\""),
+      "and so is the stylesheet")
+check(shellRewritten.contains("https://fonts.googleapis.com/css2?family=Inter"),
+      "an external url is left alone")
+checkEqual(ShellStoreRules.rewritten(document: shellRewritten, scheme: "rkm-asset"), shellRewritten,
+           "⚠ the rewrite is idempotent — storing the rewritten document is safe")
+
+let mixedDocument = "<script src=\"/assets/index-UZQ_BGxK.js\"></script><p>see /assets/index-UZQ_BGxK.js</p>"
+let mixedRewritten = ShellStoreRules.rewritten(document: mixedDocument, scheme: "rkm-asset")
+check(mixedRewritten.contains("<p>see /assets/index-UZQ_BGxK.js</p>"),
+      "⚠ a bare mention in prose is NOT a reference")
+check(mixedRewritten.contains("\"rkm-asset://app/assets/index-UZQ_BGxK.js\""),
+      "…while the quoted reference still is")
+
+let shellNeeds = ["/assets/index-UZQ_BGxK.js", "/assets/index-DbZL-5sd.css"]
+let shellStored = ShellStoreManifest(
+    serverAddress: "http://rkm-hp:8124",
+    documentBytes: 1623,
+    assets: shellNeeds.map { ShellStoredAsset(path: $0, bytes: 10) },
+    storedAt: Date(timeIntervalSince1970: 1_758_000_000))
+
+checkEqual(ShellStoreRules.choice(manifest: shellStored, requiredAssets: shellNeeds,
+                                  serverAddress: "http://rkm-hp:8124"), .storedShell,
+           "a complete store for THIS server is used")
+checkEqual(ShellStoreRules.choice(manifest: nil, requiredAssets: shellNeeds,
+                                  serverAddress: "http://rkm-hp:8124"), .cacheFirstURL,
+           "no store at all degrades to the older behaviour")
+checkEqual(ShellStoreRules.choice(manifest: shellStored, requiredAssets: shellNeeds,
+                                  serverAddress: "http://other:8124"), .cacheFirstURL,
+           "⚠ a store fetched from ANOTHER server is dropped, never rendered")
+checkEqual(ShellStoreRules.choice(manifest: shellStored,
+                                  requiredAssets: shellNeeds + ["/assets/missing.js"],
+                                  serverAddress: "http://rkm-hp:8124"), .cacheFirstURL,
+           "⚠ a document whose bundle is missing is NOT usable — that is the blank screen this fixes")
+checkEqual(ShellStoreRules.choice(manifest: ShellStoreManifest(version: 99,
+                                                               serverAddress: "http://rkm-hp:8124",
+                                                               documentBytes: 1623,
+                                                               assets: shellStored.assets,
+                                                               storedAt: shellStored.storedAt),
+                                  requiredAssets: shellNeeds,
+                                  serverAddress: "http://rkm-hp:8124"), .cacheFirstURL,
+           "a manifest from a NEWER build is refused, not decoded")
+checkEqual(ShellStoreRules.choice(manifest: ShellStoreManifest(serverAddress: "http://rkm-hp:8124",
+                                                               documentBytes: 0,
+                                                               assets: shellStored.assets,
+                                                               storedAt: shellStored.storedAt),
+                                  requiredAssets: shellNeeds,
+                                  serverAddress: "http://rkm-hp:8124"), .cacheFirstURL,
+           "an empty stored document is not a shell")
+
 // MARK: - Verdict
 
 print("")

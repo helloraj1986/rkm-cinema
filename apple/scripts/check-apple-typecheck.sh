@@ -76,7 +76,7 @@ done
 # synthetic import and no filtered error. ⚠ `WebShellModel.swift`, which CARRIES THE LADDER OUT, cannot be
 # checked here — SwiftUI and WebKit are not stubbable in this scaffold — so that half is the Mac round's
 # business, and saying so is the reason files are listed one at a time.
-for name in ShellLaunchPlan; do
+for name in ShellLaunchPlan ShellStorePlan; do
   if [ ! -f "$SHELL_SRC/$name.swift" ]; then
     echo "missing source: $SHELL_SRC/$name.swift"; exit 3
   fi

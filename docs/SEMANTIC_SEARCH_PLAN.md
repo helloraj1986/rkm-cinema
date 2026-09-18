@@ -73,6 +73,35 @@ Run in this sandbox on **CPU, Python 3.11.15, numpy 2.4.6**, corpus = 2 000 rows
 | `model2vec` + `potion-retrieval-32M` | 512 | same | ~35 s | 0.47 s | 2.9 ms / 2 ms | 349 MB |
 | `sentence-transformers` + MiniLM | — | ⚠ **torch** | — | — | — | — | **rejected on sight**: the plan's own suggestion, and the one dependency this box must not gain (≈2 GB image, CPU-only Windows host). |
 
+### §3.0 The candidate this plan first MISSED: `fastembed` + `bge-small-en-v1.5` (ONNX, no torch)
+
+§3's first draft never measured it — and it is the obvious middle option (a real sentence-transformer
+served by ONNX runtime, no torch), so leaving it out made *"why not bge-small?"* a question the next
+session would have to reopen. It was measured afterwards, on the same 6-document probe corpus, by an
+independent run in this sandbox:
+
+| | `potion-base-8M` | `potion-base-32M` | **`BAAI/bge-small-en-v1.5`** |
+|---|---|---|---|
+| dims | 256 | 512 | 384 |
+| embed 500 texts | **0.26 s** (0.52 ms/text) | 0.26 s | **67.9 s — 135.7 ms/text, 260× slower** |
+| per query | **0.24 ms** | 0.38 ms | **78.7 ms — 330× slower** |
+| peak RSS | **129 MB** | 329 MB | **733 MB (5.7×)** |
+| `movies like Inception` | Inception 0.43, Grand Weekend 0.30 | Inception 0.43, … | Inception 0.72, Wild Planet 0.48 |
+| `something with a twist ending` | **Inception 0.46** | **Inception 0.47** | Letters to Notting Hill 0.59, Inception 0.58 |
+| `feel-good comedy for the family` | **Grand Weekend 0.60** | **Grand Weekend 0.60** | **Grand Weekend 0.70**, Toybox 0.53, Letters 0.51 |
+
+**Read honestly:** bge-small ranks about the same as the 8M static model on two of the three queries
+and slightly better on the third (for the family query its #2/#3 are children's and comedy titles,
+where the 8M model reaches for whatever is nearest). Its scores are also better separated — 0.72
+against 0.48, where model2vec compresses everything into 0.26–0.46 — but the TIER in §4.4 is what
+turns a similarity into a rank, so separation is not something this design needs.
+
+Against that: **135 ms per text means a 2 000-title library takes about four and a half minutes to
+index on this box**, against 0.55 s for `potion-base-8M`, and 733 MB resident against 130 MB. On a
+CPU-only home server the fallback has to be too cheap to notice; bge-small is not — the first
+conversational query after a restart would sit there for minutes. **`potion-base-8M` stays, and this
+comparison exists so it does not get relitigated.**
+
 ⚠ The 32M rows' "cold load" includes their first-call download, so it is not a like-for-like load
 time; their query/RSS numbers are the honest comparison, and they LOSE on both.
 

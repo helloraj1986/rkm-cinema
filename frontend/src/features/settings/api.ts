@@ -36,7 +36,9 @@ export function useSearchPrefs() {
 export function useSetSearchPrefs() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (personalized: boolean) => api.setSearchPrefs(personalized),
+    // ⚠ A PATCH, not a whole-preference write: search has two switches now, and sending both would
+    // mean changing one silently rewrote the other (the server treats a missing field as "leave it").
+    mutationFn: (patch: { personalized?: boolean; semantic?: boolean }) => api.setSearchPrefs(patch),
     onSuccess: (data) => {
       // ⚠ Write the SERVER's answer into the cache rather than the value we sent:
       // if the two ever disagree, the screen shows what is actually stored.

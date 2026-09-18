@@ -10,6 +10,20 @@ WORKDIR /app
 COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
+# Semantic search (SEARCH_IMPROVEMENT_PLAN Phase 6): BAKE the embedding model into the image.
+#
+# ⚠ Two reasons, both about the person waiting for a search: a container that fetched the model on
+# its first conversational query would stall that query behind ~59 MB of download, and a box whose
+# outbound network is down (or rate-limited by a proxy) would lose the feature entirely. The model
+# is 59 MB of weights + a tokenizer, deliberately the smallest one that measured well enough
+# (plan §3), and HF_HOME keeps it inside the image rather than in a runtime-writable cache.
+#
+# ⚠ The failure of this RUN is a BUILD failure, on purpose: a silent skip would ship an image whose
+# semantic search quietly does nothing.
+ENV HF_HOME=/opt/rkm-models
+RUN python -c "from model2vec import StaticModel; StaticModel.from_pretrained('minishlab/potion-base-8M')" \
+    && du -sh /opt/rkm-models
+
 COPY api /app/api
 COPY services /app/services
 COPY domain /app/domain

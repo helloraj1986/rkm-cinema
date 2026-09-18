@@ -710,9 +710,12 @@ export interface GlobalSearchShape {
 }
 
 /** GET/POST /api/search/prefs — how THIS profile wants search ranked
- *  (SEARCH_IMPROVEMENT_PLAN Phase 5). Per profile, never per account. */
+ *  (SEARCH_IMPROVEMENT_PLAN Phase 5, Phase 6). Per profile, never per account. */
 export interface SearchPrefsShape {
   personalized: boolean;
+  /** ⚠ Phase 6: whether a query the string matcher cannot answer is ALSO searched by MEANING.
+   *  Bounded by construction — it only runs when nothing matched — and per profile. */
+  semantic: boolean;
   profile_name: string;
 }
 
@@ -1247,9 +1250,11 @@ export const api = {
   /** This profile's search preferences (Phase 5). */
   getSearchPrefs: () => getJson<SearchPrefsShape>("/search/prefs"),
   /** Set this profile's search preferences. ⚠ The profile is taken from the
-   *  session server-side — the body can never name whose setting it is. */
-  setSearchPrefs: (personalized: boolean) =>
-    postJson<SearchPrefsShape>("/search/prefs", { personalized }),
+   *  session server-side — the body can never name whose setting it is.
+   *  ⚠ A field left OUT is not changed (the server's own rule), so the two
+   *  switches of one profile's search cannot overwrite each other. */
+  setSearchPrefs: (patch: { personalized?: boolean; semantic?: boolean }) =>
+    postJson<SearchPrefsShape>("/search/prefs", patch),
   /** TMDB discover by taste filters. */
   suggest: (filters: SuggestFilters) => postJson<SuggestShape>("/suggest", filters),
   /** Full TMDB + IMDb detail for one suggested title (card-click modal). */

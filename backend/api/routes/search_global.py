@@ -55,6 +55,13 @@ from services.library import build_library_service
 from services.search.affinity import Affinity, MAX_HISTORY, build_affinity, empty_affinity
 from services.search.query_parser import ParsedQuery, best_person_match, parse_query
 from services.search.ranking import rank_all
+from services.search.semantic import (
+    available as semantic_available,
+    cached_index_rows,
+    index_owner,
+    semantic_hits,
+    should_use_semantic,
+)
 from services.search_prefs import SearchPrefsStore
 from services.tmdb import TMDBService
 from services.watchlist import WatchlistService
@@ -265,10 +272,99 @@ def search_global(q: str = Query(default="", min_length=1)):
             # Degrade to library-only, but never silently (api log shows why).
             logger.error("Live TMDB global search failed for %r: %s", query, e)
 
-    payload["results"] = _ranked(parsed, owned_raw, watchlist_raw, payload, hints,
-                                 affinity=_taste(cfg, service))
+    affinity = _taste(cfg, service)
+    ranked = _ranked(parsed, owned_raw, watchlist_raw, payload, hints, affinity=affinity)
+    # Phase 6: when the string matcher has visibly failed, let the embeddings look for something
+    # CLOSE rather than something spelled alike. ⚠ Evaluated against the LEXICAL list, before any
+    # semantic row exists — that is what makes the tier invariant a fact about the response.
+    semantic = _semantic_fallback(service, parsed.scoring_query, ranked)
+    if semantic:
+        ranked = _ranked(parsed, owned_raw, watchlist_raw, payload, hints, affinity=affinity,
+                         semantic=semantic)
+        _append_semantic_items(payload, owned_raw, semantic)
+
+    payload["results"] = ranked
     _attach_spans(payload)
     return SearchGlobalResponse(**payload)
+
+
+#: The ranked SOURCES whose score answers "did the string matcher find what he typed?" — the library
+#: (``owned``) and the TMDB candidates (``tmdb``).
+#:
+#: ⚠⚠ **Deliberately NOT the watchlist or the navigation hints**, and this was MEASURED rather than
+#: reasoned: his acquisition queue holds 471 rows as it stands, and against the conversational query
+#: *"something with a twist ending"* two of them FUZZY-match at **0.742** — *"Teach You a Lesson"* and
+#: *"A Toxic Love Story"*. That is a higher score than a containment hit (0.65–0.80) and it is a false
+#: positive of exactly the kind `fuzzy.py`'s own guards exist to limit. Letting an unchecked queue row
+#: decide would mean a mood query never reaches the embeddings on the day the queue happens to contain
+#: something vaguely similar — the feature would look like it "sometimes does nothing".
+SEMANTIC_TRIGGER_SOURCES = ("owned", "tmdb")
+
+
+def _lexical_top(ranked: list[UnifiedResult]) -> float:
+    """The best LEXICAL relevance in the list, over the sources that mean "a title matched".
+
+    ⚠ Called BEFORE any semantic row is added (they arrive as source ``owned``), so this cannot read
+    its own output back and suppress itself.
+    """
+    return max((row.score for row in ranked if row.source in SEMANTIC_TRIGGER_SOURCES), default=0.0)
+
+
+def _semantic_fallback(service, query: str, ranked: list[UnifiedResult]) -> list[tuple[dict, float]]:
+    """Embedding neighbours for a query the string matcher could not answer (Phase 6).
+
+    ⚠⚠ **THE ORDER OF THE CHECKS IS THE COST MODEL.** The preference and the trigger are free;
+    ``available()`` loads a ~130 MB model on its first call; the row fetch is a Jellyfin request
+    carrying every synopsis. So they are asked in that order and each is only reached when the one
+    before it said yes — a strong query, or a switched-off preference, costs a dictionary lookup.
+
+    Returns ``[(row, cosine)]`` ready for ``rank_all(semantic=…)``, or ``[]`` for the overwhelmingly
+    common case where the string matcher already answered the question.
+    """
+    if service is None:
+        return []
+    ctx = current_session()
+    profile_id = ctx.profile_id() if ctx is not None else ""
+    try:
+        if not SearchPrefsStore().semantic(profile_id):
+            return []
+    except Exception as e:  # noqa: BLE001
+        # An unreadable preference file must not switch a feature ON, so this fails closed — the same
+        # direction `_taste` chooses, for the same reason.
+        logger.warning("search preferences unavailable (%s) — no embedding fallback", e)
+        return []
+
+    if not should_use_semantic(query, _lexical_top(ranked)):
+        return []
+    if not semantic_available():
+        return []
+
+    owner = index_owner(profile_id)
+    rows = cached_index_rows(owner, lambda: service.index_rows() or [])
+    hits = semantic_hits(owner, query, rows)
+    if hits:
+        logger.info("embedding fallback for %r: %d row(s) from %d indexed titles", query, len(hits), len(rows))
+    return hits
+
+
+def _append_semantic_items(payload: dict, owned: list[dict], semantic) -> None:
+    """Add the embedding neighbours to the GROUPED array the screens actually render.
+
+    ⚠ Both search surfaces render ``items`` (and `discovery`), not the ranked ``results`` list —
+    `features/search/GlobalSearch.tsx` and `layouts/mobile/SearchScreen.tsx` iterate it. A hit that
+    reaches only ``results`` is invisible on every screen the app has, which is why this exists at all.
+
+    ⚠ Deduped by item id against the rows already in the group, because a *weak* lexical row can be
+    the same title as the strongest neighbour.
+    """
+    known = {str(row.get("id") or row.get("item_id") or "") for row in owned or []}
+    known |= {str(item.id) for item in payload["items"]}
+    for row, _cos in semantic:
+        item_id = str(row.get("id") or row.get("item_id") or "")
+        if not item_id or item_id in known:
+            continue
+        known.add(item_id)
+        payload["items"].append(GlobalOwnedRow(**_to_owned(row)))
 
 
 def _genre_names(genre_ids, names: dict) -> list[str]:
@@ -364,7 +460,7 @@ def _person_for(parsed: ParsedQuery, people: list[dict]) -> str:
 
 def _ranked(parsed: ParsedQuery, owned_raw: list[dict], watchlist_raw: list[dict],
             payload: dict, hints: dict[str, list[dict]],
-            affinity=None) -> list[UnifiedResult]:
+            affinity=None, semantic=()) -> list[UnifiedResult]:
     """One ranked list across every source (SEARCH_IMPROVEMENT_PLAN Phase 2).
 
     ⚠ Discovery rows are passed as the MODELS already built for ``payload`` (so the
@@ -374,6 +470,9 @@ def _ranked(parsed: ParsedQuery, owned_raw: list[dict], watchlist_raw: list[dict
     have different inputs (the array is deduped against owned only, the ranked list
     also skips anything the queue already covers) and a single shared pass would
     have to lie about one of them.
+
+    ``semantic`` (Phase 6) is passed straight through to ``rank_all``: ``(row, cosine)`` pairs, only
+    ever supplied when the string matcher failed — see :func:`_semantic_fallback`.
     """
     try:
         ranked = rank_all(
@@ -385,6 +484,7 @@ def _ranked(parsed: ParsedQuery, owned_raw: list[dict], watchlist_raw: list[dict
             query_year=parsed.year,
             query_year_range=parsed.year_range,
             affinity=affinity,
+            semantic=semantic,
         )
     except Exception as e:  # noqa: BLE001
         # ⚠ Ranking is additive: if it fails, the response still carries the

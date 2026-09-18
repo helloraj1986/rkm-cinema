@@ -43,6 +43,11 @@ DEFAULT_DIR = "/data/rkm"
 #: every reader asks ``personalized()``, and only this constant decides.
 DEFAULT_PERSONALIZED = True
 
+#: The default for the EMBEDDING fallback (Phase 6). ON, for the argument Phase 5 made and one more:
+#: it is bounded by construction — the route only runs it when the string matcher has failed — and a
+#: feature nobody can find is a feature nobody has. The switch is the way out, and it is per profile.
+DEFAULT_SEMANTIC = True
+
 
 def default_store_path(watchlist_path: Optional[str] = None) -> Path:
     """The store path, derived from the watchlist's own location."""
@@ -111,6 +116,17 @@ class SearchPrefsStore:
         value = entry.get("personalized")
         return DEFAULT_PERSONALIZED if not isinstance(value, bool) else value
 
+    def semantic(self, profile_id: str) -> bool:
+        """Whether this viewer wants the embedding fallback (Phase 6). Defaults to ON.
+
+        ⚠ Same shape as :meth:`personalized` on purpose, including the "missing row means the
+        DEFAULT, not off" rule: storing only the people who turned it off would invert on the day
+        somebody reads the file.
+        """
+        entry = self.row(profile_id)
+        value = entry.get("semantic")
+        return DEFAULT_SEMANTIC if not isinstance(value, bool) else value
+
     # ------------------------------------------------------------------ writing
     def _write(self, data: dict) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -134,6 +150,27 @@ class SearchPrefsStore:
             users = data.setdefault("users", {})
             entry = dict(users.get(key) or {})
             entry["personalized"] = bool(enabled)
+            entry["updated"] = _now()
+            users[key] = entry
+            data["updated"] = _now()
+            self._write(data)
+            return entry
+
+    def set_semantic(self, profile_id: str, enabled: bool) -> dict:
+        """Store one viewer's embedding-fallback choice and return their fresh row.
+
+        ⚠ It writes into the SAME row as :meth:`set_personalized` (they are two settings of one
+        profile's search), which is why both copy the row before editing: a writer that replaced the
+        row wholesale would silently clear the other preference.
+        """
+        key = str(profile_id or "")
+        if not key:
+            raise ValueError("search preferences need a profile id")
+        with self._lock:
+            data = json.loads(json.dumps(self.load()))
+            users = data.setdefault("users", {})
+            entry = dict(users.get(key) or {})
+            entry["semantic"] = bool(enabled)
             entry["updated"] = _now()
             users[key] = entry
             data["updated"] = _now()

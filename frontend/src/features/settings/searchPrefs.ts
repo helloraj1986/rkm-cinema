@@ -35,3 +35,37 @@ export function personalizationCopy(enabled: boolean, profileName = ""): Persona
     stateWord: enabled ? "On" : "Off",
   };
 }
+
+/**
+ * The copy for the MEANING-based fallback switch (SEARCH_IMPROVEMENT_PLAN Phase 6).
+ *
+ * ⚠ What each clause has to get right, because a person decides with it:
+ *  - **"when nothing matches"** is the bound, and it is the honest promise: this never reorders a
+ *    search that already worked, so turning it on cannot make a good result worse;
+ *  - **"by meaning"** is what it actually does — the library's own descriptions are compared to
+ *    what was typed — and it is why the title list it returns can contain films whose titles share
+ *    no words with the query;
+ *  - **"always below a real title match"** is the ranking guarantee a person can hold the app to
+ *    (see `SEMANTIC_TRIGGER_SCORE` in the backend). Without it the feature reads as "search
+ *    sometimes shows me unrelated films".
+ */
+export interface SemanticCopy {
+  title: string;
+  description: string;
+  switchLabel: string;
+  stateWord: string;
+}
+
+export function semanticCopy(enabled: boolean, profileName = ""): SemanticCopy {
+  const who = profileName ? ` for ${profileName}` : "";
+  return {
+    title: "Search by meaning",
+    description: enabled
+      ? `When nothing in your library matches the words you typed, this profile also searches by MEANING${who} — so "something with a twist ending" can find films whose descriptions are close, even though no title says that. It only runs when the ordinary search finds nothing, and its results always rank below a real title match.`
+      : "Search matches titles by name only. A query that describes a mood rather than naming a film will return nothing, for anyone using this profile.",
+    switchLabel: enabled
+      ? "Turn search by meaning off for this profile"
+      : "Turn search by meaning on for this profile",
+    stateWord: enabled ? "On" : "Off",
+  };
+}

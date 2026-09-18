@@ -57,6 +57,35 @@ went straight to *"Can't reach this server"*. ADR-0012 is that question, asked i
 
 ---
 
+## 0c. ⭐ The measured shape (2026-09-19), and the phases that build it
+
+§0b was written before the device had a say. It has now: the ladder shipped on `feat/offline-cold-launch`
+DOES load the document from the device with the Wi-Fi off, and the app still painted nothing — because
+WebKit refuses to store a response larger than roughly 5% of its disk cache, so the ~1.1 MB
+`/assets/index-*.js` is not there to come back. The spike — ⚠ **a branch-only doc:
+`apple/SPIKE_SHELL_ORIGIN.md` on `spike/shell-origin`, read it with
+`git show spike/shell-origin:apple/SPIKE_SHELL_ORIGIN.md`** — then measured what the replacement needs, and
+all three answers came back **yes**:
+
+| Measured | Consequence |
+|---|---|
+| `loadHTMLString(html, baseURL: <server>)` keeps the **server's origin** (`/api/auth/me` → 200, cookie sent) | The app can hand the page its own copy of the document with **no CORS, no cookie work, no api change** |
+| a **module script** loads from a `WKURLSchemeHandler` | The app's own code can come from the app's container (E1's media result does not generalise) |
+| that document **shares the app's `localStorage`** (`lsKeys: 4`, `lsSeesQueryCache: true`) | A1's persisted rows come back with it — the offline shell carries the library, not an empty app |
+
+⇒ **The phases** (ADR-0012 **D7/D8**):
+
+| # | Work | Gate | Needs a round? |
+|---|---|---|---|
+| **S1** | **The store's rules, pure**: which asset URLs a document names, the rewrite to `rkm-asset://…`, the manifest and its freshness, and what the offline step does when the store is empty | `check-offline-core.py --falsify` — every rule reverted one at a time | **No** — the sandbox runs it |
+| **S2** | **The native half**: fetch the document + assets into `Application Support/ShellCache/` on a successful live load; serve them from a real scheme handler; make the `cached` step load the stored document | typecheck + the round below | one Mac round |
+| **S3** | **The device test**: Wi-Fi off, force-quit, relaunch — the app should PAINT, with its rows | his phone | his phone |
+
+⚠ S4 is deliberately not written: the poster/subtitle capture into a downloaded title's bundle (ADR-0010
+limit 1) is a separate concern, and §5b's packaging/transfer pipeline still needs its own measurement.
+
+---
+
 ## 1. Decisions to make first (write these as an ADR before coding)
 
 Per your own convention (§20): a load-bearing, expensive-to-reverse choice gets an ADR. This one qualifies — it changes the "one live SPA, no bundled UI, every deploy reaches the phone instantly" invariant in §17.1.

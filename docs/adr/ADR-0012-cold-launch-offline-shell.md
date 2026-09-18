@@ -7,7 +7,12 @@
   before relying on D3.** The ladder works exactly as designed (a cold launch with no network DOES load the
   document from the device), but the app still does not paint, because the shell's ~1.1 MB script does not
   come back with it. ⚠ D3's claim that the HTTP cache is the shell store is **contradicted by that
-  measurement** — see the section, and the corrected decision below it. **This branch is NOT merged.**
+  measurement**.
+- ⭐ **The replacement shape was then measured, not chosen** — `apple/SPIKE_SHELL_ORIGIN.md` (his iPhone,
+  2026-09-19) answers all three questions, and the last of them decides whether the offline shell carries
+  the library or an empty app: the app can hand the page its own copy of the document **and keep the
+  server's origin, its cookies, its `/api/*` and its `localStorage`**. See **D7/D8** below. ⚠ **This branch
+  is still NOT merged**, and the ladder in it is unchanged: only what the `cached` step LOADS changes.
 - **Date:** 2026-09-19
 - **Phase:** `feat/offline-cold-launch` (plan: `docs/OFFLINE_SHELL_PLAN.md`, re-scoped — see the note at
   the end of this file)
@@ -82,11 +87,12 @@ mechanism for "how the app gets its own UI offline" (the WebView's HTTP cache). 
 >
 > **⇒ A scheme handler (or an equivalent app-owned store) IS required, as `OFFLINE_SHELL_PLAN.md` §2
 > phase A originally said.** The HTTP cache is a shell store for a SMALL document, not for the app.
-> The next step is a spike to answer the two questions that decide its shape — (1) does
-> `loadHTMLString(_:baseURL:)` with the *server's* URL give the page the server's origin (so the session
-> cookie, `/api/*` and A1's persisted query cache keep working), and (2) does a module script load from a
-> `WKURLSchemeHandler` (E1 measured custom schemes out for **media**, not for scripts). ⚠ Do not build the
-> machinery before that round answers them.
+> ⭐ **And the shape of it was then MEASURED rather than chosen** — `apple/SPIKE_SHELL_ORIGIN.md`, run on
+> his iPhone 2026-09-19: `loadHTMLString(_:baseURL:)` with the server's URL **does** give the page the
+> server's origin (`/api/auth/me` → 200, so the session cookie travelled), a **module script does load
+> from a `WKURLSchemeHandler`**, and — the fact that decides whether the offline shell carries the library
+> or an empty app — **a document handed over this way shares the app's own `localStorage`**
+> (`lsKeys: 4`, `lsSeesQueryCache: true`). See **D7**.
 
 **D4 — per launch, reset by `load()`; and `reload()` now goes through `load()`.** It previously called
 `webView.reload()`, which **re-sends the last request** — so a reload of a cached-booted page would re-read
@@ -101,6 +107,29 @@ This rule already existed as an early return; it now lives in the ladder, where 
 its own offline state from its own failed `/api/*` calls and B4's auth guard (`guardDecision` reads
 *unreachable* as *offline*, not as *signed out*). Telling it would be a seam-2 contract change requiring
 both sides to move — for a fact it does not need.
+
+**D7 — the shell is APP-OWNED: the app keeps the document and its assets, and hands the document to the
+page itself.** ⭐ This is the design D3 said was unnecessary and the device then showed is necessary, and
+it is cheap because of three measured facts (`apple/SPIKE_SHELL_ORIGIN.md`):
+
+1. the app fetches the document (and the assets it names) into `Application Support/ShellCache/` — the
+   same durable directory decision as the offline downloads, and for the same reason (`Caches/` is
+   purgeable by iOS, which is exactly what loses a WebView cache entry);
+2. on the offline step it loads **that** document with `loadHTMLString(html, baseURL: address.url)` —
+   ⭐ measured to keep the SERVER's origin, so the session cookie, same-origin `/api/*` **and A1's
+   origin-keyed `localStorage` snapshot** all keep working. **That is why the origin does not move and no
+   CORS, cookie or api work is needed.**
+3. the document's asset URLs are rewritten to a custom scheme (`rkm-asset://…`) served by a
+   `WKURLSchemeHandler` from that directory — measured to carry **module scripts**, which is the one thing
+   E1's media result did not tell us.
+
+**D8 — the store is refreshed on every successful LIVE load, and the offline step never invents content.**
+A live load is already the moment the app knows the deployed shell; the document is small (1.6 KB) and the
+assets are content-hashed, so a refresh is a diff, not a transfer. ⚠ The stored set is only ever used as a
+**pair** — a document and the assets it names, fetched together — so a half-updated store cannot paint an
+app whose script does not match its document, which is the failure `/assets/ =404` exists to make loud.
+⚠ And when the store has nothing (a device that has never been online), the offline step falls back to the
+plain cache-first URL load this ADR originally shipped — **degrade, never crash**.
 
 ## What this deliberately does NOT change
 
@@ -168,7 +197,9 @@ round) to answer the two questions that decide its shape:
 2. does a **module script** load from a `WKURLSchemeHandler`? (E1 measured custom schemes out for **media**;
    scripts are a different risk profile, and CORS is required for module scripts.)
 
-Build nothing bigger until that round answers both.
+**✅ That round ran on 2026-09-19 and answered BOTH — plus a third question the answer raised — and it is
+recorded verbatim in `apple/SPIKE_SHELL_ORIGIN.md` §Result: YES, YES, and `lsSeesQueryCache: true`.**
+The design it settles is **D7/D8**.
 
 ⚠ `WebShellModel.swift` **cannot be typechecked in this sandbox** (SwiftUI/WebKit are not stubbable in the
 committed scaffold), so the file that carries the ladder out is compile-checked for the first time on his

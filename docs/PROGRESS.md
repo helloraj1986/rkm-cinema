@@ -114,11 +114,38 @@ a durable copy of the document + its assets in `Application Support/`, loaded wi
 URL so the page's origin (and therefore the session cookie, `/api/*`, and A1's persisted query cache) does
 not move. ⚠ ADR-0012 D3 must be corrected in that ADR, not silently.
 
+### ⭐ THE SPIKE ANSWERED IT (2026-09-19, same session) — the fix is the CHEAP shape
+
+Throwaway branch **`spike/shell-origin`** (⚠ NOT to be merged; the record is `apple/SPIKE_SHELL_ORIGIN.md`
+and the tool is `tools/check_spike_shell.py`). Run on his iPhone from Xcode's console — ⚠ **the debug
+overlay CLIPS every line it shows, so it could not carry the answer; the console could.**
+
+| Question | Answer |
+|---|---|
+| does `loadHTMLString(html, baseURL: <server>)` keep the SERVER's origin? | ⭐ **YES** — `origin` is the server's exactly, `/api/status` 200 and **`/api/auth/me` 200** (the cookie travelled; `cookieChars: 0` is just HttpOnly) |
+| does a MODULE SCRIPT load from a `WKURLSchemeHandler`? | ⭐ **YES** — `serving /probe.js as text/javascript, 106 B`, and `moduleNow: ok @ rkm-spike-asset://spike/probe.js` (its own `import.meta.url` proves WebKit treated it as a module) |
+| does that document share the app's `localStorage`? | ⭐⭐ **YES** — `ls: ok`, `lsKeys: 4`, **`lsSeesQueryCache: true`** ⇒ A1's persisted rows come back with it |
+| does a custom-scheme DOCUMENT load (the fallback)? | It does (`origin rkm-spike-asset://spike`, `secure: true`) — **not needed** |
+
+**⇒ ADR-0012 gains D7/D8**: the shell becomes APP-OWNED (the document + its assets in
+`Application Support/ShellCache/`, the document handed to the page with the server as its base URL, the
+assets rewritten to a custom scheme) — and ⚠ **the page's origin does not move**, so there is no CORS work,
+no cookie plumbing, no api change, and A1's origin-keyed cache is untouched. The ladder itself is unchanged:
+only what the `cached` step LOADS changes.
+
+Phases are written into `docs/OFFLINE_SHELL_PLAN.md` §0c: **S1** the store's rules (pure, Linux, no round) ·
+**S2** the native half (one Mac round) · **S3** the Wi-Fi-off device test.
+
+⚠ **And a defect the round exposed in a SHARED doc:** `apple/LOGGING.md` §7's
+`log stream --device --subsystem …` **does not run on his Mac** — `log stream` has no `--device` flag
+(his terminal's usage output is pasted in the session). The working route on a physical device is Xcode's
+console, or Console.app → Devices. ⚠ **That doc is owed a fix** and the fix belongs on `dev`, not on this
+branch's throwaway spike.
+
 ### NEXT STEPS, in order
 
-1. **His Mac round** (Part 2) — `./apple/scripts/mac-round.sh ios`, then the Wi-Fi-off relaunch test in
-   ADR-0012 §"verified/not verified". ⚠ **RUN 2026-09-19: the shell loads from the device, the app does not
-   paint — see the block above.** The round is therefore still open, against the app-owned-shell step.
+1. **S1–S3 of the app-owned shell** (plan §0c). ⚠ The Mac round is now only needed for **S2**, not for the
+   diagnosis — and the Wi-Fi-off test that used to say "the app does not paint" should then say it does.
 2. **His phone** (carried forward from session 6, all still open) — the Cancel fix's Swift half (§7a), the
    Sheet tap fix (session 6 Part 1), and §9's caption placement.
 3. **§7 (c) — PARKED** (session 6 Part 6). The plan is on `feat/request-candidate-ids`; phase 2 needs his

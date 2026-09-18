@@ -89,10 +89,36 @@ lesson is that WebKit's behaviour here is **measured, not inferred**. So:
   for an unreachable origin, and the answer becomes the scheme handler the plan proposed — which ADR-0012
   therefore records as *not chosen yet*, not as wrong.
 
+### ⚠ HIS DEVICE ROUND (2026-09-19): item 4 did NOT happen — and the ladder is not the reason (measured)
+
+He ran the test on the iPhone with the Wi-Fi off and got **a blank screen**, twice: once cold, and once
+immediately after a successful online visit (so the shell's bytes had just been fetched). What the overlay
+screenshot and the log actually show:
+
+| Evidence | Reading |
+|---|---|
+| `the server did not answer — trying the copy…` → `load #2` → `didFinish / : title "RKM Cinema"` → `web page ready` | ✅ **The ladder works.** With no network the shell asks the DEVICE and the DOCUMENT comes back from its cache — the phase's core claim, observed on hardware. |
+| HUD `net —` (the "newest request" field is a dash) | ⚠ **The page made ZERO requests** — no `/api/auth/me`, no `/api/config` ⇒ React never booted. |
+| `last` still shows the *navigation* failure, and no `jserror` line exists | Nothing in the page threw. A `<script src>` that fails to load logs nothing at all — this is that signature. |
+| The overlay covers 380×586pt of the 402×874pt screen; outside it the page is a flat `#08090b` (the app's `--bg`) with **zero** bright pixels | No header, no bottom nav, no "Checking your session…" spinner, no text: an empty canvas wearing the app's own background. |
+
+⚠ **So: the document is served from the device, its ~1.1 MB `/assets/index-*.js` is not** — and because the
+app's script never runs, nothing paints. ⚠ The online-then-immediately-offline test rules out "the cache had
+aged out": the bytes had been fetched seconds earlier and still did not come back. The leading (unproven)
+explanation is that **WebKit's disk cache does not keep a single ~1.1 MB response** — the document (1.6 KB)
+is kept. ADR-0012 D3 assumed the HTTP cache is a shell store; on this evidence it is a shell store for a
+SMALL document only.
+
+**Consequence: `feat/offline-cold-launch` stays UNMERGED.** The next step is to make the shell app-owned —
+a durable copy of the document + its assets in `Application Support/`, loaded with the server as the base
+URL so the page's origin (and therefore the session cookie, `/api/*`, and A1's persisted query cache) does
+not move. ⚠ ADR-0012 D3 must be corrected in that ADR, not silently.
+
 ### NEXT STEPS, in order
 
 1. **His Mac round** (Part 2) — `./apple/scripts/mac-round.sh ios`, then the Wi-Fi-off relaunch test in
-   ADR-0012 §"verified/not verified". This is the only thing standing between the branch and a merge.
+   ADR-0012 §"verified/not verified". ⚠ **RUN 2026-09-19: the shell loads from the device, the app does not
+   paint — see the block above.** The round is therefore still open, against the app-owned-shell step.
 2. **His phone** (carried forward from session 6, all still open) — the Cancel fix's Swift half (§7a), the
    Sheet tap fix (session 6 Part 1), and §9's caption placement.
 3. **§7 (c) — PARKED** (session 6 Part 6). The plan is on `feat/request-candidate-ids`; phase 2 needs his

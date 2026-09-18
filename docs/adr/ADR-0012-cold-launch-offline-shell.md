@@ -2,7 +2,12 @@
 
 - **Status:** Accepted · ✅ **built 2026-09-19** — the pure ladder is executed and falsified on Linux
   (`apple/scripts/check-offline-core.py --falsify`, 8 rules reverted); the WebKit half is written and
-  typecheck-clean and ⚠ **unverified until his Mac round**, because a WebKit build cannot be run here.
+  typecheck-clean.
+- ⚠⚠ **AND THE DEVICE ROUND ON 2026-09-19 SAYS THE MECHANISM IS NOT SUFFICIENT — read §"The device round"
+  before relying on D3.** The ladder works exactly as designed (a cold launch with no network DOES load the
+  document from the device), but the app still does not paint, because the shell's ~1.1 MB script does not
+  come back with it. ⚠ D3's claim that the HTTP cache is the shell store is **contradicted by that
+  measurement** — see the section, and the corrected decision below it. **This branch is NOT merged.**
 - **Date:** 2026-09-19
 - **Phase:** `feat/offline-cold-launch` (plan: `docs/OFFLINE_SHELL_PLAN.md`, re-scoped — see the note at
   the end of this file)
@@ -68,6 +73,21 @@ by accident. See the table above for why the policy is wrong at `fresh`.
 for "how the app serves local bytes to the page" (loopback HTTP); this ADR establishes that there is *one*
 mechanism for "how the app gets its own UI offline" (the WebView's HTTP cache). Neither is a second path.
 
+> ⚠⚠ **D3 IS CONTRADICTED BY THE DEVICE ROUND (2026-09-19) — it stands here as the decision that was taken,
+> and it must not be relied on.** Measured: the document IS served from the device, and the ~1.1 MB
+> `/assets/index-*.js` is NOT — so the app never boots. WebKit refuses to cache a response larger than
+> roughly **5% of its disk cache** (Apple's own documented rule for `URLCache`, whose iOS default disk
+> capacity has been measured as low as **9 MB**), which fits a 1.6 KB document surviving and this bundle
+> not, and it does not improve with freshness (his retest immediately after an online visit was blank too).
+>
+> **⇒ A scheme handler (or an equivalent app-owned store) IS required, as `OFFLINE_SHELL_PLAN.md` §2
+> phase A originally said.** The HTTP cache is a shell store for a SMALL document, not for the app.
+> The next step is a spike to answer the two questions that decide its shape — (1) does
+> `loadHTMLString(_:baseURL:)` with the *server's* URL give the page the server's origin (so the session
+> cookie, `/api/*` and A1's persisted query cache keep working), and (2) does a module script load from a
+> `WKURLSchemeHandler` (E1 measured custom schemes out for **media**, not for scripts). ⚠ Do not build the
+> machinery before that round answers them.
+
 **D4 — per launch, reset by `load()`; and `reload()` now goes through `load()`.** It previously called
 `webView.reload()`, which **re-sends the last request** — so a reload of a cached-booted page would re-read
 the cache even with the network back. `load()` is the ONE entry point and it always starts at `fresh`,
@@ -118,6 +138,37 @@ The falsification test is the plan's own, and it is run with the Wi-Fi actually 
 ⚠ If step 3 does NOT paint, the honest conclusion is that the WebView refuses a cached document for an
 unreachable origin, and the answer becomes the scheme handler the plan proposed — which is why this ADR
 records that option as *not chosen yet*, rather than as wrong.
+
+### ⚠ The device round (2026-09-19) — and the prediction above was half right
+
+**He ran it. The answer to the question this section asked is YES — the document DOES come back from the
+device — and the app still does not paint.** The log chain proves the ladder engaged: `the server did not
+answer — trying the copy…` → `load #2` → `didFinish / : title "RKM Cinema"` → `web page ready`, with the HUD
+reading `web / · loaded`. What the same screenshot shows about the PAGE:
+
+| Evidence | Reading |
+|---|---|
+| HUD `net —` (the "newest request" field) | ⚠ **The page made ZERO requests** — no `/api/auth/me`, no `/api/config` ⇒ React never booted. |
+| `last` still shows the *navigation* failure; no `jserror` line | Nothing threw. ⚠ A `<script src>` that fails to load logs **nothing at all** — this is that signature. |
+| The overlay covers 380×586pt of a 402×874pt screen; outside it the page is a flat `#08090b` (the app's own `--bg`) with **zero** bright pixels | No header, no bottom nav, no "Checking your session…" skeleton, no text. |
+
+⇒ **The document is served from the device and its ~1.1 MB script is not.** ⚠ A retest *immediately after a
+successful online visit* was blank too, so this is not cache ageing: the response is not being STORED.
+Apple documents the rule for `URLCache` ("the response must be no larger than about **5% of the disk cache
+size**"), and the iOS default disk capacity has been measured at **9 MB** — which fits a 1.6 KB document
+surviving and this bundle not.
+
+⚠ **So this ADR's own conclusion was wrong, and `OFFLINE_SHELL_PLAN.md` §2 phase A was right**: the shell
+must be app-owned. The next step is a **spike** (in the E1 tradition — cheapest possible build, one Mac
+round) to answer the two questions that decide its shape:
+
+1. does `loadHTMLString(_:baseURL:)` with the **server's** URL give the page the server's ORIGIN — i.e. do
+   the session cookie, same-origin `/api/*` and A1's persisted query cache (which is keyed by origin) all
+   keep working?
+2. does a **module script** load from a `WKURLSchemeHandler`? (E1 measured custom schemes out for **media**;
+   scripts are a different risk profile, and CORS is required for module scripts.)
+
+Build nothing bigger until that round answers both.
 
 ⚠ `WebShellModel.swift` **cannot be typechecked in this sandbox** (SwiftUI/WebKit are not stubbable in the
 committed scaffold), so the file that carries the ladder out is compile-checked for the first time on his

@@ -421,11 +421,15 @@ MUTATIONS: list[tuple[str, str, str, str, str]] = [
     ("the /assets/ prefix rule", "ShellStorePlan.swift",
      "        guard path.hasPrefix(assetPrefix) else { return false }",
      "        guard true else { return false }",
-     "a path outside /assets/ is not stored"),
+     # ⚠ The label that only THIS rule can produce — `/favicon.svg` is refused by the extension whitelist
+     # as well, which is how this mutation survived its first run.
+     "⚠ a .js OUTSIDE /assets/ is refused"),
     ("the path-traversal refusal", "ShellStorePlan.swift",
      '        guard !name.isEmpty, !name.contains("/"), !name.contains("..") else { return false }',
      "        guard !name.isEmpty else { return false }",
-     "refuses /assets/../secret.js as a file name"),
+     # ⚠ Likewise: `../secret.js` is refused by the character whitelist too, so the case that needs the
+     # `..` guard is one made only of legal characters.
+     "refuses /assets/..js as a file name"),
     ("the extension whitelist", "ShellStorePlan.swift",
      "        return storableExtensions.contains(ext)",
      "        return true",

@@ -1275,11 +1275,22 @@ checkEqual(ShellStoreRules.requiredAssets(document: shellDocument,
            "an asset named INSIDE the bundle is collected too (the day a build splits)")
 
 for unsafe in ["/assets/../secret.js", "/assets/sub/dir.js", "/assets/", "/assets/x.txt", "/assets/.js",
-               "/assets/index%2F..%2Fx.js"] {
+               "/assets/index%2F..%2Fx.js",
+               // ⚠⚠ THIS ONE IS HERE BECAUSE THE FALSIFICATION RUN FOUND THE TWO ABOVE WERE PASSING FOR
+               // THE WRONG REASON. `../secret.js` contains a `/` and `%2F..%2Fx.js` contains `%`, so BOTH
+               // are already refused by the character whitelist — reverting the traversal guard changed
+               // nothing, which is a check that proves nothing. This name needs the `..` guard ITSELF: a
+               // legal extension, legal characters, no separator, and a traversal inside it.
+               "/assets/..js"] {
     checkEqual(ShellStoreRules.isStorableAssetPath(unsafe), false, "refuses \(unsafe) as a file name")
 }
 checkEqual(ShellStoreRules.isStorableAssetPath("/assets/index-UZQ_BGxK.js"), true,
            "a plain hashed bundle is a storable name")
+// ⚠ And the same lesson for the PREFIX: `/favicon.svg` is refused by the extension whitelist too, so a
+// check written with it cannot fail when the prefix guard goes. A `.js` outside `/assets/` is the case
+// that needs the prefix rule and nothing else — drop the guard and `dropFirst` turns it into an asset.
+checkEqual(ShellStoreRules.isStorableAssetPath("/static/index-abc.js"), false,
+           "⚠ a .js OUTSIDE /assets/ is refused — the prefix is the rule, not the extension")
 
 let shellRewritten = ShellStoreRules.rewritten(document: shellDocument, scheme: "rkm-asset")
 check(shellRewritten.contains("\"rkm-asset://app/assets/index-UZQ_BGxK.js\""),

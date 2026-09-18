@@ -9,10 +9,11 @@ That is the "two separate searches" feeling the plan set out to kill.
 
 The replacement is a score-based ownership PREFERENCE, never a gate:
 
-    owned      relevance + OWNED_BONUS      (0.30)
-    watchlist  relevance + WATCHLIST_BONUS  (0.15)
+    owned      relevance + OWNED_BONUS      (0.03)
+    watchlist  relevance + WATCHLIST_BONUS  (0.015)
     hint       relevance                    (person / genre / collection)
     tmdb       relevance                    (deduped against owned, as before)
+    semantic   its OWN tier, [0.30, 0.39]   (Phase 6 — see SEMANTIC_BASE)
 
 His own copy of a film still ranks first — it is both genuinely relevant and
 bonused — but the sequels and remakes he does NOT own surface beneath it, which
@@ -21,6 +22,15 @@ is the "it knows what I mean" behaviour the plan is after.
 ⚠ ``score`` is a RANKING KEY, not a probability: 1.0 is a perfect title match on
 its own, and a bonused row legitimately exceeds it. Only the ORDER is meaningful
 — do not render it as a percentage, and do not compare it across queries.
+
+⚠⚠ **The SEMANTIC tier is the one source that is not a string match at all**
+(Phase 6, plan `docs/SEMANTIC_SEARCH_PLAN.md`). A cosine similarity is not
+comparable to a title score, so it is not allowed to compete with one: its whole
+range sits strictly BELOW ``SEMANTIC_TRIGGER_SCORE``, the line below which the
+route decides the string matcher has failed. The route only ever passes semantic
+rows when no lexical row reached that line, which is what makes the invariant
+``SEMANTIC_BASE + SEMANTIC_SPAN < SEMANTIC_TRIGGER_SCORE`` a *proof* about every
+response the app can produce rather than a hope.
 
 Pure: no I/O, no config. The route decides what to fetch; this decides what to
 show first.
@@ -41,6 +51,10 @@ from services.search.scoring import (
 
 __all__ = [
     "OWNED_BONUS",
+    "SEMANTIC_BASE",
+    "SEMANTIC_MIN_COS",
+    "SEMANTIC_SPAN",
+    "SEMANTIC_TRIGGER_SCORE",
     "SOURCE_ORDER",
     "WATCHLIST_BONUS",
     "RankedRow",
@@ -78,6 +92,37 @@ SOURCE_ORDER = {"owned": 0, "watchlist": 1, "hint": 2, "tmdb": 3}
 #: sorted ALPHABETICALLY — throwing away TMDB's own relevance ranking and showing
 #: a worse list than the one that was already in hand.
 PROVIDER_ORDER_EPSILON = 1e-6
+
+#: ⚠⚠ THE LINE THE ROUTE TRIGGERS THE EMBEDDING FALLBACK ON (Phase 6): below it,
+#: nothing the string matcher found is a real match, and the route may ask the
+#: semantic index for rows. Read it as "weaker than a support-field hit and far
+#: weaker than the token tier (0.6)" — 0.4 is his own number from the plan text,
+#: and it has the property that matters: it sits ABOVE ``SEMANTIC_BASE +
+#: SEMANTIC_SPAN``, so a semantic row can never outrank a lexical one.
+SEMANTIC_TRIGGER_SCORE = 0.4
+
+#: Where a SEMANTIC row scores, and how much room the similarity has to order the
+#: group. ⚠ The range is [0.30, 0.39]: strictly BELOW the trigger line, so a
+#: semantic hit lands above the zero-score rows (an owned row the provider returned
+#: but our scorer could not see sits at OWNED_BONUS, 0.03) and below anything that
+#: matched lexically well enough to have suppressed the fallback.
+#:
+#: ⚠ A semantic row carries NO bonus: OWNED_BONUS would push the top of the tier to
+#: 0.42, back over the trigger line, and the invariant below would be false. The
+#: rows are owned by construction anyway — the index IS the library.
+#:
+#: Invariant (pinned in tests/test_semantic_search.py, mirroring the OWNED_BONUS one):
+#:     SEMANTIC_BASE + SEMANTIC_SPAN < SEMANTIC_TRIGGER_SCORE < TOKEN_SCORE (0.6)
+SEMANTIC_BASE = 0.30
+SEMANTIC_SPAN = 0.09
+
+#: The cosine below which a neighbour is NOISE and is not admitted at all. ⚠ This is
+#: a sanity floor, NOT a calibrated relevance claim: measured on a 10-film probe, an
+#: unrelated film scored 0.17–0.27 while the right answer scored 0.24–0.45, so no
+#: floor at this scale separates "related" from "unrelated" honestly. It exists so a
+#: near-orthogonal neighbour cannot pad the list, and CALIBRATING it is Phase 7's job
+#: (the metrics loop), not a guess made in the ranker.
+SEMANTIC_MIN_COS = 0.05
 
 
 @dataclass
@@ -282,6 +327,53 @@ def _provider_bias(index: int, total: int) -> float:
     return (total - index) * PROVIDER_ORDER_EPSILON
 
 
+def semantic_score(cos: float) -> float:
+    """A cosine similarity mapped into the semantic tier, never outside it.
+
+    ⚠ The mapping is what keeps the tier's RANGE honest: a perfect match (cos 1.0)
+    scores ``SEMANTIC_BASE + SEMANTIC_SPAN`` and a neighbour at the floor scores
+    ``SEMANTIC_BASE``, so ordering inside the group is the similarity's and the
+    group's ceiling is a constant. Anything at or below the floor maps to the base
+    (the caller drops it anyway — see ``SEMANTIC_MIN_COS``).
+    """
+    lo = SEMANTIC_MIN_COS
+    scaled = (float(cos) - lo) / (1.0 - lo) if cos > lo else 0.0
+    return SEMANTIC_BASE + SEMANTIC_SPAN * min(1.0, max(0.0, scaled))
+
+
+def _rank_semantic(rows: Sequence[tuple[dict, float]]) -> list[RankedRow]:
+    """Embedding neighbours of the query — the Phase 6 fallback source.
+
+    ⚠ These rows arrive ALREADY scored (the route ran the index), and their score is
+    a cosine similarity, not a string relevance. They are:
+      · admitted only when the route decided the string matcher had failed, which is
+        the property that makes the tier's placement a proof (§SEMANTIC_TRIGGER_SCORE);
+      · given NO bonus of any kind — see SEMANTIC_BASE's note;
+      · deduped against the owned rows the provider already returned (``taken``), so a
+        title that matched lexically AND semantically cannot appear twice.
+    """
+    out: list[RankedRow] = []
+    for index, pair in enumerate(rows or ()):
+        try:
+            row, cos = pair
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(row, dict):
+            continue
+        if float(cos) < SEMANTIC_MIN_COS:
+            continue
+        out.append(RankedRow(
+            score=semantic_score(float(cos)) + _provider_bias(index, len(rows or ())),
+            source="owned",
+            kind=_owned_kind(row),
+            payload=row,
+            matched_fields=[],
+            match_type="semantic",
+            ranges=[],
+        ))
+    return out
+
+
 def _identity(row: "RankedRow") -> str:
     """A stable per-row key for the sort, so two identical queries cannot reshuffle.
 
@@ -299,8 +391,15 @@ def rank_all(query: str, *, owned: Sequence[dict] = (), watchlist: Sequence[dict
              discovery: Sequence[dict] = (), hints: dict[str, Sequence[dict]] | None = None,
              query_year: int | None = None,
              query_year_range: tuple[int, int] | None = None,
-             affinity: Affinity | None = None) -> list[RankedRow]:
+             affinity: Affinity | None = None,
+             semantic: Sequence[tuple[dict, float]] = ()) -> list[RankedRow]:
     """ONE ranked list across every source, highest relevance first.
+
+    ``semantic`` is a sequence of ``(owned_row, cosine)`` pairs from the embedding
+    index (Phase 6). ⚠ The CALLER is responsible for only passing them when the
+    string matcher failed (``SEMANTIC_TRIGGER_SCORE``) — that is the contract that
+    keeps a similarity from outranking a title match, and it is asserted in the
+    tests rather than assumed here.
 
     Ordering is by ``score`` descending, then by :data:`SOURCE_ORDER`, then by
     title, then by :func:`_identity` — fully determined by the data, so the list
@@ -308,7 +407,9 @@ def rank_all(query: str, *, owned: Sequence[dict] = (), watchlist: Sequence[dict
     """
     owned_seq = list(owned or [])
     taken: set[int] = set()
+    owned_ids: set[str] = set()
     for row in owned_seq:
+        owned_ids.add(str(row.get("id") or row.get("item_id") or ""))
         try:
             pids = row.get("provider_ids") or {}
             tid = int(pids.get("tmdb") or 0)
@@ -326,6 +427,15 @@ def rank_all(query: str, *, owned: Sequence[dict] = (), watchlist: Sequence[dict
         except (TypeError, ValueError):
             continue
 
+    # ⚠ Deduped by ITEM id against what the provider already returned: the same title
+    # can be both a (weak) lexical result and the strongest embedding neighbour, and
+    # the person must see it once. Dropping the semantic copy keeps the row that
+    # carries the query's match spans.
+    semantic_rows = [
+        (row, cos) for row, cos in (semantic or ())
+        if str(row.get("id") or row.get("item_id") or "") not in owned_ids
+    ]
+
     rows: list[RankedRow] = []
     rows.extend(_rank_owned(query, owned_seq, query_year=query_year,
                             query_year_range=query_year_range))
@@ -335,6 +445,7 @@ def rank_all(query: str, *, owned: Sequence[dict] = (), watchlist: Sequence[dict
                             query_year_range=query_year_range))
     rows.extend(_rank_discovery(query, discovery_rows, owned_seq, query_year=query_year,
                                 query_year_range=query_year_range, affinity=affinity))
+    rows.extend(_rank_semantic(semantic_rows))
 
     rows.sort(key=lambda r: (-r.score, SOURCE_ORDER.get(r.source, 99),
                              str(r.payload.get("title") or r.payload.get("name") or ""),

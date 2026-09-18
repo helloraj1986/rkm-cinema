@@ -142,15 +142,41 @@ falsification here is the tool's own mutation fixture — which is exactly what 
 kept as a closure record rather than deleted, because the lesson (invert a check whose subject was
 deliberately removed; re-measure before repairing) is what the next session needs.
 
+### Part 6 — §7 (c): the plan was written, then PARKED on his word (same session)
+
+He decided §7 **(c)** (carry an id on each 409 candidate so the ambiguity list is pickable), then parked
+the phase on seeing the plan: *"DROP THIS TASK FOR NOW … WE WILL SEE LATER."*
+
+⚠ **Nothing was implemented and no code was written.** The plan is one commit on its own branch:
+**`feat/request-candidate-ids` @ `dca122b`**, and ⚠ **`docs/REQUEST_CANDIDATE_IDS_PLAN.md` is NOT on `dev`
+or `main`** — read it with
+
+```bash
+git show feat/request-candidate-ids:docs/REQUEST_CANDIDATE_IDS_PLAN.md
+```
+
+⚠ **Its §1 corrects the premise §7 was written from, and that is the valuable half of the work.** §7
+records that the 409 carries `candidates: [{title, year}]`; **measured, that array is EMPTY in production.**
+`RadarrMovie` already has `tmdbId` (`services/radarr.py:13-22`), `add_movie` already holds the candidate
+list (`:298-318`), then builds a **sentence** and returns `AddResult(False, None, msg, "ambiguous")` —
+`movie=None`, so the list dies there; `AddResult` (`:47-51`) has nowhere to put it; `_candidates()`
+(`application/commands/request_media.py:179-185`) reads `item` → `None` → returns `[]`; and that empty list
+is what reaches the wire (`api/routes/media.py:112-119`). **The ids exist — they are captured in a string.**
+
+⚠ **Phase 2 is BLOCKED, not merely unstarted.** The plan's §6 asks for one real sample before any code:
+the sentence his Radarr returns for a genuinely ambiguous title, and the lookup results behind it. He was
+asked and parked the phase instead — **so do not build phase 2 against the fakes alone without re-raising
+it**, or the wire shape gets pinned to a test fixture (`backend/tests/test_api.py:66` is the only sample in
+the repo).
+
 ### NEXT STEPS, in order
 
-1. **§7 (c) — the pickable 409 list.** Decided 2026-09-19: carry an id (ideally `tmdbId`) on each
-   candidate and accept a chosen one on the request path. ⚠ A BACKEND phase, and the project's cycle puts
-   the plan doc in the FIRST commit — see `docs/SEMANTIC_SEARCH_PLAN.md` for the shape.
-2. **His phone** — the Cancel fix's Swift half (§7a), the Sheet tap fix (Part 1), and the §9 caption's
-   placement.
-3. **Plan §6 phase 4** — label the semantic rows (`match_type == "semantic"` already travels end to
-   end) before Phase 7's metrics loop calibrates `SEMANTIC_MIN_COS` and the 0.4 trigger.
+1. **His phone** — the Cancel fix's Swift half (§7a), the Sheet tap fix (Part 1), and the §9 caption's
+   placement. These are the only things actually waiting on him.
+2. **§7 (c) — PARKED** (Part 6). The plan and its corrected ground truth are on
+   `feat/request-candidate-ids`; it needs his real Radarr sample before phase 2.
+3. **Plan §6 phase 4** (semantic search) — label the semantic rows (`match_type == "semantic"` already
+   travels end to end) before Phase 7's metrics loop calibrates `SEMANTIC_MIN_COS` and the 0.4 trigger.
 
 ⚠ **Untracked and NOT mine:** `docs/OFFLINE_SHELL_PLAN.md` (a cold-launch offline shell plan, design
 improvement #9) appeared in the working tree at 19:06 UTC on 2026-09-18 — mid-session, written by another

@@ -3,8 +3,12 @@
 > Branch `feat/request-candidate-ids`, from `dev`. **Plan committed FIRST, before any code**, per the
 > feature-shipping cycle — see `docs/SEMANTIC_SEARCH_PLAN.md` for the shape this follows.
 > ⚠ A doc cannot name its own tip: `git log --oneline -3` is the answer.
-> **Status: PLAN.** Every file:line below was READ from source on 2026-09-19, not recalled — and §1's
-> findings are why this phase is bigger than its one-line description.
+> **Status: PARKED — written 2026-09-19, then dropped on his instruction the same day.** Nothing below has
+> been implemented and **no code was written**: this commit is the plan and nothing else. ⚠ **Do not start
+> phase 2 without reading §6** — it is blocked on a real sample of what his Radarr returns for an
+> ambiguous title, which he was asked for and chose not to supply before parking the phase. Every address
+> in §1 was READ from source on 2026-09-19, not recalled — and §1's findings are why this phase is bigger
+> than its one-line description.
 
 ## What this is for
 

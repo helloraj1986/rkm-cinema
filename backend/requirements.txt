@@ -11,7 +11,8 @@ PyYAML>=6.0
 rapidfuzz>=3.9
 # Semantic search fallback (SEARCH_IMPROVEMENT_PLAN Phase 6). Static embeddings on CPU —
 # numpy + tokenizers only, NO torch and NO onnxruntime, which is why this one and not
-# sentence-transformers (that would add ~2 GB to an image deployed on a CPU-only Windows box).
+# sentence-transformers (that route was MEASURED at 5.65 GB of installed packages — torch and
+# its CUDA wheels — against ~185 MB for this one).
 # ⚠ Optional at runtime, like rapidfuzz above: services/search/semantic.py reports itself
 # unavailable rather than raising, so a container built before this line still serves search
 # lexically. The model itself is baked at BUILD time (see Dockerfile) so no request ever waits

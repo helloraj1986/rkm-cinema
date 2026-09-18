@@ -71,7 +71,7 @@ Run in this sandbox on **CPU, Python 3.11.15, numpy 2.4.6**, corpus = 2 000 rows
 | **`model2vec` + `potion-base-8M`** | **256** | jinja2, joblib, numpy, safetensors, tokenizers, tqdm — **no torch, no onnxruntime** | **3.4 s** | **0.55 s (0.27 ms/text)** | **17 ms / 90 ms** | **130 MB** |
 | `model2vec` + `potion-base-32M` | 512 | same | ~37 s | 0.42 s | 43 ms / 101 ms | 349 MB |
 | `model2vec` + `potion-retrieval-32M` | 512 | same | ~35 s | 0.47 s | 2.9 ms / 2 ms | 349 MB |
-| `sentence-transformers` + MiniLM | — | ⚠ **torch** | — | — | — | — | **rejected on sight**: the plan's own suggestion, and the one dependency this box must not gain (≈2 GB image, CPU-only Windows host). |
+| `sentence-transformers` + MiniLM | — | ⚠ **torch** | — | — | — | — | **rejected on sight**: the plan's own suggestion, and the one dependency this box must not gain. ⚠ **Measured afterwards, not estimated**: installing it into a clean venv moved `site-packages` from **24.4 MB to 6 088.1 MB — a delta of 5.65 GB**. The first draft of this table said "≈2 GB", which was a guess and wrong by 2.8×. |
 
 ### §3.0 The candidate this plan first MISSED: `fastembed` + `bge-small-en-v1.5` (ONNX, no torch)
 

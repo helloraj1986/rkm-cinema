@@ -1,4 +1,86 @@
-## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-18, session 4) · branch **`dev`** · tree clean, pushed
+## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-18, session 5b) · branch **`feat/semantic-search`** (from `dev`) · tree clean, pushed
+
+**Say this first:** *"continue rkm-cinema — pick up the RESUME-HERE block."* Then read this and
+`docs/SEMANTIC_SEARCH_PLAN.md`, which is the phase's plan AND its measurements.
+
+⚠ **A doc cannot name its own tip.** `git log --oneline -3` is the honest answer.
+⚠ **A second branch is open in parallel** — `feat/mobile-request-and-similar` (his items 3 + 4: the
+409's candidates in the suggest sheet, the phone's Similar row, and a real fix for taps inside a
+`Sheet`). Both branch from `dev` and neither depends on the other.
+
+### What is on this branch: SEARCH_IMPROVEMENT_PLAN Phase 6 — semantic search
+
+His instruction was *"use the most logical and recommended solution which you think is most suitable
+for the project"*, and the three decisions he asked for are answered in the plan with the numbers
+they rest on. **The feature is COMPLETE except for the labelling phase (plan §6 phase 4), which was
+deliberately left until after his library has been seen with it on.**
+
+| Piece | State |
+|---|---|
+| **The model** | `model2vec` + `minishlab/potion-base-8M`, 256 dims, **no torch, no onnxruntime**. Measured over a 2 000-row corpus: whole library embedded in **0.55 s**, **17 ms** per query, **130 MB** resident, 59 MB on disk. The 512-dim 32M variants cost 2.7× the memory and did NOT rank better. |
+| **The index** | In-process, keyed `(profile_id, library fingerprint)`, built lazily on the first triggered query, LRU of 2 — §11 by construction: profiles see different libraries, so a shared index is wrong. |
+| **The trigger** | his rule + two floors: ≥3 characters AND (top LEXICAL score < 0.4 OR conversational). ⚠ Evaluated over `owned`+`tmdb` rows only — see the queue finding below. |
+| **The tier** | `[0.30, 0.39]`, strictly below the 0.4 trigger line, so a similarity can never outrank a title match — an invariant with its own test, like `OWNED_BONUS`. |
+| **The switch** | Settings → Search, per profile, default ON, and both switches are PATCHES (a partial write cannot reset the other). |
+| **The image** | model2vec in `requirements.txt`; the model is **baked at build time** into `/opt/rkm-models`. ⚠ Verified here with `HF_HUB_OFFLINE=1`: it loads with no network. |
+
+### ⚠⚠ THE FINDING THAT CHANGED THE CODE (measured against HIS data, not reasoned)
+
+His acquisition queue holds **471 rows**, and two of them fuzzy-match *"something with a twist ending"*
+at **0.742** — *"Teach You a Lesson"* and *"A Toxic Love Story"*, printed by the real scorer. That is a
+false positive ABOVE a containment hit, and with the trigger reading the whole ranked list it
+silently suppressed the fallback for a query nothing in his library matched. The trigger now reads
+only the sources that mean "a TITLE matched" (`owned` + `tmdb`); the queue is not consulted in either
+direction. Two route tests pin it, one mutation falsifies it.
+
+### EVIDENCE (not intent) — real model, real route, 10-title library
+
+| Query | Shown first | All five |
+|---|---|---|
+| `movies like Inception` | Inception (0.34) | Inception, The Matrix, Interstellar, Planet Earth, The Dark Knight |
+| `something with a twist ending` | Inception (0.32) | Inception, Hereditary, Se7en, When Harry Met Sally, Interstellar |
+| `feel good comedy for the family` | When Harry Met Sally | …then The Dark Knight (⚠ wrong), Grand Budapest, Toy Story, Hereditary |
+| `the dark knight` *(owned exactly)* | — | fallback does not fire; the model is never loaded, the library never fetched |
+| `th` | — | below the length floor |
+
+⚠ **Do not oversell it**: two of the three conversational queries lead with the right film and the
+third gets one of three — static embeddings are good at "more like this" and weak at mood. It is a
+fallback for queries that return NOTHING today, not a recommender. That is why plan phase 4 labels
+the rows instead of passing them off as matches.
+
+### Gates
+
+| Gate | Result |
+|---|---|
+| backend `python -m pytest tests/ -q` | **1338 passed** (1298 baseline + 40 new across three files) |
+| ruff check | clean |
+| frontend `npx vitest run` · `tsc --noEmit` · `npm run build` | **580 passed / 22 files** · clean · 35.8 s |
+| contract drift (CI's own check) | `snapshot_openapi.py` + `generate:types` re-run → **no diff** |
+| `tools/check_md_links.py` | 64 files, all links resolve |
+| **falsification** | **15 source mutations** (9 core + 6 route) all RED, source byte-identical after. ⚠ One of them EXPOSED a weak test (the fingerprint test only changed the row COUNT) — a same-size swap is now pinned too. |
+
+### ⚠ NOT VERIFIED — say so, do not imply otherwise
+
+1. **Nothing here has run against a real Jellyfin library.** The library is a 10-title stub; the
+   timings are this container's CPU; his library size is unknown (2 000 titles measured, 10 000
+   extrapolates to ~3 s / ~200 MB of RAM, once per process).
+2. **The container has never been built.** No Docker in the sandbox — the bake command and the
+   offline load were verified directly, but `docker compose build` is his first real test.
+3. The model's semantic quality on HIS library is untested, and a mood query is where it is weakest.
+
+### NEXT STEPS, in order
+
+1. **His call, then his box**: this branch is independent of `feat/mobile-request-and-similar`, so
+   either can land first. Build the image on RKM-HP, then search *"something with a twist ending"*
+   and *"movies like Inception"* and compare with the switch off.
+2. **Then plan §6 phase 4** — label the semantic rows (`match_type == "semantic"` is already carried
+   end to end) so a "close to what you typed" row is not presented as a match.
+3. Phase 7 (the metrics loop) is what would CALIBRATE `SEMANTIC_MIN_COS` and the 0.4 trigger; both
+   numbers are named as "not calibrated" in the code.
+
+---
+
+## ⚡ [HISTORY — 2026-09-18, session 4] — its items on `dev` · branch **`dev`**
 
 **Say this first:** *"continue rkm-cinema — pick up the RESUME-HERE block."* Then read this and
 `KNOWN_ISSUES.md`'s status table (the live list of open defects and their state).

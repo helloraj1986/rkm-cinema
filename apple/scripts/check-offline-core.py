@@ -246,8 +246,8 @@ MUTATIONS: list[tuple[str, str, str, str, str]] = [
      "        guard size >= 0 else {",
      "⚠ zero bytes can never satisfy a range"),
     ("an unreadable range is the whole file", "OfflineHTTP.swift",
-     '                return .wholeFile(reason: "the Range header could not be read")',
-     '                return .unsatisfiable(reason: "the Range header could not be read")',
+     '            guard !specs.isEmpty else {\n                return .wholeFile(reason: "the Range header could not be read")\n            }',
+     '            guard !specs.isEmpty else {\n                return .unsatisfiable(reason: "the Range header could not be read")\n            }',
      "an unreadable range sends the whole file — the recoverable answer"),
     # --- the response
     ("a HEAD sends no body", "OfflineHTTP.swift",

@@ -89,3 +89,9 @@ apple/logs/
 
 # Generated API types ARE committed on purpose (see apple/scripts/generate-api.sh) —
 # do not ignore apple/**/Core/GeneratedAPI/.
+
+# Debug screenshots. ⚠ Added 2026-09-19 the hard way: a 268 KB device screenshot was swept into a commit
+# by `git add -A`, and this repo does not want binary evidence in its history. Screenshots travel the same
+# way logs do — they are pasted/attached, and the file stays on the desk.
+debug_screenshots/
+*.heic

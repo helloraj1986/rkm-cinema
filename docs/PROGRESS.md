@@ -1,3 +1,55 @@
+## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-18, after session 3) · branch **`dev`** · search relevance merged as **`b8ed22e`** · **40 ahead of `main`** · tree clean, pushed
+
+**Say this first:** *"continue rkm-cinema — pick up the RESUME-HERE block."* Then read this and
+`KNOWN_ISSUES.md`'s status table (the live list of open defects and their state).
+
+⚠ **Everything BELOW this block is session 1–2 history, and its headline is STALE** — it says
+"15 commits ahead of `dev`, none merged", but that work WAS merged into `dev` as `ec5a37a`. This
+block is the state; the session-2 block below is still worth reading for its open items (#2, and the
+six device-unverified things).
+
+### Landed this session — SEARCH_IMPROVEMENT_PLAN phases 0–5, merged to `dev` as `b8ed22e`
+
+| Phase | What |
+|---|---|
+| **0** | `services/search/` owns relevance — ONE scorer; `global_search.py` re-exports its old surface. |
+| **1** | Typo tolerance (`rapidfuzz`): `"the dark knght"` now finds *The Dark Knight* in HIS OWN library. |
+| **2** | ONE ranked list. ⚠ The `strong_match` discovery gate is **DELETED** — owning *The Matrix* no longer hides *Reloaded* / *Animatrix*. |
+| **3** | Query understanding: `"tom hanks movies 1994"` → person + type + year; TMDB type-specific endpoints. |
+| **4** | Instant search: sub-3-char queries never reach TMDB, superseded requests cancelled, matched spans highlighted. |
+| **5** | Taste from watched history + a per-profile switch. Bonus is bounded BELOW a relevance tier step. |
+| **fix** | ⚠ A discovered title on the PHONE could be ADDED to the watchlist but not LOOKED at — a TODO that outlived M4. The row simply had no `onClick`. |
+
+⚠ **Three of the plan's own numbers were deliberately NOT followed**, each for a stated reason in the
+commit bodies — read them before "correcting" anything: `OWNED_BONUS` is 0.03 not 0.30, the taste
+bonus is ABSOLUTE 0.03 rather than "10–15% of base score", and the prefix index is **not built** (a
+module-level title index must be keyed by SESSION — profiles see different libraries, §11).
+
+### ⚠ NOT VERIFIED ON HIS DEVICE — do not describe any of it as working
+
+1. **Every UI change in phases 2–5.** Measured headlessly only: typecheck, **569 vitest**,
+   production build, and `tools/check_search_fallback.py` in a real browser — including its
+   **falsification direction** (4 assertions go RED with the gate re-introduced).
+2. **The phone's discovery-detail sheet** — driven headlessly at 390px, never touched with a thumb.
+3. **Whether 0.03 is the right amount of taste.** It is a BOUND (proven not to overturn a better
+   title match); it is not calibrated, and only real searches can say.
+
+### NEXT STEPS, in order
+
+1. **He deploys and tests `dev`** — `.\rkm-cinema.ps1 apply`, then the scenarios given in the chat
+   reply. ⚠ **`main` is 40 commits behind and must NOT advance until he accepts on the UI** (§13).
+   When he does: `git checkout main && git merge --ff-only dev && git push` — the invariant still
+   holds (`git merge-base --is-ancestor main dev` is silent).
+2. **Phase 6 (semantic search) and Phase 7 (metrics loop)** — both await HIS decision, not code.
+   Phase 6 needs real infra (embeddings); Phase 7 needs him to say what he wants logged.
+3. ⚠ **`docs/SEARCH.md` is NOT on `dev`** — it exists only on `feat/mobile-m3-library`
+   (`0c6076f`), yet `SEARCH_IMPORVEMENT_PLAN.md` (which IS on `dev`) opens by referring to it.
+   Merge that branch's doc across or re-create it.
+4. Session 2's **#2 — the poster-toggle sweep** (below) is still the top un-done item, and it needs
+   no decision from him.
+
+---
+
 ## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-18, after session 2) · branch **`feat/mobile-m3-library`** · tip **`581f226`** · **15 commits ahead of `dev`**, tree clean, pushed
 
 ⚠ **Session 2 closed item 5 below — the offline `507` was his `.env`, not his disk — and found a second

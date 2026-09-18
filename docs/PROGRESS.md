@@ -142,10 +142,32 @@ Phases are written into `docs/OFFLINE_SHELL_PLAN.md` §0c: **S1** the store's ru
 console, or Console.app → Devices. ⚠ **That doc is owed a fix** and the fix belongs on `dev`, not on this
 branch's throwaway spike.
 
+### ✅ S2 BUILT (2026-09-19) — the native half: the app now HOLDS its own shell
+
+`Shell/ShellStore.swift` (the container `Application Support/ShellCache/`, atomic writes, the manifest as
+the commit point) · `Shell/ShellFetcher.swift` (refresh after a successful LIVE load — **all-or-nothing**,
+so a mid-deploy 404 cannot overwrite a good shell) · `Shell/ShellAssetSchemeHandler.swift`
+(`rkm-asset://app/assets/<name>` served from the container, `*` CORS as the spike measured, `no-store`).
+The ladder's `cached` step now hands the page the stored document with the **server as its base URL** —
+which the spike measured to keep the origin, the cookie, `/api/*` and A1's snapshot — and the handler is
+registered **always**, not conditionally.
+
+⚠ **Two real defects the sandbox gates caught before his round:** `check-apple-typecheck.sh` failed the
+build on a `let` URL receiving a mutating `setResourceValues` (a genuine Mac build failure), and the
+falsification run reported two of S1's rules passing *for the wrong reason* (`/favicon.svg` was also
+refused by the extension whitelist; `../secret.js` also by the character whitelist) — both fixtures are now
+cases only the intended rule can fail.
+
+Gates: `check-offline-core.py` **558 checks, 0 failures** · typecheck PASS (all three new files) ·
+`check-imports.py` 37 files · `check_md_links.py` clean · ⚠ the 86-mutation falsification run is in flight
+and its result is recorded when it lands.
+
 ### NEXT STEPS, in order
 
-1. **S1–S3 of the app-owned shell** (plan §0c). ⚠ The Mac round is now only needed for **S2**, not for the
-   diagnosis — and the Wi-Fi-off test that used to say "the app does not paint" should then say it does.
+1. **His Mac round for S3** — `./apple/scripts/mac-round.sh ios`, then the Wi-Fi-off force-quit relaunch.
+   Expected: the app **paints, with its rows**; `shell refresh: kept 2 asset(s)` at the fresh step;
+   `handing over the app's own shell (N B)` at the cached one. The Wi-Fi-off test that said "it does not
+   paint" should finally say it paints.
 2. **His phone** (carried forward from session 6, all still open) — the Cancel fix's Swift half (§7a), the
    Sheet tap fix (session 6 Part 1), and §9's caption placement.
 3. **§7 (c) — PARKED** (session 6 Part 6). The plan is on `feat/request-candidate-ids`; phase 2 needs his

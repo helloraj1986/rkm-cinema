@@ -78,8 +78,14 @@ all three answers came back **yes**:
 | # | Work | Gate | Needs a round? |
 |---|---|---|---|
 | **S1** | **The store's rules, pure**: which asset URLs a document names, the rewrite to `rkm-asset://…`, the manifest and its freshness, and what the offline step does when the store is empty | `check-offline-core.py --falsify` — every rule reverted one at a time | **No** — the sandbox runs it |
-| **S2** | **The native half**: fetch the document + assets into `Application Support/ShellCache/` on a successful live load; serve them from a real scheme handler; make the `cached` step load the stored document | typecheck + the round below | one Mac round |
-| **S3** | **The device test**: Wi-Fi off, force-quit, relaunch — the app should PAINT, with its rows | his phone | his phone |
+| **S2** | ✅ **BUILT 2026-09-19** — `ShellStore` (the container, atomic writes, the manifest as the commit point), `ShellFetcher` (refresh on a successful live load — **all-or-nothing**, so a mid-deploy 404 cannot overwrite a good shell), `ShellAssetSchemeHandler` (serves `rkm-asset://app/assets/<name>` from the container). The ladder's `cached` step now hands over the stored document, and the handler is registered **always** | typecheck — ⚠ **which caught a real Mac build failure** (a `let` URL given a mutating call), so the round is not its first compile | no |
+| **S3** | **The device test**: Wi-Fi off, force-quit, relaunch — the app should PAINT, with its rows | his phone | ⚠ **his phone — outstanding** |
+
+⚠ One interaction in S2 is load-bearing and easy to lose: the pair rule is evaluated on the **already
+rewritten** stored document, and it still works because `rkm-asset://app/assets/index-*.js` *contains* the
+`/assets/index-*.js` the rule looks for. A rewrite that hid the asset names would satisfy the pair rule
+with an empty set and render an incomplete store — the blank page this phase exists to fix. It has its own
+check, and every rule in S1/S2 is reverted one at a time by `check-offline-core.py --falsify`.
 
 ⚠ S4 is deliberately not written: the poster/subtitle capture into a downloaded title's bundle (ADR-0010
 limit 1) is a separate concern, and §5b's packaging/transfer pipeline still needs its own measurement.

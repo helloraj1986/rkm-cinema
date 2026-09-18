@@ -76,11 +76,18 @@ done
 # synthetic import and no filtered error. ⚠ `WebShellModel.swift`, which CARRIES THE LADDER OUT, cannot be
 # checked here — SwiftUI and WebKit are not stubbable in this scaffold — so that half is the Mac round's
 # business, and saying so is the reason files are listed one at a time.
-for name in ShellLaunchPlan ShellStorePlan; do
+for name in ShellLaunchPlan ShellStorePlan ShellStore ShellFetcher ShellAssetSchemeHandler; do
   if [ ! -f "$SHELL_SRC/$name.swift" ]; then
     echo "missing source: $SHELL_SRC/$name.swift"; exit 3
   fi
-  cp "$SHELL_SRC/$name.swift" "$TMP/$name.swift"
+  # ⚠ S2 (`ShellStore`/`ShellFetcher`/`ShellAssetSchemeHandler`) calls URLSession and WebKit, so the Shell
+  # loop needs the same treatment the Offline loop gives its Apple-facing files. The two PURE files get it
+  # too and are unharmed by it — the synthetic import is guarded by `canImport`, and neither imports a
+  # framework that gets stripped.
+  {
+    printf '#if canImport(FoundationNetworking)\nimport FoundationNetworking\n#endif\n'
+    cat "$SHELL_SRC/$name.swift"
+  } | sed -E '/^import (UIKit|Combine|WebKit|Network)$/d' > "$TMP/$name.swift"
   WORK+=("$TMP/$name.swift")
 done
 

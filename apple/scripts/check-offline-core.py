@@ -464,6 +464,13 @@ MUTATIONS: list[tuple[str, str, str, str, str]] = [
      "        guard requiredAssets.allSatisfy({ stored.contains($0) }) else { return .cacheFirstURL }",
      "        guard true else { return .cacheFirstURL }",
      "a document whose bundle is missing is NOT usable"),
+    # ⚠ S2 (ADR-0012 D7): the store reads the asset set back OUT of a document that is already
+    # rewritten, and this pattern is what finds them. Widened, it matches prose and attribute names
+    # as well — the required set stops describing the bundle.
+    ("the asset pattern the store looks for", "ShellStorePlan.swift",
+     '        let pattern = "\\(assetPrefix)[A-Za-z0-9._-]+"',
+     '        let pattern = "[A-Za-z0-9._-]+"',
+     "the document's own asset references, in document order"),
 ]
 
 

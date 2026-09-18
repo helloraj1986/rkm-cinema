@@ -1302,6 +1302,15 @@ check(shellRewritten.contains("https://fonts.googleapis.com/css2?family=Inter"),
 checkEqual(ShellStoreRules.rewritten(document: shellRewritten, scheme: "rkm-asset"), shellRewritten,
            "⚠ the rewrite is idempotent — storing the rewritten document is safe")
 
+// ⚠⚠ LOAD-BEARING AND EASY TO LOSE: the STORED document is already rewritten, and the store's pair rule
+// reads the asset set back OUT of it (`WebShellModel.storedShellDocument`) — so the rewritten form must
+// still name the same assets. If a rewrite ever hid them, `requiredAssets` would come back empty, the
+// pair rule would be satisfied by nothing, and an incomplete store would render as the blank page this
+// whole phase exists to fix.
+checkEqual(ShellStoreRules.requiredAssets(document: ShellStoreRules.rewritten(document: shellDocument, scheme: "rkm-asset")),
+           ShellStoreRules.requiredAssets(document: shellDocument),
+           "the rewritten document still names the same assets")
+
 let mixedDocument = "<script src=\"/assets/index-UZQ_BGxK.js\"></script><p>see /assets/index-UZQ_BGxK.js</p>"
 let mixedRewritten = ShellStoreRules.rewritten(document: mixedDocument, scheme: "rkm-asset")
 check(mixedRewritten.contains("<p>see /assets/index-UZQ_BGxK.js</p>"),

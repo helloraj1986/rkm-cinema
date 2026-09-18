@@ -102,6 +102,21 @@ final class WebShellModel: ObservableObject {
         state = .loading
         bootStep = ladder.step
 
+        // ⭐⭐ ADR-0012 D7/D8 — THE OFFLINE STEP HANDS OVER THE APP'S OWN COPY, and this is the whole point
+        // of the phase. With no network there is no WebKit cache entry to ask for (measured on his phone:
+        // the ~1.1 MB bundle is never STORED, so a launch with the Wi-Fi off painted nothing), so the app
+        // serves the document it holds — with the SERVER as its base URL, which is measured to keep the
+        // page's origin, its cookies, its `/api/*` and A1's persisted query cache.
+        // ⚠ Falls through to the cache-first URL load below when there is no usable store: a device that
+        // has never been online is a normal state, and this degrades rather than failing.
+        if ladder.step == .cached, let stored = storedShellDocument() {
+            RKMLog.info("load #\(loadAttempts) → \(address.displayString) · step cached"
+                        + " · handing over the app's own shell (\(stored.count) B)",
+                        category: .nav, correlation: identifier)
+            webView.loadHTMLString(stored, baseURL: address.url)
+            return
+        }
+
         var request = URLRequest(url: address.url)
         // ⚠ `returnCacheDataElseLoad` ONLY at the cached step, because it SKIPS revalidation: at `fresh`
         // it would serve a superseded document whose hashed bundle the last deploy deleted, and
@@ -112,6 +127,37 @@ final class WebShellModel: ObservableObject {
                     + (ladder.step.asksCacheFirst ? " · cache-first (the device's own copy)" : " · revalidating"),
                     category: .nav, correlation: identifier)
         webView.load(request)
+    }
+
+    /// The app's own copy of the shell, or `nil` when there is nothing usable — **the ONE place that
+    /// decision is made** (`ShellStoreRules.choice` is pure and falsified; this only supplies the facts).
+    ///
+    /// ⚠ `requiredAssets` is computed from the STORED document, which is already rewritten — and it still
+    /// works, because the rewritten references (`rkm-asset://app/assets/index-*.js`) contain the
+    /// `/assets/index-*.js` the rule looks for. ⚠ That is load-bearing and pinned by a check in
+    /// `offline-core-tests/main.swift`, because a rewrite that hid the asset names would silently defeat
+    /// the pair rule and let an incomplete store be rendered.
+    private func storedShellDocument() -> String? {
+        guard let document = ShellStore.readDocument() else { return nil }
+        let required = ShellStoreRules.requiredAssets(document: document)
+        let choice = ShellStoreRules.choice(manifest: ShellStore.manifest(),
+                                            requiredAssets: required,
+                                            serverAddress: ShellStore.addressKey(for: address))
+        guard choice == .storedShell else {
+            RKMLog.info("shell store: not usable this launch (\(required.count) asset(s) wanted)", category: .web)
+            return nil
+        }
+        return document
+    }
+
+    /// ⚠ Its own name on purpose: the `describe(_:)` further down takes a `URL?`, and an overload that
+    /// shadowed it would be a trap for whoever reads this next.
+    private func shellRefreshDescription(_ outcome: ShellFetcher.Outcome) -> String {
+        switch outcome {
+        case .stored(let assets): return "kept \(assets) asset(s)"
+        case .unchanged: return "already current"
+        case .failed(let why): return "not kept — \(why)"
+        }
     }
 
     // MARK: - Navigation delegate callbacks
@@ -134,6 +180,18 @@ final class WebShellModel: ObservableObject {
         // already has appear on screen the moment it can draw them — and it is production behaviour, not
         // probe scaffolding.
         OfflineBridge.shared.pageDidLoad()
+
+        // ⭐ ADR-0012 D8 — a successful LIVE load is the one moment the app knows which shell the server
+        // is serving, so it is the moment the app's own copy is brought up to date. ⚠ Only at the `fresh`
+        // step: a launch served from the store has, by definition, no server to talk to.
+        // ⚠ Fire-and-forget: the page is already painted, and a refresh that fails changes nothing it can
+        // see (the store it already had stays valid — the fetch is all-or-nothing).
+        if bootStep == .fresh {
+            Task { [address] in
+                let outcome = await ShellFetcher.refresh(address: address)
+                RKMLog.info("shell refresh: \(shellRefreshDescription(outcome))", category: .web)
+            }
+        }
         #if DEBUG
         // ⚠ Phase B3's live probe hangs off this: its bridge half needs a LIVE page (it installs a listener
         // in it), and the page is only live once a navigation has finished. No-op without the launch

@@ -106,7 +106,7 @@ enum ShellStoreRules {
 ///
 /// ⚠ The bytes are recorded so a half-written file is detectable *without* reading it: the store writes
 /// atomically (temp + rename, the downloader's discipline), and this is the cheap second opinion.
-struct ShellStoredAsset: Equatable {
+struct ShellStoredAsset: Equatable, Codable {
     let path: String
     let bytes: Int
 }
@@ -116,7 +116,7 @@ struct ShellStoredAsset: Equatable {
 /// ⚠ `serverAddress` is not decoration. The plan's own rule (§1) is that a store fetched from *another*
 /// server is dropped rather than rendered — a shell is not a library, and the wrong app against the right
 /// server (or the reverse) is worse than no shell at all.
-struct ShellStoreManifest: Equatable {
+struct ShellStoreManifest: Equatable, Codable {
     /// ⚠ Bumped like the downloader's manifest: a build that changes the stored shape DROPS the old one
     /// rather than decoding half of it.
     static let currentVersion = 1

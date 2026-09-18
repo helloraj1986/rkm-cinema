@@ -23,7 +23,10 @@ import {
 import { useRecentSearches } from "../../features/search/recent";
 import { SuggestDetailSheet } from "../../features/suggest/SuggestDetailSheet";
 import { useAddToWatchlist } from "../../features/watchlist/api";
-import { useCardActions } from "../../features/watchlist/actions";
+import {
+  useCardActions,
+  type AmbiguousMatch,
+} from "../../features/watchlist/actions";
 import { toast } from "../../features/watchlist/toast";
 
 /**
@@ -60,6 +63,13 @@ export function SearchScreen() {
   const { data, isFetching, isError } = useGlobalSearch(debounced);
   const [added, setAdded] = useState<Record<number, boolean>>({});
   const [busy, setBusy] = useState<number | null>(null);
+  // ⚠ Download has its OWN in-flight state. It used to be hardcoded `false` on the sheet, so the
+  // download button answered a press with nothing at all — the same class of defect as #1 (a
+  // control that shows no state and no feedback).
+  const [busyDownload, setBusyDownload] = useState<number | null>(null);
+  // The server's "which one did you mean?" answer, while its title's sheet is open. Local UI state
+  // (§3.4); the payload is parsed once, by `ambiguousMatch`, in the shared action.
+  const [ambiguous, setAmbiguous] = useState<AmbiguousMatch | null>(null);
   // The discovered title whose details are open. Local UI state, which is all this
   // directory is allowed to hold (§3.4) — the payload and the actions come from
   // `features/search/lib.ts` and the shared sheet.
@@ -105,6 +115,27 @@ export function SearchScreen() {
         onError: () => toast("Couldn't add", "Check the backend connection.", "err"),
       },
     );
+  };
+
+  /**
+   * Download a discovered title — the ONE path, for both the row's pill and the sheet's button.
+   *
+   * ⚠ **This is where a 409 lands, and it does not dead-end.** `POST /api/media/{id}/request`
+   * answers 409 with the titles it could not choose between; `useCardActions().download` hands that
+   * structure here instead of toasting it. The phone's answer is to OPEN the title's sheet with the
+   * candidates in it — the row is where the person was, the sheet is where the details and the
+   * actions already live, and inventing a second surface for one failure is what this avoids.
+   */
+  const downloadDisc = (disc: GlobalDiscoveryRow) => {
+    setAmbiguous(null);
+    setBusyDownload(disc.tmdb_id);
+    cardActions.download(discoveryEntryStub(disc), {
+      onAmbiguous: (match) => {
+        setDetailDisc(disc);
+        setAmbiguous(match);
+      },
+      onSettled: () => setBusyDownload(null),
+    });
   };
 
   const ownedCount = data ? data.items.length + data.person_titles.length : 0;
@@ -216,8 +247,11 @@ export function SearchScreen() {
                   added={inWatchlist(disc)}
                   busy={busy === disc.tmdb_id}
                   onAdd={() => addDisc(disc)}
-                  onDownload={() => cardActions.download(discoveryEntryStub(disc))}
-                  onOpen={() => setDetailDisc(disc)}
+                  onDownload={() => downloadDisc(disc)}
+                  onOpen={() => {
+                    setAmbiguous(null);
+                    setDetailDisc(disc);
+                  }}
                 />
               ))}
             </section>
@@ -233,10 +267,14 @@ export function SearchScreen() {
         <SuggestDetailSheet
           item={discoveryToSuggestItem(detailDisc, inWatchlist(detailDisc))}
           busyAdd={busy === detailDisc.tmdb_id}
-          busyDownload={false}
+          busyDownload={busyDownload === detailDisc.tmdb_id}
+          ambiguous={ambiguous}
           onAdd={() => addDisc(detailDisc)}
-          onDownload={() => cardActions.download(discoveryEntryStub(detailDisc))}
-          onClose={() => setDetailDisc(null)}
+          onDownload={() => downloadDisc(detailDisc)}
+          onClose={() => {
+            setAmbiguous(null);
+            setDetailDisc(null);
+          }}
         />
       ) : null}
     </div>

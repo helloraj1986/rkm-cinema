@@ -310,6 +310,46 @@ the run into 6 failures / exit 1 (*"the trim moves it 0.00px — the CSS is miss
 reports that there is nothing to *load*), so it cannot tell you which font is rendering — the canvas
 metrics can (`ascent+descent = 1.200em, cap = 0.733em` is DejaVu Sans, not Inter).
 
+## `search-mobile-frame.html` + `detail-mobile-frame.html` — the phone's Suggest SHEET and Similar row (2026-09-18)
+
+Two behaviours with one thing in common: the answer to a press must land where the press happened.
+
+`python3 tools/check_mobile_suggest.py` drives the REAL `SearchScreen` over a stubbed API and asserts
+the phone's handling of **409** from `POST /api/media/{id}/request` — the one acquisition failure with
+structure behind it (`detail: {message, candidates}`):
+
+| Scenario | What it asserts |
+|---|---|
+| A `?ambiguous=1` | pressing Download on a discovered title opens THAT title's sheet with the server's SENTENCE and its candidate titles in it — and **zero** interactive controls among them (`controls=0`), because the server's candidates carry no id, so a pick-one control could not act |
+| B *(no param)* | the same press on a normally-answered request renders **no panel** and sends **exactly one** request — the negative case, without which A would only prove the panel always renders |
+| C `?ambiguous=1` | the same 409 arriving while the sheet is **already open** (the flow this exists for: press Download on the details, not on the row) puts the list in that sheet |
+| D `?ambiguous=1` @320 | and it fits the narrowest phone with nothing poking outside the viewport |
+| E `?ambiguous=1` | a real mouse DRAG down the sheet still dismisses it **and fires nothing** — the counterweight to the fix below, which is invisible in the source |
+
+⚠⚠ **The trap this frame found, and the reason it clicks with a real mouse.** A real click inside a
+`Sheet` did nothing at all: the panel captured the pointer on `pointerdown`, so a gesture that STARTED
+ON A BUTTON was retargeted to the panel and the browser dispatched `click` to the PANEL. `element.click()`
+from the console worked, which is the signature of a swallowed gesture rather than a broken handler —
+and no check in this repo had ever clicked inside a sheet, so nothing could see it (the ⋯ More sheet,
+the Browse filters and this sheet were all affected). Scenario C is the assertion that keeps it fixed;
+scenario E is the one that keeps the fix from being "make the sheet undraggable". The rule lives in
+`sheetRules.ts::shouldArmDrag` and its reasoning in `Sheet.tsx`.
+
+`python3 tools/check_detail_mobile.py` (see the M4 section above for its other assertions) now also
+measures the Similar row the phone gained the same day — `?similar=0` is the negative half:
+
+| Assertion | What it means |
+|---|---|
+| `similar` | "Because you watched" renders as the phone's own LIST: a heading naming the source title, one ≥44px body per row that opens the title, one ≥44px Add/Download pill beside it, the provider's non-owned rows present **by name**, and the OWNED fixture title absent (the client-side dedupe is part of the contract) |
+| `no-similar` | with the provider returning nothing, the section is **absent** — a heading over an empty rail is the defect this half exists to catch |
+
+⚠ Both frames' rows and pills are measured **after scrolling the section into view**: the phone puts
+"Because you watched" below the fold on purpose, and a pill measured at scroll top would be reported
+off-screen for the wrong reason.
+
+⚠ **The same two TMPDIR/restart traps as every other frame here** — run playwright with `TMPDIR`
+unset, and kill the vite that owns :5199 (`ss -ltnp | grep 5199`) before believing a run.
+
 ## `cta-frame.html` — the card CTA and the search action pair (2026-09-13)
 
 His report, two defects on two high-visibility surfaces: the poster's **"▶ Episodes"** pill rendered the

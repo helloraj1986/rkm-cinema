@@ -34,19 +34,38 @@ module-level title index must be keyed by SESSION — profiles see different lib
 3. **Whether 0.03 is the right amount of taste.** It is a BOUND (proven not to overturn a better
    title match); it is not calibrated, and only real searches can say.
 
+### ⚠⚠ `dev` IS NOT THE LATEST CODE — 7 commits are stranded on `feat/mobile-m3-library`
+
+Verified 2026-09-18 with `git branch --no-merged dev`. `dev` is MISSING:
+
+| Missing from `dev` | Consequence |
+|---|---|
+| **`3e91fd0` — the poster-toggle sweep (his #2)** | ⚠ **`dev` still exhibits the "two green ticks" bug he reported.** `MediaCard.tsx` on dev still carries `onToggleWatched` + `rkm-reveal-hit` at 6 call sites. |
+| `tools/check_poster_watched.py` (185 lines) + `frontend/harness/poster-watched-frame.tsx` | the browser gate for the above — so dev cannot even detect the regression |
+| `tools/check_detail_mobile.py` (367 lines) | the M4 detail measurement tool |
+| `b48d6c7` — the ONE-architecture-document consolidation | dev's `docs/` has NO `archive/`; `ARCHITECTURE_AUDIT.md` + `modular-scalable-architecture.md` still sit un-archived in `docs/`. ⚠ The consolidated `ARCHITECTURE.md` is the version agents read from that branch — dev's is older. |
+| `docs/SEARCH.md` (`0c6076f`) | see below |
+
+⚠ **A 2026-09-18 merge check says this is cheap to fix:** `git merge-tree --write-tree dev
+feat/mobile-m3-library` reports exactly ONE conflict — `docs/PROGRESS.md` (both sides edited this
+top block). The code auto-merges cleanly.
+
+⚠ `spike/offline-loopback` also holds 14 unmerged commits, but §13 puts `spike/*` OUT of the flow by
+convention. It does contain real `apple/` tooling fixes (`mac-round.sh` step 5, the E1/E2 gate) —
+decide deliberately whether those are wanted, rather than merging a spike by reflex.
+
 ### NEXT STEPS, in order
 
-1. **He deploys and tests `dev`** — `.\rkm-cinema.ps1 apply`, then the scenarios given in the chat
-   reply. ⚠ **`main` is 40 commits behind and must NOT advance until he accepts on the UI** (§13).
+1. **⚠ Resolve the stranded `feat/mobile-m3-library` work BEFORE main advances** — otherwise `main`
+   would fast-forward to a `dev` that reintroduces a bug he already reported. See the block above.
+2. **He deploys and tests `dev`** — `.\rkm-cinema.ps1 apply`, then the scenarios given in the chat
+   reply. ⚠ **`main` is 41 commits behind and must NOT advance until he accepts on the UI** (§13).
    When he does: `git checkout main && git merge --ff-only dev && git push` — the invariant still
    holds (`git merge-base --is-ancestor main dev` is silent).
-2. **Phase 6 (semantic search) and Phase 7 (metrics loop)** — both await HIS decision, not code.
+3. **Phase 6 (semantic search) and Phase 7 (metrics loop)** — both await HIS decision, not code.
    Phase 6 needs real infra (embeddings); Phase 7 needs him to say what he wants logged.
-3. ⚠ **`docs/SEARCH.md` is NOT on `dev`** — it exists only on `feat/mobile-m3-library`
+4. ⚠ **`docs/SEARCH.md` is NOT on `dev`** — it exists only on `feat/mobile-m3-library`
    (`0c6076f`), yet `SEARCH_IMPORVEMENT_PLAN.md` (which IS on `dev`) opens by referring to it.
-   Merge that branch's doc across or re-create it.
-4. Session 2's **#2 — the poster-toggle sweep** (below) is still the top un-done item, and it needs
-   no decision from him.
 
 ---
 

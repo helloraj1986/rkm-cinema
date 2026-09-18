@@ -4,3 +4,8 @@ uvicorn[standard]>=0.29
 pydantic>=2.6
 requests>=2.31
 PyYAML>=6.0
+# Typo-tolerant search matching (SEARCH_IMPROVEMENT_PLAN Phase 1). MIT-licensed and
+# C-accelerated, ~10x python-Levenshtein for the workloads this app runs. ⚠ Optional at
+# runtime — services/search/fuzzy.py reports itself unavailable rather than raising, so a
+# missing wheel degrades search to exact matching instead of breaking it.
+rapidfuzz>=3.9

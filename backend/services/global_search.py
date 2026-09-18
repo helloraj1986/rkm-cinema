@@ -7,68 +7,20 @@ unit-tested. All functions operate on the normalized provider rows produced by
 """
 from __future__ import annotations
 
-import re
-from typing import Any, Iterable, Optional
+from typing import Iterable, Optional
 
-_NON_WORD = re.compile(r"[^0-9A-Za-z]+")
-_SPACES = re.compile(r"\s+")
-
-#: ⚠ The ONE threshold that decides "the library already has what was asked for" — used by the
-#: discovery GATE (route) and by the dedupe below, so the two can never drift apart again.
-#: It is deliberately the EXACT tier (3), not containment (2): an owned "Sholay — Special Ops" is a
-#: DIFFERENT work from "Sholay", and treating a longer title that merely contains the query as an
-#: answer is what hid the real film from a global search (measured 2026-09-13: score 2, so
-#: `strong_match` went true and the route never asked TMDB at all).
-EXACT_TITLE_SCORE = 3
-
-
-def normalize_title(raw: Any) -> str:
-    """Case/punctuation-insensitive title key ("3 Body Problem:" -> "3 body problem")."""
-    s = _NON_WORD.sub(" ", str(raw or "")).strip().lower()
-    return _SPACES.sub(" ", s)
-
-
-def title_match_score(query: str, title: Any, *, query_year: Optional[int] = None,
-                      title_year: Optional[Any] = None) -> int:
-    """How strongly an owned title answers the query (0 = no match).
-
-    3 = exact normalized title · 2 = containment (len>=3) with compatible year
-    or no year either side · 1 = every significant token contained (len>=5).
-    Years must agree when both are known so same-name remakes stay distinct.
-    """
-    q = normalize_title(query)
-    t = normalize_title(title)
-    if not q or not t:
-        return 0
-    try:
-        y1 = int(query_year) if query_year is not None else None
-        y2 = int(title_year) if title_year is not None else None
-    except (TypeError, ValueError):
-        y1, y2 = None, None
-    # Same-name remakes of a different year are DISTINCT titles, never a match.
-    if y1 is not None and y2 is not None and y1 != y2:
-        return 0
-    if q == t:
-        return 3
-    if len(q) >= 3 and (q in t or t in q):
-        return 2
-    words = q.split()
-    if len(q) >= 5 and all(w in t for w in words):
-        return 1
-    return 0
-
-
-def owned_strong_match(owned: Iterable[dict], query: str, *, query_year: Optional[int] = None) -> int:
-    """Best ``title_match_score`` across owned rows.
-
-    ⚠ The caller compares this against ``EXACT_TITLE_SCORE`` — a number alone cannot say whether the
-    library *answered* the query (see that constant).
-    """
-    best = 0
-    for row in owned or []:
-        best = max(best, title_match_score(query, row.get("title", ""), query_year=query_year,
-                                           title_year=row.get("year")))
-    return best
+# ⚠ The scoring primitives MOVED to ``services/search/`` (SEARCH_IMPROVEMENT_PLAN Phase 0) and are
+# re-exported here so this module's public surface — which the route and the tests both import — is
+# unchanged. Relevance logic lives in ONE place; this file keeps only the global-search-specific rules
+# (the ownership gate, discovery dedupe, and the per-row action state).
+from services.search.normalize import normalize_title  # noqa: F401  (re-export)
+from services.search.scoring import (  # noqa: F401  (re-export)
+    EXACT_TITLE_SCORE,
+    best_relevance,
+    owned_strong_match,
+    score_item,
+    title_match_score,
+)
 
 
 def is_duplicate_discovery(candidate: dict, owned: Iterable[dict]) -> bool:

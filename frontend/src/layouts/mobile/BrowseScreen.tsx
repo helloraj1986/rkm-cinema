@@ -44,7 +44,7 @@ export function BrowseScreen() {
   const { folderId = "" } = useParams();
   const foldersQ = useLibraryFolders();
   const items = useFolderItems(folderId || null);
-  const { quickPlay, openItem, toggleWatched } = useLibraryOutlet();
+  const { quickPlay, openItem } = useLibraryOutlet();
   const [searchParams, setSearchParams] = useSearchParams();
   const [filtersOpen, setFiltersOpen] = useState(false);
 
@@ -121,7 +121,6 @@ export function BrowseScreen() {
                 fluid
                 onQuickPlay={quickPlay}
                 onOpenDetail={openItem}
-                onToggleWatched={toggleWatched}
               />
             ))}
           </div>

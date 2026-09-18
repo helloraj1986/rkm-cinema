@@ -159,17 +159,23 @@ Full runbook — failure modes, recovery ladders, where state lives: **[`docs/OP
 
 ```powershell
 # Backend (from backend/)
-python -m pytest tests/ -q        # 1107 tests, no live LAN required
+python -m pytest tests/ -q        # 1177 tests, no live LAN required
 ruff check api application config core domain infrastructure jobs services
 
 # Frontend (from frontend/)
 npm ci
 npm run dev                       # Vite dev server (proxies /api to 127.0.0.1:8000)
-npm test                          # 294 Vitest tests
+npm test                          # 551 Vitest tests / 20 files
 npm run typecheck                 # tsc --noEmit
 npm run build                     # production build (baked into the web image)
 npm run generate:types            # regenerate TS types from the frozen contract
 ```
+
+⚠ **That is not the whole gate.** The Apple halves (an offline core executed on Linux, a per-file
+typecheck), the browser checks and the docs link check are separate commands —
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) **§15** lists every one of them with what it proves and how
+to falsify it. CI (`.github/workflows/ci.yml`) runs the backend lint/test and the frontend
+typecheck/test/build plus a contract-drift check on every push.
 
 The `/api` contract is **frozen** per [ADR-0001](docs/adr/ADR-0001-freeze-api-contract.md) — additive
 only; regenerate types from `docs/api/openapi.v1.json` rather than hand-writing shapes. A **new route**
@@ -191,14 +197,20 @@ rkm-cinema.ps1   the one script you run
 
 ## Documentation
 
+**New here — human or agent?** Read `docs/ARCHITECTURE.md` §0 first: it gives the reading order and the
+five rules that explain most of the code.
+
 | Doc | Contents |
 |---|---|
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | **The single architecture document** — what runs where (§2.1), what owns which fact, where to change X (§14), the gates (§15), the identity model (§11), the phone/tablet integration (§17), the ADR index (§20) and the documentation map (§21) |
 | [`docs/OPERATIONS.md`](docs/OPERATIONS.md) | **The runbook**: commands, rules, fresh install, recovery, the auth switch, where state lives |
-| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | How the system is built, including the identity model (§11) |
-| [`docs/adr/`](docs/adr/) | Architecture decision records — start with [ADR-0006](docs/adr/ADR-0006-delegated-identity-and-sessions.md) (identity) and [ADR-0001](docs/adr/ADR-0001-freeze-api-contract.md) (the frozen contract) |
-| [`docs/api/openapi.v1.json`](docs/api/openapi.v1.json) | The frozen API contract |
+| [`docs/adr/`](docs/adr/) | Architecture decision records — start with [ADR-0006](docs/adr/ADR-0006-delegated-identity-and-sessions.md) (identity) and [ADR-0001](docs/adr/ADR-0001-freeze-api-contract.md) (the frozen contract). Indexed in ARCHITECTURE.md §20 |
+| [`docs/api/openapi.v1.json`](docs/api/openapi.v1.json) | The frozen API contract (`frontend/src/lib/api/types.ts` is generated from it) |
 | [`docs/TAILSCALE_HOSTING.md`](docs/TAILSCALE_HOSTING.md) | Remote/phone access over Tailscale |
-| [`docs/PROGRESS.md`](docs/PROGRESS.md) | What changed, session by session — the project's working memory |
+| [`docs/PROGRESS.md`](docs/PROGRESS.md) | What changed, session by session — the project's working memory. ⚠ Read its TOP block: the rest is an append-only log |
+| [`docs/KNOWN_ISSUES.md`](docs/KNOWN_ISSUES.md) | Open defects, in the owner's own words |
+| [`docs/archive/`](docs/archive/README.md) | ⚠ Superseded documents (the legacy audit, the executed restructure plan) — history only |
 
 Plans for the workstreams that built this (identity, household accounts, subtitles, the bundled
-stack) live beside them in `docs/` as `*_PLAN.md`.
+stack) live beside them in `docs/` as `*_PLAN.md` — ⚠ a plan becomes history the moment it is built;
+`PROGRESS.md` is the record of what actually landed.

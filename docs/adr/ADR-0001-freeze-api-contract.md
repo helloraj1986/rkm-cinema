@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-09-06
-- **Phase:** 0 (`docs/modular-scalable-architecture.md`)
+- **Phase:** 0 (the restructure plan, archived: `docs/archive/modular-scalable-architecture.md`)
 
 ## Context
 The frontend is being re-platformed (React/TS). The `/api` surface is the seam between the

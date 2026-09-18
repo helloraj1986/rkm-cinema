@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-09-06
-- **Phase:** 0/1 (`docs/modular-scalable-architecture.md`)
+- **Phase:** 0/1 (the restructure plan, archived: `docs/archive/modular-scalable-architecture.md`)
 
 ## Context
 The backend is modular (thin routes, DI-capable services, provider ABC, repository seam, one

@@ -23,9 +23,10 @@ import { useMutateItemState } from "./api";
  * ⚠ It owns the mutation rather than taking a handler, for the reason above: a caller that passes its
  * own handler is a caller that can forget the pending state, and then the tile is silent again.
  *
- * ⚠ **The poster is NOT this control** (his rule, same day): the grid's cards *reflect* watched state
- * with the tick marker and no longer offer the toggle at all. One fact, one owner — see
- * `MediaCard`'s note and `KNOWN_ISSUES` §2.
+ * ⚠ **The poster is NOT this control** (his rule, decided 2026-09-17, landed 2026-09-18): the grid's
+ * cards *reflect* watched state with the tick marker and offer no toggle at all — the `onToggleWatched`
+ * prop is gone from `MediaCard` for that reason. One fact, one owner — see `MediaCard`'s note and
+ * `KNOWN_ISSUES` §2.
  */
 export function WatchedAction({
   item,

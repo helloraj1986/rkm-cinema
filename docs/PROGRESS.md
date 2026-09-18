@@ -1,14 +1,18 @@
-## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-18, after session 3) · branch **`dev`** · search relevance merged as **`b8ed22e`** · **40 ahead of `main`** · tree clean, pushed
+## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-18, session 4) · branch **`dev`** · tree clean, pushed
 
 **Say this first:** *"continue rkm-cinema — pick up the RESUME-HERE block."* Then read this and
 `KNOWN_ISSUES.md`'s status table (the live list of open defects and their state).
 
-⚠ **Everything BELOW this block is session 1–2 history, and its headline is STALE** — it says
-"15 commits ahead of `dev`, none merged", but that work WAS merged into `dev` as `ec5a37a`. This
-block is the state; the session-2 block below is still worth reading for its open items (#2, and the
-six device-unverified things).
+⚠ **TWO lines of work landed on `dev` today, and they were running in parallel.** Both are below. The
+block underneath this one is the older handoff for `feat/mobile-m3-library` — it is now HISTORY (that
+branch is merged), kept because its 507 section and its open items are still the truth.
 
-### Landed this session — SEARCH_IMPROVEMENT_PLAN phases 0–5, merged to `dev` as `b8ed22e`
+⚠ **A lesson this session paid for twice:** a doc cannot name its own tip, and neither can a merge
+commit name itself. `git log --oneline -3` is the honest answer; never trust a SHA written in a doc.
+
+### 1. Search relevance — `SEARCH_IMPROVEMENT_PLAN` phases 0–5
+
+Merged from `feat/search-relevance` (`--no-ff`). `docs/SEARCH_IMPORVEMENT_PLAN.md` is the plan.
 
 | Phase | What |
 |---|---|
@@ -17,7 +21,7 @@ six device-unverified things).
 | **2** | ONE ranked list. ⚠ The `strong_match` discovery gate is **DELETED** — owning *The Matrix* no longer hides *Reloaded* / *Animatrix*. |
 | **3** | Query understanding: `"tom hanks movies 1994"` → person + type + year; TMDB type-specific endpoints. |
 | **4** | Instant search: sub-3-char queries never reach TMDB, superseded requests cancelled, matched spans highlighted. |
-| **5** | Taste from watched history + a per-profile switch. Bonus is bounded BELOW a relevance tier step. |
+| **5** | Taste from watched history + a per-profile switch (Settings → Search). Bonus is bounded BELOW a relevance tier step. |
 | **fix** | ⚠ A discovered title on the PHONE could be ADDED to the watchlist but not LOOKED at — a TODO that outlived M4. The row simply had no `onClick`. |
 
 ⚠ **Three of the plan's own numbers were deliberately NOT followed**, each for a stated reason in the
@@ -25,58 +29,72 @@ commit bodies — read them before "correcting" anything: `OWNED_BONUS` is 0.03 
 bonus is ABSOLUTE 0.03 rather than "10–15% of base score", and the prefix index is **not built** (a
 module-level title index must be keyed by SESSION — profiles see different libraries, §11).
 
+### 2. The stranded `feat/mobile-m3-library` work — swept up in the same session
+
+⚠ **This branch had been left unmerged with REAL fixes on it.** Found by running
+`git branch --no-merged dev` instead of assuming a merge meant everything landed — and the previous
+handoff block, which said "6 commits ahead of `dev`", had been read past. It carried:
+
+- the **#2 poster-toggle sweep** (`3e91fd0`) — ⚠ **until this merge, `dev` still showed the "two green
+  ticks" he reported.** `MediaCard.tsx` kept `onToggleWatched` + `rkm-reveal-hit` at 6 call sites.
+- `tools/check_poster_watched.py` + `frontend/harness/poster-watched-frame.tsx` — the gate for it, so
+  `dev` could not previously even DETECT that regression.
+- `tools/check_detail_mobile.py` — the M4 detail measurement tool.
+- the ONE-architecture-document consolidation (`b48d6c7`) + `docs/archive/` + `docs/SEARCH.md`.
+
+⚠ `spike/offline-loopback` still holds 14 unmerged commits. §13 puts `spike/*` OUT of the flow by
+convention, so that is a DECISION, not an oversight — it does carry real `apple/` tooling fixes
+(`mac-round.sh` step 5, the E1/E2 gate). Decide deliberately or leave it.
+
 ### ⚠ NOT VERIFIED ON HIS DEVICE — do not describe any of it as working
 
-1. **Every UI change in phases 2–5.** Measured headlessly only: typecheck, **569 vitest**,
-   production build, and `tools/check_search_fallback.py` in a real browser — including its
-   **falsification direction** (4 assertions go RED with the gate re-introduced).
+1. **Every UI change in search phases 2–5**, and **the poster sweep** — both measured headlessly only.
 2. **The phone's discovery-detail sheet** — driven headlessly at 390px, never touched with a thumb.
-3. **Whether 0.03 is the right amount of taste.** It is a BOUND (proven not to overturn a better
-   title match); it is not calibrated, and only real searches can say.
-
-### ⚠⚠ `dev` IS NOT THE LATEST CODE — 7 commits are stranded on `feat/mobile-m3-library`
-
-Verified 2026-09-18 with `git branch --no-merged dev`. `dev` is MISSING:
-
-| Missing from `dev` | Consequence |
-|---|---|
-| **`3e91fd0` — the poster-toggle sweep (his #2)** | ⚠ **`dev` still exhibits the "two green ticks" bug he reported.** `MediaCard.tsx` on dev still carries `onToggleWatched` + `rkm-reveal-hit` at 6 call sites. |
-| `tools/check_poster_watched.py` (185 lines) + `frontend/harness/poster-watched-frame.tsx` | the browser gate for the above — so dev cannot even detect the regression |
-| `tools/check_detail_mobile.py` (367 lines) | the M4 detail measurement tool |
-| `b48d6c7` — the ONE-architecture-document consolidation | dev's `docs/` has NO `archive/`; `ARCHITECTURE_AUDIT.md` + `modular-scalable-architecture.md` still sit un-archived in `docs/`. ⚠ The consolidated `ARCHITECTURE.md` is the version agents read from that branch — dev's is older. |
-| `docs/SEARCH.md` (`0c6076f`) | see below |
-
-⚠ **A 2026-09-18 merge check says this is cheap to fix:** `git merge-tree --write-tree dev
-feat/mobile-m3-library` reports exactly ONE conflict — `docs/PROGRESS.md` (both sides edited this
-top block). The code auto-merges cleanly.
-
-⚠ `spike/offline-loopback` also holds 14 unmerged commits, but §13 puts `spike/*` OUT of the flow by
-convention. It does contain real `apple/` tooling fixes (`mac-round.sh` step 5, the E1/E2 gate) —
-decide deliberately whether those are wanted, rather than merging a spike by reflex.
+3. **Whether 0.03 is the right amount of taste.** It is a BOUND (proven not to overturn a better title
+   match); it is not calibrated, and only real searches can say.
+4. Everything the block below already lists as device-unverified still is.
 
 ### NEXT STEPS, in order
 
-1. **⚠ Resolve the stranded `feat/mobile-m3-library` work BEFORE main advances** — otherwise `main`
-   would fast-forward to a `dev` that reintroduces a bug he already reported. See the block above.
-2. **He deploys and tests `dev`** — `.\rkm-cinema.ps1 apply`, then the scenarios given in the chat
-   reply. ⚠ **`main` is 41 commits behind and must NOT advance until he accepts on the UI** (§13).
-   When he does: `git checkout main && git merge --ff-only dev && git push` — the invariant still
-   holds (`git merge-base --is-ancestor main dev` is silent).
-3. **Phase 6 (semantic search) and Phase 7 (metrics loop)** — both await HIS decision, not code.
-   Phase 6 needs real infra (embeddings); Phase 7 needs him to say what he wants logged.
-4. ⚠ **`docs/SEARCH.md` is NOT on `dev`** — it exists only on `feat/mobile-m3-library`
-   (`0c6076f`), yet `SEARCH_IMPORVEMENT_PLAN.md` (which IS on `dev`) opens by referring to it.
+1. **He deploys and tests `dev`** — `.\rkm-cinema.ps1 apply`, then the scenarios given in the chat
+   reply. ⚠ **`main` must NOT advance until he accepts on the UI** (§13). When he does:
+   `git checkout main && git merge --ff-only dev && git push` — the invariant still holds
+   (`git merge-base --is-ancestor main dev` is silent).
+2. **Phase 6 (semantic search) and Phase 7 (metrics loop)** — both await HIS decision, not code.
+3. **The poster sweep is now on `dev` but was never device-tested**: `check_poster_watched.py` exists
+   and should be run against the merged tree before calling the "two green ticks" report closed.
 
 ---
 
-## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-18, after session 2) · branch **`feat/mobile-m3-library`** · tip **`581f226`** · **15 commits ahead of `dev`**, tree clean, pushed
+## ⚡ [HISTORY — this branch is now MERGED into `dev`] (2026-09-18, after session 3) · branch **`feat/mobile-m3-library`** · **6 commits ahead of `dev`** (M3+M4 merged; tree clean, pushed)
 
-⚠ **Session 2 closed item 5 below — the offline `507` was his `.env`, not his disk — and found a second
-defect standing behind it: the phone was throwing the server's own sentence away.** Read the 507 section
-below before touching the offline code. Half of it needs no iOS rebuild and can be tried in one command.
+⚠ **The tip:** this line rides a docs-only commit, so `git log -1` is always one commit past the code
+named here — the **measured code tip is `0c6076f`** (`test(mobile): measure the detail screen with a tool
+that can fail`). `git log --oneline -3` is the honest answer; do not trust a SHA written in a doc.
+
+⚠ **An agent starting here: read [`ARCHITECTURE.md`](ARCHITECTURE.md) §0 first** — one document now, with
+the reading order, the five rules, the deployed inventory (§2.1), "where do I change X" (§14) and every
+gate command (§15). The other two architecture files were archived on 2026-09-18.
+
+⚠ **Session 2 did four things: closed item 5 (the offline `507` was his `.env`, not his disk), found the
+client defect standing behind it, landed item 1 — the #2 poster-toggle sweep — and consolidated the
+architecture docs into one verified document.** M3+M4 are
+**merged to `dev`** (`ec5a37a`, on his word); the sweep (`3e91fd0`) and the docs (`b48d6c7`) are what the
+branch carries. Read the 507 section below before touching the offline code — half of it needs no iOS
+rebuild and can be tried in one command.
 
 **Say this first:** *"continue rkm-cinema — pick up the RESUME-HERE block."* Then read this and
 `KNOWN_ISSUES.md`'s status table (the live list of open defects and their state).
+
+⚠ **Session 3 (this one) closed NEXT STEP 3 — and only that.** The detail screen is now measured by a
+tool that can FAIL rather than by a one-off probe holding a stale assertion: `tools/check_detail_mobile.py`
+(the harness tile filter now carries `Unwatched`, the label the mid-play fixture actually renders;
+freshness guarded on both sides; `--selftest` proves all four assertions go RED on a mutated probe). It
+also settles item 2 of the "built but not verified" list — the #1 Watched control **is** now measured.
+⚠ No app source, backend, or Swift changed; the tool measures the REAL `layouts/mobile/DetailScreen.tsx`
+through the harness, so its numbers describe the branch as it stands.
+⚠ Still open and unchanged: the six items' device rounds, the pending decisions below, and every
+step from 4 onward.
 
 ### Built this session (all committed + pushed, none merged)
 
@@ -91,9 +109,14 @@ below before touching the offline code. Half of it needs no iOS rebuild and can 
 ### ⚠ SIX THINGS ARE BUILT BUT **NOT VERIFIED ON HIS DEVICE** — never describe them as working
 
 1. **M3 Search** + **M4 Detail** screens — measured headlessly at 320/390 only.
-2. **#1 Watched control** — the detail tile was **not** re-measured: the harness probe last ran BEFORE
-   it, so its assertion `tiles == ["Watched","More"]` is knowingly stale (that fixture is mid-play →
-   the label is now `Unwatched`). Re-run the probe before calling that screen "measured".
+2. **#1 Watched control** — ✔ **RE-MEASURED 2026-09-18 (session 3).** The probe's tile filter listed only
+   `Watched`, so it silently dropped the state-labelled tile this screen exists to show. The filter now
+   carries `Unwatched`, and the screen is measured by a tool instead of a one-off run:
+   **`tools/check_detail_mobile.py`** (freshness-guarded both ways, `--selftest` falsified) reports
+   **movie** primary `Resume (28%)` · **series** primary `Resume S1E2` · tiles `Unwatched,More` ·
+   `scrollWidth == innerWidth` · 0 overflowing elements, at **320 / 390 / 430**. ⚠ What it does NOT
+   cover: the TAP itself — a headless browser cannot do an iOS finger-tap, so the control's feedback
+   stays his device round.
 3. **#3 Switch Profile** — overflow measured fixed (0 at 320–430), but a headless browser cannot do an
    iOS finger-drag or raise the keyboard. His phone is the acceptance.
 4. **#7 Cancel** — Swift fix, typecheck gate PASS, **no Mac build and nothing anywhere taps Cancel**
@@ -113,19 +136,27 @@ below before touching the offline code. Half of it needs no iOS rebuild and can 
 
 ### NEXT STEPS, in order
 
-1. **#2 — the poster-toggle sweep (decided by him; no decision needed).** The details view OWNS the
-   watched control; the poster only REFLECTS status. Delete `MediaCard`'s toggle button (its
-   `rkm-reveal-hit` bottom row) and the `Mark as watched/unplayed` item in its ⋯ menu, then drop the
-   `onToggleWatched` prop at six call sites: `LibraryHomeView`, `LibraryFolderView`, `DiscoverView`,
-   `PosterRail`, `HomeScreen`, `BrowseScreen`. The tick MARKER on the art stays. → kills the "two green
-   ticks" report.
+1. ✔ **DONE 2026-09-18 (session 2) — the #2 poster-toggle sweep landed** (`3e91fd0`). The details view
+   OWNS the watched control; the poster only REFLECTS status. `MediaCard`'s toggle button and the ⋯
+   menu's `Mark as watched/unplayed` item are gone, `onToggleWatched` is DELETED (not left optional),
+   the six call sites dropped it, and the ⋯ row is `justify-end` now that it has one child. The tick
+   MARKER on the art stays. Pinned by `tools/check_poster_watched.py` — falsified against the pre-fix
+   source (6 problems, *"draws the watched fact 2 time(s) — 1 marker + 1 control"*). See the section
+   below for the probe bug that falsification caught.
 2. ✔ **DONE 2026-09-18 (session 2): the five render tests are falsified.** All five went RED and the file
    was restored byte-identically. The mutations, each one line in `render_config.py::build_api_vars`:
    drop the staging assignment · change the `12 * 1024 ** 3` default · hardcode over an env override ·
    `str(int(str(env.get(…) or "0")) or default)` — the `"0"`-swallowing bug this test exists for ·
    remove the blank fallback. Same lesson as the Swift core's `--falsify`: a check that has never been
    reverted proves nothing.
-3. **Re-run the detail-screen harness probe** with the corrected tile label (see #2 above).
+3. ✔ **DONE 2026-09-18 (session 3) — the detail screen is now measured by a tool that can fail.**
+   The stale assertion is gone (the probe's tile filter carries `Unwatched`), and
+   `tools/check_detail_mobile.py` re-runs the measurement in one command: primary action on screen and
+   ≥44px with a progress/episode-aware label, exactly ONE state-labelled watched control, the action
+   tiles on screen and ≥32px, and no horizontal overflow — at 320/390/430 for BOTH fixtures. Freshness
+   is guarded on both sides (a marker missing from disk is reported as a TOOL bug, not a stale server),
+   and `--selftest` proves each assertion goes RED on a mutated probe. Measured: `Resume (28%)`
+   (movie) · `Resume S1E2` (series) · tiles `Unwatched,More` · 0 overflow everywhere.
 4. **His phone round** on those six items → on his word, **merge to `dev`** (15 commits is a lot of
    unreviewed branch; he asks for merges).
 5. **M5 — Player** (plan §11: landscape-first, `playsinline`, tap-to-reveal chrome, thumb scrubber,
@@ -179,7 +210,51 @@ from there to here.
 
 ---
 
-## ▶ ✅ **THE `507`, ANSWERED FROM HIS OWN LOG — and the client defect standing behind it** (2026-09-18, session 2) · branch **`feat/mobile-m3-library`** · `581f226`
+## ▶ 📘 **THE DOCS CONSOLIDATED: one architecture file, two archived, every claim re-verified** (2026-09-18, session 2) · his ask: *"i see there are two architecture files ... consolidate them so that i can have a clear picture of the project and anyone who reads it understand it totally and take it dev work … anyone means any agent"*
+
+**Three architecture files became one.** `docs/ARCHITECTURE.md` is now the single architecture document;
+the two that sat beside it are **ARCHIVED** (moved with `git mv`, so history survives) with banners naming
+what replaced them, and the live references to them were repointed.
+
+| File | Was | Now |
+|---|---|---|
+| `docs/ARCHITECTURE.md` | a good map, but counted **36** session routes (41), claimed `frontend/` had no CI, and sent readers to the audit | **the ONE document** — §0 orientation + the five rules, §2.1 the deployed inventory, §14 "where do I change X", §15 the full gate table, §19 why-the-stack, §20 the ADR index, §21 the documentation map |
+| `ARCHITECTURE_AUDIT.md` → `docs/archive/` | Phase-1 audit of the **legacy** app (Plex/Emby, `app.js`, "56 tests green") | 🔴 SUPERSEDED banner; its durable content was already shipped or is in §19 |
+| `modular-scalable-architecture.md` → `docs/archive/` | the plan that drove the restructure (phases 0–5) | 🔴 SUPERSEDED — **EXECUTED**; its decisions table + "use-principally" rules are now §19 |
+
+Repointed (they would otherwise be instructions to a file that no longer exists): `backend/ruff.toml`,
+`backend/scripts/snapshot_openapi.py`, `backend/services/library/service.py`, and `ADR-0001/0002/0003`'s
+`**Phase:**` line. `docs/archive/README.md` became a real index (every archived doc → what replaced it).
+`README.md` gained the reading pointer and its **stale counts were corrected: 1107 → 1177 pytest,
+294 → 551 vitest**.
+
+**⚠ Every factual claim added was VERIFIED, not remembered** — this document is read by agents that act on
+it, so a plausible sentence is a trap:
+
+| Claim | How it was checked |
+|---|---|
+| **1177 backend tests pass** | `python -m pytest tests/ -q` → `1177 passed` in 125 s |
+| **551 frontend tests / 20 files** | `npx vitest run` → `551 passed (20)` |
+| 59 routes = **PUBLIC 1 · auth-route 6 · session 41 · ADMIN 11** | parsed `ROUTE_LEVELS` from `test_route_protection.py` (the declaration, not a comment) — the doc now carries the recount command |
+| **the deployed topology** | `.env` + the rendered `.rkm.env`, then probed every port: `192.168.65.254` answers **200** on 7878 Radarr · 8989 Sonarr · 9696 Prowlarr · 1701 qBittorrent, Jellyfin 8098, the app 8124. ⚠ **The compose `fullstack` profile is NOT what he runs** (its 7879/8988/9697/8080 answered nothing) — the doc now says so, because "run the fullstack profile" would have been wrong advice for this box |
+| CI exists and what it runs | read `.github/workflows/ci.yml` — backend ruff+pytest, frontend typecheck+vitest+build **+ a contract-drift check** (`generate:types && git diff --exit-code`) |
+| `apple/` state | 29 Swift files in the iOS target, `tvos/` holds a README and nothing else, `tools/harness.py` still absent |
+| the branch rule still holds | `git merge-base --is-ancestor main dev` → yes (fast-forward still possible) |
+| every gate command in §15 exists | each read from `package.json`/CI/the tool itself, incl. `check_offline_download.py --selftest` and its 0/1/3 tri-state |
+| the doc set is internally consistent | `python3 tools/check_md_links.py` → **61 files, 63 relative links, all resolve** (was 22 links; §20/§21 added 41) |
+
+⚠ **Two stale claims found and corrected rather than copied forward** — both worth remembering as the
+failure mode of documentation: the compose file's own header still says *"bundled self-contained stack
+(EXPERIMENT branch)"* while it is the stack he deploys, and §18's improvement list needed its status
+re-checked (now annotated: **#1 half done, #7 not started, #10 bigger**). A doc written from the previous
+doc is how a wrong number outlives its code.
+
+Gates: `check_md_links.py` clean · `ruff check` clean · `pytest` 1177 passed · no code behaviour changed
+(comments/docstrings only in `backend/`).
+
+---
+
+## ▶ ✅ **THE `507`, ANSWERED FROM HIS OWN LOG — and the client defect standing behind it, then THE #2 SWEEP** (2026-09-18, session 2) · branch **`feat/mobile-m3-library`** · `581f226`, `3e91fd0`
 
 He sent the phone's log with the report: *"currently for the offline download the ios still have these
 logs, where it says storage is full"* — `POST /api/offline/prepare -> 507`, then
@@ -235,6 +310,56 @@ Gates, all run in the sandbox:
    `docker compose logs --tail=50 api | grep "offline: prepare refused"` now names the cause.
 2. Swift half (`581f226`): a Mac build, then the row shows the server's own words — which is the only
    way to tell "the staging disk is full" from a budget that is smaller than the film.
+
+### ✔ ...and then item 1 landed: **the #2 poster-toggle sweep** (`3e91fd0`)
+
+His rule, decided 2026-09-17 and landed here: **the details view OWNS the watched control; the poster
+only REFLECTS status.** One fact was drawn twice on one card — the tick MARKER on the art and a green
+TOGGLE in the bottom row, both driven by `item.played` — and offered a third time by the details tile.
+
+* `MediaCard` loses the toggle button AND the ⋯ menu's `Mark as watched` / `Mark as unplayed` item. ⚠ The
+  `onToggleWatched` prop is **DELETED, not left optional**: the prop is what made the old behaviour
+  conditional, so leaving it would let a future caller bring the second tick back.
+* The tick MARKER on the art stays — a marker is status, and a control must not look like status.
+* ⚠ The bottom row became `justify-end`. It has ONE child left, and `justify-between` would have silently
+  moved the ⋯ menu to the LEFT edge — a defect introduced by the fix itself, which is why the check
+  asserts the trigger's right edge.
+* The six call sites dropped the prop: `LibraryHomeView` and `LibraryFolderView` (each also dropped a
+  `toggleWatched` destructure used for nothing else), `DiscoverView` ×2, `BrowseScreen`, `HomeScreen`,
+  and `PosterRail::CardHandlers` — the shared type, which is how one rule reaches all of them.
+  `WatchedAction` / `ItemDetail` / `DetailScreen` are untouched: they ARE the owner (`moreActionsFor`'s
+  `untoggle` verb is the DETAILS ⋯ menu, never the card's).
+* ⚠ `WatchedAction`'s doc comment already CLAIMED this sweep had landed ("the grid's cards … no longer
+  offer the toggle at all") while the code still had it. Written from the decision, not from the code —
+  it is true now, and it says which day each half happened.
+
+**A browser check, because the defect was a duplicate ON SCREEN** — a props-level test would have been
+satisfied by the pair. `tools/check_poster_watched.py` mounts the REAL `MediaCard` three times (played
+film · unplayed film · played series: both states, or *"the marker follows `played`"* cannot be told from
+*"the marker is always drawn"*) and asserts: **one watched indicator per played poster**
+(`markers + toggles == 1`), no card renders a watched control, the ⋯ menu offers no watched verb while
+still offering Replay + View details, an unplayed card shows no marker, the marker sits INSIDE the
+artwork, and the ⋯ trigger is at the row's right edge.
+
+⚠⚠ **THE FALSIFICATION CAUGHT A BUG IN THE CHECK, NOT IN THE FIX** — the lesson worth carrying: run
+against the pre-fix `MediaCard` (restored from HEAD, with a frame that passes `onToggleWatched`) it
+reports **6 problems**, including *"draws the watched fact 2 time(s) — 1 marker(s) ['Watched'] + 1
+control(s) ['Mark as unplayed']"*, which is his report verbatim. **But the FIRST falsification run
+missed the played cards entirely.** The probe matched only the word `unwatched`, while the removed control
+said **`Mark as unplayed`** for a played title — so it was blind to the duplicate on exactly the card the
+report is about, and only the unplayed fixture came back red. A check that had never been reverted would
+have shipped looking green and blind. Match the VERB, not one spelling of it.
+The same run proved the source restores byte-identically afterwards.
+
+⚠ And the harness's oldest trap fired again mid-session: after the falsification left its own `vite`
+holding :5199, a fresh one silently failed to bind (`--strictPort`) and the STALE server answered — my
+next "PASS" read as 6 problems on the FIXED source. Kill by port owner, start ONE server, then
+`curl … | grep` a module you just edited before believing any number (README).
+
+Gates: `typecheck` clean · `npx vitest run` **551 passed / 20 files** · `check_poster_watched.py` **PASS**
+(+ `--expect-broken` 6 problems) · `check_cta_alignment.py` still **OK** (it shares the frame this change
+edited) · `check_md_links.py` clean · ⚠ `check_library_scan.py` G and `check_item_modal.py` H fail **at
+HEAD too** (measured against a stashed tree) — recorded as `KNOWN_ISSUES` §8, not fixed here.
 
 ---
 

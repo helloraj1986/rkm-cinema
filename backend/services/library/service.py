@@ -102,7 +102,8 @@ class LibraryProvider(ABC):
     # ----------------------------------------------- capability surface (Phase 1)
     # Newer providers (Jellyfin) implement richer views; others inherit the
     # harmless default so ROUTES call the ABC uniformly (never ``getattr``/
-    # ``hasattr``). See docs/modular-scalable-architecture.md Phase 1.
+    # ``hasattr``). See docs/archive/modular-scalable-architecture.md ("Phase 1"), or
+    # docs/ARCHITECTURE.md §19 for the reasoning as it stands.
     def all_items(self, limit: Optional[int] = None) -> list[dict]:
         """Full library (Movies+Series) with playback facts. Default ``[]``."""
         return []

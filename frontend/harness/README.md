@@ -136,6 +136,39 @@ that were already fixed on disk). Check before believing any result:
 `kill -9 $(ss -ltnp | grep 5199 | grep -oP 'pid=\K[0-9]+')`, start one vite, then
 `curl -s http://localhost:5199/src/features/admin/HouseholdView.tsx | grep -c 'summary-members'`.
 
+## `poster-watched-frame.html` — WHAT A POSTER MAY SAY ABOUT WATCHED STATE (2026-09-18)
+
+His rule, from `KNOWN_ISSUES` §2: *"on the poster when you click the right tick button (i think its for
+watched) there are two green ticks and then the button inside (details page) watched button becomes
+redundant"*. One fact was drawn twice on one card — the tick MARKER on the art and a green TOGGLE in the
+bottom row, both driven by `item.played`.
+
+**The details view owns the watched control; the poster only REFLECTS status.** `python3
+tools/check_poster_watched.py` mounts the REAL `MediaCard` three times (a played film, an unplayed film,
+a played series — BOTH states on purpose, or "the marker follows `played`" cannot be told from "the
+marker is always drawn") and asserts the rendered shape:
+
+| Assertion | What it means |
+|---|---|
+| A | the frame really rendered — three cards, art and a ⋯ trigger on each (else "no toggle" is true of a blank page) |
+| B | a played card draws the fact ONCE: `markers + toggles == 1`, and exactly one marker |
+| C | **no** card draws a watched CONTROL (`Mark as watched` / `Mark as unplayed`) |
+| D | the ⋯ menu offers no watched verb, and still offers Replay + View details |
+| E | an unplayed card shows no marker |
+| F | the marker is INSIDE the artwork (status on the poster, not a control in the action row) |
+| G | the ⋯ trigger is at the row's RIGHT edge — the row lost its left-hand child, so `justify-between` would silently move the menu left |
+
+⚠ **Falsified against the pre-fix source**, and the first attempt was NOT good enough: run with the old
+`MediaCard` restored (plus a frame that passes `onToggleWatched`) it reported **6 problems**, including
+B on both played cards — *"draws the watched fact 2 time(s) — 1 marker + 1 control"*, the report
+verbatim. ⚠ Before that, the probe matched only the word `unwatched`, while the REMOVED control said
+**`Mark as unplayed`** for a played title — so it was blind to the duplicate on exactly the played card
+the report is about, and only the unplayed fixture came back red. Match the verb, not one spelling.
+
+⚠ Both TMPDIR traps apply here, in opposite directions: `swiftc` must build in `~/tmp`, but Chromium
+refuses to launch when `TMPDIR` points at `/root` (SIGTRAP, *"Target page, context or browser has been
+closed"*). Run playwright checks with `TMPDIR` unset.
+
 ## `nav-frame.html` — navigation access + the account menu (2026-09-12, reworked 2026-09-13)
 
 `python3 tools/check_nav_access.py` mounts the REAL `Header`, `Sidebar` and `MobileNav` over a

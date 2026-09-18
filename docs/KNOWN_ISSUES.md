@@ -6,8 +6,8 @@ He answered every open item. What that means for this file:
 
 | # | His answer | State |
 |---|---|---|
-| 1 | Reproduced on device: the ⋯ and Watched DO work, but **the Watched control shows no state and no feedback on tap** | **Half closed** — `features/library/WatchedAction.tsx` now says `Unwatched`/`Watched`, shows `Saving…` while in flight, and `useMutateItemState` toasts the server's sentence on failure. His device round confirms. |
-| 2 | **Rule decided:** the details view OWNS the watched control; the poster only reflects status — so the poster shows ONE tick | **Open, and now a defined sweep** — delete `MediaCard`'s toggle button (its hover row) and the `Mark as watched/unplayed` item in its ⋯ menu, then drop the `onToggleWatched` prop at its six call sites (`LibraryHomeView`, `LibraryFolderView`, `DiscoverView`, `PosterRail`, `HomeScreen`, `BrowseScreen`). The marker on the art stays. |
+| 1 | Reproduced on device: the ⋯ and Watched DO work, but **the Watched control shows no state and no feedback on tap** | **Half closed** — `features/library/WatchedAction.tsx` now says `Unwatched`/`Watched`, shows `Saving…` while in flight, and `useMutateItemState` toasts the server's sentence on failure. His device round confirms. ✔ **Re-measured 2026-09-18 (session 3):** the tile renders state-labelled at 320/390/430 (`tools/check_detail_mobile.py`, falsified) — the headless half is now evidence, not an assumption; ⚠ the TAP feedback still needs his phone. |
+| 2 | **Rule decided:** the details view OWNS the watched control; the poster only reflects status — so the poster shows ONE tick | **CLOSED 2026-09-18** — landed. `MediaCard`'s toggle button and its ⋯ `Mark as watched/unplayed` item are gone (`onToggleWatched` deleted, not left optional), the tick MARKER stays, and the ⋯ row is right-aligned now that it has one child. The six call sites dropped the prop. Pinned by `tools/check_poster_watched.py` (one watched indicator per played poster, no watched control, no watched verb in the menu), and the harness probe was FIXED mid-way because it knew only the word "unwatched" while the removed control said "unplayed" — the falsification caught that, not a review. |
 | 3 | **Corrected:** Settings is fine — the sideways scroll is on the **Switch Profile** view | **FIXED** — measured cause: the picker's nowrap subtitle (348px / 494px of min-content) floors the `place-items-center` grid track through the grid item's `min-width:auto`, so `scrollWidth` was 416 (picker) / **562 (Switch Profile)** at *every* width from 320 to 430. One token, `min-w-0` on the picker container, closes it to 0 and lets the subtitle ellipsise. ⚠ The root `overflow-x: clip` guard did not fix it — it was applied and the document still scrolled the full 172px. |
 | 7 | NEW: **Cancel does nothing on an in-progress download** | **FIXED IN SOURCE (2026-09-18) — needs his device round.** Two Swift defects closed in `OfflineDownloads.swift`: a cancel during the packaging window now records the INTENT, marks the row `paused` and makes the run abandon instead of starting a task; and a real cancel's `NSURLErrorCancelled` branch now writes `.paused` (guarded `!= .ready`, so a Cancel at 99% cannot un-finish a whole file), which gives the planner a state to emit and flips the page's Cancel → Resume with no JS change. ⚠ Typecheck gate PASS (`apple/scripts/check-apple-typecheck.sh`), but that proves types and call shapes, **not behaviour** — no Mac, and nothing anywhere taps Cancel. See §7a for the log lines that decide (A) vs (B) on his phone. |
 | 5 | **Rule decided:** the rail excludes the hero, by title ID, as one shared `lib.ts` utility with a unit test | **CLOSED** — `library/lib.ts::withoutHero()` + `useHomeRows`; both Homes inherit it; 5 tests; falsified positionally (4 went RED). |
@@ -50,30 +50,6 @@ this must be reproduced on the device before changing code.
 
 **Do NOT "fix" this by rebuilding the row.** It was verified working in the browser; reproduce it on
 his phone first, with him holding the device.
-
----
-
-## 2 · Marking watched from a poster shows **two green ticks**
-
-> *"on the poster when you click the right tick button (i think its for watched) there are two green
-> ticks and then the button inside (details page) watched button becomes redundant"*
-
-**Mechanism — already located, not yet fixed.** In `features/library/MediaCard.tsx` the played state is
-drawn **twice**:
-
-* `line 47` — the poster's status MARKER: `if (marker.kind === "watched") return <WatchedTick />` (the
-  tick on the art, driven by `item.played`);
-* `line ~196` — the bottom action row's watched TOGGLE, whose own state is also `item.played`.
-
-Mark a title watched and both light up at once — two ticks for one fact. ⚠ The redundancy he names on
-the DETAILS page is the same shape: the same fact is offered as a control in three places (card
-marker, card toggle, details tile).
-
-**Decide the rule first, then change code.** The question is not "which tick to delete" but **which
-surface OWNS the watched state**: the marker is status (read-only, always visible), the toggle is
-control (act on it), and a control should not look identical to a status. Likely answer: the marker
-stays as STATUS on the art; the toggle keeps a neutral resting look and only shows its own "done"
-state on press — but this is his call to make, not mine to assume.
 
 ---
 
@@ -224,6 +200,23 @@ Swift compiled or run, and nothing anywhere taps Cancel. Specifically:
 * The harness stub can't express a cancel at all: `offline-frame.tsx:148‑151` pushes `{c:"cancel"}` and
   resolves, stopping no timer and emitting no `state` event. **A stub that can say "the item is now
   paused" is the prerequisite for any off-device regression test of this.**
+
+---
+
+## 8 · Two harness checks fail AT HEAD — not his report, found while gating the #2 sweep
+
+Found 2026-09-18 by running the neighbouring browser checks after the poster-watched sweep. **Both were
+measured against a STASHED tree (i.e. at `bedfd67`, with the sweep absent), so neither is caused by it**
+— recorded here so they are not rediscovered as new, and so each gets its own investigation.
+
+| Check | Scenario | What it does |
+|---|---|---|
+| `tools/check_library_scan.py` | G — `?signedout=1` | `window.__probe is not a function`: the frame never rendered, so the two "the control is not offered" assertions in that scenario are **vacuous**. A–F all pass. |
+| `tools/check_item_modal.py` | H | `Esc closed the player only — the modal stayed behind it` (1 problem) — and a second run of the same check died earlier with `Page.goto: Page crashed`, so this one is at least partly flaky. ⚠ H is the scenario that guards the `canEscapeClose` fix, so a real failure there would mean Escape handling regressed. |
+
+⚠ Undiagnosed: neither has been read past its own output. Nothing in the poster-watched sweep touches
+either frame's components (`LibraryHomeView`/`LibraryFolderView` render `MediaCard`, which is what this
+change edited — that is why they were run).
 
 
 

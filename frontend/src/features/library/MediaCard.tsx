@@ -52,8 +52,16 @@ function MarkerBadge({ marker }: { marker: Marker }) {
  * Premium media card (design spec §19–22): the poster owns the card — no heavy
  * borders, no clutter over the artwork. Whole card opens the item's page; the
  * hover overlay reveals a centered ▶ (movies play now / series open episodes)
- * and a compact watched toggle; a 3px amber progress bar sits on the poster's
+ * and the ⋯ menu; a 3px amber progress bar sits on the poster's
  * bottom edge. `fluid` fills a CSS-grid track instead of the fixed rail width.
+ *
+ * ⚠⚠ **THE POSTER REFLECTS WATCHED STATE; IT DOES NOT OFFER IT** (his rule, decided 2026-09-17 and
+ * landed 2026-09-18). This card used to draw the fact twice — the `WatchedTick` marker on the art AND
+ * a green toggle in the bottom row whose own state was also `item.played` — so marking a title watched
+ * lit up TWO ticks on one poster, and the tile on the details page made it three places offering one
+ * fact. The DETAILS view owns the watched state (`WatchedAction`); the MARKER here stays, because a
+ * marker is status and a control must not look like status. The `onToggleWatched` prop is gone rather
+ * than optional-but-unused, so a future caller cannot quietly bring the second tick back.
  *
  * ⚠ MEMOISED, and it is not a micro-optimisation — it is what makes progressive mounting (M3) free.
  * Every growth step re-renders the folder view, and without a memo React re-runs this component for
@@ -70,7 +78,6 @@ function MediaCardBase({
   item,
   onQuickPlay,
   onOpenDetail,
-  onToggleWatched,
   fluid = false,
 }: {
   item: MediaItem;
@@ -78,7 +85,6 @@ function MediaCardBase({
   onQuickPlay: (item: MediaItem) => void;
   /** Whole-card click — navigates to the item's dedicated page. */
   onOpenDetail: (item: MediaItem) => void;
-  onToggleWatched?: (item: MediaItem) => void;
   /** Fill the parent grid cell (folder pages) instead of the fixed rail width. */
   fluid?: boolean;
 }) {
@@ -184,28 +190,13 @@ function MediaCardBase({
           </span>
         </button>
 
-        {/* Bottom hover row: watched toggle + ⋯ context menu (§46). The
-            jellyfin deep link now lives in the menu so the row stays calm.
+        {/* Bottom hover row: the ⋯ context menu (§46) — the only control on the art since the watched
+            toggle was removed (see the card's note above). ⚠ It is RIGHT-aligned now, not
+            `justify-between`: with the toggle gone there is one child, and `justify-between` would
+            have moved the menu to the LEFT edge.
             ⚠ `rkm-reveal-hit` (§7.3): on a touch device this row is always visible and tappable —
-            gating it to hover made the watched toggle and the ⋯ menu unreachable on a phone. */}
-        <div className="rkm-reveal-hit absolute inset-x-2 bottom-2 z-[2] flex items-center justify-between gap-1 transition">
-          {onToggleWatched ? (
-            <button
-              type="button"
-              onClick={() => onToggleWatched(item)}
-              aria-label={item.played ? "Mark as unplayed" : "Mark as watched"}
-              title={item.played ? "Mark as unplayed" : "Mark as watched"}
-              className={`grid h-7 w-7 place-items-center rounded-full ring-1 transition ${
-                item.played
-                  ? "bg-emerald-500 text-black ring-emerald-400/60"
-                  : "bg-black/60 text-zinc-200 ring-white/25 hover:bg-emerald-500 hover:text-black"
-              }`}
-            >
-              <Icon name="check" size={13} strokeWidth={2.5} />
-            </button>
-          ) : (
-            <span />
-          )}
+            gating it to hover made the ⋯ menu unreachable on a phone. */}
+        <div className="rkm-reveal-hit absolute inset-x-2 bottom-2 z-[2] flex items-center justify-end gap-1 transition">
           <PopupMenu
             label={`More actions for ${item.title}`}
             items={[
@@ -215,16 +206,6 @@ function MediaCardBase({
                 icon: "play",
                 onSelect: () => onQuickPlay(item),
               },
-              ...(onToggleWatched
-                ? [
-                    {
-                      key: "toggle",
-                      label: item.played ? "Mark as unplayed" : "Mark as watched",
-                      icon: "check" as const,
-                      onSelect: () => onToggleWatched(item),
-                    },
-                  ]
-                : []),
               {
                 key: "details",
                 label: "View details",

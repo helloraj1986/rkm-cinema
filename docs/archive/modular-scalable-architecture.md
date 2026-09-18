@@ -1,7 +1,18 @@
 # RKM Cinema — Modular & Scalable Architecture Plan
 
-> Status: **PLAN** (no code changed). Gate before continuing the feature roadmap (item 2+).
-> Branch: `experiment/bundled-docker-stack`
+> ⚠⚠ **SUPERSEDED AND ARCHIVED — 2026-09-18. This plan was EXECUTED.**
+> Phases 0–4 landed (the frozen `/api` contract + CI, the consolidated backend, the React shell replacing
+> the `app.js` monolith, the legacy app's retirement) and Phase 5's roadmap moved into
+> [`../PROGRESS.md`](../PROGRESS.md). Its durable reasoning now lives in
+> **[`../ARCHITECTURE.md`](../ARCHITECTURE.md) §19** — why the stack is what it is — with §20 (the ADR
+> index) and §21 (the documentation map). Read this only for the plan's own record: the phases, the risks
+> it anticipated, and the trade-offs it weighed.
+>
+> ⚠ Note for anyone following a path from here: this file used to live at `docs/`, so a pointer to
+> `docs/modular-scalable-architecture.md` (in an old comment, ADR or PROGRESS entry) now resolves HERE.
+>
+> Status: **EXECUTED — kept as history** (was: *"PLAN (no code changed). Gate before continuing the
+> feature roadmap (item 2+)"*). Branch it was written on: `experiment/bundled-docker-stack`, since folded in.
 
 ## Why this plan exists
 

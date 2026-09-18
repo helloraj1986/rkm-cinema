@@ -44,7 +44,7 @@ import { toast } from "../../features/watchlist/toast";
  */
 export function HomeScreen() {
   const rows = useHomeRows();
-  const { quickPlay, openItem, toggleWatched } = useLibraryOutlet();
+  const { quickPlay, openItem } = useLibraryOutlet();
   const scan = useScanLibrary();
   const isAdmin = useCurrentProfile()?.is_admin;
   const [backdropFailed, setBackdropFailed] = useState(false);
@@ -57,7 +57,6 @@ export function HomeScreen() {
   const handlers: CardHandlers = {
     onQuickPlay: quickPlay,
     onOpenDetail: openItem,
-    onToggleWatched: toggleWatched,
   };
 
   // ---- the three query states the desktop Home also has, in the same order ----------------------

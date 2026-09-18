@@ -30,6 +30,7 @@ import {
   type MoreActionKey,
 } from "../../features/library/lib";
 import { useAutoPlayDeepLink } from "../../features/library/useAutoPlayDeepLink";
+import { SimilarRow } from "../../features/library/SimilarRow";
 import { DownloadAction, DownloadNotice } from "../../features/offline/DownloadButton";
 import { useEpisodes } from "../../features/playback/api";
 import {
@@ -311,6 +312,19 @@ export function DetailScreen() {
       ) : null}
 
       <DownloadNotice itemId={itemId} />
+
+      {/* "Because you watched" — the SAME row the desktop renders, on the phone's own surface:
+          `detailSurface="sheet"` swaps the desktop's card rail + centred dialog for a thumb-sized
+          list + the shared suggest Sheet. ⚠ It was deliberately absent until M4's sheet existed —
+          the desktop's tap opened a `Dialog`, and a row whose tap does nothing is the defect this
+          project keeps re-finding. Sits ABOVE the pinned bar, which must stay the last thing in the
+          flow for its sticky offset to be the bottom of the page. */}
+      <SimilarRow
+        itemId={itemId}
+        title={title}
+        localItems={itemsQ.data?.items ?? []}
+        detailSurface="sheet"
+      />
 
       {/* ⚠ THE ACTION BAR IS PINNED, and it is the ONLY primary on the screen. It sits in the thumb
           zone: `sticky bottom-<tab bar + inset + gap>` keeps it there while the page scrolls and puts

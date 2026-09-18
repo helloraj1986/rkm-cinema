@@ -37,6 +37,16 @@ this must be reproduced on the device before changing code.
 
 **Where to look first — in this order:**
 
+0. ⚠⚠ **(2026-09-18, session 5 — CHECKED AND FIXED, but read it before diagnosing anything here.)**
+   A REAL tap never reached a control inside a **`Sheet`** at all: `Sheet` captured the pointer on
+   `pointerdown`, and since that handler is on the panel it captured gestures that STARTED on a
+   button — the pointerup retargeted to the panel, so the browser dispatched `click` to the PANEL and
+   the button never heard it. Measured in Chromium: a real click on the suggest sheet's Download did
+   nothing while `element.click()` from the console ran the handler. **The ⋯ tile opens a SHEET**, so
+   every item in it was inert — and no check had ever clicked inside a sheet, which is exactly why it
+   survived. Fixed (`shouldArmDrag`, `DRAG_ARM_PX = 8`). ⚠ It is device-unverified: his round must
+   confirm a tap inside the sheet works now.
+
 1. **`PopupMenu`'s positioning.** `measure()` assumes a 224px menu and clamps to
    `window.innerWidth/innerHeight`. iOS's *visual* viewport is shorter than the layout viewport while
    the toolbar is up, so a menu computed to fit can be placed **below the fold** — it opens, and he
@@ -96,7 +106,16 @@ so it can be given its own investigation rather than being quietly worked around
 
 ---
 
-## 7 · M4's **RequestSheet** cannot be built truthfully until one of these changes — his call
+## 7 · M4's **RequestSheet** — option (b) is BUILT (2026-09-18); (c) is still his call
+
+⚠ **STATUS 2026-09-18 (session 5):** option **(b) is built** on `feat/mobile-request-and-similar` —
+the request's own sentence and, for a 409, its candidate titles render as a READ-ONLY list inside
+the title's suggest sheet (`AmbiguousMatches`), on the phone and in the desktop dialog. It is
+deliberately read-only and that is a fact about the SERVER, not a preference: a candidate carries a
+title and a year and **no id**, so a pick-one control would have nothing to re-request with. Option
+**(c)** — carry an id (ideally `tmdbId`) on each candidate and accept a chosen one on the request
+path — remains a BACKEND phase and remains his decision. The client half is now done, so (c) is a
+server change plus one prop.
 
 ⚠ Found in the backend/client ground truth while starting M4 (2026-09-17). The wireframe (§7.4) shows
 a request flow with a quality list and an ambiguity list. Two facts stand in the way, and BOTH are
@@ -213,8 +232,9 @@ measured against a STASHED tree (i.e. at `bedfd67`, with the sweep absent), so n
 |---|---|---|
 | `tools/check_library_scan.py` | G — `?signedout=1` | `window.__probe is not a function`: the frame never rendered, so the two "the control is not offered" assertions in that scenario are **vacuous**. A–F all pass. |
 | `tools/check_item_modal.py` | H | `Esc closed the player only — the modal stayed behind it` (1 problem) — and a second run of the same check died earlier with `Page.goto: Page crashed`, so this one is at least partly flaky. ⚠ H is the scenario that guards the `canEscapeClose` fix, so a real failure there would mean Escape handling regressed. |
+| `tools/check_touch_actions.py` | phone, `watched` target | `the watched toggle is not in the DOM at all` — ⚠ **STALE, not a regression, and recorded 2026-09-18 (session 5).** The tool still asserts the poster's watched TOGGLE (`button[aria-label^="Mark as"]`), which the **accepted #2 rule deleted**: the details view owns the watched control and the poster only REFLECTS status (`features/library/MediaCard.tsx`, `tools/check_poster_watched.py`). The check's premise is gone, so the fix is one line — drop the `watched` entry from `TARGETS`, or invert it to assert the toggle's ABSENCE — but which one is a decision about what the phone's poster actions now are, so it is left standing and named here rather than quietly rewritten. Its other scenarios (`cta`, `menu`, `compact_row`, and the desktop hover direction) pass. |
 
-⚠ Undiagnosed: neither has been read past its own output. Nothing in the poster-watched sweep touches
+⚠ Undiagnosed: **none of these** has been read past its own output. Nothing in the poster-watched sweep touches
 either frame's components (`LibraryHomeView`/`LibraryFolderView` render `MediaCard`, which is what this
 change edited — that is why they were run).
 

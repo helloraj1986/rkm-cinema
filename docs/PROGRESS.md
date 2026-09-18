@@ -1,4 +1,63 @@
-## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-18, session 4) · branch **`dev`** · tree clean, pushed
+## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-18, session 5) · branch **`feat/mobile-request-and-similar`** (from `dev` @ `47d2966`) · tree clean, pushed
+
+**Say this first:** *"continue rkm-cinema — pick up the RESUME-HERE block."* Then read this and
+`KNOWN_ISSUES.md`'s status table (the live list of open defects and their state).
+
+⚠ **A doc cannot name its own tip and neither can a merge commit name itself.** `git log --oneline -3`
+is the honest answer; never trust a SHA written in a doc.
+
+### 1. His items 3 + 4 — the RequestSheet's 409 candidates, and the phone's Similar row
+
+Both were **one pass over the same two surfaces**, which is how he asked for them.
+
+| His item | What landed |
+|---|---|
+| **3 — RequestSheet (b)** | A 409 from `POST /api/media/{id}/request` carries `detail: {message, candidates}`. `useCardActions().download` now hands that STRUCTURE to the surface (`onAmbiguous`) instead of collapsing it into a toast, and `AmbiguousMatches` renders it inside `SuggestDetailBody` — so the desktop dialog and the phone sheet cannot describe the same 409 differently. The phone OPENS the title's sheet on an ambiguous match, from the row's pill **and** from the button inside an already-open sheet. ⚠ The list is **read-only**, because the server's candidates carry no id (option (c) is still his call — `KNOWN_ISSUES` §7). |
+| **4 — the phone's Similar row** | `SimilarRow` gained `detailSurface="sheet"`: the desktop keeps its card rail + centred `Dialog`, the phone gets a thumb-sized LIST (one ≥44px body that opens the title, one ≥44px Add/Download pill) rendered on `layouts/mobile/DetailScreen.tsx`, sitting above the pinned bar. One component, one set of actions, two presentations. |
+
+⚠ **Also fixed while building them, and it is bigger than either:** a real tap never reached a control
+inside a **`Sheet`**. `Sheet` captured the pointer on `pointerdown`, and because the handler is on the
+panel it captured gestures that STARTED ON A BUTTON — the pointerup then retargeted to the panel, so
+the browser dispatched `click` to the PANEL and the button never heard it. Measured in Chromium: a
+real click on the suggest sheet's **Download** did nothing, while `element.click()` from the console
+ran the handler exactly as written. It affected every control in every sheet — the M4 ⋯ More sheet,
+the Browse filters sheet, this one — and nothing in the source or in any prior check could see it
+(none of them clicked inside a sheet). The gesture is now **armed** (`DRAG_ARM_PX = 8`, `shouldArmDrag`)
+and captured only once it is clearly a drag.
+
+### Gates (all green, measured this session)
+
+| Gate | Result |
+|---|---|
+| `npx vitest run` | **583 passed / 23 files** (+5 `ambiguousMatch`, +4 `shouldArmDrag`) |
+| `npx tsc --noEmit` · `npm run build` | clean · built in 32.7s |
+| **NEW** `tools/check_mobile_suggest.py` | **5/5 scenarios** — A: a 409 renders the server's sentence + both candidates inside the sheet, `controls=0`; B: a normal answer renders NO panel and sends exactly 1 request; C: the same 409 from INSIDE an open sheet; D: 320px, no overflow; E: a drag down still dismisses and fires nothing. `--selftest`: 10 mutations, all RED. |
+| `tools/check_detail_mobile.py` | **4/4** — `similar` renders 2 rows (the OWNED fixture title is deduped) at 320/390/430 with ≥44px zones and 0 overflow; `?similar=0` renders NOTHING. `--selftest`: 8 mutations, all RED. |
+| `check_mobile_shell` · `check_mobile_layout_switch` | PASS (5 and 9 scenarios) — the sheet's drag/dismiss rules still hold after the capture fix |
+| backend | **untouched this session** — no route, service or image change |
+
+### ⚠ NOT VERIFIED ON HIS DEVICE — do not describe any of it as working
+
+1. **Everything above is headless Chromium.** The Similar row, the 409 panel, and the sheet's tap
+   fix are measured in this sandbox at 320/390/430 — never touched with a thumb.
+2. ⚠ **The Sheet fix is the one to watch on his phone**: it changes when the pointer is captured, so
+   his device round should confirm BOTH halves — a tap inside a sheet now works (More ⋯ items,
+   Browse filters, Download in the suggest sheet) AND a drag down still dismisses it.
+3. `tools/check_touch_actions.py` **fails at HEAD for a stale reason** — recorded in `KNOWN_ISSUES` §8
+   this session (it asserts a poster watched TOGGLE that the accepted #2 rule deleted).
+
+### NEXT STEPS, in order
+
+1. **He deploys and tests this branch** — `.\\rkm-cinema.ps1 apply`, then the scenarios in the chat
+   reply. ⚠ **`main` must NOT advance until he accepts on the UI** (§13).
+2. **Phase 6 (semantic search)** — a plan doc (`docs/SEMANTIC_SEARCH_PLAN.md`) is being written on its
+   own branch; see its `⚡ RESUME` header before touching code.
+3. Still open from session 4 and unchanged: the six device rounds, and §8's other two harness
+   failures (`check_library_scan` G, `check_item_modal` H).
+
+---
+
+## ⚡ [HISTORY — 2026-09-18, session 4] — its items on `dev`; items 3 and 4 below were built in session 5 · branch **`dev`**
 
 **Say this first:** *"continue rkm-cinema — pick up the RESUME-HERE block."* Then read this and
 `KNOWN_ISSUES.md`'s status table (the live list of open defects and their state).

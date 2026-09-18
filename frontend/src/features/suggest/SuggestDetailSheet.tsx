@@ -1,4 +1,5 @@
 import type { SuggestResult } from "../../lib/api/client";
+import type { AmbiguousMatch } from "../watchlist/actions";
 import { Sheet } from "../../components/ui/Sheet";
 import { SuggestDetailBody } from "./SuggestDetailBody";
 
@@ -25,6 +26,7 @@ export function SuggestDetailSheet({
   item,
   busyAdd,
   busyDownload,
+  ambiguous,
   onClose,
   onAdd,
   onDownload,
@@ -32,6 +34,8 @@ export function SuggestDetailSheet({
   item: SuggestResult;
   busyAdd: boolean;
   busyDownload: boolean;
+  /** The server's ambiguous-match answer for this title's download, when there is one. */
+  ambiguous?: AmbiguousMatch | null;
   onClose: () => void;
   onAdd: () => void;
   onDownload: () => void;
@@ -42,6 +46,7 @@ export function SuggestDetailSheet({
         item={item}
         busyAdd={busyAdd}
         busyDownload={busyDownload}
+        ambiguous={ambiguous}
         onClose={onClose}
         onAdd={onAdd}
         onDownload={onDownload}

@@ -1,6 +1,8 @@
 import type { SuggestResult } from "../../lib/api/client";
+import type { AmbiguousMatch } from "../watchlist/actions";
 import { useSuggestDetail } from "../watchlist/api";
 import { Icon } from "../../components/ui/Icon";
+import { AmbiguousMatches } from "./AmbiguousMatches";
 import { suggestDetailView } from "./detail";
 
 /**
@@ -21,6 +23,7 @@ export function SuggestDetailBody({
   item,
   busyAdd,
   busyDownload,
+  ambiguous,
   onClose,
   onAdd,
   onDownload,
@@ -28,6 +31,14 @@ export function SuggestDetailBody({
   item: SuggestResult;
   busyAdd: boolean;
   busyDownload: boolean;
+  /**
+   * The server's "which one did you mean?" answer for THIS title's download, when there is one.
+   *
+   * ⚠ The shell owns this state (it is the shell that catches the mutation's error), but the
+   * RENDERING lives here so the desktop dialog and the phone sheet cannot describe the same 409
+   * differently. `null`/omitted renders nothing — verbatim today's behaviour.
+   */
+  ambiguous?: AmbiguousMatch | null;
   onClose: () => void;
   onAdd: () => void;
   onDownload: () => void;
@@ -129,6 +140,11 @@ export function SuggestDetailBody({
             {busyDownload ? "Starting download…" : "Download"}
           </button>
         </div>
+
+        {/* ⚠ BELOW the actions, not above them: the person pressed Download, so the answer to that
+            press belongs next to where they pressed. It is also the one failure with structure
+            behind it (a 409's candidate list) — a toast could only ever carry the sentence. */}
+        {ambiguous ? <AmbiguousMatches match={ambiguous} /> : null}
       </div>
     </>
   );

@@ -14,6 +14,7 @@
  *   ?kind=series  a series with two seasons and a half-watched episode (default: a movie)
  *   ?nolink=1     no `jellyfin_url` — the ⋯ must then exist only if something else does
  *   ?fresh=1      untouched (nothing played, nothing in progress)
+ *   ?similar=0    the provider returns no similar titles — the row must render NOTHING
  */
 import { useState } from "react";
 import ReactDOM from "react-dom/client";
@@ -30,6 +31,8 @@ const PARAMS = new URLSearchParams(location.search);
 const SERIES = PARAMS.get("kind") === "series";
 const NO_LINK = PARAMS.get("nolink") === "1";
 const FRESH = PARAMS.get("fresh") === "1";
+/** `?similar=0` — the provider knows of no similar titles: the row must render NOTHING. */
+const SIMILAR = PARAMS.get("similar") !== "0";
 
 const MOVIE_ID = "m-sholay";
 const SERIES_ID = "s-shso";
@@ -69,6 +72,19 @@ const episodes = [
   { id: "e2", name: "Two", season: 1, episode: 2, played: false, playback_position: 1200, runtime: 3600, thumb: null },
   { id: "e3", name: "Three", season: 1, episode: 3, played: false, playback_position: 0, runtime: 3500, thumb: null },
   { id: "e4", name: "Another Country", season: 2, episode: 1, played: false, playback_position: 0, runtime: 3400, thumb: null },
+];
+
+/**
+ * The provider's "Because you watched" candidates — SHAPED LIKE THE ROUTE'S ANSWER.
+ *
+ * ⚠ The first row is a title he ALREADY OWNS (`Sholay`, 1975 — the same year as `movieItem`), because
+ * the client-side dedupe is part of the row's contract: a similar row that offers him a film he has
+ * is the kind of "helpful" bug a friendlier fixture would hide. It must NOT appear.
+ */
+const SIMILAR_ROWS = [
+  { id: 12259, title: "Sholay", year: 1975, kind: "movie", score: 9.1, poster: "", backdrop: "" },
+  { id: 135254, title: "Ramgarh Ke Sholay", year: 1991, kind: "movie", score: 5.4, poster: "", backdrop: "" },
+  { id: 586776, title: "The Sholay Girl", year: 2019, kind: "movie", score: 6.2, poster: "", backdrop: "" },
 ];
 
 window.fetch = (async (input: RequestInfo | URL) => {
@@ -111,6 +127,9 @@ window.fetch = (async (input: RequestInfo | URL) => {
   if (path.startsWith("/api/library/series/")) {
     return send({ series_id: SERIES_ID, episodes: SERIES ? episodes : [] });
   }
+  if (path.startsWith("/api/jellyfin/similar")) {
+    return send({ similar: SIMILAR ? SIMILAR_ROWS : [] });
+  }
   return send({});
 }) as typeof fetch;
 
@@ -143,6 +162,10 @@ const ctx: LibraryOutletContext = {
     const r = el.getBoundingClientRect();
     return r.width > 0 && (r.right > window.innerWidth + 1 || r.left < -1);
   });
+  // ⚠ "Because you watched" (2026-09-18): the phone renders it as a LIST of rows, so what has to be
+  // measured is the two zones a thumb actually hits — the body that opens the title and the pill
+  // that adds/downloads it — plus the dedupe (an OWNED title must not be offered).
+  const similarSection = document.querySelector('[data-testid="similar-title-row"]');
   return {
     calls: [...calls],
     body: document.body.textContent ?? "",
@@ -151,6 +174,20 @@ const ctx: LibraryOutletContext = {
     episodeRows: [...document.querySelectorAll("button")].filter((b) => /^(Play|Resume|Replay)( S\d+E\d+)?$/.test((b.textContent || "").trim())).map((b) => (b.textContent || "").trim()),
     headings: [...document.querySelectorAll("h2,h3")].map((h) => (h.textContent || "").trim()),
     sheet: document.querySelector('[role="dialog"]') ? (document.querySelector('[role="dialog"]')!.textContent || "").trim().slice(0, 160) : null,
+    similar: similarSection
+      ? {
+          heading: (similarSection.querySelector("h2")?.textContent || "").trim(),
+          rows: [...similarSection.querySelectorAll('[data-testid="similar-item"]')].map((li) => ({
+            title: (li.querySelector('[data-testid="similar-title"]')?.textContent || "").trim(),
+            ...px(li),
+          })),
+          open: [...similarSection.querySelectorAll('[data-testid="similar-open"]')].map((b) => px(b)),
+          actions: [...similarSection.querySelectorAll('[data-testid="similar-action"]')].map((b) => ({
+            text: (b.textContent || "").trim(),
+            ...px(b),
+          })),
+        }
+      : null,
     overflow: poking.length,
     overflowEls: poking.slice(0, 4).map((el) => `${el.tagName}.${String(el.className).slice(0, 50)}`),
     scrollWidth: document.documentElement.scrollWidth,

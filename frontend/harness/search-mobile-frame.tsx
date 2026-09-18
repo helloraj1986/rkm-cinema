@@ -14,10 +14,18 @@
  * ⚠ `?fail=1` makes `/api/search/global` answer 500 — the degradation path, which must surface as the
  * shared sentence and never as a blank screen or a stack. `?empty=1` answers a real empty result set.
  *
+ * ⚠ `?ambiguous=1` makes `POST /api/media/{id}/request` answer **409** with
+ * `detail: {message, candidates}` — the server's own "two titles matched, pick one" shape
+ * (`api/routes/media.py`). This is the ONE acquisition failure with structure behind it, and the
+ * screen must render the candidates where the person acted instead of a toast that names titles
+ * they cannot see. It is a query param rather than a second frame because everything else about the
+ * scenario — the search, the rows, the sheet — is identical, and two frames drift.
+ *
  * Query params:
- *   ?fail=1   the search route fails (500)
- *   ?slow=1   the answer takes 900ms (the loading state)
- *   ?empty=1  no owned rows, no hints, no discovery — the "no matches" case
+ *   ?fail=1       the search route fails (500)
+ *   ?slow=1       the answer takes 900ms (the loading state)
+ *   ?empty=1      no owned rows, no hints, no discovery — the "no matches" case
+ *   ?ambiguous=1  the download request answers 409 + candidates
  */
 import { useState } from "react";
 import ReactDOM from "react-dom/client";
@@ -35,6 +43,7 @@ const PARAMS = new URLSearchParams(location.search);
 const FAIL = PARAMS.get("fail") === "1";
 const SLOW = PARAMS.get("slow") === "1";
 const EMPTY = PARAMS.get("empty") === "1";
+const AMBIGUOUS = PARAMS.get("ambiguous") === "1";
 
 /** His own library row for "sholay" — the episode his report showed. */
 const OWNED = {
@@ -98,7 +107,26 @@ window.fetch = (async (input: RequestInfo | URL, init: RequestInit = {}) => {
     });
   }
   if (path.startsWith("/api/suggest/add/")) return send({ ok: true, message: "Added" });
-  if (path.startsWith("/api/media/")) return send({ ok: true, state: "requested", message: "Requested" });
+  if (path.startsWith("/api/media/")) {
+    // ⚠ The 409's real shape, from the route itself: `detail` is an OBJECT whose candidates carry a
+    // title and a year and NO id. A stub that invented an id would let a pickable control look
+    // justified — which is exactly what the server cannot answer today (KNOWN_ISSUES §7).
+    if (AMBIGUOUS) {
+      return send(
+        {
+          detail: {
+            message: "Two titles matched — pick one",
+            candidates: [
+              { title: "Sholay", year: 1975 },
+              { title: "The Sholay Girl", year: 2019 },
+            ],
+          },
+        },
+        409,
+      );
+    }
+    return send({ ok: true, state: "requested", message: "Requested" });
+  }
   return send({});
 }) as typeof fetch;
 
@@ -112,9 +140,15 @@ window.fetch = (async (input: RequestInfo | URL, init: RequestInit = {}) => {
     const r = el.getBoundingClientRect();
     return r.width > 0 && (r.right > window.innerWidth + 1 || r.left < -1);
   });
+  // ⚠ The 409's answer, measured where it must appear: INSIDE the title's sheet. `controls` is the
+  // assertion that matters — the candidates carry no id, so a button, link or role=button among
+  // them would be a control that cannot act.
+  const panel = document.querySelector('[role="dialog"]');
+  const ambiguous = document.querySelector('[data-testid="ambiguous-matches"]');
   return {
     calls: [...calls],
     searchCalls: calls.filter((c) => c.url.startsWith("/api/search/global")).length,
+    mediaCalls: calls.filter((c) => c.url.startsWith("/api/media/")).length,
     // ⚠ Read the COMPUTED opacity: an action that is visible only under `:hover` is invisible here,
     // and this screen must never depend on a hover (§7.3).
     actions: actions.map((a) => ({ text: (a.textContent || "").trim(), ...px(a), opacity: getComputedStyle(a).opacity })),
@@ -128,6 +162,17 @@ window.fetch = (async (input: RequestInfo | URL, init: RequestInit = {}) => {
     innerWidth: window.innerWidth,
     layout: document.documentElement.dataset.layout ?? null,
     recent: [...document.querySelectorAll('[data-testid="recent-chip"]')].map((c) => (c.textContent || "").trim()),
+    ambiguous: ambiguous
+      ? {
+          text: (ambiguous.textContent || "").trim(),
+          candidates: [...ambiguous.querySelectorAll('[data-testid="ambiguous-candidate"]')].map((c) =>
+            (c.textContent || "").trim(),
+          ),
+          controls: ambiguous.querySelectorAll('button, a, [role="button"], input, select').length,
+          ...px(ambiguous),
+        }
+      : null,
+    sheet: panel ? (panel.textContent || "").trim().slice(0, 220) : null,
   };
 };
 

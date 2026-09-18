@@ -21,6 +21,11 @@ answers the questions the 2026-09-18 handoff left open:
                   directions, and never poke outside the viewport.
   D. layout       nothing overflows: `documentElement.scrollWidth == innerWidth` and no element's
                   box crosses a horizontal edge.
+  E. similar      "Because you watched" renders as the phone's own LIST: one ≥44px body per row that
+                  opens the title, one ≥44px Add/Download pill beside it, the provider's non-owned
+                  titles present and the OWNED one absent (the dedupe is part of the contract), and
+                  with `?similar=0` the section renders NOTHING at all — a heading over an empty rail
+                  is the defect this half exists to catch.
 
 ⚠ WHY A TOOL AND NOT A ONE-OFF PROBE. The handoff recorded this screen with a manual playwright run
 whose assertion (`tiles == ["Watched", "More"]`) went stale the moment the control became
@@ -72,6 +77,18 @@ WIDTHS: list[tuple[str, int, int]] = [
 
 WATCHED_LABELS = ("Watched", "Unwatched")
 
+SIMILAR_ACTION_LABELS = ("Add", "Adding…", "Download", "Starting…")
+"""The two verbs the row's pill may carry, and the in-flight form of each. A pill reading anything
+else means the row has started offering something the screen does not implement."""
+
+SIMILAR_OWNED_TITLE = "Sholay"
+"""⚠ The fixture sends this title as a similar row AND owns it (same year) — the client-side dedupe
+must drop it. See `SIMILAR_ROWS` in `detail-mobile-frame.tsx`."""
+
+SIMILAR_EXPECTED = ("Ramgarh Ke Sholay", "The Sholay Girl")
+"""The two non-owned rows that must survive the dedupe. Asserting them BY NAME is deliberate: an
+empty row and a wrong row are different bugs, and a count alone cannot tell them apart."""
+
 MARKERS: dict[str, str] = {
     # The frame itself. ⚠ The marker is the NEWEST thing it measures — the label set that went stale
     # — not merely something recent.
@@ -84,7 +101,14 @@ MARKERS: dict[str, str] = {
     # is absent from the served module and the guard would report a false stale.
     "/src/layouts/mobile/DetailScreen.tsx": "detail-primary",
     "/src/features/library/WatchedAction.tsx": "Unwatched",
+    # ⚠ Added with the Similar row (2026-09-18). `DetailScreen.tsx` alone would NOT catch a stale
+    # serve of the row itself: the screen is unchanged by a row edit, so a pre-edit row would keep
+    # answering while every marker looked fresh.
+    "/src/features/library/SimilarRow.tsx": "similar-title-row",
 }
+
+Scenario = tuple[str, int, int, str, str, tuple[str, ...]]
+"""label, width, height, kind, query, assertion names."""
 
 
 @dataclass
@@ -146,12 +170,13 @@ def fresh(base: str) -> list[str]:
     return problems
 
 
-def open_frame(browser, base: str, width: int, height: int, kind: str):
+def open_frame(browser, base: str, width: int, height: int, kind: str, query: str = ""):
     """A FRESH page per scenario — a reused page carries the previous width's layout."""
     page = browser.new_page(viewport={"width": width, "height": height})
     errors: list[str] = []
     page.on("pageerror", lambda e: errors.append(f"pageerror: {e}"))
-    url = f"{base}{FRAME}?kind={kind}"
+    suffix = f"&{query}" if query else ""
+    url = f"{base}{FRAME}?kind={kind}{suffix}"
     page.goto(url, wait_until="load", timeout=30_000)
     page.wait_for_function("() => !!window.__probe", timeout=20_000)
     page.wait_for_selector('[data-testid="detail-primary"]', timeout=20_000)
@@ -237,31 +262,136 @@ def assert_layout(p: dict) -> list[str]:
     return problems
 
 
+def assert_similar(p: dict, kind: str) -> list[str]:
+    """The phone's "Because you watched" row: a list of ≥44px two-zone rows, deduped against the library."""
+    problems: list[str] = []
+    s = p.get("similar")
+    if not s:
+        return [
+            "no 'Because you watched' row on the phone's detail screen — it must render for a "
+            "movie/series whose provider knows similar titles (before 2026-09-18 it was absent by "
+            "design, because the desktop's modal had no phone counterpart)"
+        ]
+    rows = s.get("rows") or []
+    titles = [r["title"] for r in rows]
+    if not rows:
+        return ["the similar row rendered with NO rows — an empty section is what ?similar=0 asserts is absent"]
+    if not (s.get("heading") or "").startswith("Because you watched"):
+        problems.append(f"the section heading reads {s.get('heading')!r} — it must name the source title")
+    # ⚠ The dedupe is the assertion a friendly fixture would hide: the provider offered a title he
+    # already owns (same title AND year) and it must not be offered back to him.
+    if SIMILAR_OWNED_TITLE in titles:
+        problems.append(
+            f"the row offers {SIMILAR_OWNED_TITLE!r}, which is already in the library — the client-side "
+            "dedupe (`filterLibraryRows`) did not run"
+        )
+    missing = [t for t in SIMILAR_EXPECTED if t not in titles]
+    if missing:
+        problems.append(f"the provider's rows are missing from the screen: {missing} (rendered: {titles})")
+    if len(s.get("open") or []) != len(rows):
+        problems.append(f"{len(s.get('open') or [])} row bodies for {len(rows)} rows — every row needs a tap target")
+    for r in rows:
+        if r["h"] < MIN_TAP_PX:
+            problems.append(f"row {r['title']!r} is {r['h']}px tall — under the {MIN_TAP_PX}px tap floor")
+    for o in s.get("open") or []:
+        if o["h"] < MIN_TAP_PX:
+            problems.append(f"a row body is {o['h']}px tall — under the {MIN_TAP_PX}px tap floor")
+    actions = s.get("actions") or []
+    if len(actions) != len(rows):
+        problems.append(f"{len(actions)} action pills for {len(rows)} rows — exactly one verb per title")
+    for a in actions:
+        if a["h"] < MIN_TAP_PX:
+            problems.append(f"the row's {a['text']!r} pill is {a['h']}px tall — under the {MIN_TAP_PX}px tap floor")
+        if a["text"] not in SIMILAR_ACTION_LABELS:
+            problems.append(f"the row's pill reads {a['text']!r} — expected one of {list(SIMILAR_ACTION_LABELS)}")
+        if a["bottom"] > p["viewportH"] + 1:
+            problems.append(f"the row's {a['text']!r} pill is below the {p['viewportH']}px viewport")
+        if a["w"] < MIN_TAP_PX:
+            problems.append(f"the row's {a['text']!r} pill is {a['w']}px wide — under the {MIN_TAP_PX}px tap floor")
+    return problems
+
+
+def assert_no_similar(p: dict, kind: str) -> list[str]:
+    """`?similar=0` — nothing to show means NOTHING renders, not an empty heading."""
+    if p.get("similar"):
+        s = p["similar"]
+        return [
+            "the section rendered with no similar titles from the provider "
+            f"(heading {s.get('heading')!r}, {len(s.get('rows') or [])} rows) — an empty row must be absent"
+        ]
+    return []
+
+
 ASSERTIONS = {
     "primary": lambda p, kind: assert_primary(p, kind),
     "watched": lambda p, kind: assert_watched_tile(p),
     "tiles": lambda p, kind: assert_tiles(p),
     "layout": lambda p, kind: assert_layout(p),
+    "similar": lambda p, kind: assert_similar(p, kind),
+    "no-similar": lambda p, kind: assert_no_similar(p, kind),
 }
 
+ALL = ("primary", "watched", "tiles", "layout", "similar")
 
-def check_width(browser, base: str, label: str, w: int, h: int, kind: str) -> tuple[Result, dict | None, list[str]]:
-    page, errors = open_frame(browser, base, w, h, kind)
+
+def check_scenario(
+    browser,
+    base: str,
+    label: str,
+    w: int,
+    h: int,
+    kind: str,
+    query: str,
+    names: tuple[str, ...],
+) -> tuple[Result, dict | None, list[str]]:
+    page, errors = open_frame(browser, base, w, h, kind, query)
     try:
         p = probe(page)
+        # ⚠ "Because you watched" sits BELOW the fold on a real detail page (after the synopsis, the
+        # cast and the credits), so a pill measured at scroll top is measured off-screen — and a
+        # "below the viewport" verdict there would be an artefact of where the probe looked, not a
+        # layout defect. The section is scrolled into view and re-probed for its own assertions.
+        scrolled = None
+        if "similar" in names:
+            page.evaluate(
+                "() => document.querySelector('[data-testid=\"similar-title-row\"]')"
+                "?.scrollIntoView({ block: 'center' })"
+            )
+            page.wait_for_timeout(250)
+            scrolled = probe(page)
     finally:
         page.close()
     result = Result(label)
     if errors:
         result.problems.extend(errors)
-    for name, fn in ASSERTIONS.items():
-        for problem in fn(p, kind):
+    for name in names:
+        source = scrolled if (name == "similar" and scrolled) else p
+        for problem in ASSERTIONS[name](source, kind):
             result.problems.append(f"[{name}] {problem}")
     return result, p, errors
 
 
+def scenarios(kind: str) -> list[Scenario]:
+    rows: list[Scenario] = [
+        (label, w, h, kind, "", ALL) for label, w, h in WIDTHS
+    ]
+    # ⚠ The NEGATIVE case, and the reason it is a scenario rather than an argument: "the row renders"
+    # is only evidence if the same screen can also be measured NOT rendering it.
+    rows.append(("similar off", 390, 844, kind, "similar=0", ("no-similar", "layout")))
+    return rows
+
+
 def selftest() -> int:
     """Falsification: hand each assertion a deliberately broken probe and require it to go RED."""
+    similar_good = {
+        "heading": "Because you watched Sholay",
+        "rows": [
+            {"title": "Ramgarh Ke Sholay", "h": 76},
+            {"title": "The Sholay Girl", "h": 76},
+        ],
+        "open": [{"w": 240, "h": 56, "bottom": 700}, {"w": 240, "h": 56, "bottom": 780}],
+        "actions": [{"text": "Add", "w": 70, "h": 44, "bottom": 700}, {"text": "Add", "w": 70, "h": 44, "bottom": 780}],
+    }
     good = {
         "primary": {"text": "Resume", "w": 200, "h": 52, "top": 700, "bottom": 752, "opacity": "1"},
         "tiles": [
@@ -273,9 +403,12 @@ def selftest() -> int:
         "scrollWidth": 390,
         "innerWidth": 390,
         "viewportH": 844,
+        "similar": similar_good,
     }
     baseline = [f"{n}: {fn(good, 'movie')}" for n, fn in ASSERTIONS.items()]
-    if any(problems for _, problems in ((n, fn(good, "movie")) for n, fn in ASSERTIONS.items())):
+    # ⚠ Only the POSITIVE assertions are checked against the good probe. `no-similar` asserts absence
+    # by design, so it fails on the same probe — it is falsified by its own mutation below instead.
+    if any(fn(good, "movie") for n, fn in ASSERTIONS.items() if n in ALL):
         print("❌ SELFTEST: the GOOD probe fails an assertion — the assertions are wrong, not the screen")
         for line in baseline:
             print(f"   {line}")
@@ -286,10 +419,30 @@ def selftest() -> int:
         "watched": {**good, "tiles": [{"text": "More", "w": 44, "h": 44, "top": 1, "bottom": 45}]},
         "tiles": {**good, "tiles": [{"text": "Unwatched", "w": 20, "h": 20, "top": 1, "bottom": 21}]},
         "layout": {**good, "overflow": 1, "overflowEls": ["DIV.x"], "scrollWidth": 420},
+        # The three ways the row can be wrong: absent, offering what he owns, and thumb-sized for a
+        # mouse.
+        "similar": {**good, "similar": None},
+        "similar-dedupe": {
+            **good,
+            "similar": {
+                **similar_good,
+                "rows": [{"title": SIMILAR_OWNED_TITLE, "h": 76}, *similar_good["rows"]],
+            },
+        },
+        "similar-tiny": {
+            **good,
+            "similar": {
+                **similar_good,
+                "rows": [{"title": "Ramgarh Ke Sholay", "h": 20}, {"title": "The Sholay Girl", "h": 76}],
+                "actions": [{"text": "Add", "w": 70, "h": 22, "bottom": 700}, similar_good["actions"][1]],
+            },
+        },
+        "no-similar": {**good, "similar": similar_good},
     }
     failures: list[str] = []
     for name, bad in mutations.items():
-        problems = ASSERTIONS[name](bad, "movie")
+        key = name.split("-")[0] if name not in ASSERTIONS else name
+        problems = ASSERTIONS[key](bad, "movie")
         if not problems:
             failures.append(f"{name}: mutation NOT caught — this assertion cannot fail")
         else:
@@ -328,23 +481,25 @@ def main() -> int:
 
     results: list[Result] = []
     print(f"detail screen · kind={args.kind} · {args.base}{FRAME}")
-    print(f"{'scenario':<12} {'primary':<14} {'tiles':<28} {'scroll':>10}  overflow")
+    print(f"{'scenario':<12} {'primary':<14} {'tiles':<28} {'similar':<34} scroll  overflow")
     with sync_playwright() as pw:
         browser = pw.chromium.launch()
         try:
-            for label, w, h in WIDTHS:
-                result, p, _ = check_width(browser, args.base, label, w, h, args.kind)
+            for label, w, h, kind, query, names in scenarios(args.kind):
+                result, p, _ = check_scenario(browser, base=args.base, label=label, w=w, h=h, kind=kind, query=query, names=names)
                 results.append(result)
                 if p:
                     tile_text = ",".join(t["text"] for t in (p.get("tiles") or [])) or "—"
                     prim = ((p.get("primary") or {}).get("text") or "—")
+                    sim = (p.get("similar") or {}).get("rows") or []
+                    sim_text = f"{len(sim)}: {','.join(r['title'] for r in sim)}" if sim else "—"
                     print(
-                        f"{label:<12} {prim:<14} {tile_text:<28} "
+                        f"{label:<12} {prim:<14} {tile_text:<28} {sim_text[:32]:<34} "
                         f"{p['scrollWidth']:>4}/{p['innerWidth']:<5} {p.get('overflow')}"
                     )
                     if shots:
-                        page, _ = open_frame(browser, args.base, w, h, args.kind)
-                        page.screenshot(path=str(shots / f"detail-{w}.png"), full_page=True)
+                        page, _ = open_frame(browser, args.base, w, h, kind, query)
+                        page.screenshot(path=str(shots / f"detail-{w}{'-nosim' if query else ''}.png"), full_page=True)
                         page.close()
         finally:
             browser.close()
@@ -359,7 +514,7 @@ def main() -> int:
             print(f"❌ {r.label}")
             for problem in r.problems:
                 print(f"   {problem}")
-    print(f"\n{len(results) - failed}/{len(results)} widths passed")
+    print(f"\n{len(results) - failed}/{len(results)} scenarios passed")
     return 1 if failed else 0
 
 

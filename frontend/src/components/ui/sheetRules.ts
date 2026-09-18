@@ -52,8 +52,31 @@ export function shouldDismiss(input: { dy: number; elapsedMs: number; height: nu
   return dy / elapsedMs >= DISMISS_VELOCITY;
 }
 
-/** Velocity in px/ms — exported so a failure can say the number rather than just "not dismissed". */
+/**
+ * Velocity in px/ms — exported so a failure can say the number rather than just "not dismissed".
+ */
 export function dragVelocity(dy: number, elapsedMs: number): number {
   if (elapsedMs <= 0) return 0;
   return dy / elapsedMs;
+}
+
+/**
+ * How far a finger must travel before a pointerdown becomes a DRAG rather than a tap.
+ *
+ * ⚠⚠ **This threshold exists because capturing the pointer on `pointerdown` breaks every control
+ * inside the sheet** (measured 2026-09-18). The panel's handler sees the pointerdown that started on
+ * a button; capturing it there retargets the gesture to the panel, so the browser dispatches the
+ * `click` to the PANEL — the nearest common ancestor of the captured down/up pair — and the button
+ * never hears it. On a real browser that is indistinguishable from a dead button: a real click did
+ * nothing while `element.click()` from the console fired the handler exactly as written.
+ *
+ * So the gesture is armed, not captured, until it is clearly a drag. 8px is deliberately below the
+ * ~10px a thumb moves during an ordinary tap on a 44px target, and far below the distance that
+ * distinguishes a drag: anything smaller than this is not a gesture anybody meant.
+ */
+export const DRAG_ARM_PX = 8;
+
+/** Is this much travel a DRAG (and so capturable), or still a TAP? */
+export function shouldArmDrag(dy: number): boolean {
+  return dy >= DRAG_ARM_PX;
 }

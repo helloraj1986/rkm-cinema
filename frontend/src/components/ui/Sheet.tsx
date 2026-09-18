@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
-import { DISMISS_MS, dragOffset, shouldDismiss } from "./sheetRules";
+import { DISMISS_MS, dragOffset, shouldArmDrag, shouldDismiss } from "./sheetRules";
 
 /**
  * The bottom sheet — the mobile answer to a centred dialog (MOBILE_FIRST_UI_PLAN §5.3, brief §6).
@@ -27,6 +27,12 @@ import { DISMISS_MS, dragOffset, shouldDismiss } from "./sheetRules";
  * escape hatch (a sheet layered over the full-screen player must not swallow Escape). Those are one
  * set of behaviours, implemented in both files because the two have different geometry — not two
  * policies.
+ *
+ * ⚠⚠ **A pointerdown inside this panel must NOT capture the pointer** (fixed 2026-09-18, see
+ * `shouldArmDrag`). Capturing on `pointerdown` retargeted the whole gesture to the panel, so the
+ * browser dispatched `click` to the PANEL and every button inside every sheet was inert to a real tap
+ * — invisible in the source, and invisible to `element.click()`. The gesture is armed on movement
+ * instead.
  */
 
 export function Sheet({
@@ -53,7 +59,15 @@ export function Sheet({
   canEscapeRef.current = canEscapeClose;
 
   // The drag, in a ref: a pointermove must not re-render the whole sheet tree per pixel.
-  const dragRef = useRef<{ startY: number; startTime: number } | null>(null);
+  const dragRef = useRef<{
+    startY: number;
+    startTime: number;
+    pointerId: number;
+    /** Set once the gesture has travelled far enough to be a drag rather than a tap. */
+    armed: boolean;
+    /** The element the gesture is captured on — the panel, once `armed`. */
+    el: HTMLElement | null;
+  } | null>(null);
   const [dy, setDy] = useState(0);
   const [leaving, setLeaving] = useState(false);
   /**
@@ -146,11 +160,26 @@ export function Sheet({
       // gesture the content needs.
       const scroller = panelRef.current;
       if (scroller && scroller.scrollTop > 0) return;
-      dragRef.current = { startY: e.clientY, startTime: e.timeStamp };
-      setDragging(true);
-      // Pointer capture keeps the gesture alive when the finger leaves the handle — without it a
-      // fast drag stops halfway and the sheet springs back.
-      e.currentTarget.setPointerCapture?.(e.pointerId);
+      // ⚠⚠ THE POINTER IS NOT CAPTURED HERE, AND THAT IS THE FIX (2026-09-18).
+      //
+      // This handler is on the PANEL, so it sees every pointerdown inside the sheet — including on a
+      // button. Capturing immediately retargets the whole gesture to the panel, and the browser then
+      // dispatches `click` to the panel (the nearest common ancestor of a captured down/up pair)
+      // instead of to the control under the finger. Every control inside every sheet became inert to
+      // a real tap: measured in Chromium, a real click on the suggest sheet's Download did nothing
+      // while `element.click()` from the console worked — the signature of a swallowed gesture, not
+      // of a broken handler. Nothing about it is visible in the source, only in the browser.
+      //
+      // The gesture is ARMED instead, and captured only once it has travelled far enough to be a
+      // drag (`shouldArmDrag`): a tap never arms, so its `click` reaches the button; a drag arms and
+      // then keeps following the finger even when it leaves the panel.
+      dragRef.current = {
+        startY: e.clientY,
+        startTime: e.timeStamp,
+        pointerId: e.pointerId,
+        armed: false,
+        el: e.currentTarget,
+      };
     },
     [dismissible, leaving],
   );
@@ -158,15 +187,28 @@ export function Sheet({
   const onPointerMove = useCallback((e: ReactPointerEvent<HTMLDivElement>) => {
     const drag = dragRef.current;
     if (!drag) return;
-    setDy(dragOffset(drag.startY, e.clientY));
+    const offset = dragOffset(drag.startY, e.clientY);
+    if (!drag.armed) {
+      if (!shouldArmDrag(offset)) return;
+      drag.armed = true;
+      setDragging(true);
+      // Capture NOW, mid-gesture (a live pointer can be captured at any time): from here the sheet
+      // follows the finger past the panel's own edges.
+      drag.el?.setPointerCapture?.(drag.pointerId);
+    }
+    setDy(offset);
   }, []);
 
   const onPointerUp = useCallback(
     (e: ReactPointerEvent<HTMLDivElement>) => {
       const drag = dragRef.current;
       dragRef.current = null;
-      setDragging(false);
       if (!drag) return;
+      // ⚠ A gesture that never armed is a TAP. It must not dismiss, and it must not "snap back"
+      // either — there is nothing to snap back from. Without this the fast-flick rule would read a
+      // 5px jiggle inside a tap as a dismissal.
+      if (!drag.armed) return;
+      setDragging(false);
       const offset = dragOffset(drag.startY, e.clientY);
       const height = panelRef.current?.getBoundingClientRect().height ?? 0;
       if (shouldDismiss({ dy: offset, elapsedMs: e.timeStamp - drag.startTime, height })) {

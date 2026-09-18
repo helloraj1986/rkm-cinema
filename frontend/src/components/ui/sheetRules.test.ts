@@ -3,8 +3,10 @@ import { describe, expect, it } from "vitest";
 import {
   DISMISS_FRACTION,
   DISMISS_VELOCITY,
+  DRAG_ARM_PX,
   dragOffset,
   dragVelocity,
+  shouldArmDrag,
   shouldDismiss,
 } from "./sheetRules";
 
@@ -81,5 +83,43 @@ describe("shouldDismiss — the three ways to mean it, and the ways to not", () 
     const slow = shouldDismiss({ dy: 200, elapsedMs: 2000, height });
     expect(fast).toBe(true);
     expect(slow).toBe(true);
+  });
+});
+
+/**
+ * ⚠⚠ THE RULE THAT KEEPS EVERY BUTTON INSIDE A SHEET ALIVE — measured, not reasoned (2026-09-18).
+ *
+ * The panel's `pointerdown` handler sees gestures that START ON A BUTTON. Capturing the pointer
+ * there retargets the gesture to the panel, so the browser dispatches `click` to the panel (the
+ * nearest common ancestor of the captured down/up pair) and the button never hears it. In a real
+ * browser that is a dead button: a real click on the suggest sheet's **Download** did nothing, while
+ * `element.click()` from the console ran the handler exactly as written.
+ *
+ * So the gesture is armed — not captured — until it has travelled far enough to be a drag.
+ */
+describe("shouldArmDrag — a TAP must never be captured", () => {
+  it("arms only once the gesture has clearly moved", () => {
+    expect(DRAG_ARM_PX).toBeGreaterThan(0);
+    expect(shouldArmDrag(DRAG_ARM_PX)).toBe(true);
+    expect(shouldArmDrag(DRAG_ARM_PX + 40)).toBe(true);
+  });
+
+  it("does NOT arm for a tap, including the few px a thumb always drifts", () => {
+    expect(shouldArmDrag(0)).toBe(false);
+    expect(shouldArmDrag(1)).toBe(false);
+    expect(shouldArmDrag(DRAG_ARM_PX - 1)).toBe(false);
+  });
+
+  it("does NOT arm an upward drag — that gesture dismisses nothing", () => {
+    // `dragOffset` clamps upward movement to 0, so this is belt-and-braces: an upward gesture can
+    // never arm, and so can never capture the pointer either.
+    expect(shouldArmDrag(-50)).toBe(false);
+  });
+
+  it("⚠ the threshold is a fifth of the shortest tap target, not a gesture length", () => {
+    // The rule that keeps these two numbers coupled: the arm threshold must be small enough that a
+    // deliberate tap on a 44px control never crosses it, or this "fix" reintroduces the dead button
+    // it exists to remove — intermittently, which is worse.
+    expect(DRAG_ARM_PX).toBeLessThanOrEqual(44 / 5);
   });
 });

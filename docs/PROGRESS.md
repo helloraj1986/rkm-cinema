@@ -1,4 +1,4 @@
-## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-18, after session 2) · branch **`feat/mobile-m3-library`** · tip **`b48d6c7`** · **2 commits ahead of `dev`** (everything else is merged), tree clean, pushed
+## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-18, after session 3) · branch **`feat/mobile-m3-library`** · tip **`0c6076f`** · **5 commits ahead of `dev`** (M3+M4 merged; tree clean, pushed)
 
 ⚠ **An agent starting here: read [`ARCHITECTURE.md`](ARCHITECTURE.md) §0 first** — one document now, with
 the reading order, the five rules, the deployed inventory (§2.1), "where do I change X" (§14) and every
@@ -13,6 +13,16 @@ rebuild and can be tried in one command.
 
 **Say this first:** *"continue rkm-cinema — pick up the RESUME-HERE block."* Then read this and
 `KNOWN_ISSUES.md`'s status table (the live list of open defects and their state).
+
+⚠ **Session 3 (this one) closed NEXT STEP 3 — and only that.** The detail screen is now measured by a
+tool that can FAIL rather than by a one-off probe holding a stale assertion: `tools/check_detail_mobile.py`
+(the harness tile filter now carries `Unwatched`, the label the mid-play fixture actually renders;
+freshness guarded on both sides; `--selftest` proves all four assertions go RED on a mutated probe). It
+also settles item 2 of the "built but not verified" list — the #1 Watched control **is** now measured.
+⚠ No app source, backend, or Swift changed; the tool measures the REAL `layouts/mobile/DetailScreen.tsx`
+through the harness, so its numbers describe the branch as it stands.
+⚠ Still open and unchanged: the six items' device rounds, the pending decisions below, and every
+step from 4 onward.
 
 ### Built this session (all committed + pushed, none merged)
 

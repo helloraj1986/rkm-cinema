@@ -131,8 +131,13 @@ const ctx: LibraryOutletContext = {
     return { w: Math.round(r.width), h: Math.round(r.height), top: Math.round(r.top), bottom: Math.round(r.bottom) };
   };
   const primary = document.querySelector('[data-testid="detail-primary"]');
+  // ⚠ The watched control's label is STATE-dependent: `Unwatched` while the item
+  // is unplayed (the mid-play fixture) and `Watched` once it is played. The old
+  // filter listed only `Watched`, so it silently dropped the tile it exists to
+  // measure — the stale assertion the 2026-09-18 handoff flagged.
+  const TILE_LABELS = ["Watched", "Unwatched", "More", "Download"];
   const tiles = [...document.querySelectorAll("button")].filter((b) =>
-    ["Watched", "More", "Download"].includes((b.textContent || "").trim()),
+    TILE_LABELS.includes((b.textContent || "").trim()),
   );
   const poking = [...document.querySelectorAll("body *")].filter((el) => {
     const r = el.getBoundingClientRect();

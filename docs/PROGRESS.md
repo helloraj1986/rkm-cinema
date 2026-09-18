@@ -27,9 +27,14 @@ rebuild and can be tried in one command.
 ### ⚠ SIX THINGS ARE BUILT BUT **NOT VERIFIED ON HIS DEVICE** — never describe them as working
 
 1. **M3 Search** + **M4 Detail** screens — measured headlessly at 320/390 only.
-2. **#1 Watched control** — the detail tile was **not** re-measured: the harness probe last ran BEFORE
-   it, so its assertion `tiles == ["Watched","More"]` is knowingly stale (that fixture is mid-play →
-   the label is now `Unwatched`). Re-run the probe before calling that screen "measured".
+2. **#1 Watched control** — ✔ **RE-MEASURED 2026-09-18 (session 3).** The probe's tile filter listed only
+   `Watched`, so it silently dropped the state-labelled tile this screen exists to show. The filter now
+   carries `Unwatched`, and the screen is measured by a tool instead of a one-off run:
+   **`tools/check_detail_mobile.py`** (freshness-guarded both ways, `--selftest` falsified) reports
+   **movie** primary `Resume (28%)` · **series** primary `Resume S1E2` · tiles `Unwatched,More` ·
+   `scrollWidth == innerWidth` · 0 overflowing elements, at **320 / 390 / 430**. ⚠ What it does NOT
+   cover: the TAP itself — a headless browser cannot do an iOS finger-tap, so the control's feedback
+   stays his device round.
 3. **#3 Switch Profile** — overflow measured fixed (0 at 320–430), but a headless browser cannot do an
    iOS finger-drag or raise the keyboard. His phone is the acceptance.
 4. **#7 Cancel** — Swift fix, typecheck gate PASS, **no Mac build and nothing anywhere taps Cancel**
@@ -62,7 +67,14 @@ rebuild and can be tried in one command.
    `str(int(str(env.get(…) or "0")) or default)` — the `"0"`-swallowing bug this test exists for ·
    remove the blank fallback. Same lesson as the Swift core's `--falsify`: a check that has never been
    reverted proves nothing.
-3. **Re-run the detail-screen harness probe** with the corrected tile label (see #2 above).
+3. ✔ **DONE 2026-09-18 (session 3) — the detail screen is now measured by a tool that can fail.**
+   The stale assertion is gone (the probe's tile filter carries `Unwatched`), and
+   `tools/check_detail_mobile.py` re-runs the measurement in one command: primary action on screen and
+   ≥44px with a progress/episode-aware label, exactly ONE state-labelled watched control, the action
+   tiles on screen and ≥32px, and no horizontal overflow — at 320/390/430 for BOTH fixtures. Freshness
+   is guarded on both sides (a marker missing from disk is reported as a TOOL bug, not a stale server),
+   and `--selftest` proves each assertion goes RED on a mutated probe. Measured: `Resume (28%)`
+   (movie) · `Resume S1E2` (series) · tiles `Unwatched,More` · 0 overflow everywhere.
 4. **His phone round** on those six items → on his word, **merge to `dev`** (15 commits is a lot of
    unreviewed branch; he asks for merges).
 5. **M5 — Player** (plan §11: landscape-first, `playsinline`, tap-to-reveal chrome, thumb scrubber,

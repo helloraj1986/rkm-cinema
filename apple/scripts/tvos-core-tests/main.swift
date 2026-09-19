@@ -1,4 +1,10 @@
 import Foundation
+// ⚠ Same Linux/Darwin split as `Core/PlaybackAuth.swift`: swift-corelibs-foundation keeps `HTTPCookie` in
+// `FoundationNetworking` and Apple's SDK does not. The C1 section builds real `HTTPCookie` fixtures, so this
+// file needs it too.
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 // The Phase B gate that runs WITHOUT a Mac.
 //
@@ -995,6 +1001,120 @@ let states: [DetailState] = [.loading, .notFound, .failed("boom"), .content(movi
 check(states.allSatisfy { $0.snapshot == nil || $0.snapshot == movieSnapshot },
       "only the content state carries a snapshot")
 checkEqual(states.compactMap(\.failureMessage), ["boom"], "only the failed state carries a sentence")
+
+// MARK: - Phase C1 — the playback credential
+
+// ⚠⚠ **PIN COPY AND NAMES AGAINST LITERALS.** B2's falsification pass caught a TAUTOLOGY here: the rail
+// headings were asserted against the very constant the mutation moved, so both sides moved together and the
+// check stayed green. The cookie name below is therefore a LITERAL — if it ever drifts from
+// `backend/services/auth.py::SESSION_COOKIE`, this must go red, and it cannot do that by reading the same
+// constant it is checking.
+//
+// ⚠ This section is why C1 exists at all: every predicate here fails SILENTLY in the app. A cookie for the
+// wrong host, an expired session, a path this app does not use — each one produces the same screen, a black
+// player, and no sentence anywhere.
+section("the playback credential")
+
+let serverOrigin = URL(string: "http://rkm-hp.tail8d5e8.ts.net:8124")!
+
+/// A cookie shaped like the ones the api sets (`backend/api/routes/auth.py`: `path="/"`, `httponly`, no
+/// `Secure` — the tailnet is plain http).
+func sessionJarCookie(_ name: String,
+                      value: String = "opaque-session-id",
+                      domain: String = "rkm-hp.tail8d5e8.ts.net",
+                      path: String = "/",
+                      expires: Date? = nil) -> HTTPCookie {
+    var properties: [HTTPCookiePropertyKey: Any] = [
+        .name: name, .value: value, .domain: domain, .path: path,
+    ]
+    if let expires { properties[.expires] = expires }
+    guard let cookie = HTTPCookie(properties: properties) else {
+        fatalError("could not build the fixture cookie \(name) — the harness is broken, not the app")
+    }
+    return cookie
+}
+
+checkEqual(PlaybackAuth.sessionCookieName, "rkm_session",
+           "the cookie the player looks for is the api's own session cookie")
+
+// The api sets exactly one app cookie, but a host can carry plenty of others, and "the first cookie in the
+// jar" is a credential that cannot work.
+let mixedJar = [
+    sessionJarCookie("some_other_app"),
+    sessionJarCookie("rkm_session", value: "wanted"),
+    sessionJarCookie("another_tool", value: "also-wanted"),
+]
+checkEqual(PlaybackAuth.sessionCookie(for: serverOrigin, in: mixedJar)?.value, "wanted",
+           "the session cookie is picked by NAME out of a jar full of others")
+
+// ⚠ The sentinel-collision family this repo has already been burned by: a missing id matched EVERY row. The
+// same shape here is "no match found, so use something" — and the answer must be nothing.
+check(PlaybackAuth.sessionCookie(for: serverOrigin, in: []) == nil,
+      "an empty cookie jar yields no credential")
+check(PlaybackAuth.sessionCookie(for: serverOrigin, in: [sessionJarCookie("some_other_app", value: "decoy")]) == nil,
+      "an unrelated cookie is NEVER substituted for the session")
+// ⚠ The domain guard INSIDE `applies`, which the checks above cannot reach: a correctly-NAMED session cookie
+// belonging to a different host. Without this the domain predicate could be deleted from `applies` and both
+// the domain checks above would still pass, because they call `domainCovers` directly.
+check(PlaybackAuth.sessionCookie(for: serverOrigin, in: [
+        sessionJarCookie("rkm_session", domain: "evil.example"),
+      ]) == nil,
+      "a correctly-named session cookie for ANOTHER host is not used")
+
+// A host-only cookie is exact; a domain cookie (leading dot) also covers subdomains.
+check(PlaybackAuth.domainCovers("rkm-hp.tail8d5e8.ts.net", host: "rkm-hp.tail8d5e8.ts.net"),
+      "a host-only cookie covers its own host")
+check(!PlaybackAuth.domainCovers(".tail8d5e8.ts.net", host: "notail8d5e8.ts.net"),
+      "a domain cookie does not match a host that merely ends the same way")
+check(PlaybackAuth.domainCovers(".tail8d5e8.ts.net", host: "rkm-hp.tail8d5e8.ts.net"),
+      "…but it does cover a real subdomain")
+check(!PlaybackAuth.domainCovers("rkm-hp.tail8d5e8.ts.net", host: "evil.example"),
+      "a cookie issued for this server is never sent to another host")
+check(!PlaybackAuth.domainCovers("", host: "rkm-hp.tail8d5e8.ts.net"),
+      "a cookie with no domain covers nothing")
+
+// Expiry.
+check(PlaybackAuth.sessionCookie(for: serverOrigin, in: [
+        sessionJarCookie("rkm_session", expires: Date().addingTimeInterval(3600)),
+      ]) != nil,
+      "a live session cookie is used")
+check(PlaybackAuth.sessionCookie(for: serverOrigin, in: [
+        sessionJarCookie("rkm_session", expires: Date().addingTimeInterval(-60)),
+      ]) == nil,
+      "an EXPIRED session cookie is not used")
+
+// Path scope.
+check(PlaybackAuth.pathCovers("/", requestPath: "/api/jellyfin/hls/x/master.m3u8"),
+      "a root-path cookie covers every request")
+check(PlaybackAuth.pathCovers("/api", requestPath: "/api/jellyfin/hls/x/master.m3u8"),
+      "a cookie scoped to /api covers the routes beneath it")
+check(!PlaybackAuth.pathCovers("/api", requestPath: "/apix"),
+      "…but NOT a path that merely starts the same way")
+check(PlaybackAuth.sessionCookie(for: serverOrigin, in: [sessionJarCookie("rkm_session", path: "/somewhere-else")]) == nil,
+      "a cookie scoped to a path this app does not use is refused")
+check(!PlaybackAuth.applies(sessionJarCookie("rkm_session"), to: URL(string: "about:blank")!),
+      "an origin with no host gets no credential")
+
+// The options the asset is built with, under the key the MAC-ONLY call site supplies.
+let playableCookie = sessionJarCookie("rkm_session", value: "wanted")
+let options = PlaybackAuth.assetOptions(cookieKey: "AVURLAssetHTTPCookiesKey", cookie: playableCookie)
+check(options?.keys.first == "AVURLAssetHTTPCookiesKey",
+      "the cookie is handed over under the key the call site names")
+check((options?["AVURLAssetHTTPCookiesKey"] as? [HTTPCookie])?.count == 1,
+      "…as a one-element cookie array, which is the shape the asset takes")
+check(PlaybackAuth.assetOptions(cookieKey: "", cookie: playableCookie) == nil,
+      "an empty option key builds NO options rather than a bogus one")
+
+// ⚠ The value is a bearer credential (`SessionStore` keeps only its sha256). The redactor in `RKMLog` covers
+// URLs; this covers the one credential the player is handed directly, which the redactor never sees.
+let identifiableSecret = "a-very-identifiable-session-id"
+check(!PlaybackAuth.loggable(sessionJarCookie("rkm_session", value: identifiableSecret))
+        .contains(identifiableSecret),
+      "the loggable description never carries the credential")
+checkEqual(PlaybackAuth.loggable(nil), "no session cookie",
+           "…and says there is none, rather than logging nothing at all")
+checkEqual(PlaybackAuth.missingSessionSentence, "Not signed in on this TV. Sign in again, then play.",
+           "the refusal names the missing credential instead of showing a black screen")
 
 // MARK: - Report
 

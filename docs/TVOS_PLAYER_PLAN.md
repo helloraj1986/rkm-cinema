@@ -152,21 +152,45 @@ is a defect, not a polish item.
 
 ## §3 — Phases
 
-### C1 — the player against the carrier the app already has *(zero backend change)*
+### C1 — the player against the carrier the app already has *(built — zero backend change)*
+
+**Built: `apple/tvos/RKMCinemaTV/Core/PlaybackAuth.swift`** + a new `the playback credential` section in
+`tvos-core-tests/main.swift`, 10 mutations in `check-tvos-core.py`, and the file added to
+`check-apple-typecheck.sh`'s list **in the same commit** (a portable file no gate compiles is an unguarded
+file). Gates: `check-tvos-core.py` **320 checks, 0 failures** (was 297 — the new section is 23 of them) ·
+`check-apple-typecheck.sh` 36 files ✓ · `check-imports.py` 32 files ✓ · `check-tvos-models.py` ✓ ·
+`check_md_links.py` ✓.
+
+⚠⚠ **The gate's own falsification pass found a gap in the plan as written, and it is worth keeping.** Four of
+C1's rules are predicates of `applies(_:to:)`, and the first draft of the section checked three of them by
+calling `domainCovers` / `pathCovers` **directly** — which means deleting the domain predicate from `applies`
+would have left every one of those checks GREEN. The section now carries a check that reaches the predicate
+*through* the selector (a correctly-named session cookie belonging to `evil.example`), and the mutation
+`the host check inside applies` is what pins it. **Same family as B2's tautology**: a check that does not travel
+the path the mutation edits is a check that proves nothing about it.
+
+⚠ **A portability finding that would have silently removed the file from the gate:**
+`HTTPCookie` lives in **`FoundationNetworking`** on Linux and in **`Foundation`** on Darwin. The first compile
+failed with `'HTTPCookie' is unavailable: This type has moved to the FoundationNetworking module`, and the fix
+is the conditional import both files now carry (`#if canImport(FoundationNetworking)`). Worth knowing because
+the symptom is not an error at all in the case that matters — a file that fails to compile here simply leaves
+the runnable set, and a rule that is no longer executed looks exactly like a rule that passes.
 
 `Core/APIClient.swift` already authenticates every REST call through `URLSession.shared`'s cookie store, so
 `POST /api/jellyfin/progress` and every JSON route need **nothing new**. The only question is `AVPlayer`, whose
 sub-requests are not made by our `URLSession`.
 
-Build it against the **cookie the app already holds**: read the session cookie out of `HTTPCookieStorage.shared`
-*after sign-in* (never stored a second time, never logged) and hand it to the asset through `AVURLAsset`'s
-documented cookie option — **[hypothesis]** `AVURLAssetHTTPCookiesKey`, an array of `HTTPCookie`
-(⚠ **verify the exact key and its name on the Mac**, per §5: real API, not recalled API).
+It is built against the **cookie the app already holds**, handed to the asset through `AVURLAsset`'s documented
+cookie option. ⚠ **The option key itself is deliberately NOT named in `PlaybackAuth.swift`** — it is
+`AVFoundation`, and naming it there would take the file out of the Linux gate. The Mac-only call site passes
+it, so a wrong or non-existent key is a **compile error on the Mac** — the visible failure this repo insists on
+over a silent one. **[hypothesis, still]**: `AVURLAssetHTTPCookiesKey`, an array of `HTTPCookie` — the exact
+symbol is verified by the Mac build, and whether it *works* is C4's F2.
 
 ⚠ **This step is deliberately the one that cannot be tested here, and the phase is arranged around that.** The
 claim in play — that a cookie does or does not reach a *media playlist and a segment* — is a statement about
 Apple's platform, so it is **measured by C4's F2 rather than argued in this file**. The failure mode is
-deliberately the visible one: a `401` on a `…/hls/…` URL, named in the log by `RKMLog.request`.**If F2 passes,
+deliberately the visible one: a `401` on a `…/hls/…` URL, named in the log by `RKMLog.request`. **If F2 passes,
 this phase never touches `backend/` at all and C5 is not built.**
 
 ### C2 — the pure playback rules, RUN here *(portable, gateable)*

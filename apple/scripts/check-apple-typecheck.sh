@@ -163,6 +163,9 @@ echo "== tvOS sources (RKMCinemaTV) — the nineteen files that need no Apple UI
 #   RequestURL       ⚠ the URL builder, and the reason it is its own file: `appendingPathComponent` escapes a
 #                    query into the PATH, and `APIClient` (which would otherwise hold this rule) imports
 #                    `RKMServerKit`, so nothing in it can be RUN here. Also EXECUTED.
+#   PlaybackAuth     Phase C1's credential carrier — which cookie the player is handed, and the refusal when
+#                    there is none. Also EXECUTED. ⚠ The AVFoundation option key is a PARAMETER, supplied by
+#                    the Mac-only call site, which is what keeps this file inside the Linux gate.
 #   LibraryAPI       the endpoints, so no view spells a path
 #   HomeStore        the two Home requests and the APIError -> sentence mapping
 #   BrowseStore      the library list + one folder's wall, same mapping
@@ -184,6 +187,7 @@ TV_WORK=()
 for rel in Core/ServerDefaults.swift Core/APIClient.swift Core/Models/AuthModels.swift \
            Core/Models/LibraryModels.swift Core/Models/DetailModels.swift \
            Core/HomeRails.swift Core/BrowseRules.swift Core/DetailRules.swift Core/RequestURL.swift \
+           Core/PlaybackAuth.swift \
            Core/LibraryAPI.swift Core/HomeStore.swift Core/BrowseStore.swift Core/DetailStore.swift \
            Core/PosterURL.swift Core/PosterLoader.swift \
            Server/ServerProbe.swift App/AppLog.swift App/AppModel.swift Auth/SessionStore.swift; do

@@ -286,8 +286,12 @@ the hardcoded bundle id fails case J.
 - **Phase B** — Home (Continue Watching / Recently Added), Browse (folders → items), item detail,
   posters. New contract models for `GET /api/library/*` and `GET /api/jellyfin/detail`, checked by the
   same gate.
-- **Phase C** — `AVPlayer` + HLS, resume and progress reporting, **and the only backend change this app
-  needs**: B1–B3 (`session_token` from login, accepted in `api/session.py::session_context_from_request`,
-  injected into each rewritten HLS URI). Auth is cookie-only today — verified
-  `backend/api/session.py:236`. ⚠ **Do not bet playback on cookie propagation to segment requests.**
+- **Phase C** — `AVPlayer` + HLS, resume and progress reporting. ⚠ **The sequencing is now `docs/TVOS_PLAYER_PLAN.md`'s,
+  and it is deliberately NOT "backend first"** — see `APPLE_CLIENTS_PLAN.md` §4.4's B1–B3 for the recorded design
+  and the plan for why it is now **C5, built only if the round proves it is needed**: whether `AVPlayer` carries
+  a credential to a **segment** request is a claim about Apple's platform, and this repo has twice paid for
+  building on one of those. C1 ships the carrier against the cookie the app already holds, with **zero backend
+  change**, and the round's F2 is the measurement. Auth is cookie-only today — verified
+  `backend/api/session.py:236`. ⚠ **Do not bet playback on cookie propagation to segment requests** — and do not
+  bet against it either; measure it.
 - **Phase D** — focus/distance polish at 1080p from three metres.

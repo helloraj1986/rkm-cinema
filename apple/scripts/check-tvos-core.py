@@ -62,6 +62,11 @@ PURE_SOURCES = [
     TVOS / "Core" / "Models" / "DetailModels.swift",
     TVOS / "Core" / "DetailRules.swift",
     TVOS / "Core" / "RequestURL.swift",
+    # Phase C1 — the credential `AVPlayer` cannot get from `URLSession`. Same split again: the SELECTION and
+    # the refusal are pure and run here; the AVFoundation key it is built under is supplied by the Mac-only
+    # call site (see the file), and the platform behaviour itself is the round's falsifier, not this gate's
+    # claim.
+    TVOS / "Core" / "PlaybackAuth.swift",
 ]
 
 HARNESS = REPO / "apple" / "scripts" / "tvos-core-tests" / "main.swift"
@@ -250,6 +255,47 @@ MUTATIONS = [
      '    static func nextUp(_ verb: String) -> String { "Next up: \\(verb)" }',
      '    static func nextUp(_ verb: String) -> String { "\\(verb)" }',
      "the screen names the verb it WILL offer, in the phone's own words"),
+    # ---- C1: the playback credential
+    ("the session cookie's name", "PlaybackAuth.swift",
+     'static let sessionCookieName = "rkm_session"',
+     'static let sessionCookieName = "rkm"',
+     "the cookie the player looks for is the api's own session cookie"),
+    ("the cookie name check", "PlaybackAuth.swift",
+     '        guard cookie.name == sessionCookieName else { return false }',
+     '        guard true else { return false }',
+     "the session cookie is picked by NAME out of a jar full of others"),
+    ("the host check inside applies", "PlaybackAuth.swift",
+     '        guard domainCovers(cookie.domain, host: host) else { return false }',
+     '        guard true else { return false }',
+     "a correctly-named session cookie for ANOTHER host is not used"),
+    ("the expiry check", "PlaybackAuth.swift",
+     '        if let expires = cookie.expiresDate, expires <= Date() { return false }',
+     '        if false { return false }',
+     "an EXPIRED session cookie is not used"),
+    ("the path scope inside applies", "PlaybackAuth.swift",
+     '        return pathCovers(cookie.path, requestPath: requestPath)',
+     '        return true',
+     "a cookie scoped to a path this app does not use is refused"),
+    ("the subdomain suffix test", "PlaybackAuth.swift",
+     '        return host.hasSuffix("." + domain)',
+     '        return host.hasSuffix(domain)',
+     "a domain cookie does not match a host that merely ends the same way"),
+    ("the path prefix test", "PlaybackAuth.swift",
+     '        return requestPath.hasPrefix(base.hasSuffix("/") ? base : base + "/")',
+     '        return requestPath.hasPrefix(base)',
+     "…but NOT a path that merely starts the same way"),
+    ("the no-substitute rule", "PlaybackAuth.swift",
+     '        cookies.first { applies($0, to: origin) }',
+     '        cookies.first',
+     "an unrelated cookie is NEVER substituted for the session"),
+    ("the empty option key", "PlaybackAuth.swift",
+     '        guard !cookieKey.isEmpty else { return nil }',
+     '        guard true else { return nil }',
+     "an empty option key builds NO options rather than a bogus one"),
+    ("the withheld cookie value", "PlaybackAuth.swift",
+     '        return "session cookie for \\(cookie.domain)\\(cookie.path) (value withheld)"',
+     '        return "session cookie \\(cookie.value)"',
+     "the loggable description never carries the credential"),
 ]
 
 

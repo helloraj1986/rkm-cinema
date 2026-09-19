@@ -395,6 +395,13 @@ What actually changed on screen:
   the card prints `S1E3 · Series name` underneath it — `S1·E3` above and `S1E3` below would be two spellings
   of one code on one card. ⚠ One line to change if he wants the dot; say so rather than let it drift.
 
+⚠⚠ **AND THE FIRST BUILD THAT RAN SHOWED A REAL UX BUG — the focus ring around the label rather than the
+button** (his report: *"homescreen → scrolling to details button → the ux has bug"*). A `ButtonStyle` sees only
+`configuration.label`, so chrome applied to the `Button` is chrome the style cannot wrap: `CtaButtonStyle` and
+`PillButtonStyle` drew the ring while their callers drew the box. **Both styles now own their box**
+(`CtaButtonStyle(kind:)`, `PillButtonStyle(kind:)`), which removes the class, and **rule 5 of
+`check-tvos-members.py`** refuses box chrome applied to a `Button` whose style already draws it.
+
 ⚠⚠ **AND U6'S SECOND ROUND FAILED ON A NAME, WHICH IS WHY THE MEMBERS GATE HAS A RULE 4.** `ButtonStyle`
 declares an associatedtype requirement `Body`, so the helper views nested inside U6's four new `ButtonStyle`
 conformers collided with it — `type 'TabButtonStyle' does not conform to protocol 'ButtonStyle'`. Phase A's

@@ -37,6 +37,30 @@ cd ~/dev/rkm-cinema && git checkout feat/tvos-ux && git pull --ff-only && ./appl
 and **a failed build proves nothing about the layouts** — a `BUILD FAILED` is a build round, and F1–F7 were
 never attempted. ⚠ `simctl launch --console-pty` HOLDS his terminal until the app exits: tell him to `Ctrl-C`.
 
+### 🐞 HE FOUND A REAL UX BUG ON THE FIRST BUILD THAT RAN (2026-09-20) — rule 5 exists because of it
+
+His words: **"homescreen → scrolling to details button → the ux has bug"**, with a screenshot. The Home's
+`Details` button drew its **focus ring around the word**, inside the button's own grey box.
+
+**Cause.** A `ButtonStyle` receives `configuration.label` — the button's CONTENT and nothing else. The ring was
+drawn inside the style, while `.padding()` and `.background()` were applied to the `Button` itself, so the ring
+never saw the box. ⚠ `TabButtonStyle` and the avatar button already had it right (their box is inside the
+label); `CtaButtonStyle` and `PillButtonStyle` did not.
+
+**Fix — structural, not cosmetic: the style owns its box.** `CtaButtonStyle(kind:)` (`.primary` / `.secondary`)
+and `PillButtonStyle(kind:)` (`.plain` / `.primary`) now draw their own padding, fill, border, radius, focus
+ring and lift, exactly as `TabButtonStyle` already did. **A caller that can only supply content cannot supply it
+in the wrong place**, so the class is gone rather than this instance of it.
+
+⚠ **Rule 5 of `check-tvos-members.py` keeps a sixth style from re-introducing it:** from `.buttonStyle(<a style
+we own>)` it walks back to the enclosing `Button`, deletes every closure from that region (the action and the
+label are allowed to draw anything), and refuses box chrome (`.padding`, `.background`, `.overlay`, `.frame`) in
+what is left. ⚠ **Proved on the real defect**: re-adding `.padding()` to that exact `Details` button makes it
+fire (`Home/HeroBand.swift:182`), and it is silent on the fixed tree.
+
+⚠ **THE LESSON, THIRD TIME:** no gate here can compile SwiftUI, so a defect that only the Mac can see has to be
+answered with a STRUCTURE that makes it impossible, and only then with a text rule as a backstop.
+
 ### ⚠⚠ ROUND 2 FAILED TOO (2026-09-20) — ON A NAME, NOT A MEMBER. Rule 4 exists because of it.
 
 ```

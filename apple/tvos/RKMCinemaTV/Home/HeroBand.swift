@@ -171,51 +171,61 @@ struct HeroBand: View {
                     Image(systemName: "play.fill")
                         .font(.system(size: TVTokens.Hero.ctaFontSize * 0.8))
                     Text(primaryLabel)
-                        .font(.system(size: TVTokens.Hero.ctaFontSize, weight: .bold))
                 }
-                // ⚠ The prototype's `.cta-btn.primary`: gold fill, near-black text (`#1a1300`), 0.9u radius.
-                .foregroundStyle(RKMColour.background)
-                .padding(.horizontal, TVTokens.Hero.ctaPaddingH)
-                .padding(.vertical, TVTokens.Hero.ctaPaddingV)
-                .background(RKMColour.accent,
-                            in: RoundedRectangle(cornerRadius: TVTokens.Hero.ctaRadius, style: .continuous))
             }
-            .buttonStyle(CtaButtonStyle())
+            // ⚠⚠ **NO padding/background/foregroundStyle HERE, AND THAT IS THE FIX HE FOUND.** The style owns
+            // the box: it draws the fill, the padding, the radius and the focus ring around all of it.
+            .buttonStyle(CtaButtonStyle(kind: .primary))
             .accessibilityLabel(primaryLabel)
 
             if !primaryOpensTheItem {
                 Button("Details", action: onDetails)
-                    // ⚠ The prototype's `.cta-btn.secondary`: 12 % white, no border.
-                    .font(.system(size: TVTokens.Hero.ctaFontSize, weight: .semibold))
-                    .foregroundStyle(RKMColour.primary)
-                    .padding(.horizontal, TVTokens.Hero.ctaPaddingH)
-                    .padding(.vertical, TVTokens.Hero.ctaPaddingV)
-                    .background(RKMColour.primary.opacity(0.12),
-                                in: RoundedRectangle(cornerRadius: TVTokens.Hero.ctaRadius, style: .continuous))
-                    .buttonStyle(CtaButtonStyle())
+                    .buttonStyle(CtaButtonStyle(kind: .secondary))
             }
         }
     }
 }
 
-/// ⚠ The prototype's `.cta-btn:focus` — a 1.09 lift with a white ring. The fill is drawn by the caller, so
-/// this style carries only the focus treatment both hero buttons share.
+/// The prototype's `.cta-btn`, in both its kinds — **and the style draws the whole button, box included.**
+///
+/// ⚠⚠ **WHY THE STYLE OWNS THE BOX** (his report, 2026-09-20: *"homescreen → scrolling to details button → the
+/// ux has bug"*). A `ButtonStyle` receives `configuration.label`, which is the button's CONTENT and nothing
+/// else. The first version of this file applied the padding and the fill to the `Button` — outside the label —
+/// while the ring was drawn inside the style, so **the ring wrapped the word `Details` and sat inside the
+/// button's own grey box**, exactly as his screenshot shows. ⚠ **The fix is not to move the ring: it is to take
+/// the box away from the caller.** A caller that can only supply content cannot supply it in the wrong place.
+/// ⚠ No gate of mine can see the difference — there is no SwiftUI on Linux — which is precisely why the
+/// structure has to make it impossible instead of a convention having to remember it.
+///
+/// ⚠ The two kinds are the prototype's own: `.primary` is a gold fill with near-black text (`#1a1300`), and
+/// `.secondary` is 12 % white with no border. Both take the same `0.9u` radius, the same `0.85u / 1.8u`
+/// padding, the same `1.09` focus lift and the same white ring, so they cannot drift apart.
 struct CtaButtonStyle: ButtonStyle {
+
+    enum Kind { case primary, secondary }
+
+    let kind: Kind
+
     func makeBody(configuration: Configuration) -> some View {
-        CtaChrome(configuration: configuration)
+        CtaChrome(configuration: configuration, kind: kind)
     }
 
-        // ⚠⚠ NOT `Body`: every `Style` protocol declares an associatedtype requirement called `Body`, so a
-    // helper view nested inside a conformer and named `Body` collides with it — measured on the Mac,
-    // U6's second round: `type 'TabButtonStyle' does not conform to protocol 'ButtonStyle'` plus
-    // `struct 'Body' must be as accessible as its enclosing type`. The Phase A tile style is called
-    // `TileBody` for exactly this reason; this is that rule, spelled the same way.
+    // ⚠⚠ NOT `Body`: every `Style` protocol declares an associatedtype requirement called `Body`, so a
+    // helper view nested inside a conformer and named `Body` collides with it — measured on the Mac, U6's
+    // second round. The Phase A tile style is called `TileBody` for exactly this reason.
     private struct CtaChrome: View {
         let configuration: ButtonStyle.Configuration
+        let kind: Kind
         @Environment(\.isFocused) private var isFocused
 
         var body: some View {
             configuration.label
+                .font(.system(size: TVTokens.Hero.ctaFontSize, weight: kind == .primary ? .bold : .semibold))
+                .foregroundStyle(kind == .primary ? RKMColour.background : RKMColour.primary)
+                .padding(.horizontal, TVTokens.Hero.ctaPaddingH)
+                .padding(.vertical, TVTokens.Hero.ctaPaddingV)
+                .background(fill, in: RoundedRectangle(cornerRadius: TVTokens.Hero.ctaRadius,
+                                                       style: .continuous))
                 .overlay {
                     RoundedRectangle(cornerRadius: TVTokens.Hero.ctaRadius, style: .continuous)
                         .stroke(RKMColour.primary.opacity(0.85),
@@ -223,6 +233,10 @@ struct CtaButtonStyle: ButtonStyle {
                 }
                 .scaleEffect(isFocused ? 1.09 : 1)
                 .animation(.easeOut(duration: 0.2), value: isFocused)
+        }
+
+        private var fill: Color {
+            kind == .primary ? RKMColour.accent : RKMColour.primary.opacity(0.12)
         }
     }
 }

@@ -316,19 +316,27 @@ struct ProfilesView: View {
 
     /// ⚠ The design input's `.pill-btn`: a translucent fill, a hairline border, a fully-rounded box and a
     /// `1.05u` label — the secondary row under the profile band.
+    ///
+    /// ⚠⚠ **NOTHING IS PADDED HERE, AND THAT IS THE POINT.** `PillButtonStyle` draws the whole button
+    /// (padding, fill, border, focus ring), because a caller that pads the `Button` instead puts the focus
+    /// ring inside the box rather than around it — his report on the Home's `Details` button, 2026-09-20, was
+    /// exactly that. One place to get right, and it is not the caller.
     private func pill(_ title: String, action: @escaping () -> Void) -> some View {
         Button(title, action: action)
-            .font(.system(size: TVTokens.Profile.pillFontSize))
-            .foregroundStyle(RKMColour.primary)
-            .padding(.horizontal, TVTokens.Profile.pillPaddingH)
-            .padding(.vertical, TVTokens.Profile.pillPaddingV)
-            .background(RKMColour.surface2.opacity(0.9),
-                        in: RoundedRectangle(cornerRadius: TVTokens.Profile.pillRadius, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: TVTokens.Profile.pillRadius, style: .continuous)
-                    .stroke(RKMColour.border, lineWidth: 1)
-            )
             .buttonStyle(PillButtonStyle())
+    }
+
+    /// ⚠ The one pill that is FILLED rather than translucent — the password prompt's
+    /// `Watch as <name>`. Same style, different kind, so the geometry cannot drift from the row above it.
+    private func primaryPill(action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: TVTokens.u * 0.5) {
+                if session.busy { ProgressView() }
+                Text(session.busy ? "Switching…" : "Watch as \(asking?.name ?? "")")
+            }
+        }
+        .buttonStyle(PillButtonStyle(kind: .primary))
+        .disabled(session.busy)
     }
 
     /// ⚠⚠ **WHAT `Add profile` / `Manage profiles` OPEN, AND WHY IT IS NOT A FORM.** Both are real server
@@ -407,7 +415,7 @@ struct ProfilesView: View {
                 }
 
                 HStack(spacing: TVTokens.Profile.actionGap) {
-                    Button {
+                    primaryPill {
                         let chosen = profile
                         let secret = password
                         passwordFocused = false
@@ -418,21 +426,7 @@ struct ProfilesView: View {
                                 app.didSelectProfile()
                             }
                         }
-                    } label: {
-                        HStack(spacing: TVTokens.u * 0.5) {
-                            if session.busy { ProgressView() }
-                            Text(session.busy ? "Switching…" : "Watch as \(profile.name)")
-                                .font(.system(size: TVTokens.Profile.pillFontSize, weight: .semibold))
-                        }
-                        .foregroundStyle(RKMColour.background)
-                        .padding(.horizontal, TVTokens.Profile.pillPaddingH)
-                        .padding(.vertical, TVTokens.Profile.pillPaddingV)
-                        .background(RKMColour.accent,
-                                    in: RoundedRectangle(cornerRadius: TVTokens.Profile.pillRadius,
-                                                         style: .continuous))
                     }
-                    .buttonStyle(PillButtonStyle())
-                    .disabled(session.busy)
 
                     pill("Cancel") {
                         password = ""
@@ -523,32 +517,56 @@ struct ProfileTileStyle: ButtonStyle {
     }
 }
 
-/// ⚠ The prototype's `.pill-btn:focus` — a 1.08 lift, a lighter fill and a white ring. The fill and the
-/// border are drawn by the caller; this style adds only the focus treatment every pill shares.
+/// The prototype's `.pill-btn`, in both its kinds — **and the style draws the whole button, box included.**
+///
+/// ⚠⚠ **WHY IT OWNS THE BOX: his report on the Home's `Details` button.** A `ButtonStyle` receives the
+/// button's CONTENT and nothing else, so a ring drawn in the style while the padding and the fill are applied
+/// to the `Button` wraps the LABEL — a small ring around a word, inside the button's own box, which is what he
+/// saw. Moving the box in here makes that impossible rather than merely fixed, and it is the same shape
+/// `TabButtonStyle` already had.
+///
+/// ⚠ The `1.08` lift, the lighter fill and the white ring are the prototype's `.pill-btn:focus`; `.primary`
+/// is its gold CTA fill with near-black text.
 struct PillButtonStyle: ButtonStyle {
+
+    enum Kind { case plain, primary }
+
+    var kind: Kind = .plain
+
     func makeBody(configuration: Configuration) -> some View {
-        PillChrome(configuration: configuration)
+        PillChrome(configuration: configuration, kind: kind)
     }
 
-        // ⚠⚠ NOT `Body`: every `Style` protocol declares an associatedtype requirement called `Body`, so a
-    // helper view nested inside a conformer and named `Body` collides with it — measured on the Mac,
-    // U6's second round: `type 'TabButtonStyle' does not conform to protocol 'ButtonStyle'` plus
+    // ⚠⚠ NOT `Body`: every `Style` protocol declares an associatedtype requirement called `Body`, so a
+    // helper view nested inside a conformer and named `Body` collides with it — measured on the Mac, U6's
+    // second round: `type 'TabButtonStyle' does not conform to protocol 'ButtonStyle'` plus
     // `struct 'Body' must be as accessible as its enclosing type`. The Phase A tile style is called
     // `TileBody` for exactly this reason; this is that rule, spelled the same way.
     private struct PillChrome: View {
         let configuration: ButtonStyle.Configuration
+        let kind: Kind
         @Environment(\.isFocused) private var isFocused
 
         var body: some View {
             configuration.label
+                .font(.system(size: TVTokens.Profile.pillFontSize, weight: kind == .primary ? .semibold : .regular))
+                .foregroundStyle(kind == .primary ? RKMColour.background : RKMColour.primary)
+                .padding(.horizontal, TVTokens.Profile.pillPaddingH)
+                .padding(.vertical, TVTokens.Profile.pillPaddingV)
+                .background(fill, in: RoundedRectangle(cornerRadius: TVTokens.Profile.pillRadius,
+                                                       style: .continuous))
                 .overlay {
                     RoundedRectangle(cornerRadius: TVTokens.Profile.pillRadius, style: .continuous)
-                        .stroke(RKMColour.primary.opacity(0.85),
-                                lineWidth: isFocused ? TVTokens.Bar.focusRing : 0)
+                        .stroke(isFocused ? RKMColour.primary.opacity(0.85) : RKMColour.border,
+                                lineWidth: isFocused ? TVTokens.Bar.focusRing : 1)
                 }
                 .scaleEffect(isFocused ? 1.08 : 1)
                 .opacity(isFocused ? 1 : 0.94)
                 .animation(.easeOut(duration: 0.22), value: isFocused)
+        }
+
+        private var fill: Color {
+            kind == .primary ? RKMColour.accent : RKMColour.surface2.opacity(0.9)
         }
     }
 }

@@ -114,6 +114,13 @@ VIEW_TYPES = {
     "LoginView": "Auth/LoginView.swift",
     "ServerSetupView": "Server/ServerSetupView.swift",
     "UnreachableServerView": "Server/UnreachableServerView.swift",
+    # ⚠ The app's own BUTTON STYLES are constructed in the views too (`CtaButtonStyle(kind:)`), so their labels
+    # are checked the same way — a style that took a `kind` and was passed `style:` is the same compile error.
+    "CtaButtonStyle": "Home/HeroBand.swift",
+    "PillButtonStyle": "Auth/ProfilesView.swift",
+    "TabButtonStyle": "Home/TopBar.swift",
+    "IconButtonStyle": "Home/TopBar.swift",
+    "ProfileTileStyle": "Auth/ProfilesView.swift",
 }
 
 #: Where a call to one of those types may appear. ⚠ Their own declaration files are excluded: `HomeView`'s
@@ -365,6 +372,59 @@ def check_nested_body(root: pathlib.Path) -> list[str]:
     return problems
 
 
+#: ⚠⚠ RULE 5 — **A STYLE THAT OWNS ITS BOX MUST NOT BE GIVEN ONE BY ITS CALLER.** His report, 2026-09-20:
+#: *"homescreen → scrolling to details button → the ux has bug"* — the Home's `Details` button drew its focus
+#: ring around the WORD, inside its own grey box, because the ring was drawn in the style while the padding and
+#: the fill were applied to the `Button` (outside the label). A `ButtonStyle` only ever receives
+#: `configuration.label`, so chrome applied to the Button is chrome the style cannot see.
+#:
+#: ⚠ **The fix was structural — `CtaButtonStyle` and `PillButtonStyle` now draw their own padding, fill,
+#: border and ring, exactly as `TabButtonStyle` already did.** This rule is what keeps a sixth style from
+#: re-introducing it, because no compiler here can: the difference between "ring around the box" and "ring
+#: around the word" is one that ONLY the Mac can see, and he should not be the one who finds it.
+#:
+#: ⚠ HOW IT READS: from `.buttonStyle(<a style we own>)` it walks back to the enclosing `Button`, DELETES every
+#: brace-delimited closure from that region (the action closure, the label closure — both legitimately contain
+#: padding and backgrounds) and looks at what is left: the modifier chain applied to the BUTTON. That is
+#: exactly the place the box must not be.
+STYLE_TYPES = ("TabButtonStyle", "IconButtonStyle", "CtaButtonStyle", "PillButtonStyle", "ProfileTileStyle")
+BOX_CHROME = (".padding(", ".background", ".overlay", ".frame(")
+CLOSURE = re.compile(r"\{[^{}]*\}")
+
+
+def check_style_ownership(root: pathlib.Path) -> list[str]:
+    problems: list[str] = []
+    for path in sorted(root.rglob("*.swift")):
+        if ".build" in path.parts:
+            continue
+        text = path.read_text(encoding="utf-8")
+        for match in re.finditer(r"\.buttonStyle\((\w+)", text):
+            style = match.group(1)
+            if style not in STYLE_TYPES:
+                continue
+            start = text.rfind("Button", 0, match.start())
+            if start == -1:
+                continue
+            region = text[start:match.start()]
+            # ⚠ Strip the closures (repeatedly, so a closure containing a closure goes too) — the label and the
+            # action are allowed to draw anything; what is left is the chain applied to the Button itself.
+            for _ in range(6):
+                stripped = CLOSURE.sub("", region)
+                if stripped == region:
+                    break
+                region = stripped
+            for offender in BOX_CHROME:
+                if offender in region:
+                    line = text.count("\n", 0, start) + 1
+                    problems.append(
+                        f"{path.relative_to(root)}:{line}: `{offender}…)` is applied to a `Button` that uses "
+                        f"`{style}` — that style draws its own box, so the caller's chrome lands INSIDE it "
+                        f"(a focus ring around the label instead of around the button)"
+                    )
+                    break
+    return problems
+
+
 def check(root: pathlib.Path) -> list[str]:
     problems: list[str] = []
     cache: dict[str, set[str]] = {}
@@ -440,6 +500,16 @@ def selftest() -> int:
             failures.append("rule 3 fires on the REAL tree, so its red above proved nothing")
         if check_nested_body(TVOS):
             failures.append("rule 4 fires on the REAL tree, so its red above proved nothing")
+        if check_style_ownership(TVOS):
+            failures.append("rule 5 fires on the REAL tree, so its red above proved nothing")
+
+        # Rule 5: the defect he found — chrome on the Button rather than in the style.
+        profile = scratch / "Auth" / "ProfilesView.swift"
+        profile.write_text(profile.read_text(encoding="utf-8")
+                           + "\nlet scratchBad5 = Button(\"x\") {}.padding(4).buttonStyle(PillButtonStyle())\n",
+                           encoding="utf-8")
+        if not any("PillButtonStyle" in problem for problem in check_style_ownership(scratch)):
+            failures.append("it did not fire on chrome applied to a Button that uses a style we own")
 
         # Rule 4: the name a `Style` protocol already owns.
         rail = scratch / "Home" / "RailView.swift"
@@ -460,7 +530,7 @@ def selftest() -> int:
         for line in failures:
             print(f"  · {line}")
         return 1
-    print("selftest: fires on all four defects (member, call label, static name, nested `Body`), stays silent on the real tree.")
+    print("selftest: fires on all FIVE defects (member, call label, static name, nested `Body`, chrome on a styled Button), stays silent on the real tree.")
     return 0
 
 
@@ -478,7 +548,7 @@ def main(argv: list[str]) -> int:
 
     try:
         problems = (check(TVOS) + check_calls(TVOS) + check_namespaces(TVOS)
-                    + check_nested_body(TVOS))
+                    + check_nested_body(TVOS) + check_style_ownership(TVOS))
     except (FileNotFoundError, ValueError) as error:
         print(f"cannot run: {error}", file=sys.stderr)
         return 2
@@ -490,10 +560,11 @@ def main(argv: list[str]) -> int:
         return 1
     print(f"PASS — {len(USES)} view/type pair(s) checked: every member a view names exists on its model, "
           f"and every call to one of the {len(VIEW_TYPES)} app view/type names uses a label it takes.")
-    print(f"⚠ Not covered: TYPES (a value of the wrong type still needs the compiler), argument ORDER, and")
-    print("  behaviour. THREE rules, all aimed at the class of mistake that has already cost a round:")
-    print("  a member a view names that its model lacks; a call using a label its own type does not take;")
-    print("  and a static-namespace name (HomeRules.*, TVTokens.* …) that is not declared anywhere.")
+    print("⚠ Not covered: TYPES (a value of the wrong type still needs the compiler), argument ORDER, and")
+    print("  behaviour. FIVE rules, every one bought by a defect that reached his Mac:")
+    print("  1 a member a view names that its model lacks;  2 a call using a label its type does not take;")
+    print("  3 a static-namespace name (HomeRules.*, TVTokens.* …) declared nowhere;  4 a nested `struct Body`")
+    print("  (a `Style` protocol owns that name);  5 chrome applied to a `Button` whose style already draws it.")
     return 0
 
 

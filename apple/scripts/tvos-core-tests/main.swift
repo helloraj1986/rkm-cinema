@@ -996,6 +996,84 @@ check(states.allSatisfy { $0.snapshot == nil || $0.snapshot == movieSnapshot },
       "only the content state carries a snapshot")
 checkEqual(states.compactMap(\.failureMessage), ["boom"], "only the failed state carries a sentence")
 
+// MARK: - The Profile Switcher's rules (Phase U2)
+
+section("the profile tiles")
+
+/// ⚠ Built by DECODING, like every other fixture here, so it cannot describe a shape the wire does not
+/// produce — and `ProfileUser` carries no optional beyond its five required fields.
+func profile(_ id: String, _ name: String, admin: Bool = false, password: Bool = false,
+             disabled: Bool = false) -> ProfileUser? {
+    let json = "{\"id\": \"\(id)\", \"name\": \"\(name)\", \"is_admin\": \(admin), "
+        + "\"has_password\": \(password), \"disabled\": \(disabled), \"last_login\": \"\"}"
+    return try? JSONDecoder().decode(ProfileUser.self, from: Data(json.utf8))
+}
+
+// ⚠⚠ THE AVATAR'S INITIALS. The buildspec's four examples (`ME`, `RA`, `RK`, `SH`) are all single names and
+// are all first-two-letters; the multi-word branch is a NEW tvOS decision (stated in `ProfileRules`), so it is
+// pinned here rather than left to a view.
+checkEqual(ProfileRules.initials("meenu"), "ME", "meenu reads ME")
+checkEqual(ProfileRules.initials("sharanya"), "SH", "sharanya reads SH")
+checkEqual(ProfileRules.initials("Raj Kumar"), "RK", "a two-word name reads its two initials")
+checkEqual(ProfileRules.initials("Raj  Kumar  Singh"), "RK", "a third word is not part of the initials")
+checkEqual(ProfileRules.initials("   "), "?", "a name with nothing in it still draws something")
+checkEqual(ProfileRules.initials("raj2"), "RA", "a digit is not an initial")
+
+// ⚠⚠ THE WORDS. His decision, 2026-09-19: the APP's vocabulary wins and the buildspec's `"Profile · password"`
+// set is not adopted (it cannot express the disabled case at all). Pinned against the literals, never against
+// the expression that produces them — a comparison against `ProfileRules.subtitle` itself would be a TAUTOLOGY.
+let plainProfile = profile("u1", "sharanya")!
+let lockedProfile = profile("u2", "meenu", password: true)!
+let adminProfile = profile("u3", "rkm", admin: true)!
+let disabledProfile = profile("u4", "raj", disabled: true)!
+checkEqual(ProfileRules.subtitle(plainProfile), "No password", "an open profile says No password")
+checkEqual(ProfileRules.subtitle(lockedProfile), "Password protected", "a locked profile says Password protected")
+checkEqual(ProfileRules.subtitle(adminProfile), "Administrator — asks for a password",
+           "the administrator says what it will ask for")
+// ⚠ DISABLED OUTRANKS EVERYTHING: a disabled administrator must not read "asks for a password", because it
+// cannot be selected at all.
+checkEqual(ProfileRules.subtitle(profile("u5", "raj", admin: true, disabled: true)!),
+           "Disabled — cannot be selected", "a disabled administrator says it cannot be selected")
+
+checkEqual(ProfileRules.accessibilityLabel(lockedProfile), "meenu, profile, password protected",
+           "a locked tile reads its lock to a screen reader")
+checkEqual(ProfileRules.accessibilityLabel(adminProfile), "rkm, administrator, password protected",
+           "the administrator says so out loud")
+checkEqual(ProfileRules.accessibilityLabel(plainProfile), "sharanya, profile, no password",
+           "an open profile says it needs nothing")
+checkEqual(ProfileRules.accessibilityLabel(disabledProfile), "raj, profile, disabled",
+           "a disabled tile is not merely dimmed for a screen reader")
+
+section("the profile eyebrow")
+
+checkEqual(ProfileRules.eyebrow(profileCount: 4, signedInAs: "rkm"),
+           "4 profiles on this server · Signed in as rkm", "the eyebrow counts the profiles and names the account")
+checkEqual(ProfileRules.eyebrow(profileCount: 1, signedInAs: "rkm"),
+           "1 profile on this server · Signed in as rkm", "one profile is singular")
+checkEqual(ProfileRules.eyebrow(profileCount: 0, signedInAs: nil), "0 profiles on this server",
+           "with no account name there is no dangling separator")
+checkEqual(ProfileRules.eyebrow(profileCount: 2, signedInAs: "   "), "2 profiles on this server",
+           "a blank account name is not a name")
+
+section("who may administer")
+
+let household = [plainProfile, lockedProfile, adminProfile]
+// ⚠⚠ MATCHED BY ID, NOT BY NAME — and the fixture is built so the difference is VISIBLE: `lockedProfile` is
+// the one named `meenu`, and a name match would make it the administrator. The name is what a rename changes;
+// the buildspec's own example data (`rkm` looks like the administrator) is exactly this trap.
+checkEqual(ProfileRules.isAdministrator(signedInUserID: "u3", profiles: household), true,
+           "the signed-in administrator is recognised")
+checkEqual(ProfileRules.isAdministrator(signedInUserID: "u2", profiles: household), false,
+           "a member is not the administrator, whatever they are called")
+checkEqual(ProfileRules.isAdministrator(signedInUserID: "nobody", profiles: household), false,
+           "an id nobody matches is not an administrator")
+checkEqual(ProfileRules.isAdministrator(signedInUserID: nil, profiles: household), false,
+           "an unknown signed-in account is not an administrator")
+checkEqual(ProfileRules.isAdministrator(signedInUserID: "", profiles: household), false,
+           "an empty signed-in id is not an administrator")
+checkEqual(ProfileRules.isAdministrator(signedInUserID: "u3", profiles: []), false,
+           "no profiles means no administrator — the admin controls are not offered on a guess")
+
 // MARK: - Report
 
 print("")

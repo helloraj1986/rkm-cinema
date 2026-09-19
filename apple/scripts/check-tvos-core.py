@@ -62,6 +62,13 @@ PURE_SOURCES = [
     TVOS / "Core" / "Models" / "DetailModels.swift",
     TVOS / "Core" / "DetailRules.swift",
     TVOS / "Core" / "RequestURL.swift",
+    # Phase U2 — the Profile Switcher's rules, and the wire model they read. ⚠ `AuthModels.swift` joins the
+    # list WITH them: `ProfileRules` takes a `ProfileUser`, and a rule about a shape is only worth running
+    # against the shape the wire actually produces. `SessionStore` and `ProfilesView` are NOT here (the first
+    # imports `RKMServerKit`, the second is SwiftUI) — so `subtitle`, `initials`, the eyebrow and the
+    # administrator check are the parts of that screen a machine can check.
+    TVOS / "Core" / "Models" / "AuthModels.swift",
+    TVOS / "Core" / "ProfileRules.swift",
 ]
 
 HARNESS = REPO / "apple" / "scripts" / "tvos-core-tests" / "main.swift"
@@ -250,6 +257,44 @@ MUTATIONS = [
      '    static func nextUp(_ verb: String) -> String { "Next up: \\(verb)" }',
      '    static func nextUp(_ verb: String) -> String { "\\(verb)" }',
      "the screen names the verb it WILL offer, in the phone's own words"),
+    # ---- U2: the Profile Switcher's rules
+    ("the avatar's second letter", "ProfileRules.swift",
+     "            letters = String(first.prefix(2))", "            letters = String(first.prefix(1))",
+     "meenu reads ME"),
+    ("the second initial of a two-word name", "ProfileRules.swift",
+     "            letters = String(first.prefix(1)) + String(words[1].prefix(1))",
+     "            letters = String(first.prefix(2))",
+     "a two-word name reads its two initials"),
+    ("a disabled profile still offering to be selected", "ProfileRules.swift",
+     '        if profile.disabled { return "Disabled — cannot be selected" }',
+     '        if false { return "Disabled — cannot be selected" }',
+     "a disabled administrator says it cannot be selected"),
+    # ⚠⚠ THE MUTATION THAT GUARDS HIS DECISION: the buildspec's own vocabulary, which §1a records as NOT
+    # adopted because it cannot express the disabled case at all.
+    ("the buildspec's vocabulary for a locked profile", "ProfileRules.swift",
+     '        if profile.hasPassword { return "Password protected" }',
+     '        if profile.hasPassword { return "Profile · password" }',
+     "a locked profile says Password protected"),
+    ("the administrator no longer saying what it asks for", "ProfileRules.swift",
+     '        if profile.isAdmin { return "Administrator — asks for a password" }',
+     '        if profile.isAdmin { return "Administrator" }',
+     "the administrator says what it will ask for"),
+    ("a screen reader losing the lock", "ProfileRules.swift",
+     '            parts.append("password protected")', '            parts.append("locked")',
+     "a locked tile reads its lock to a screen reader"),
+    ("the eyebrow's plural", "ProfileRules.swift",
+     'let head = "\\(count) profile\\(count == 1 ? "" : "s") on this server"',
+     'let head = "\\(count) profiles on this server"',
+     "one profile is singular"),
+    ("a dangling separator on the eyebrow", "ProfileRules.swift",
+     "        return name.isEmpty ? head : \"\\(head) · Signed in as \\(name)\"",
+     "        return \"\\(head) · Signed in as \\(name)\"",
+     "with no account name there is no dangling separator"),
+    # ⚠⚠ MATCHED BY ID, NOT BY NAME — the trap the fixture is shaped for.
+    ("the administrator matched by name", "ProfileRules.swift",
+     "        return profiles.first { $0.id == signedInUserID }?.isAdmin ?? false",
+     "        return profiles.first { $0.name == signedInUserID }?.isAdmin ?? false",
+     "a member is not the administrator, whatever they are called"),
 ]
 
 

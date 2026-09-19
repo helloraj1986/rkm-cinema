@@ -82,20 +82,29 @@ do not re-derive per metric.
 | Card | `aspect-ratio: 2/3`, `border-radius: 14px`, focus `scale(1.14)` + `0 18px 30px rgba(0,0,0,.55)`, `0 0 0 3px gold`, `0 0 34px rgba(232,179,61,.45)`; `.label` inset `14px 12px 12px` with a bottom-up black scrim, title `16px` w600, meta `13px` dim, opacity `0 → 1` + `translateY(6px → 0)` on focus | `TVTokens.Grid.card*` |
 | Empty state | `padding: 80px 4px`, `h3 26px`, `p 17px` dim, one `.chip` = **Clear filter** | §3.3 |
 
-### 3.2 The card — one image path, two presentations (deliberately)
+### 3.2 The card — one artwork path, two cards (deliberately)
 
 His §8: the grid card and the detail screen's shelves are *"the exact same component"*. His two HTML files
 say the grid card is **2:3 with a reveal-on-focus label over the art** while set 1's shelf card is **16:9 with
 the caption under the art** (U7). Both are his, so both are built, and the thing that must not be copied is
 the *artwork pipeline*:
 
-* `Home/PosterCard.swift` gains a `shape` — `.keyart` (16:9, the Home's, unchanged) or `.poster` (2:3, the
-  new grid) — plus a `caption` — `.under` (U7's premium block) or `.overlay` (the reveal).
-* **`PosterImageView`, `PosterLoader`, `PosterURL` and the fallback are NOT duplicated** — that is the part
-  where a second copy becomes a second silent failure (`PosterCard.swift`'s own header).
+* ⚠⚠ **AS BUILT (amended): a new `Browse/LibraryGridCard.swift`, NOT a parameter on `PosterCard`.** The plan
+  said "`PosterCard` gains a `shape` and a `caption`". The build showed that to be the wrong shape of change:
+  the two cards share **no** caption structure (badge + state chip + progress bar + caption-under vs art-only
+  + reveal-over), so one type with two modes would be a tree of conditionals inside the card the Home has
+  already had accepted on his simulator. What IS shared, and must stay shared, is the part where a second copy
+  becomes a second silent failure (`PosterCard.swift`'s own header): **`PosterImageView` → `PosterLoader` →
+  `PosterURL` are untouched and used by both**, so there is one request, one log line, one fallback and one
+  "no photo" mark for the whole app. ⚠ `Home/PosterCard.swift` was not modified at all in this phase.
 * ⚠ The library grid card carries **no type badge, no state chip and no progress bar**, because his file
   draws none: at rest it is art only, and on focus it is art + `title` + `year · runtime`. Recorded rather
   than "improved".
+* ⚠ The focus treatment is the prototype's own (`scale(1.14)`, the gold ring, the double shadow) through a
+  new `LibraryCardStyle`, **not** the platform's `.card` style: his `.card.is-focused` draws a ring the
+  platform does not, and the reveal needs a focus value the label can read (`@Environment(\.isFocused)`, the
+  mechanism `TabButtonStyle` and the Profile tile already use on screen). ⚠ It is a `ButtonStyle` because
+  **the style owns its box** — the U7b lesson — so the ring cannot land around the caption instead.
 
 ### 3.3 The rules — `Core/LibraryRules.swift` (NEW, `Foundation`-only, RUN in the harness)
 
@@ -172,12 +181,12 @@ decodes 21 keys; none is `RemoteTrailers`), so a Trailer control needs a wire ch
 
 | Gate | Change |
 |---|---|
-| `check-tvos-core.py` | `Core/LibraryRules.swift` joins `PURE_SOURCES`, with new checks + mutations for every rule in §3.3 (the tie-breaks are where a port goes silently wrong). |
-| `tvos-core-tests/main.swift` | a new section per rule; fixtures shaped like the real rows. |
-| `check-tvos-members.py` | the new view variables join `USES` (the `MediaItem` / `DetailSnapshot` members the new views read), and the new types join `VIEW_TYPES`. |
-| `check-apple-typecheck.sh` | nothing new — `LibraryRules.swift` is `Foundation`-only and the views are SwiftUI, which nothing here compiles. |
+| `check-tvos-core.py` | `Core/LibraryRules.swift` joins `PURE_SOURCES` — **465 checks**, and **17 new mutations (102 in total, the number the gate's own header reports)**, one per rule in §3.3: the genre order and its empty-name drop, the `All` chip's two halves, both count lines, **the grid's second margin** (the U7b shape), the fraction trim, the undated-row order, `played` scoring zero, recently-played's `played &&` clause, the sort's stability, the caption's runtime, the tab plan's current tab and the unresolved library's state, and the cast hue's key. |
+| `tvos-core-tests/main.swift` | a new section per rule, fixtures shaped like the real rows — including a row with **no `added`** (it must sort last), a **played row carrying a position** (the only shape where `progress`'s `played` clause is observable) and **two undated rows in both orders** (which is what pins stability). ⚠ The fixture pair `newer`/`played` tie at 3600 s, and the first run of this section FAILED on the runtime expectation — the harness was wrong, the rule was right; the expectation was fixed, not the comparator. |
+| `check-tvos-members.py` | 5 new `USES` rows and 5 new `TYPE_SOURCES` (incl. the NESTED `BrowseRules.LibraryTabPlan`, which needed the scan to match a declaration by its **last dotted component**), 2 new `VIEW_TYPES`, both new button styles added to rule 5's `STYLE_TYPES` list, and `LibraryRules`/`LibraryCopy` added to `NAMESPACES`. ⚠⚠ **AND A REAL FALSE POSITIVE FIXED: `TopBarTab(id: "detail:back", …)` made rule 2 report a label `TopBarTab` does not take, on a CORRECT tree** — a colon inside a string literal is not a label. Literals are now stripped before the labels are read, and the `--selftest` pins both halves (the literal stays silent, a genuinely wrong label still fires). |
+| `check-apple-typecheck.sh` | `Core/LibraryRules.swift` added to the explicit list — a portable file no gate compiles is an unguarded file, and it was in `PURE_SOURCES` only. |
 | `check-tvos-models.py` | unchanged: no wire model changes in this phase. |
-| `check-design-tokens.py` | unchanged: no new colour. **Every colour on both screens is an existing `RKMColour`.** |
+| `check-design-tokens.py` | unchanged: no new colour. **Every colour on both screens is an existing `RKMColour`** — his `#E8B33D`/`#FFD866`/`#7A1F2B` table is not transcribed anywhere. |
 
 ## 7. The round (his Mac — SCREEN round, WITHOUT `-RKMDebugHUD`)
 
@@ -202,3 +211,26 @@ the layouts.
 2. The **rating on the wire** (`_item_public()` + the frontend `MediaItem` + the tvOS model + a deploy) — which
    would give him the Rating sort, the card badge, and the ★ on the grid.
 3. **`Trailer`** — needs `RemoteTrailers` on the detail payload.
+
+## 9. AS BUILT (recorded at the phase's own commit, 2026-09-20)
+
+⚠ **One phase's worth of work in one commit, because both screens were asked for in one instruction** —
+`docs/TVOS_LIBRARY_UI_PLAN.md` (this file) was committed first, on its own.
+
+| | |
+|---|---|
+| **Files added** | `Core/LibraryRules.swift` (the pure rules: chips, filter, the eight sorts, the count, the grid's arithmetic), `Browse/LibraryGridCard.swift` (the 2:3 art-only card + `LibraryCardStyle`), `Browse/FilterChip.swift` (the chip + `ChipButtonStyle`) |
+| **Files changed** | `Browse/BrowseView.swift` (rewritten: the top bar, the filter row, the grid, the empty/loading states), `Detail/DetailView.swift` (rewritten: the hero, the title block, the synopsis, the cast row; the states and the episode list kept), `Core/BrowseRules.swift` (`LibraryTabTarget` / `LibraryTabPlan` / `tabPlan`), `Core/DetailRules.swift` (`castHue`), `Design/TVTokens.swift` (`px`, `Grid`, `Title`), `Design/DesignColours.swift` (`castAvatar(hue:)`), `Home/HomeView.swift` (its tabs now come from `BrowseRules.tabPlan`) |
+| **NOT touched** | `Home/PosterCard.swift`, `Home/HeroBand.swift`, `Home/TopBar.swift`, `Home/RailView.swift`, `Core/BrowseStore.swift`, `Core/DetailStore.swift`, and every wire model — **no `backend/`, `frontend/` or `nginx/` file changed, so nothing needs `apply`** |
+| **Gates, on this commit** | `check-tvos-core.py` **465 checks / 0 failures** · `check-tvos-models.py` 113 keys / 17 endpoints · `check-apple-typecheck.sh` 21 portable files · `check-imports.py` 40 files · `check-tvos-members.py` 31 pairs, `--selftest` fires on all FIVE rules · `check-design-tokens.py` R1/R2/R3 · `check_md_links.py` 75 files · **`check-tvos-core.py --falsify`: the verdict is recorded in `PROGRESS.md`'s gate table** (it recompiles the harness once per rule, so it runs backgrounded and its number is transcribed from its own last line, never from a remembered count) |
+| **⚠ NOT verified** | **not one SwiftUI view has been compiled anywhere** — no SwiftUI on Linux, so the two screens are written and unbuilt until his Mac round. Same status Phase U's views had. |
+
+⚠ **The Title screen's top bar, AS BUILT, differs from his file in one deliberate way.** His `.topbar` is
+`position:fixed` over the hero, hidden at rest and shown only near the top; here it is a normal band above the
+hero and it never hides. The reasons, in order: (1) the collapse is a **scroll-position signal**, which is the
+same class of platform claim as the Home's F6 and is deliberately measured there first; (2) a bar that hides
+itself takes the only way out of the screen with it, and `docs/ARCHITECTURE.md`'s dead-end rule outranks a
+cosmetic collapse. ⚠ **It carries ONE tab — `Back`, named by `AppModel.detailReturnLabel` — and the profile
+avatar**, which is his own layout (`wordmark + ‹ Movies Kids`) and is what puts the default focus on the way
+back rather than on a Play button that cannot work.
+

@@ -161,8 +161,10 @@ struct DetailView: View {
                     }
 
                     // `.spacer-bottom { height:100px }` — the tail, so the last shelf is not flush with the
-                    // screen's bottom edge.
-                    Spacer(minLength: TVTokens.Title.bottomSpacer)
+                    // screen's bottom edge. ⚠ A fixed-height `Color.clear` and NOT a `Spacer()`: a `Spacer`
+                    // inside a `ScrollView`'s stack has no space to claim, so it collapses to nothing.
+                    Color.clear
+                        .frame(height: TVTokens.Title.bottomSpacer)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -238,14 +240,19 @@ struct DetailView: View {
     ///
     /// ⚠ The parts come from `DetailRules.metaBits`, which has already dropped the unknown ones, so there is
     /// no empty separator to trim and no third vocabulary for "no certification".
+    ///
+    /// ⚠⚠ Iterated by INDEX, deliberately: `ForEach(parts.enumerated(), id: \.offset) { index, part in … }`
+    /// relies on destructuring a tuple parameter in a closure, which Swift only allows in some positions — and
+    /// this file is compiled by nothing here. The index form has no such question in it.
     private func metaLine(_ snapshot: DetailSnapshot) -> some View {
-        HStack(spacing: TVTokens.Title.metaGap) {
-            ForEach(Array(metaParts(snapshot).enumerated()), id: \.offset) { index, part in
+        let parts = snapshot.metaBits
+        return HStack(spacing: TVTokens.Title.metaGap) {
+            ForEach(parts.indices, id: \.self) { index in
                 if index > 0 {
                     // `.dot-sep { opacity:0.5 }` — the separator is dimmer than either side of it.
                     Text("·").foregroundStyle(RKMColour.secondary.opacity(0.5))
                 }
-                Text(part).foregroundStyle(RKMColour.secondary)
+                Text(parts[index]).foregroundStyle(RKMColour.secondary)
             }
 
             if !snapshot.rating.isEmpty {
@@ -258,10 +265,6 @@ struct DetailView: View {
         }
         .font(.system(size: TVTokens.Title.metaSize))
         .lineLimit(1)
-    }
-
-    private func metaParts(_ snapshot: DetailSnapshot) -> [String] {
-        snapshot.metaBits
     }
 
     /// `.genre-pill` — *"non-focusable, purely informational here — filtering belongs to the library screen,

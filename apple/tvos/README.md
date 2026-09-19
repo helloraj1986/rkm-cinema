@@ -4,23 +4,30 @@ A **native SwiftUI client**. tvOS has no WebKit at all (Apple removed it; the gu
 embedding one), so there is no shell shortcut here — the UI is written for the TV. Full reasoning:
 [`../../docs/APPLE_CLIENTS_PLAN.md`](../../docs/APPLE_CLIENTS_PLAN.md) §4.
 
-**Status: Phase U (U1–U6) is BUILT on `feat/tvos-ux` (2026-09-20) and its round is the next thing that
-happens.** ⚠ **U6 rebuilt the two screens to his prototype's geometry** (`tvos_ux/1. …/rkm-cinema-tvos-concept.html`),
+**Status: Phase U (U1–U7b) and Phase V are BUILT on `feat/tvos-ux` (2026-09-20) and their rounds are the next
+thing that happens.** ⚠ **V redesigned the Library and Title screens to his second prototype**
+(`tvos_ux/2. LibraryViewandItemDetailsView/`): a fixed 6-column grid of 2:3 posters whose caption appears only
+on focus, a filter row of this library's own genres with the web app's eight sorts, and a 66 %-height backdrop
+hero with the title block over it. Plan and measurements: [`../../docs/TVOS_LIBRARY_UI_PLAN.md`](../../docs/TVOS_LIBRARY_UI_PLAN.md).
+⚠ **U6 rebuilt the two screens to his prototype's geometry** (`tvos_ux/1. …/rkm-cinema-tvos-concept.html`),
 because the first build did not look like the file he drew: 16:9 cards, a `32u` hero, the `RKM·CINEMA` top bar
-and the gradient-avatar Profile Switcher. `TVTokens.u` (19.2 pt) is the prototype's own scale.
+and the gradient-avatar Profile Switcher. `TVTokens.u` (19.2 pt) is the prototype's own scale, and set 2's CSS
+px is `TVTokens.px` (1.26 pt), derived from the page margin the two files share.
 Phase A (screens 0–2: address → sign in → who's watching) was accepted on his simulator; Phase B (B1–B4 —
-models, Home, Browse, item detail) is merged to `dev`. ⚠ **Phase U (U1–U4: the generated design tokens, the
-Profile Switcher, the Home's top bar + hero, the Recently Added rail) sits on `feat/tvos-ux`, which is NOT
-merged and is NOT on `dev`.** The plan is [`../../docs/TVOS_UX_PLAN.md`](../../docs/TVOS_UX_PLAN.md); the
-live handover is the RESUME-HERE block at the top of [`../../docs/PROGRESS.md`](../../docs/PROGRESS.md).
+models, Home, Browse, item detail) is merged to `dev`. ⚠ **Phase U (U1–U7b: the generated design tokens, the
+Profile Switcher, the Home's top bar + hero, the Recently Added rail, the premium card) and Phase V (the
+Library + Title screens) sit on `feat/tvos-ux`, which is NOT merged and is NOT on `dev`.** The plans are
+[`../../docs/TVOS_UX_PLAN.md`](../../docs/TVOS_UX_PLAN.md) and
+[`../../docs/TVOS_LIBRARY_UI_PLAN.md`](../../docs/TVOS_LIBRARY_UI_PLAN.md); the live handover is the
+RESUME-HERE block at the top of [`../../docs/PROGRESS.md`](../../docs/PROGRESS.md).
 
 ⚠⚠ **THE tvOS DEPLOYMENT TARGET IS NOW `26.0`** (his decision, 2026-09-19 — one code path and Liquid Glass,
 at the cost of not installing on tvOS 17–25). See §1's build-settings table.
 
 ⚠⚠ **No SwiftUI view on this branch has ever been compiled anywhere.** The pure rules are compiled and RUN
-here on Linux (393 checks), but U2's, U3's and U4's views are written and unbuilt — so the round below is not
-a formality, it is the first build. Its seven falsifiers are written down in `docs/PROGRESS.md` and
-`docs/TVOS_UX_PLAN.md` §U5, **before** it runs.
+here on Linux (465 checks, 102 falsified mutations), but every view is written and unbuilt — so the round
+below is not a formality, it is the first build. Its falsifiers are written down in `docs/PROGRESS.md`,
+`docs/TVOS_UX_PLAN.md` §U5 and `docs/TVOS_LIBRARY_UI_PLAN.md` §7, **before** it runs.
 
 The round, on the **MacBook Pro** (⚠ a SCREEN round, so **without** `-RKMDebugHUD YES`):
 
@@ -30,8 +37,10 @@ cd ~/dev/rkm-cinema && git checkout feat/tvos-ux && git pull --ff-only && ./appl
 
 ⚠ **Read the `4. result` block** — if it says `BUILD FAILED`, the two likeliest causes are the tvOS 26 floor
 surfacing a deprecation the 17.6 floor was hiding, and the SwiftUI that has never been compiled
-(`Home/{TopBar,HeroBand,HomeView,PosterCard}.swift`, `Auth/ProfilesView.swift`, `App/AppModel.swift`,
-`Browse/BrowseView.swift` and the Core rules/stores they read).
+(`Home/{TopBar,HeroBand,HomeView,PosterCard,RailView}.swift`, `Auth/ProfilesView.swift`, `App/AppModel.swift`,
+`Browse/{BrowseView,LibraryGridCard,FilterChip}.swift`, `Detail/DetailView.swift` and the Core rules/stores they
+read). ⚠ Two rounds of Phase U were lost to exactly one line each — a member that did not exist and a nested
+`struct Body` — and `apple/scripts/check-tvos-members.py` now covers both classes before a round is spent.
 §1's one-time Xcode step is DONE: the project, `INFOPLIST_FILE`, the shared scheme and the local package are
 all committed.
 

@@ -81,7 +81,11 @@ struct BrowseView: View {
     /// ⚠ Every decision here is `BrowseRules.tabPlan`'s; this only attaches the closures. The current tab is
     /// the OPEN FOLDER when there is one, and `Browse` when there is not.
     private var tabs: [TopBarTab] {
-        let current: BrowseRules.LibraryTabTarget = store.openFolderID.map { .folder($0) } ?? .browse
+        // ⚠ Fully qualified inside `map`: the closure's result type is not otherwise pinned, and
+        // `map { .folder($0) }` is the shape that makes the compiler ask for a contextual type it does not
+        // have. The annotation pins the `??`; the explicit case pins the closure.
+        let current: BrowseRules.LibraryTabTarget =
+            store.openFolderID.map { BrowseRules.LibraryTabTarget.folder($0) } ?? .browse
         return BrowseRules.tabPlan(entries: store.folders.entries, current: current).map { plan in
             TopBarTab(id: plan.id,
                       title: plan.title,
@@ -241,7 +245,10 @@ struct BrowseView: View {
                   alignment: .leading,
                   spacing: TVTokens.Grid.rowGap) {
             ForEach(items.prefix(store.mountedCount)) { item in
-                LibraryGridCard(item: item, base: base, width: cardWidth, onSelect: open)
+                // ⚠ An explicit closure rather than `onSelect: open`: `open` is OVERLOADED on this screen
+                // (a folder tab and an item), and passing an overloaded function as a value makes the
+                // compiler infer a type it does not need to. This is the one place a round would find it.
+                LibraryGridCard(item: item, base: base, width: cardWidth, onSelect: { open($0) })
             }
         }
     }

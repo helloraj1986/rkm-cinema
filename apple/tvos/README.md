@@ -88,6 +88,22 @@ cd ~/dev/rkm-cinema && ./apple/scripts/mac-round.sh tvos --sim -RKMDebugHUD YES
 It pulls, builds, installs and launches on an Apple TV simulator, logging to `apple/logs/`. Paste the
 short summary back (the errors, then the tail).
 
+⚠⚠ **READING A SCREENSHOT FROM THIS ROUND — three things that have already cost time (2026-09-19):**
+
+1. **The debug HUD covers the top-left of the app.** It is a **980pt-wide** panel at `padding(28)` with
+   `black.opacity(0.88)`, so on Home it hides the header's left side and **the first rail's heading**.
+   A heading missing under the panel is COVERAGE, not absence — and a screenshot taken with
+   `-RKMDebugHUD YES` is *for the log lines*, not for judging layout. Run the round without the flag for a
+   clean screen.
+2. **The HUD reads newest-first**: the newest line is at the TOP. So what you need is at the top of the
+   panel, not the bottom.
+3. ⚠⚠ **A launch that has not finished painting shows the PREVIOUS run's snapshot.** Two consequences: the
+   cards on a very early screenshot are not this launch's, and the log lines will stop at the session read —
+   `/api/library/*` and `poster` lines appear only once Home actually loads. **Wait until the rails are
+   drawn before screenshotting**, or the frame answers nothing (it happened on his first B2 round).
+   Falsified if: a screenshot taken well after the rails appear still shows no `poster` lines — then the
+   HUD is not live or the lines are not emitted, and that is a defect, not a timing artefact.
+
 ⚠ **Two things about the simulator, both fixed in the script on 2026-09-19 and both worth knowing:**
 the script uses the Apple TV that is **already booted** if there is one, and there is **no committed
 default device name** for tvOS because every Apple TV's name contains brackets (`Apple TV 4K (3rd

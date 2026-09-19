@@ -1,4 +1,22 @@
-## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-19) · ✅ **PHASE B OF THE tvOS CLIENT IS MERGED TO `dev`** — Home, Browse and item detail, as a `--no-ff` merge (`a6190c3`) · ⚠ **his Mac round for it was never recorded, so read the box below before trusting anything about it** · **the working tree is on `dev`** (switched here by the merge — this tree IS his Windows checkout) · **nothing needs `apply`**: no file under `backend/`, `frontend/` or `nginx/` changed on the branch, so there is no generated artefact and nothing to deploy
+## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-19) · ✅ **PHASE B OF THE tvOS CLIENT IS MERGED TO `dev`** — Home, Browse and item detail, as a `--no-ff` merge (`a6190c3`) · ⚠ **his Mac round for it was never recorded, so read the box below before trusting anything about it** · ⚠⚠ **TWO UNMERGED BRANCHES NOW EXIST AND `dev` KNOWS ABOUT NEITHER — read the next block FIRST** · **the working tree is on `feat/tvos-ux`** (it was switched to cut that branch — ⚠ this tree IS his Windows checkout, so the branch left checked out is the branch HE builds) · **nothing needs `apply`**: no file under `backend/`, `frontend/` or `nginx/` changed on either branch, so there is no generated artefact and nothing to deploy
+
+### ▶ THE TWO OPEN BRANCHES, AND THE ORDER HE ASKED FOR
+
+Both are cut from `dev` (`0d75e1f`). **He chose the UX first** (*"i want to implment the better ux first before
+going to playback"*), so `feat/tvos-ux` is the one to work on next and `feat/tvos-player` is parked, complete and
+deliberately unfinished.
+
+| Branch | Carries | State |
+|---|---|---|
+| **`feat/tvos-ux`** | `docs/TVOS_UX_PLAN.md` — the Profile Switcher + Home redesign, plus his design input under `tvos_ux/` | **PLAN ONLY — no Swift written.** All four of his decisions are recorded in §0.2/§1a/§2b. **U1 is the next phase** |
+| **`feat/tvos-player`** | **C1 — the playback credential** (`Core/PlaybackAuth.swift` + its gate section + 10 mutations) | **BUILT, GATED, PUSHED** (`6919626`): 320 checks / 55 mutations RED, typecheck + imports + models + md-links green. ⚠ **Parked MID-PHASE** — C2–C5 are not started, and `docs/TVOS_PLAYER_PLAN.md` §3 says C5 (the backend carrier) is built **only if the round's F2 proves it is needed** |
+
+⚠⚠ **The one fact a next session must not get wrong:** the UX plan **supersedes the sequencing in
+`APPLE_CLIENTS_PLAN.md` §4.4 and `apple/tvos/README.md` §8**, both of which still describe Phase C as
+"backend first". `apple/tvos/README.md` was amended on `feat/tvos-player` but is **still stale on `dev`** — so
+whoever merges either branch should confirm that §8 does not get re-staled by the merge order. ⚠ And
+`README.md:73` states `TVOS_DEPLOYMENT_TARGET = 17.0` while the project carries **17.6**; U1 fixes it, and the
+target is going to **26.0** (his decision, `docs/TVOS_UX_PLAN.md` §0.2).
 
 **Say this first:** *"continue rkm-cinema — pick up the RESUME-HERE block, we're on the tvOS app."*
 

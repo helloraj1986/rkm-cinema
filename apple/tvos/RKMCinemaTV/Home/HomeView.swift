@@ -77,7 +77,12 @@ struct HomeView: View {
     private var topBar: some View {
         TopBar(tabs: topBarTabs,
                initials: ProfileRules.initials(app.session?.currentProfile?.name ?? ""),
-               failure: store.snapshot.navFailure,
+               // ⚠ `nav.failedMessage` and NOT a `navFailure` accessor: this line is what U5's first Mac
+               // round died on (`value of type 'HomeSnapshot' has no member 'navFailure'`) — a member that
+               // was written in this view and never in the model, which nothing on this machine could catch.
+               // `NavOutcome`'s own member is the shortest truthful path, and `check-tvos-members.py` now
+               // checks exactly this class of access before a round is spent on it.
+               failure: store.snapshot.nav.failedMessage,
                onProfile: { Task { await app.changeProfile() } })
     }
 

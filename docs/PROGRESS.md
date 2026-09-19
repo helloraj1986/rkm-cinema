@@ -36,6 +36,30 @@ cd ~/dev/rkm-cinema && git checkout feat/tvos-ux && git pull --ff-only && ./appl
 and **a failed build proves nothing about the layouts** — a `BUILD FAILED` is a build round, and F1–F7 were
 never attempted. ⚠ `simctl launch --console-pty` HOLDS his terminal until the app exits: tell him to `Ctrl-C`.
 
+### ⚠⚠ ROUND 1 FAILED (2026-09-20) — ONE LINE, AND A GATE NOW COVERS IT
+
+His first round on this branch was a **`BUILD FAILED` (exit 65)**, on exactly one error:
+
+```
+Home/HomeView.swift:80:40: error: value of type 'HomeSnapshot' has no member 'navFailure'
+```
+
+`HomeView` asked the snapshot for a member that was never written, and **every gate on this machine was blind
+to it by construction** — there is no SwiftUI on Linux, so a view is compiled by nothing here, and
+`check-imports.py` checks imports, not members. ⚠ **The good news in the same log:** the build got all the way
+into the Home's file batch, so the **tvOS 26.0 floor did NOT surface a deprecation error**, and
+`HomeStore`/`LibraryAPI`/`PosterLoader`/`PosterURL` compiled clean in the same pass.
+
+Fixed with `NavOutcome`'s own member (`store.snapshot.nav.failedMessage`) rather than by adding the accessor —
+the shortest truthful path, and no new untested rule. ⚠ **And the GATE was fixed in the same session, which
+is this repo's rule for a blind spot** (`references` in the skill record the identical lesson from B2's
+missing import): **`apple/scripts/check-tvos-members.py`** checks the *first member* a listed view variable
+names against the type that declares it — a deliberately narrow TABLE of `(file, variable, type)` triples,
+because a general dot-access sweep needs a type checker and a gate that cries wolf is worse than an absent
+one. Its `--selftest` fires on the exact `navFailure` line and stays silent on the real tree. ⚠⚠ **It reads
+DEPTH-1 members only**: a function body's locals are also `let`/`var`, and `HomeRails.rails` has locals named
+`cw` and `played` — a scan that counted them would have "found" those members and passed a view naming them.
+
 ### ▶ WHAT IS VERIFIED ON THIS BRANCH, AND WITH WHAT
 
 | Gate | Result (2026-09-20, branch `feat/tvos-ux`) |
@@ -46,6 +70,7 @@ never attempted. ⚠ `simctl launch --console-pty` HOLDS his terminal until the 
 | `python3 apple/scripts/check-tvos-models.py` | 113 keys, **17 endpoint literals** (both artwork routes included) |
 | `bash apple/scripts/check-apple-typecheck.sh` | every portable tvOS file typechecks, **plus `DesignTokens.swift` and `TVTokens.swift`** |
 | `python3 apple/scripts/check-imports.py apple/tvos/RKMCinemaTV` | 37 files, no missing framework imports |
+| **`python3 apple/scripts/check-tvos-members.py`** (NEW) | 23 view/type pair(s) — every member a SwiftUI view names exists on its model. ⚠ Written AFTER the round below failed; `--selftest` proves it fires on that exact defect |
 | `python3 tools/check_md_links.py` | 74 files, 68 relative links, all resolve |
 | `cd frontend && npx vitest run` · `npm run typecheck` | **589 tests in 23 files, all pass** · `tsc --noEmit` clean — ⚠ **unchanged, as promised**: nothing under `frontend/` was touched |
 | `cd backend && env -u JELLYFIN_API_KEY python -m pytest tests/ -q` | **1338 passed, 0 failed** — ⚠ **unchanged**: `git diff --stat origin/dev -- backend/` is EMPTY |

@@ -423,7 +423,8 @@ resumes after — and whoever resumes it should check `docs/TVOS_PLAYER_PLAN.md`
 | `python3 apple/scripts/check-tvos-models.py` | any new model key must still match the frozen contract |
 | `python3 apple/scripts/check-tvos-core.py` (+ `--falsify`, backgrounded, ~10 min) | U4's rail rules must **run**, not merely compile |
 | `bash apple/scripts/check-apple-typecheck.sh` | ⚠ add every new portable file in the **same** commit it lands |
-| `python3 apple/scripts/check-imports.py apple/tvos/RKMCinemaTV --selftest` | the ONLY gate that can see the SwiftUI views |
+| `python3 apple/scripts/check-imports.py apple/tvos/RKMCinemaTV --selftest` | the gate that sees the SwiftUI views' IMPORTS |
+| `python3 apple/scripts/check-tvos-members.py` (added 2026-09-20, after the round failed) | the gate that sees the views' MEMBER ACCESS — the first member each listed view variable names, against the type that declares it |
 | `python3 tools/check_md_links.py` | this file, and the two design assets it names |
 | `cd frontend && npx vitest run` · `npm run typecheck` | ⚠ expected **unchanged** — if either moves, `frontend/` was touched against §5 |
 | `cd backend && python -m pytest tests/ --capture=no -q` | ⚠ expected **unchanged** — no `backend/` file is touched by this phase, which is the point |

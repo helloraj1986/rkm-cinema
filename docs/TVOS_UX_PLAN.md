@@ -283,11 +283,26 @@ no-op. ⚠ The tvOS project uses **synchronized groups** — a file's presence I
 touch `project.pbxproj`** for membership; adding the file is enough. Add both to `check-apple-typecheck.sh`'s
 list in the same commit.
 
+⚠ **BUILT 2026-09-20, with three additions the plan did not name — recorded here because a plan reads as fact
+to the next session:**
+* **`apple/scripts/check-design-tokens.py`** is the drift gate (the generator's `--check` is its R1), and it
+  carries two more rules and a `--falsify` pass that proves all three can go red: **R2** no tvOS source may
+  name the web app's `DesignTokens.Colour.textMuted` (that is what `TVTokens` overrides), and **R3** no hex
+  literal or `Color(red:)` outside `Design/` — the CSS's own *"never scatter arbitrary colours"*.
+* **`Design/DesignColours.swift`** — a THIRD file, and deliberately outside every gate (no SwiftUI on Linux,
+  so nothing here can compile it). Its whole content is the four-component → `Color` conversion and the
+  `RKMColour` names, so there is **no rule in it to be wrong**; `RKMColour.muted` reads `TVTokens` and every
+  other name reads the generated table.
+* **The buildspec's type scale is NOT adopted**, and `TVTokens` says why: it is prose, its colour table (the
+  checkable part) was wrong in 8 of 10 values, and the accepted screens' sizes are what his round verified.
+  Retro-fitting a scale across screens this phase does not touch is Phase D polish — half a scale would be
+  the second copy §1a warns about.
+
 ⚠ **U1 also carries the two changes that are not tokens**, because both are "tell the truth about the build"
 work and belong with the build settings: the **deployment-target bump to 26.0** (§0.2, the one legitimate
-`project.pbxproj` edit) and the **`README.md:73` fix** (`17.0` → the real value). ⚠ The target bump is the
-phase's only change **no gate here can verify** — no Xcode in this sandbox — so it is confirmed by his Mac build
-and nothing else.
+`project.pbxproj` edit) and the **`README.md:73` fix** (`17.0` → the real value, now `26.0`). ⚠ The target bump
+is the phase's only change **no gate here can verify** — no Xcode in this sandbox — so it is confirmed by his
+Mac build and nothing else.
 
 ### U2 — the Profile Switcher
 The delta in §1a, on the existing accepted screen: the circular initials avatar, the lock badge, the row, the

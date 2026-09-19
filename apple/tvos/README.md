@@ -70,7 +70,7 @@ sources.
 |---|---|---|---|
 | Build Settings | `INFOPLIST_FILE` | `Config/Info.plist` | ⚠ ATS is a nested dictionary and `INFOPLIST_KEY_*` cannot express it |
 | Build Settings | `GENERATE_INFOPLIST_FILE` | `NO` | otherwise Xcode generates a second plist |
-| Build Settings | `TVOS_DEPLOYMENT_TARGET` | `17.0` | ⚠ Xcode pins the SDK version (26.x) by default. 17.0 installs on anything newer, and the code uses nothing newer |
+| Build Settings | `TVOS_DEPLOYMENT_TARGET` | `26.0` | ⚠ Xcode pins the SDK version (26.x) by default. **26.0 is the project's floor, raised from 17.6 by his decision on 2026-09-19** (`docs/TVOS_UX_PLAN.md` §0.2): Liquid Glass needs tvOS 26, one code path beats `#available` branching, and his Apple TV is a 4K 2nd generation or newer — the hardware Apple says gets the glass. ⚠ The cost, stated: the app no longer installs on tvOS 17–25 |
 | Signing & Capabilities | Team | your Apple ID | only needed for a *device* build; **the simulator needs no signing** |
 
 ⚠ **No bundle-id step, deliberately.** `mac-round.sh` reads `PRODUCT_BUNDLE_IDENTIFIER` out of the

@@ -13,7 +13,10 @@ apple/
 │                                 + the log REDACTOR and the rolling file log (LOGGING.md)
 ├── ios/               ← RKMCinema: a WKWebView shell around the LIVE web UI
 ├── tvos/              ← RKMCinemaTV: a native SwiftUI client (tvOS has no browser)
-└── scripts/           ← generate-api.sh: regen the Swift API types from the frozen contract
+└── scripts/           ← the gates that run ON LINUX: check-tvos-models.py (models + endpoints vs the
+                         frozen contract), check-apple-typecheck.sh, check-imports.py,
+                         test-mac-round.sh (the round script, stubbed), and generate-api.sh
+                         ⚠ superseded — see its header
 ```
 
 ⚠ **Read [`WORKFLOW.md`](WORKFLOW.md) before touching either folder** — the two-machine loop
@@ -32,7 +35,7 @@ id** that the HUD displays — that is what makes a screenshot and a log join up
 | Renders | the **real React UI**, loaded live from the server | its **own** SwiftUI views |
 | Why | iOS ships WebKit — the existing UI *is* the app | **tvOS has no WebKit at all**, so a native UI is the only option |
 | Screens | 2 (server address → web shell) | 7 (address, sign-in, profiles, home, browse, detail, player) |
-| API client | **none** — the web UI makes its own `/api` calls, same-origin | yes — generated from `docs/api/openapi.v1.json` |
+| API client | **none** — the web UI makes its own `/api` calls, same-origin | yes — **hand-written** models + a contract checker that runs on Linux (`apple/scripts/check-tvos-models.py`), **not** a generator (the generator needed `brew` and could never be exercised from this sandbox) |
 | New code | thin — the shell itself is small; the dev-phase logging and debug overlay are the bulk | thousands |
 | Cost | 1–2 days | 2–4 weeks of evenings |
 
@@ -79,9 +82,10 @@ device*; these apps cannot route to `100.x` tailnet addresses themselves.
 
 ## Build order
 
-1. **`ios/`** — smallest work, no backend change, and it proves the "shell around the live UI" thesis
-   before any TV code exists.
-2. **`tvos/`** skeleton → browse → player.
+1. **`ios/`** — done (2026-09-14): the shell, the offline downloads, the cold-launch shell.
+2. **`tvos/`** — **Phase A built 2026-09-19** on branch `feat/tvos-client`: screens 0–2 (address → sign
+   in → who's watching). Next: the Xcode project (once, by hand — `tvos/README.md` §1) → browse → player.
+   ⚠ Status, gates and what is still unverified: `tvos/README.md`.
 
 ## ⚠ Toolchain
 

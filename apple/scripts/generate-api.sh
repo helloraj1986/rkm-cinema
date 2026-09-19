@@ -1,5 +1,14 @@
 #!/usr/bin/env bash
-# Regenerate the tvOS Swift API types from the FROZEN contract.
+# ⚠⚠ **SUPERSEDED 2026-09-19 — DO NOT RUN THIS AS THE FIRST STEP OF ANY PHASE.** The tvOS models are
+# HAND-WRITTEN (`apple/tvos/RKMCinemaTV/Core/Models/`) and kept honest by
+# `apple/scripts/check-tvos-models.py`, which runs on Linux with no Mac and no `brew` — see the header of
+# the models file for why that trade was taken (the generator needs a tool this sandbox cannot exercise,
+# and the drift risk is caught either way).
+#
+# It is kept, un-run and un-verified, as the escape hatch: if the tvOS type surface ever grows past a few
+# screens, a generator becomes worth its weight. ⚠ Until then, nothing should depend on this file working.
+#
+# Regenerate the tvOS Swift API types from the FROZEN contract (ESCAPE HATCH — see the note above).
 #
 # Mirrors `npm run generate:types` in frontend/ (openapi-typescript → src/lib/api/types.ts):
 # one committed contract, generated clients, no handwritten model drift.
@@ -12,7 +21,7 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SPEC="$REPO_ROOT/docs/api/openapi.v1.json"
-OUT="$REPO_ROOT/tvos/RKMCinemaTV/RKMCinemaTV/Core/GeneratedAPI"
+OUT="$REPO_ROOT/apple/tvos/RKMCinemaTV/Core/GeneratedAPI"
 
 if ! command -v swift-openapi-generator >/dev/null 2>&1; then
   echo "swift-openapi-generator not found." >&2

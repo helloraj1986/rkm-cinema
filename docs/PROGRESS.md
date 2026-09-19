@@ -1,6 +1,225 @@
-## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-19, session 7) · branch **`feat/offline-cold-launch`** — cut from `dev`, ⚠ **NOT merged** (this one needs his Mac round before anything moves) · ⚠ **the working tree is on THAT branch**, so that is what `.\rkm-cinema.ps1 apply` would build (and nothing here needs `apply` — see the handover)
+## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-19, session 8) · branch **`feat/tvos-client`** — cut from `dev` (35ddc0e), pushed, ⚠ **NOT merged** · ✅ **PHASE A IS VERIFIED ON HIS SIMULATOR** — screens 0–2 work end to end (Part 4) · ⚠ **the working tree is on THAT branch**, so that is what `.\rkm-cinema.ps1 apply` would build — and **nothing needs `apply`**: no file under `backend/`, `frontend/` or `nginx/` changed this session
 
-**Say this first:** *"continue rkm-cinema — pick up the RESUME-HERE block."* Then read this,
+**Say this first:** *"continue rkm-cinema — pick up the RESUME-HERE block, we're on the tvOS app."*
+
+⚠ **This session's work is worth nothing until it has been built on his Mac, and it needs ONE thing from
+him that no agent can do: the Xcode project.** `apple/tvos/README.md` §1 is that step, written out. Until
+it exists, `mac-round.sh tvos` correctly refuses with `Project not found: apple/tvos/RKMCinemaTV.xcodeproj`.
+
+### What he asked for
+
+> *"i want to build the tvos app for the rkm-cinema, can we plan and execute… reuse as much code as
+> possible that is already been used in other ios devices… ofcourse create new branch from dev"*
+
+Four decisions, from a form — each one changed the shape of the work:
+
+| # | Question | His answer | What it decided |
+|---|---|---|---|
+| 1 | Phase A scope | **screens 0–2** (address → sign in → who's watching) | the first Mac round produces a **navigable** app, not a skeleton |
+| 2 | API types from the frozen contract | **hand-written `Decodable` + a Linux checker** | ⚠ no `swift-openapi-generator`, no `brew`, no never-run script — and the drift risk is caught in this sandbox instead |
+| 3 | The player's backend auth (B1–B3) | **deferred to Phase C** | `backend/` is untouched this session; the only backend change tvOS will ever need is the HLS token |
+| 4 | Test target | **simulator first**, Apple TV later | the round script's tvOS path is exercised *now*, and the deployment floor is set from the code (tvOS **17.0**) |
+
+### Part 1 — the reuse audit (his actual question), measured rather than assumed
+
+The answer is not "most of it", and the honest shape is three buckets:
+
+| | Files | LOC | Verdict |
+|---|---|---|---|
+| `apple/Shared/RKMServerKit` | 8 | 1,545 | ✅ **reused as-is** — `Package.swift` already declared `.tvOS(.v16)`. Screen #0's address handling **and** the entire logging stack (`RKMLog` · `RollingFileLog` · `LogRingBuffer` · `LogRedactor` · `CorrelationID`) came free |
+| `ios/…/Server/ServerProbe.swift` | 1 | 57 | ✅ **copied** — `Foundation` + `RKMServerKit`, no UIKit/WebKit, and its "any HTTP response counts as reachable" rule is a *rule*, not a platform behaviour |
+| iOS views (`ServerSetupView` · `UnreachableServerView` · `DebugHUD` · `AppLog` · `AppModel` · `AppRootView`) | 6 | ~1,000 | ⚠ **rewritten as shapes**, not ported: every one needed the focus engine and a TV type scale, and every iOS-only modifier had to go |
+| `ios/…/Shell/` | 10 | ~1,700 | ❌ **dead — tvOS has no WebKit at all** |
+| `ios/…/Offline/` + `Spike/` | 14 | ~6,600 | ❌ **dead and out of scope** — that stack exists to serve the SPA into a WebView with no network; TV is read+play |
+| New: `Core/APIClient` · `Core/Models/AuthModels` · `Auth/SessionStore` | 3 | ~700 | ⚠ **genuinely new** — ⚠ the iOS shell has **no API client by design** (the page makes its own same-origin `/api` calls), so the REST layer was never a port |
+
+⚠ The rule that keeps it honest: **nothing goes in `Shared/` unless BOTH apps need it.** The REST client,
+the auth models and the session therefore live in the tvOS target — `apple/README.md` says the same thing,
+and this session is the first test of it.
+
+### Part 2 — BUILT: Phase A on `feat/tvos-client`
+
+* **`apple/tvos/RKMCinemaTV/`** — 14 Swift files: `RKMCinemaTVApp` · `App/{AppLog,AppModel,AppRootView}` ·
+  `Server/{ServerProbe,ServerSetupView,UnreachableServerView}` ·
+  `Auth/{SessionStore,LoginView,ProfilesView}` · `Core/{ServerDefaults,APIClient}` ·
+  `Core/Models/AuthModels` · `Debug/DebugHUD`, plus `Config/Info.plist` (ATS: `NSAllowsArbitraryLoads`
+  **only**) and `Assets.xcassets`.
+* **⚠ The one request that decides the first screen is `GET /api/auth/me`,** because it separates the three
+  states that look identical from outside: `401` = sign in · `200` with `profile_selected` false = pick a
+  profile · `200` with it true = carry on. A transport failure is the only thing that means "unreachable".
+  `AppModel.Phase` gained a **`connecting`** case for it — on a TV, two seconds of nothing reads as a
+  broken app in a way a phone never does.
+* **⚠ The address field opens PRE-FILLED** (`Core/ServerDefaults.swift`, one line to change) — the plan's
+  §4.2 point: a Siri Remote is a poor text input. The tvOS round script has **no committed default device**
+  for the same class of reason (Apple TV names contain brackets).
+⚠ The debug overlay starts OFF and is reachable by `-RKMDebugHUD YES`, or the `Debug` toggle on screen
+  #0. On tvOS the HUD is not a convenience — **it is the only diagnostic surface that exists**, and its
+  state is displayed rather than remembered.
+  ⚠⚠ **It carries NO focusable control, and that was a real bug on his first round.** See Part 3a.
+* **`apple/scripts/check-tvos-models.py`** (new) — the replacement for a generated client. 6 rules: every
+  model is a contract schema; every decoded key is a property; every **non-optional** property is
+  `required` or `default`ed in the contract; every endpoint literal is a real path; no wire type hides
+  outside `Core/Models/`; and a `CodingKeys` case with no property. R3 is why `LoginResponse.user`,
+  `ProfilesResponse.profiles`, `SelectProfileResponse.profile` and both of `MeResponse`'s are **optional**
+  in Swift — the contract does not promise them, and a non-optional read would have turned an omission into
+  a failed sign-in.
+* **`apple/scripts/check-apple-typecheck.sh`** gained a tvOS loop (6 portable files) with a **separate**
+  stub file, `typecheck-stubs/TVStubs.swift` — ⚠ the iOS stubs reference iOS types in their WebKit slice,
+  so sharing one stub file would have failed the tvOS gate on symbols tvOS does not have.
+* **`apple/scripts/mac-round.sh`** — ⚠⚠ **it could not have run on a TV at all before this.** The name
+  extraction cut at the FIRST bracket (`sed 's/ (.*//'`), so `Apple TV 4K (3rd generation)` became
+  `Apple TV 4K`: a destination that does not exist. Harmless on iOS, fatal on every Apple TV. Now: a
+  `sim_names()` helper that keeps the full name, an **exact fixed-string** default match (`-qxF`), a
+  `grep -F "NAME ("` UDID lookup that cannot match a *different* Apple TV, and **no committed tvOS default
+  at all** (the family name was never a device).
+* **`apple/scripts/mac-round.sh` (a SECOND fault, found while he was creating the project)** — ⚠⚠ the
+  launch bundle id was **hardcoded** as `com.helloraj1986.rkmcinema.tvos`. Xcode names a new project
+  `com.helloraj1986.RKMCinemaTV`, so the app would have built, installed, and then **refused to launch** —
+  a message that reads like a build fault. It now reads `PRODUCT_BUNDLE_IDENTIFIER` from the same
+  `-showBuildSettings` call the `.app` lookup already makes, with the old value only as a fallback, which
+  **deletes a GUI step** nobody should have had to get exactly right.
+* **`apple/scripts/test-mac-round.sh`** — 4 new cases (10 total): the tvOS family fallback under its full
+  bracketed name; the **booted** Apple TV winning over a 3rd-generation sibling; the bundle id being taken
+  from the project rather than assumed; and the "no project yet → say what to do" message. ⚠ It now runs
+  the round script from a **temp repo skeleton**, because otherwise the tvOS cases could never reach the
+  device-selection code until the project existed.
+
+### Gates, measured this session
+
+| Gate | Result |
+|---|---|
+| `python3 apple/scripts/check-tvos-models.py` | **PASS** — 8 models, 27 keys, 7 endpoint literals, 0 unchecked wire types |
+| `python3 apple/scripts/check-tvos-models.py --falsify` | **PASS — 6/6 mutations went RED**, each on its own rule |
+| `TMPDIR=/root/tmp bash apple/scripts/check-apple-typecheck.sh` | **PASS** — every iOS file as before, **+ 6/6 tvOS files** (2 Darwin-only errors filtered by name) |
+| `python3 apple/scripts/check-imports.py apple/tvos/RKMCinemaTV` | **PASS** — 14 files, no missing framework imports |
+| `bash apple/scripts/test-mac-round.sh` | **PASS — 10/10**, and **falsified**: against the previous `mac-round.sh` it fails 2 of 10, and case J fails on the old hardcoded bundle id |
+| `python3 tools/check_md_links.py` | all links resolve |
+
+⚠ **No frontend/backend gate was re-run, because no frontend or backend file changed.** Saying so is the
+point: a native phase that claimed `vitest 589` would be claiming someone else's run.
+
+⚠⚠ **THE TWO NEW GATES EARNED THEIR KEEP IMMEDIATELY, AND ON DIFFERENT DEFECTS — that is the finding.**
+
+1. `check-apple-typecheck.sh` caught **five Mac build errors** on its first run: `withBusy` was called in
+   five places in `SessionStore` and **never written**. Five real `cannot find 'withBusy' in scope` errors,
+   caught in this sandbox instead of on the Mac.
+2. `check-imports.py` caught a **missing `import Combine`** in `SessionStore.swift` — which the typecheck
+   **passed**, because `TVStubs.swift` declares `ObservableObject` in the same module. That is exactly the
+   iOS-first-build failure mode (`WORKFLOW.md` §7b) and it means **neither gate subsumes the other**.
+3. And the contract checker found a bug **in itself** — `var warningText: String { … }`, a computed
+   property, was being parsed as a decoded key. Fixed, and it is now a rule (R2b) that a `CodingKeys` case
+   with no property fails the round.
+
+### Part 3 — HIS FIRST MAC ROUND: `BUILD SUCCEEDED`, the app RUNS on the tvOS simulator
+
+⚠ **The single most valuable fact of this session, and it came from him:** the project he assembled by
+hand (~1 GUI round) builds, links and launches. That verifies the whole chain at once — the synchronized
+folder found our 14 files, `RKMServerKit` linked, the shared scheme resolved, `Config/Info.plist` was
+processed as the Info.plist, and **every one of those SwiftUI views compiles on the real tvOS SDK.**
+
+⚠ What was NOT verified is step 5 of the round script — **and the fault was ours.** He sent back
+`== 5. installing + launching on the simulator` then `No available simulator matching ''`: the device-name
+extraction returned an EMPTY name, so there was nothing to install onto. Two faults, both now fixed, and
+the second one is the more interesting:
+
+1. ⚠⚠ **The name extractor bet on a regex interval.** `sed -nE 's/… \\([0-9A-Fa-f-]{36}\\) …'` passes the
+   harness under GNU sed and returned nothing on his Mac, whose BSD sed is old enough that `{36}` is not a
+   safe thing to rely on. **The harness could not have caught this: it ran GNU sed, and the fixture was
+   simpler than reality.** It is now `awk` with bracket-stripping (`[^)]*`, no counts) plus a **length check**
+   for the UUID — behaviour every awk has had forever — and the fixture in case G is now a REALISTIC
+   `simctl` dump: the `== Devices ==` header, a `-- tvOS 26.5 --` section, and an iPhone present that the
+   tvOS family filter must *not* match. **A fixture that is easier than reality tests the wrong thing.**
+2. ⚠⚠ **And the rewrite introduced its own bug, which the harness DID catch (8 of 10 cases went red):** the
+   first awk version stripped the trailing *state* group but never the *uuid* group, so `iPhone 17 Pro` came
+   back as `iPhone 17 Pro (2222…)` — every `grep -F "NAME ("` then missed and the install step vanished
+   again, for a completely different reason. Two faults in the same five lines, and the gate earned its
+   keep on the second.
+3. ⚠ **The failure is now SELF-DESCRIBING.** When no device is found the script prints the raw
+   `simctl list devices available` output, because an empty name cannot distinguish *"this Mac has no such
+   device"* from *"our parsing found no device"* — and those need opposite fixes. His first report cost a
+   round trip precisely because the script said only `matching ''`.
+
+⚠ Also learned: `git push` from this sandbox is **rejected as non-fast-forward whenever he has pushed in
+between** — the sandbox copy is behind his commit, and the fix is `git fetch && git rebase
+origin/feat/tvos-client` before pushing, every time, without exception. It costs a push and a re-push if
+skipped, and the second push is the one that lands.
+
+### Part 3a — THE FIRST PIECE OF REAL DEVICE FEEDBACK: the diagnostic stole the remote
+
+He could not type on the simulator and reported that the arrows *"didnt work properly"*. Two separate
+faults, and one of them was ours:
+
+1. **Typing on the tvOS Simulator needs the Mac keyboard explicitly connected** — menu bar
+   **I/O → Keyboard → Connect Hardware Keyboard** (⇧⌘K). Clicking the simulator window first is also
+   required, or the keystrokes go to whatever had focus on the Mac. Neither is discoverable, and neither is
+   a fault in the app.
+2. ⚠⚠ **The debug HUD's `Hide` button was in the app's focus chain.** On tvOS **every focusable view
+   anywhere in the hierarchy joins the focus engine — overlays included** — so a control drawn on top of the
+   screen competed with the app's own arrows. An arrow from the address field went sideways into the
+   diagnostic instead of down the form. That is exactly the reported symptom, and it is the *same class* of
+   mistake as `apple/WORKFLOW.md` §7c's overlay-control failures on iOS: **a diagnostic that participates in
+   the UI changes the thing it is measuring.** The panel is now `.allowsHitTesting(false)` +
+   `.focusable(false)` with no button at all — a pure readout, switched by the launch argument and, on
+   screen #0, by the `Debug` toggle (which can also turn it off).
+
+⚠ And the lesson generalises to Phase B, where every screen is a focus grid: **anything drawn over the UI
+must be checked for focus participation before it is trusted**, because on a TV a stray focus stop is a
+control the user cannot escape.
+
+### ✅ Part 4 — PHASE A ACCEPTED ON HIS MACHINE (screenshot, 2026-09-19)
+
+His round produced the screen this phase existed to produce, and every value on it is now a verified claim
+rather than something written down:
+
+| On screen | What it verifies |
+|---|---|
+| `http://rkm-hp.tail8d5e8.ts.net:8124` reached, address **pre-filled** | the ATS declaration landed — plain `http://` over a **tailnet NAME** (not a LAN IP), which is exactly the case that broke on iOS when a second ATS key was present |
+| **Signed in as `rkm`** | delegated Jellyfin login worked, and the session cookie was accepted from `URLSession`'s shared store |
+| **Watching as `sharanya`** | ⚠ **the profile switch worked** — the one call that cannot be faked: `POST /api/auth/profile` made Jellyfin authenticate AS that profile, and `/api/auth/me` read it back |
+| `Profile selected: yes` | state came from the SERVER's answer rather than assembled locally — the `SessionStore` rule |
+| The focus ring on **Change profile**, arrows moving between the three buttons | the focus engine works once the HUD stops competing with it (Part 3a) |
+
+⚠ `signed in as rkm` + `watching as sharanya` is precisely the state `api/session.py`'s identity seam exists
+for — **`on_own_profile == false`**, the device holding the administrator's session while a household member
+watches. It is also the state a wrong implementation gets silently wrong, by serving the administrator's
+library to whoever is in the room. Worth naming on the acceptance line.
+
+⚠ **Unexplained, carried forward:** a thin strip of small monospaced text at the very top-left of the app area,
+~58% of the width. It is **not** the HUD (the round was launched *without* `-RKMDebugHUD YES`, and the panel
+would be a large dark box). Unidentified. Cosmetic, affects no acceptance item — but an unexplained mark on a
+screenshot is evidence, so it is recorded rather than forgotten: the next session should ask whether it also
+appears on a **real Apple TV**, where there is no Simulator chrome to blame.
+
+### ⚠ What is NOT verified — and it is most of the app
+
+**Everything UI.** No SwiftUI exists on Linux to stub, so the views have **never been compiled**, let
+alone run: the profile grid, the password overlay, the focus behaviour of every screen, whether the
+remote's Back is right, and the tvOS type scale. They deliberately use only APIs available on tvOS 15+
+and **omit every iOS-only modifier** (`keyboardType`, `textContentType`, `submitLabel`,
+`textInputAutocapitalization`, `autocorrectionDisabled`, `textSelection`) — that avoidance is a design
+choice, not an oversight, and it is the reason the code reads plainer than its iOS twin.
+
+⚠ The focus engine is the single largest unknown, exactly as `APPLE_CLIENTS_PLAN.md` §4.5 predicted.
+
+### ▶ THE NEXT ACTION, in order
+
+1. ⚠ **THE MERGE IS HIS CALL AND IT IS OUTSTANDING.** `feat/tvos-client` is Phase-A-complete and verified on
+   his simulator; it is **not merged to `dev`**. Nothing outside `apple/` changed, so merging cannot affect
+   the running stack — but he asks for merges, so ask rather than assume.
+2. **Then Phase B** — Home (Continue Watching / Recently Added), Browse (folders → items), item detail,
+   posters. ⚠ This is where the **focus engine becomes the work**, not a fix-up: the web app's hover menus,
+   `PopupMenu`, `Dialog` and its pointer-capture seek bar all need focusable equivalents, and the poster grid
+   is a 2-D focus grid that must be designed rather than inherited. New contract models for
+   `GET /api/library/*` and `GET /api/jellyfin/detail`, checked by `check-tvos-models.py`.
+3. **Round commands** — clean screen vs diagnostics:
+   `./apple/scripts/mac-round.sh tvos --sim` · `./apple/scripts/mac-round.sh tvos --sim -RKMDebugHUD YES`
+4. ⚠ **To type on the tvOS Simulator he must connect the Mac keyboard**: click the simulator window first,
+   then **I/O → Keyboard → Connect Hardware Keyboard** (⇧⌘K). The mouse does nothing on tvOS — arrows =
+   remote swipes, Return = Select, Esc = Menu. Both learned the slow way this session (Part 3a).
+
+## ⚠ HISTORY — session 7 (2026-09-19): the cold-launch offline shell on `feat/offline-cold-launch`. ⚠ **NOT merged, and no longer the branch in the tree** — carry its device items forward from NEXT STEPS below; nothing in it was dropped.
+
+**Say this first:** *"continue rkm-cinema — pick up the RESUME-HERE block."* ⚠ The session-7 handover below is HISTORY now; this file's own RESUME-HERE block is the current one.
 `KNOWN_ISSUES.md`'s status table, and the session-6 block below (it is now HISTORY, and its three
 device items are **carried forward** in NEXT STEPS — nothing in it was dropped).
 

@@ -56,6 +56,11 @@ U17P="22222222-2222-2222-2222-222222222222"
 U16="33333333-3333-3333-3333-333333333333"
 APP_DIR="$HOME_DIR/Library/Developer/Xcode/DerivedData/RKMCinema-abc123/Build/Products/Debug-iphonesimulator"
 mkdir -p "$APP_DIR/RKMCinema.app"
+# ⚠ The tvOS target builds RKMCinemaTV.app out of Debug-appletvsimulator. Without this directory the
+# tvOS cases below would silently exercise the DerivedData fallback instead of -showBuildSettings, i.e.
+# they would test a different code path from the one that runs.
+APP_DIR_TV="$HOME_DIR/Library/Developer/Xcode/DerivedData/RKMCinema-abc123/Build/Products/Debug-appletvsimulator"
+mkdir -p "$APP_DIR_TV/RKMCinemaTV.app"
 
 cat > "$BIN/xcrun" <<'EOF'
 #!/usr/bin/env bash
@@ -79,12 +84,27 @@ EOF
 cat > "$BIN/xcodebuild" <<'EOF'
 #!/usr/bin/env bash
 STATE="$STUB_STATE"
+# ⚠ The product differs per platform: the tvOS scheme builds RKMCinemaTV.app out of
+# Debug-appletvsimulator. A stub that always answered `RKMCinema.app` would let every tvOS assertion below
+# pass against a filename the real build never produces.
+NAME="RKMCinema"; SUFFIX="iphonesimulator"; BUNDLE="ios"
+for arg in "$@"; do
+  [ "$arg" = "RKMCinemaTV" ] && { NAME="RKMCinemaTV"; SUFFIX="appletvsimulator"; BUNDLE="tvos"; }
+done
+# ⚠ `$STATE/bundle_id` exists so a case can set an identifier the script's own fallback would NOT produce —
+# which is the only way to prove the launch id is read from the PROJECT rather than assumed.
+if [ -f "$STATE/bundle_id" ]; then
+  BUNDLE_ID="$(cat "$STATE/bundle_id")"
+else
+  BUNDLE_ID="com.helloraj1986.rkmcinema.$BUNDLE"
+fi
 for arg in "$@"; do
   if [ "$arg" = "-showBuildSettings" ]; then
     # Case E marks this, to make -showBuildSettings useless and exercise the DerivedData fallback.
     [ -f "$STATE/no_settings" ] && exit 0
-    echo "    BUILT_PRODUCTS_DIR = $HOME/Library/Developer/Xcode/DerivedData/RKMCinema-abc123/Build/Products/Debug-iphonesimulator"
-    echo "    FULL_PRODUCT_NAME = RKMCinema.app"
+    echo "    BUILT_PRODUCTS_DIR = $HOME/Library/Developer/Xcode/DerivedData/RKMCinema-abc123/Build/Products/Debug-$SUFFIX"
+    echo "    FULL_PRODUCT_NAME = $NAME.app"
+    echo "    PRODUCT_BUNDLE_IDENTIFIER = $BUNDLE_ID"
     exit 0
   fi
 done
@@ -133,12 +153,33 @@ devices() {  # $1 = booted lines, $2 = available lines
   printf '%s\n' "$2" >> "$STATE/devices_available"
 }
 
+# ⚠⚠ THE SCRIPT IS TESTED IN A TEMP REPO SKELETON, NOT IN THE REAL TREE — and case G found out why.
+# `mac-round.sh` exits early with "Project not found" when the `.xcodeproj` is missing, which is CORRECT
+# behaviour and also means the tvOS cases could never reach the device-selection code at all: the tvOS
+# project does not exist until he creates it once in Xcode (apple/WORKFLOW.md §2). Running the real script
+# from a skeleton means the harness checks the SCRIPT — what it chooses, where it installs, what it
+# launches — independently of how far along the repo is. Case I pins the "project not found" message too,
+# because that is the first thing the next round will print.
+SCRIPT_REPO="$STUB/repo"
+PROJECT_DIRS="$SCRIPT_REPO/apple"
+mkdir -p "$SCRIPT_REPO/apple/scripts" "$SCRIPT_REPO/apple/logs"
+cp "$REPO/apple/scripts/mac-round.sh" "$SCRIPT_REPO/apple/scripts/mac-round.sh"
+projects() {  # $1 = yes|no — whether a tvOS .xcodeproj is present
+  rm -rf "$PROJECT_DIRS/ios/RKMCinema.xcodeproj" "$PROJECT_DIRS/tvos/RKMCinemaTV.xcodeproj"
+  mkdir -p "$PROJECT_DIRS/ios/RKMCinema.xcodeproj"
+  [ "$1" = "yes" ] && mkdir -p "$PROJECT_DIRS/tvos/RKMCinemaTV.xcodeproj"
+  return 0
+}
+projects yes
+
 fails=0
+total=0
 run() {  # $1 = label, rest = expected grep patterns (matched against OUTPUT + the stubs' call log)
   local label="$1"; shift
   : > "$STATE/calls.log"
   local out subject pattern ok=1
-  out="$(cd "$REPO" && bash apple/scripts/mac-round.sh ios --sim -RKMOfflineSpike YES 2>&1)"
+  total=$(( total + 1 ))
+  out="$(cd "$SCRIPT_REPO" && bash apple/scripts/mac-round.sh "${RUN_TARGET:-ios}" --sim -RKMOfflineSpike YES 2>&1)"
   subject="$out
 $(cat "$STATE/calls.log" 2>/dev/null)"
   echo "───── $label"
@@ -187,7 +228,9 @@ devices "" \
         "    Apple TV (44444444-4444-4444-4444-444444444444) (Shutdown)"
 run "D · no iPhone at all — must SAY so, not die silently under set -e/pipefail" \
     "no iPhone-class simulator available" \
-    "install\+launch step will be skipped"
+    "install\+launch step will be skipped" \
+    "what simctl actually listed" \
+    "Apple TV"
 
 # ⚠⚠ CASE F IS THE PREFIX TRAP: `iPhone 16` is a PREFIX of `iPhone 16 Pro`, and the committed default
 # IS `iPhone 16`. With a bare `grep -m1 "iPhone 16"` the first line in the list wins — so the run would
@@ -210,6 +253,72 @@ run "E · -showBuildSettings is useless — the DerivedData fallback still finds
     "CALL simctl install $U17P .*RKMCinema.app"
 rm -f "$STATE/no_settings"
 
+# ⚠⚠ CASES G/H ARE tvOS, AND THEY EXIST BECAUSE THE PREVIOUS SCRIPT COULD NOT HAVE RUN ON A TV AT ALL.
+# Its committed default was `Apple TV` — the FAMILY name, not a device — and its name extraction cut at the
+# first bracket, so `Apple TV 4K (3rd generation)` came back as `Apple TV 4K`: a name that matches no
+# device, so the UDID lookup found nothing and the round would have ended at
+# "No available simulator matching 'Apple TV'". Both faults are invisible on iOS, where no device name
+# contains a bracket.
+UTV3="66666666-6666-6666-6666-666666666666"
+UTV2="77777777-7777-7777-7777-777777777777"
+RUN_TARGET=tvos
+
+# ⚠ A REALISTIC dump, not a bare device line: `simctl` prints a `== Devices ==` header and one
+# `-- <runtime> --` section per family, and an iPhone is present so the tvOS family filter has something it
+# must NOT match. The first version of this case fed a single bare line and passed — while the same code
+# printed an empty name on his Mac. A fixture that is easier than reality tests the wrong thing.
+devices "" \
+        "    iPhone 17 Pro ($U17P) (Shutdown)
+-- tvOS 26.5 --
+    Apple TV 4K (3rd generation) ($UTV3) (Shutdown)"
+run "G · tvOS: the first available Apple TV is chosen, under its FULL bracketed name" \
+    "no committed default for Apple TV — using the first available: 'Apple TV 4K \(3rd generation\)'" \
+    "installing \+ launching on Apple TV 4K \(3rd generation\)" \
+    "CALL simctl install $UTV3 .*RKMCinemaTV.app" \
+    "CALL simctl launch --console-pty $UTV3 com.helloraj1986.rkmcinema.tvos" \
+    "app: .*RKMCinemaTV.app   \(from xcodebuild -showBuildSettings\)"
+
+# ⚠ H is the Apple-TV version of the prefix trap, and it is NOT a hypothetical: the two Apple TVs a Mac
+# would have on hand are `Apple TV 4K (2nd generation)` and `Apple TV 4K (3rd generation)`, which share the
+# prefix `Apple TV 4K (`. A regex anchor on that prefix matches whichever line comes first — build for one
+# device, install on the other, with every printed line naming the wrong one.
+devices "    Apple TV 4K (2nd generation) ($UTV2) (Booted)" \
+        "    Apple TV 4K (2nd generation) ($UTV2) (Booted)
+    Apple TV 4K (3rd generation) ($UTV3) (Shutdown)"
+run "H · tvOS: the booted Apple TV wins, and the 3rd-gen line must not be mistaken for it" \
+    "ALREADY BOOTED — 'Apple TV 4K \(2nd generation\)'" \
+    "CALL simctl install $UTV2 .*RKMCinemaTV.app" \
+    "CALL simctl launch --console-pty $UTV2"
+
+# ⚠⚠ J: THE LAUNCH ID MUST COME FROM THE PROJECT, NOT FROM THE SCRIPT'S ASSUMPTION. Xcode's template
+# names a new project's identifier `<org>.<ProductName>` — i.e. `com.helloraj1986.RKMCinemaTV` — while the
+# script used to hardcode `com.helloraj1986.rkmcinema.tvos`. With the hardcoded value the app builds,
+# installs, and then refuses to launch ("the application is not installed"), which reads as a build fault.
+# This case sets the identifier to Xcode's own default and requires BOTH that it is reported and that it is
+# what gets launched.
+RUN_TARGET=tvos
+# ⚠ Its own fixture: case H left a BOOTED Apple TV, and the booted device wins by design — so without this
+# the launch would (correctly) name UTV2 while this case asserts UTV3.
+devices "" \
+        "    Apple TV 4K (3rd generation) ($UTV3) (Shutdown)"
+printf 'com.helloraj1986.RKMCinemaTV' > "$STATE/bundle_id"
+run "J · the bundle id is read from the PROJECT — Xcode's default is not the script's assumption" \
+    "bundle id: com.helloraj1986.RKMCinemaTV   \\(from xcodebuild -showBuildSettings\\)" \
+    "CALL simctl launch --console-pty $UTV3 com.helloraj1986.RKMCinemaTV"
+rm -f "$STATE/bundle_id"
+# ⚠ RUN_TARGET stays `tvos` for case I — it is about the tvOS project being absent, and pointing it at the
+# iOS project (which is committed) would make the case assert a branch it never reaches.
+
+# ⚠ I: WITHOUT THE PROJECT, THE SCRIPT MUST SAY SO AND STOP. This is the exact state of the repo right
+# now — the tvOS project is created ONCE in Xcode and committed (apple/WORKFLOW.md §2) — so this is the
+# message the first tvOS round will print, and it has to name the fix rather than fail confusingly.
+projects no
+run "I · no tvOS project in the tree — the script says what to do instead of failing obscurely" \
+    "Project not found: apple/tvos/RKMCinemaTV.xcodeproj" \
+    "It is created once in Xcode and committed"
+projects yes
+RUN_TARGET=ios
+
 echo
-if [ $fails -eq 0 ]; then echo "STUB TEST PASS — 6/6"; else echo "STUB TEST FAIL — $fails case(s)"; fi
+if [ $fails -eq 0 ]; then echo "STUB TEST PASS — $total/$total"; else echo "STUB TEST FAIL — $fails of $total case(s)"; fi
 exit $fails

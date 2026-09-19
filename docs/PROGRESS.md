@@ -142,6 +142,16 @@ Phases are written into `docs/OFFLINE_SHELL_PLAN.md` §0c: **S1** the store's ru
 console, or Console.app → Devices. ⚠ **That doc is owed a fix** and the fix belongs on `dev`, not on this
 branch's throwaway spike.
 
+### ✅ Two device confirmations, and one new defect (2026-09-19, his phone)
+
+* **Cancel on an in-progress download — CONFIRMED.** His words: *"cancel of an in progress works now"*.
+  That closes KNOWN_ISSUES §7a (the two Swift defects in `OfflineDownloads.swift`, fixed 2026-09-18) — the
+  first time either was tapped on glass.
+* **A tap inside a sheet — CONFIRMED.** *"tap inside the item in search works now — it shows me the detail
+  with download button"* ⇒ the `DRAG_ARM_PX = 8` / `shouldArmDrag` fix (session 6, Part 1) holds on iOS.
+* ⚠ **NEW: the detail screen's Download button gives no feedback** although the download does start.
+  Filed as **KNOWN_ISSUES #9** with his words and where to look. ⚠ **No code written** — his instruction.
+
 ### ⭐ S3 PASSED (2026-09-19) — his iPhone, with no media server reachable
 
 His words: *"the ios shell launches with no media server connected"*. That closes **§18 #9**, the last gap

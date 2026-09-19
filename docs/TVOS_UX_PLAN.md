@@ -395,6 +395,13 @@ What actually changed on screen:
   the card prints `S1E3 · Series name` underneath it — `S1·E3` above and `S1E3` below would be two spellings
   of one code on one card. ⚠ One line to change if he wants the dot; say so rather than let it drift.
 
+⚠⚠ **AND U6'S SECOND ROUND FAILED ON A NAME, WHICH IS WHY THE MEMBERS GATE HAS A RULE 4.** `ButtonStyle`
+declares an associatedtype requirement `Body`, so the helper views nested inside U6's four new `ButtonStyle`
+conformers collided with it — `type 'TabButtonStyle' does not conform to protocol 'ButtonStyle'`. Phase A's
+tile style had been called `TileBody` for exactly that reason and the rule was forgotten; the four are now
+`TabChrome` / `IconChrome` / `CtaChrome` / `PillChrome`, and **`check-tvos-members.py` refuses a nested
+`struct Body`**, so the next instance costs a gate run instead of a round.
+
 ⚠ **One thing the prototype adds that this phase did NOT build:** the hero's slow background drift
 (`@keyframes drift`, 26 s). It needs real artwork behind it and Reduce Motion handling, and it is exactly the
 "ambient motion" the buildspec §1 asks for — Phase D polish, recorded so it is not mistaken for an oversight.

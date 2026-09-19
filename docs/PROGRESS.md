@@ -37,6 +37,29 @@ cd ~/dev/rkm-cinema && git checkout feat/tvos-ux && git pull --ff-only && ./appl
 and **a failed build proves nothing about the layouts** — a `BUILD FAILED` is a build round, and F1–F7 were
 never attempted. ⚠ `simctl launch --console-pty` HOLDS his terminal until the app exits: tell him to `Ctrl-C`.
 
+### ⚠⚠ ROUND 2 FAILED TOO (2026-09-20) — ON A NAME, NOT A MEMBER. Rule 4 exists because of it.
+
+```
+Home/TopBar.swift:153:8: error: type 'TabButtonStyle' does not conform to protocol 'ButtonStyle'
+Home/TopBar.swift:161:20: error: struct 'Body' must be as accessible as its enclosing type
+                       because it matches a requirement in protocol 'ButtonStyle'
+Home/TopBar.swift:188:8: error: type 'IconButtonStyle' does not conform to protocol 'ButtonStyle'
+Home/TopBar.swift:193:20: error: struct 'Body' must be as accessible as its enclosing type …
+```
+
+**Every `Style` protocol declares an associatedtype requirement called `Body`**, so the helper view nested
+inside each of U6's four new `ButtonStyle` conformers collided with it. ⚠⚠ **Phase A's tile style is called
+`TileBody` for exactly this reason** — the rule was already known in this repo and was forgotten the moment
+U6 wrote four new styles, which is the whole argument for a gate rather than a convention. Renamed to
+`TabChrome` / `IconChrome` / `CtaChrome` / `PillChrome`; **rule 4 of `check-tvos-members.py` refuses a nested
+`struct Body`** (indented declarations only — a file-scope `struct Body` collides with nothing and flagging it
+would be the false positive that makes a gate worth ignoring).
+
+⚠ **TWO ROUNDS, TWO COMPILE ERRORS, BOTH IN CODE NO GATE HERE CAN COMPILE** — `navFailure` (a member that did
+not exist) and `Body` (a name a protocol owns). The members gate now covers both. That is the only
+compensation available: **there is no SwiftUI on Linux, so a text rule is the entire defence**, and the
+alternative — a SwiftUI stub — is the gate that cries wolf (`docs/TVOS_UX_PLAN.md` §6).
+
 ### ⚠⚠ ROUND 1 FAILED (2026-09-20) — ONE LINE, AND A GATE NOW COVERS IT
 
 His first round on this branch was a **`BUILD FAILED` (exit 65)**, on exactly one error:
@@ -71,7 +94,7 @@ DEPTH-1 members only**: a function body's locals are also `let`/`var`, and `Home
 | `python3 apple/scripts/check-tvos-models.py` | 113 keys, **17 endpoint literals** (both artwork routes included) |
 | `bash apple/scripts/check-apple-typecheck.sh` | every portable tvOS file typechecks, **plus `DesignTokens.swift` and `TVTokens.swift`** |
 | `python3 apple/scripts/check-imports.py apple/tvos/RKMCinemaTV` | 37 files, no missing framework imports |
-| **`python3 apple/scripts/check-tvos-members.py`** (NEW) | **TWO rules**, both on the class of error no compiler here can see: (1) every member a listed view variable names exists on its model — 23 `(file, variable, type)` pairs; (2) every label used when a view constructs one of the app's 13 own view/type names is one that type takes. ⚠ Written AFTER the round below failed, and `--selftest` proves both rules fire and stay silent on the real tree |
+| **`python3 apple/scripts/check-tvos-members.py`** (NEW) | **FOUR rules**, all on the class of error no compiler here can see: (1) every member a listed view variable names exists on its model — 23 `(file, variable, type)` pairs; (2) every label used when a view constructs one of the app's 13 own view/type names is one that type takes; (3) every `<Namespace>.<member>` a tvOS source names (`HomeRules.*`, `TVTokens.*`, `RKMColour.*`, `PosterURL.*` …) is declared by that namespace's file; (4) **no nested type named `Body`** — every `Style` protocol owns that name. ⚠ Written AFTER round 1 failed, extended AFTER round 2 failed, and `--selftest` proves all four rules fire and stay silent on the real tree |
 | `python3 tools/check_md_links.py` | 74 files, 68 relative links, all resolve |
 | `cd frontend && npx vitest run` · `npm run typecheck` | **589 tests in 23 files, all pass** · `tsc --noEmit` clean — ⚠ **unchanged, as promised**: nothing under `frontend/` was touched |
 | `cd backend && env -u JELLYFIN_API_KEY python -m pytest tests/ -q` | **1338 passed, 0 failed** — ⚠ **unchanged**: `git diff --stat origin/dev -- backend/` is EMPTY |

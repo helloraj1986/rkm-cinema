@@ -335,6 +335,36 @@ def check_namespaces(root: pathlib.Path) -> list[str]:
     return problems
 
 
+#: ⚠⚠ RULE 4 — `Body` IS NOT A SAFE NAME TO NEST, and this is the SECOND round U6 spent on the same blind
+#: spot. Every `Style` protocol (and `View`) declares an associatedtype requirement called `Body`, so a helper
+#: view nested inside a conformer and named `Body` collides with it. Measured on his Mac, 2026-09-20:
+#: `type 'TabButtonStyle' does not conform to protocol 'ButtonStyle'` +
+#: `struct 'Body' must be as accessible as its enclosing type because it matches a requirement in protocol
+#: 'ButtonStyle'`. ⚠ Phase A's tile style is called `TileBody` for this reason — the rule was known and then
+#: forgotten, which is why it is a gate now. Nothing in this sandbox compiles SwiftUI, so a text rule is the
+#: only thing that stands between this mistake and his round.
+#:
+#: ⚠ INDENTED ONLY: a `struct Body` at file scope collides with nothing, and flagging it would be the
+#: false-positive that makes a gate worth ignoring.
+NESTED_BODY = re.compile(r"^\s+(?:public\s+|internal\s+|private\s+|fileprivate\s+|final\s+)*struct\s+Body\b")
+
+
+def check_nested_body(root: pathlib.Path) -> list[str]:
+    problems: list[str] = []
+    for path in sorted(root.rglob("*.swift")):
+        if ".build" in path.parts:
+            continue
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+            if line.lstrip().startswith("//"):
+                continue
+            if NESTED_BODY.match(line):
+                problems.append(
+                    f"{path.relative_to(root)}:{number}: a nested type named `Body` — a `Style` protocol owns "
+                    f"that name; call it `TileBody`/`TabChrome`/whatever it IS"
+                )
+    return problems
+
+
 def check(root: pathlib.Path) -> list[str]:
     problems: list[str] = []
     cache: dict[str, set[str]] = {}
@@ -408,6 +438,15 @@ def selftest() -> int:
             failures.append("rule 2 fires on the REAL tree, so its red above proved nothing")
         if check_namespaces(TVOS):
             failures.append("rule 3 fires on the REAL tree, so its red above proved nothing")
+        if check_nested_body(TVOS):
+            failures.append("rule 4 fires on the REAL tree, so its red above proved nothing")
+
+        # Rule 4: the name a `Style` protocol already owns.
+        rail = scratch / "Home" / "RailView.swift"
+        rail.write_text(rail.read_text(encoding="utf-8")
+                        + "\n    private struct Body: View {}\n", encoding="utf-8")
+        if not any("named `Body`" in problem for problem in check_nested_body(scratch)):
+            failures.append("it did not fire on a nested `struct Body`")
 
         # Rule 3: a static-namespace member that does not exist.
         hero = scratch / "Home" / "HeroBand.swift"
@@ -421,7 +460,7 @@ def selftest() -> int:
         for line in failures:
             print(f"  · {line}")
         return 1
-    print("selftest: fires on all three defects (member, call label, static name), stays silent on the real tree.")
+    print("selftest: fires on all four defects (member, call label, static name, nested `Body`), stays silent on the real tree.")
     return 0
 
 
@@ -438,7 +477,8 @@ def main(argv: list[str]) -> int:
         return selftest()
 
     try:
-        problems = check(TVOS) + check_calls(TVOS) + check_namespaces(TVOS)
+        problems = (check(TVOS) + check_calls(TVOS) + check_namespaces(TVOS)
+                    + check_nested_body(TVOS))
     except (FileNotFoundError, ValueError) as error:
         print(f"cannot run: {error}", file=sys.stderr)
         return 2

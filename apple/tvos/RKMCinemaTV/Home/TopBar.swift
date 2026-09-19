@@ -155,10 +155,15 @@ struct TabButtonStyle: ButtonStyle {
     let isCurrent: Bool
 
     func makeBody(configuration: Configuration) -> some View {
-        Body(configuration: configuration, isCurrent: isCurrent)
+        TabChrome(configuration: configuration, isCurrent: isCurrent)
     }
 
-    private struct Body: View {
+        // ⚠⚠ NOT `Body`: every `Style` protocol declares an associatedtype requirement called `Body`, so a
+    // helper view nested inside a conformer and named `Body` collides with it — measured on the Mac,
+    // U6's second round: `type 'TabButtonStyle' does not conform to protocol 'ButtonStyle'` plus
+    // `struct 'Body' must be as accessible as its enclosing type`. The Phase A tile style is called
+    // `TileBody` for exactly this reason; this is that rule, spelled the same way.
+    private struct TabChrome: View {
         let configuration: ButtonStyle.Configuration
         let isCurrent: Bool
         @Environment(\.isFocused) private var isFocused
@@ -187,10 +192,15 @@ struct TabButtonStyle: ButtonStyle {
 /// The prototype's `.icon-btn`: a translucent circle with a white ring and a 1.16 lift on focus.
 struct IconButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
-        Body(configuration: configuration)
+        IconChrome(configuration: configuration)
     }
 
-    private struct Body: View {
+        // ⚠⚠ NOT `Body`: every `Style` protocol declares an associatedtype requirement called `Body`, so a
+    // helper view nested inside a conformer and named `Body` collides with it — measured on the Mac,
+    // U6's second round: `type 'TabButtonStyle' does not conform to protocol 'ButtonStyle'` plus
+    // `struct 'Body' must be as accessible as its enclosing type`. The Phase A tile style is called
+    // `TileBody` for exactly this reason; this is that rule, spelled the same way.
+    private struct IconChrome: View {
         let configuration: ButtonStyle.Configuration
         @Environment(\.isFocused) private var isFocused
 

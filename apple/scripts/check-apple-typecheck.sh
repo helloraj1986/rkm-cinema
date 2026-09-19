@@ -141,9 +141,68 @@ for primary in "${WORK[@]}"; do
 done
 
 echo ""
-if [ "$real_errors" -gt 0 ]; then
-  echo "FAIL — $real_errors file(s) have real type errors. ⚠ These are Mac build failures, caught here."
+echo "== tvOS sources (RKMCinemaTV) — the six files that need no Apple UI framework"
+# ⚠⚠ WHY THIS LIST IS SIX FILES AND NOT THE WHOLE TARGET. The tvOS app is mostly SwiftUI, and there is no
+# SwiftUI on Linux to stub (nor a UIKit, nor an AVFoundation), so the views are Mac-round business and
+# saying so is the point. What CAN be checked here is the part where a mistake is silent and expensive:
+#
+#   ServerDefaults   the pre-filled address — one line, easy to typo, impossible to notice
+#   APIClient        every request, every error path, and the log line for each
+#   AuthModels       the wire format, also covered by check-tvos-models.py against the contract
+#   ServerProbe      the reachable/unreachable rule — a 401 reported as "unreachable" is a wrong screen
+#   AppLog           the launch banner, which is what makes a round diagnosable at all
+#   SessionStore     which screen the app lands on, and the cookie handling behind it
+#
+# ⚠ The tvOS stubs are a SEPARATE file (see typecheck-stubs/TVStubs.swift): the iOS stub references iOS
+# types in its WebKit slice, so including it here would fail the gate on symbols tvOS does not have.
+TV_SRC="$REPO/apple/tvos/RKMCinemaTV"
+TV_STUBS="$REPO/apple/scripts/typecheck-stubs/TVStubs.swift"
+TMP_TV="$TMP/tvos"
+mkdir -p "$TMP_TV" || exit 3
+
+TV_WORK=()
+for rel in Core/ServerDefaults.swift Core/APIClient.swift Core/Models/AuthModels.swift \
+           Server/ServerProbe.swift App/AppLog.swift Auth/SessionStore.swift; do
+  if [ ! -f "$TV_SRC/$rel" ]; then
+    echo "missing source: $TV_SRC/$rel"; exit 3
+  fi
+  name="$(basename "$rel" .swift)"
+  # ⚠ The synthetic `FoundationNetworking` import is what lets `URLSession` and `HTTPCookieStorage`
+  # typecheck here at all, and `Combine` is stripped because TVStubs supplies the shape.
+  {
+    printf '#if canImport(FoundationNetworking)\nimport FoundationNetworking\n#endif\n'
+    cat "$TV_SRC/$rel"
+  } | sed -E '/^import (UIKit|Combine|WebKit|Network)$/d' > "$TMP_TV/$name.swift"
+  TV_WORK+=("$TMP_TV/$name.swift")
+done
+cp "$TV_STUBS" "$TMP_TV/TVStubs.swift"
+TV_ALL=("${TV_WORK[@]}" "$TMP_TV/TVStubs.swift")
+
+tv_real_errors=0
+for primary in "${TV_WORK[@]}"; do
+  others=()
+  for file in "${TV_ALL[@]}"; do
+    [ "$file" != "$primary" ] && others+=("$file")
+  done
+  output="$(swiftc -frontend -typecheck -module-name RKMCinemaTV -D DEBUG -I "$MODULES" \
+              -primary-file "$primary" "${others[@]}" 2>&1)"
+  unexpected="$(printf '%s\n' "$output" | grep -E ': error:' | grep -v '^ *|' || true)"
+  if [ -n "$unexpected" ]; then
+    echo "✗ $(basename "$primary")"
+    printf '%s\n' "$unexpected" | sed 's/^/    /'
+    tv_real_errors=$(( tv_real_errors + 1 ))
+  else
+    echo "✓ $(basename "$primary")"
+  fi
+done
+
+echo ""
+if [ "$real_errors" -gt 0 ] || [ "$tv_real_errors" -gt 0 ]; then
+  echo "FAIL — $real_errors iOS file(s) and $tv_real_errors tvOS file(s) have real type errors."
+  echo "⚠ These are Mac build failures, caught here."
   exit 1
 fi
 echo "PASS — every file typechecks, with $expected_errors Darwin-only API error(s) filtered by name."
 echo "⚠ Still not a Mac build: this proves types and call shapes, NOT behaviour."
+echo "⚠ And it does NOT cover the tvOS SwiftUI views — no SwiftUI exists here to stub. Those are"
+echo "  verified only on the Mac, and this script will not claim otherwise."

@@ -40,12 +40,29 @@ fi
 
 case "$TARGET" in
   ios)  PROJ="apple/ios/RKMCinema.xcodeproj";    SCHEME="RKMCinema";    PLATFORM="iOS";     SIM_DEVICE="iPhone 16";  PRODUCT_SUFFIX="iphonesimulator" ; BUNDLE_SUFFIX="ios" ;;
-  tvos) PROJ="apple/tvos/RKMCinemaTV.xcodeproj"; SCHEME="RKMCinemaTV";  PLATFORM="tvOS";    SIM_DEVICE="Apple TV";   PRODUCT_SUFFIX="appletvsimulator" ; BUNDLE_SUFFIX="tvos" ;;
+  # ⚠⚠ **tvOS has NO committed default device name, and that is deliberate.** tvOS device names contain
+  # brackets — `Apple TV 4K (3rd generation)` — so they change with the hardware generation AND carry
+  # regex metacharacters, while every iPhone name is a plain string. A committed name here would be an
+  # exact-match miss on most Macs and a guess on the rest; `Apple TV` is not a device at all (it is the
+  # family), so leaving this empty makes "the first available Apple TV" the honest, always-correct answer,
+  # and the script prints which one it chose. See the device-selection block below.
+  tvos) PROJ="apple/tvos/RKMCinemaTV.xcodeproj"; SCHEME="RKMCinemaTV";  PLATFORM="tvOS";    SIM_DEVICE="";           PRODUCT_SUFFIX="appletvsimulator" ; BUNDLE_SUFFIX="tvos" ;;
   *) echo "usage: $0 ios|tvos [--sim] [app arguments…]" >&2; exit 2 ;;
 esac
 
 SPEC_DIR="$(dirname "$PROJ")"
 say() { printf '\n\033[1m== %s\033[0m\n' "$*"; }
+
+# ⚠⚠ ONE DEVICE LINE AS `simctl` PRINTS IT
+#      "    Apple TV 4K (3rd generation) (A1B2C3D4-…-…) (Shutdown)"
+#   → the FULL device name. A function rather than an inline `sed` because **a device name may itself
+#   contain brackets**, which is exactly the tvOS case: the earlier `sed 's/ (.*//'` cut at the FIRST
+#   bracket, so `Apple TV 4K (3rd generation)` came back as `Apple TV 4K` — a device that does not exist —
+#   and every lookup built on it then found nothing. Harmless for `iPhone 17 Pro`; fatal for every Apple TV.
+sim_names() {
+  "$@" 2>/dev/null | sed -nE \
+    's/^[[:space:]]+(.*) \([0-9A-Fa-f-]{36}\) \([^)]*\)$/\1/p'
+}
 
 # ---------------------------------------------------------------- 1. pull
 say "1. pulling"
@@ -114,24 +131,32 @@ if [ "$WANT_SIM" = "--sim" ]; then
   # ⚠ `|| true` on purpose: `set -o pipefail` + `set -e` means a `grep` that matches nothing would
   # END THE SCRIPT here (silently, before the "no simulator available" branch below can speak). With
   # an empty result the assignment is simply empty and the next branch decides.
-  BOOTED_MATCH="$(xcrun simctl list devices booted 2>/dev/null | grep -E "$SIM_FAMILY" | head -1 | sed -E 's/^[[:space:]]+//; s/ \(.*//' || true)"
+  BOOTED_MATCH="$(sim_names xcrun simctl list devices booted | grep -E "$SIM_FAMILY" | head -1 || true)"
   if [ -n "$BOOTED_MATCH" ]; then
     SIM_MATCH="$BOOTED_MATCH"
     echo "note: using the simulator that is ALREADY BOOTED — '${SIM_MATCH}'."
     echo "      (That is the one on screen; shut it down to let this script choose instead.)"
-  elif xcrun simctl list devices available 2>/dev/null | grep -q "$SIM_DEVICE"; then
+  elif [ -n "$SIM_DEVICE" ] && sim_names xcrun simctl list devices available | grep -qxF "$SIM_DEVICE"; then
+    # ⚠ `-qxF` — an EXACT, full-line, fixed-string match. A bare substring test is what made
+    # `iPhone 16` match the line for `iPhone 16 Pro` and build for one device while installing on another.
     SIM_MATCH="$SIM_DEVICE"
   else
-    # ⚠ Fall back to the first AVAILABLE iPhone rather than giving up: "the build succeeded but
-    # nothing launched" is indistinguishable from "the change does not work", and that is exactly how
-    # a stale simulator list would read (the committed default is iPhone 16; his Mac has 17 Pro).
-    SIM_MATCH="$(xcrun simctl list devices available 2>/dev/null | grep -E "$SIM_FAMILY" | head -1 | sed -E 's/^[[:space:]]+//; s/ \(.*//' || true)"
-    echo "note: no simulator named '$SIM_DEVICE' — using '${SIM_MATCH:-none}' instead."
+    # ⚠ Fall back to the first AVAILABLE device of the family rather than giving up: "the build succeeded
+    # but nothing launched" is indistinguishable from "the change does not work", and that is exactly how
+    # a stale simulator list reads (the committed iOS default is iPhone 16; his Mac has 17 Pro).
+    SIM_MATCH="$(sim_names xcrun simctl list devices available | grep -E "$SIM_FAMILY" | head -1 || true)"
+    if [ -n "$SIM_DEVICE" ]; then
+      echo "note: no simulator named '$SIM_DEVICE' — using '${SIM_MATCH:-none}' instead."
+    else
+      # ⚠ tvOS lands here by design (no committed default — see the case block at the top), so the note
+      # must say that rather than quote an empty name.
+      echo "note: no committed default for ${SIM_FAMILY} — using the first available: '${SIM_MATCH:-none}'."
+    fi
   fi
   if [ -n "$SIM_MATCH" ]; then
     DEST="platform=${PLATFORM} Simulator,name=${SIM_MATCH}"
   else
-    echo "note: no iPhone-class simulator available — building for any iOS Simulator, and the"
+    echo "note: no ${SIM_FAMILY}-class simulator available — building for any ${PLATFORM} Simulator, and the"
     echo "      install+launch step will be skipped. Xcode > Window > Devices to add one."
     DEST="generic/platform=${PLATFORM} Simulator"
   fi
@@ -181,10 +206,17 @@ tail -25 "$BUILD_LOG"
 # ---------------------------------------------------------------- 5. optional run
 if [ $RC -eq 0 ] && [ "$WANT_SIM" = "--sim" ]; then
   say "5. installing + launching on ${SIM_MATCH:-the simulator}"
-  # ⚠ The name is anchored (`^ *NAME (`), not a bare substring: `iPhone 17` is a PREFIX of
-  # `iPhone 17 Pro`, so the old `grep -m1` could hand back the other device's UDID and install
-  # there — the same "which device did it actually run on?" fault, one line later.
-  DEV_ID="$(xcrun simctl list devices available | grep -m1 -E "^[[:space:]]*${SIM_MATCH} \(" | grep -oE '[0-9A-F-]{36}' || true)"
+  # ⚠⚠ **THE NAME IS MATCHED AS A FIXED STRING, NOT AS A REGEX.** The previous version anchored with
+  # `^ *NAME (` — which fixed the `iPhone 16` / `iPhone 16 Pro` prefix trap, but would have matched the
+  # WRONG Apple TV: `Apple TV 4K (3rd generation)` and `Apple TV 4K (2nd generation)` share the prefix
+  # `Apple TV 4K (`, so the first line in the list could win while every printed line named the other.
+  # `grep -F "NAME ("` needs no escaping and cannot match a different device, because a device's name is
+  # followed by the space-and-bracket of its UDID and nothing else can be.
+  DEV_ID=""
+  if [ -n "$SIM_MATCH" ]; then
+    DEV_ID="$(xcrun simctl list devices available | grep -F "$SIM_MATCH (" | head -1 \
+                | grep -oE '[0-9A-Fa-f-]{36}' | head -1 || true)"
+  fi
   if [ -z "$DEV_ID" ]; then
     echo "No available simulator matching '${SIM_MATCH:-$SIM_DEVICE}' — open Xcode > Window > Devices and add one." >&2
   else

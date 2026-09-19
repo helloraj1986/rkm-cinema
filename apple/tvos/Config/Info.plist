@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  RKMCinemaTV — the app's real Info.plist.
+
+  ⚠ TWO THINGS ABOUT THIS FILE, both learned the hard way on the iOS target's first real build:
+
+  1. POINT `INFOPLIST_FILE` AT IT — Build Settings → Info.plist File = `Config/Info.plist` — and set
+     GENERATE_INFOPLIST_FILE = NO. It is a file rather than INFOPLIST_KEY_* settings for one reason:
+     **App Transport Security is a nested dictionary**, which the INFOPLIST_KEY_* settings cannot
+     express (apple/WORKFLOW.md §2).
+  2. ⚠ **IT MUST LIVE OUTSIDE `RKMCinemaTV/`, the target's synchronized source folder.** A file inside
+     that folder *is* a target member, so this plist would be at once **copied into the app as a
+     resource** and **processed as the Info.plist**, and the build dies with
+     `error: Multiple commands produce …RKMCinemaTV.app/Info.plist`. `Config/` is referenced only by
+     the build setting and by nothing in the project — which is exactly what keeps it out of that
+     automatic membership.
+
+  ⚠ tvOS-specific keys are ABSENT on purpose. `LSRequiresIPhoneOS`, `UIApplicationSceneManifest`,
+  `UILaunchScreen`, `UIUserInterfaceStyle` and `UISupportedInterfaceOrientations` are all iOS keys:
+  a tvOS app has no orientations to declare, no status bar to make legible, and its interface style is
+  always dark. Copying them across "for symmetry" would be four keys that do nothing but invite the
+  question of which platform a setting belonged to.
+-->
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>RKMCinemaTV</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$(MARKETING_VERSION)</string>
+	<key>CFBundleVersion</key>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<!--
+	  ⚠ App Transport Security — READ BEFORE ADDING A SECOND KEY.
+
+	  NSAllowsArbitraryLoads is the ONLY key here, deliberately. The address is typed by a human at
+	  runtime, so it can be ANY host — a raw LAN IP, a Tailscale name, a future domain — and no
+	  build-time exception list can cover that.
+
+	  ⚠⚠ DO NOT ADD NSAllowsLocalNetworking (nor NSAllowsArbitraryLoadsForMedia /
+	  NSAllowsArbitraryLoadsInWebContent) ALONGSIDE IT. On iOS 10+ / tvOS 10+ the presence of any of
+	  those more specific keys makes ATS **ignore NSAllowsArbitraryLoads entirely** — so with both keys
+	  set, plain http:// is blocked for every host that is not "local networking", while a LAN IP still
+	  works. That asymmetry is how it presents:
+
+	      http://rkm-hp.tail8d5e8.ts.net:8124
+	      NSURLErrorDomain -1022 — the resource could not be loaded because the App Transport
+	      Security policy requires the use of a secure connection
+
+	  — a failure that reads like a server problem and is not. Paid for on the iOS shell,
+	  2026-09-14: the narrower-looking key was the more damaging one.
+
+	  ⚠ This matters MORE on tvOS than it did on iOS, for a reason that is easy to miss: ATS also
+	  governs AVFoundation. The HLS playlists and segments the player will fetch in Phase C come from
+	  the same private origin over the same plain http://, so omitting this declaration would not just
+	  block the API — it would fail playback later with an error that points at the media, not at the
+	  plist.
+
+	  (App Review asks for a justification for NSAllowsArbitraryLoads. Irrelevant unless this is ever
+	  submitted to the store — a household app with a runtime address could not pass 4.2 anyway.)
+	-->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+	</dict>
+</dict>
+</plist>

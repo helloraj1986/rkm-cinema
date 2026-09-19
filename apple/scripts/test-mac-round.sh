@@ -228,7 +228,9 @@ devices "" \
         "    Apple TV (44444444-4444-4444-4444-444444444444) (Shutdown)"
 run "D · no iPhone at all — must SAY so, not die silently under set -e/pipefail" \
     "no iPhone-class simulator available" \
-    "install\+launch step will be skipped"
+    "install\+launch step will be skipped" \
+    "what simctl actually listed" \
+    "Apple TV"
 
 # ⚠⚠ CASE F IS THE PREFIX TRAP: `iPhone 16` is a PREFIX of `iPhone 16 Pro`, and the committed default
 # IS `iPhone 16`. With a bare `grep -m1 "iPhone 16"` the first line in the list wins — so the run would
@@ -261,8 +263,14 @@ UTV3="66666666-6666-6666-6666-666666666666"
 UTV2="77777777-7777-7777-7777-777777777777"
 RUN_TARGET=tvos
 
+# ⚠ A REALISTIC dump, not a bare device line: `simctl` prints a `== Devices ==` header and one
+# `-- <runtime> --` section per family, and an iPhone is present so the tvOS family filter has something it
+# must NOT match. The first version of this case fed a single bare line and passed — while the same code
+# printed an empty name on his Mac. A fixture that is easier than reality tests the wrong thing.
 devices "" \
-        "    Apple TV 4K (3rd generation) ($UTV3) (Shutdown)"
+        "    iPhone 17 Pro ($U17P) (Shutdown)
+-- tvOS 26.5 --
+    Apple TV 4K (3rd generation) ($UTV3) (Shutdown)"
 run "G · tvOS: the first available Apple TV is chosen, under its FULL bracketed name" \
     "no committed default for Apple TV — using the first available: 'Apple TV 4K \(3rd generation\)'" \
     "installing \+ launching on Apple TV 4K \(3rd generation\)" \

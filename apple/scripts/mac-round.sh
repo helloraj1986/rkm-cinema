@@ -56,12 +56,38 @@ say() { printf '\n\033[1m== %s\033[0m\n' "$*"; }
 # ⚠⚠ ONE DEVICE LINE AS `simctl` PRINTS IT
 #      "    Apple TV 4K (3rd generation) (A1B2C3D4-…-…) (Shutdown)"
 #   → the FULL device name. A function rather than an inline `sed` because **a device name may itself
-#   contain brackets**, which is exactly the tvOS case: the earlier `sed 's/ (.*//'` cut at the FIRST
+#   contain brackets**, which is exactly the tvOS case: an earlier `sed 's/ (.*//'` cut at the FIRST
 #   bracket, so `Apple TV 4K (3rd generation)` came back as `Apple TV 4K` — a device that does not exist —
 #   and every lookup built on it then found nothing. Harmless for `iPhone 17 Pro`; fatal for every Apple TV.
+#
+# ⚠⚠ **awk, NOT sed, and NO REGEX INTERVALS ANYWHERE — 2026-09-19, learned on his Mac.** The first version
+# was `sed -nE 's/… \([0-9A-Fa-f-]{36}\) …'`, which the harness passes happily under GNU sed and which
+# printed an EMPTY name on his Mac: a tvOS round got as far as `BUILD SUCCEEDED` and then said
+# `No available simulator matching ''`. MacOS ships an old BSD sed/awk, and `{36}` is not something to bet a
+# round on. What is used instead is bracket-stripping from the END (`[^)]*`, no counts) plus a LENGTH check
+# in awk — behaviour every awk has had since forever. The count is verified in the code, not inferred by the
+# regex, so an unparseable line is skipped rather than half-parsed.
 sim_names() {
-  "$@" 2>/dev/null | sed -nE \
-    's/^[[:space:]]+(.*) \([0-9A-Fa-f-]{36}\) \([^)]*\)$/\1/p'
+  "$@" 2>/dev/null | awk '
+    {
+      line = $0
+      sub(/[[:space:]]+$/, "", line)
+      # Must end in two bracketed groups: " (uuid) (state)".
+      if (line !~ /\([^)]*\) \([^)]*\)$/) next
+      rest = line
+      sub(/ \([^)]*\)$/, "", rest)        # drop the trailing STATE group
+      uuid = rest
+      sub(/^.*\(/, "", uuid)              # the uuid bracket is the last one left
+      sub(/\)$/, "", uuid)
+      if (length(uuid) != 36) next        # 8-4-4-4-12 — the LENGTH is checked, never regex-matched
+      sub(/ \([^)]*\)$/, "", rest)        # ⚠ AND NOW THE UUID GROUP TOO — the first version of this
+                                          #   function dropped only the state, so the name came back as
+                                          #   `iPhone 17 Pro (2222…)`, every `grep -F "NAME ("` missed,
+                                          #   and the round lost its install step. Caught by the harness.
+      sub(/^[[:space:]]+/, "", rest)
+      if (rest == "") next
+      print rest
+    }'
 }
 
 # ---------------------------------------------------------------- 1. pull
@@ -158,6 +184,12 @@ if [ "$WANT_SIM" = "--sim" ]; then
   else
     echo "note: no ${SIM_FAMILY}-class simulator available — building for any ${PLATFORM} Simulator, and the"
     echo "      install+launch step will be skipped. Xcode > Window > Devices to add one."
+    # ⚠⚠ **PRINT WHAT WE ACTUALLY SAW.** This failure reached his Mac as `matching ''` — an empty name and
+    # nothing else — and an empty name cannot distinguish "this Mac has no such device" from "our parsing
+    # found no such device". Those need opposite fixes, so the raw list is printed: a diagnostic that cannot
+    # be wrong about the thing it is reporting.
+    echo "      ⚠ what simctl actually listed (${PLATFORM} rows are the ones that matter here):"
+    xcrun simctl list devices available 2>&1 | sed -n '1,40p' | sed 's/^/        /' || true
     DEST="generic/platform=${PLATFORM} Simulator"
   fi
 else
@@ -214,8 +246,18 @@ if [ $RC -eq 0 ] && [ "$WANT_SIM" = "--sim" ]; then
   # followed by the space-and-bracket of its UDID and nothing else can be.
   DEV_ID=""
   if [ -n "$SIM_MATCH" ]; then
+    # ⚠ awk, and for the same reason as `sim_names`: the previous `grep -oE '[0-9A-F-]{36}'` bets on an
+    # interval, and that bet is what cost the first tvOS round its install+launch step. The UDID is simply
+    # what follows "NAME (" on the line just matched, cut at the first ")", with the length CHECKED.
     DEV_ID="$(xcrun simctl list devices available | grep -F "$SIM_MATCH (" | head -1 \
-                | grep -oE '[0-9A-Fa-f-]{36}' | head -1 || true)"
+                | awk -v name="$SIM_MATCH" '{
+                    i = index($0, name " (")
+                    if (i == 0) next
+                    rest = substr($0, i + length(name) + 2)
+                    sub(/\).*$/, "", rest)
+                    if (length(rest) != 36) next
+                    print rest
+                  }')"
   fi
   if [ -z "$DEV_ID" ]; then
     echo "No available simulator matching '${SIM_MATCH:-$SIM_DEVICE}' — open Xcode > Window > Devices and add one." >&2

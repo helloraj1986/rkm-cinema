@@ -109,6 +109,40 @@ point: a native phase that claimed `vitest 589` would be claiming someone else's
    property, was being parsed as a decoded key. Fixed, and it is now a rule (R2b) that a `CodingKeys` case
    with no property fails the round.
 
+### Part 3 — HIS FIRST MAC ROUND: `BUILD SUCCEEDED`, the app RUNS on the tvOS simulator
+
+⚠ **The single most valuable fact of this session, and it came from him:** the project he assembled by
+hand (~1 GUI round) builds, links and launches. That verifies the whole chain at once — the synchronized
+folder found our 14 files, `RKMServerKit` linked, the shared scheme resolved, `Config/Info.plist` was
+processed as the Info.plist, and **every one of those SwiftUI views compiles on the real tvOS SDK.**
+
+⚠ What was NOT verified is step 5 of the round script — **and the fault was ours.** He sent back
+`== 5. installing + launching on the simulator` then `No available simulator matching ''`: the device-name
+extraction returned an EMPTY name, so there was nothing to install onto. Two faults, both now fixed, and
+the second one is the more interesting:
+
+1. ⚠⚠ **The name extractor bet on a regex interval.** `sed -nE 's/… \\([0-9A-Fa-f-]{36}\\) …'` passes the
+   harness under GNU sed and returned nothing on his Mac, whose BSD sed is old enough that `{36}` is not a
+   safe thing to rely on. **The harness could not have caught this: it ran GNU sed, and the fixture was
+   simpler than reality.** It is now `awk` with bracket-stripping (`[^)]*`, no counts) plus a **length check**
+   for the UUID — behaviour every awk has had forever — and the fixture in case G is now a REALISTIC
+   `simctl` dump: the `== Devices ==` header, a `-- tvOS 26.5 --` section, and an iPhone present that the
+   tvOS family filter must *not* match. **A fixture that is easier than reality tests the wrong thing.**
+2. ⚠⚠ **And the rewrite introduced its own bug, which the harness DID catch (8 of 10 cases went red):** the
+   first awk version stripped the trailing *state* group but never the *uuid* group, so `iPhone 17 Pro` came
+   back as `iPhone 17 Pro (2222…)` — every `grep -F "NAME ("` then missed and the install step vanished
+   again, for a completely different reason. Two faults in the same five lines, and the gate earned its
+   keep on the second.
+3. ⚠ **The failure is now SELF-DESCRIBING.** When no device is found the script prints the raw
+   `simctl list devices available` output, because an empty name cannot distinguish *"this Mac has no such
+   device"* from *"our parsing found no device"* — and those need opposite fixes. His first report cost a
+   round trip precisely because the script said only `matching ''`.
+
+⚠ Also learned: `git push` from this sandbox is **rejected as non-fast-forward whenever he has pushed in
+between** — the sandbox copy is behind his commit, and the fix is `git fetch && git rebase
+origin/feat/tvos-client` before pushing, every time, without exception. It costs a push and a re-push if
+skipped, and the second push is the one that lands.
+
 ### ⚠ What is NOT verified — and it is most of the app
 
 **Everything UI.** No SwiftUI exists on Linux to stub, so the views have **never been compiled**, let

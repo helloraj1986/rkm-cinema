@@ -1,4 +1,4 @@
-## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-19, session 8) · branch **`feat/tvos-client`** — cut from `dev` (35ddc0e) and pushed, ⚠ **NOT merged** · ⚠ **the working tree is on THAT branch**, so that is what `.\rkm-cinema.ps1 apply` would build — and **nothing needs `apply`**: no file under `backend/`, `frontend/` or `nginx/` changed this session
+## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-19, session 8) · branch **`feat/tvos-client`** — cut from `dev` (35ddc0e), pushed, ⚠ **NOT merged** · ✅ **PHASE A IS VERIFIED ON HIS SIMULATOR** — screens 0–2 work end to end (Part 4) · ⚠ **the working tree is on THAT branch**, so that is what `.\rkm-cinema.ps1 apply` would build — and **nothing needs `apply`**: no file under `backend/`, `frontend/` or `nginx/` changed this session
 
 **Say this first:** *"continue rkm-cinema — pick up the RESUME-HERE block, we're on the tvOS app."*
 
@@ -166,6 +166,30 @@ faults, and one of them was ours:
 must be checked for focus participation before it is trusted**, because on a TV a stray focus stop is a
 control the user cannot escape.
 
+### ✅ Part 4 — PHASE A ACCEPTED ON HIS MACHINE (screenshot, 2026-09-19)
+
+His round produced the screen this phase existed to produce, and every value on it is now a verified claim
+rather than something written down:
+
+| On screen | What it verifies |
+|---|---|
+| `http://rkm-hp.tail8d5e8.ts.net:8124` reached, address **pre-filled** | the ATS declaration landed — plain `http://` over a **tailnet NAME** (not a LAN IP), which is exactly the case that broke on iOS when a second ATS key was present |
+| **Signed in as `rkm`** | delegated Jellyfin login worked, and the session cookie was accepted from `URLSession`'s shared store |
+| **Watching as `sharanya`** | ⚠ **the profile switch worked** — the one call that cannot be faked: `POST /api/auth/profile` made Jellyfin authenticate AS that profile, and `/api/auth/me` read it back |
+| `Profile selected: yes` | state came from the SERVER's answer rather than assembled locally — the `SessionStore` rule |
+| The focus ring on **Change profile**, arrows moving between the three buttons | the focus engine works once the HUD stops competing with it (Part 3a) |
+
+⚠ `signed in as rkm` + `watching as sharanya` is precisely the state `api/session.py`'s identity seam exists
+for — **`on_own_profile == false`**, the device holding the administrator's session while a household member
+watches. It is also the state a wrong implementation gets silently wrong, by serving the administrator's
+library to whoever is in the room. Worth naming on the acceptance line.
+
+⚠ **Unexplained, carried forward:** a thin strip of small monospaced text at the very top-left of the app area,
+~58% of the width. It is **not** the HUD (the round was launched *without* `-RKMDebugHUD YES`, and the panel
+would be a large dark box). Unidentified. Cosmetic, affects no acceptance item — but an unexplained mark on a
+screenshot is evidence, so it is recorded rather than forgotten: the next session should ask whether it also
+appears on a **real Apple TV**, where there is no Simulator chrome to blame.
+
 ### ⚠ What is NOT verified — and it is most of the app
 
 **Everything UI.** No SwiftUI exists on Linux to stub, so the views have **never been compiled**, let
@@ -179,12 +203,19 @@ choice, not an oversight, and it is the reason the code reads plainer than its i
 
 ### ▶ THE NEXT ACTION, in order
 
-1. **He creates the tvOS project once** — `apple/tvos/README.md` §1, steps 1–7 (scratch folder → move only
-   the `.xcodeproj` → `INFOPLIST_FILE` = `Config/Info.plist` → `GENERATE_INFOPLIST_FILE` = `NO` →
-   `TVOS_DEPLOYMENT_TARGET` = `17.0` → **shared scheme** → Add Local Package `apple/Shared` → commit+push).
-2. Then, one command per round: `cd ~/dev/rkm-cinema && ./apple/scripts/mac-round.sh tvos --sim -RKMDebugHUD YES`
-3. **Paste the short summary back** (errors first, then the tail) plus **a screenshot with the HUD on**.
-4. Phase B (Home · Browse · detail · posters) after that round, and Phase C (the player) only after B.
+1. ⚠ **THE MERGE IS HIS CALL AND IT IS OUTSTANDING.** `feat/tvos-client` is Phase-A-complete and verified on
+   his simulator; it is **not merged to `dev`**. Nothing outside `apple/` changed, so merging cannot affect
+   the running stack — but he asks for merges, so ask rather than assume.
+2. **Then Phase B** — Home (Continue Watching / Recently Added), Browse (folders → items), item detail,
+   posters. ⚠ This is where the **focus engine becomes the work**, not a fix-up: the web app's hover menus,
+   `PopupMenu`, `Dialog` and its pointer-capture seek bar all need focusable equivalents, and the poster grid
+   is a 2-D focus grid that must be designed rather than inherited. New contract models for
+   `GET /api/library/*` and `GET /api/jellyfin/detail`, checked by `check-tvos-models.py`.
+3. **Round commands** — clean screen vs diagnostics:
+   `./apple/scripts/mac-round.sh tvos --sim` · `./apple/scripts/mac-round.sh tvos --sim -RKMDebugHUD YES`
+4. ⚠ **To type on the tvOS Simulator he must connect the Mac keyboard**: click the simulator window first,
+   then **I/O → Keyboard → Connect Hardware Keyboard** (⇧⌘K). The mouse does nothing on tvOS — arrows =
+   remote swipes, Return = Select, Esc = Menu. Both learned the slow way this session (Part 3a).
 
 ## ⚠ HISTORY — session 7 (2026-09-19): the cold-launch offline shell on `feat/offline-cold-launch`. ⚠ **NOT merged, and no longer the branch in the tree** — carry its device items forward from NEXT STEPS below; nothing in it was dropped.
 

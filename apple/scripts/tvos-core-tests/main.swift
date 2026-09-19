@@ -418,6 +418,13 @@ checkEqual(HomeRules.cardStateText(item("f", ", \"played\": true, \"runtime\": 6
            "⚠ a FINISHED title says Watched beside its full bar, not nothing at all")
 checkEqual(HomeRules.cardStateText(item("s", ", \"type\": \"tv\", \"runtime\": 600, \"playback_position\": 30")!), "",
            "⚠ a part-watched SERIES gets no chip — the bar says in progress, and Watched would be a lie")
+// ⚠⚠ **THE FIXTURE THAT MAKES THE `fraction < 1` BRANCH LOAD-BEARING.** With `played` false the check above
+// passes whether the branch exists or not — which the falsification gate caught (the mutation reverting the
+// branch stayed GREEN). A SERIES that Jellyfin marks PLAYED while an episode is part-watched is the real case:
+// the fraction is partial, there is no honest countdown, and the branch is the only thing standing between it
+// and a `Watched` chip sitting on a 5 % bar.
+checkEqual(HomeRules.cardStateText(item("s2", ", \"type\": \"tv\", \"runtime\": 600, \"playback_position\": 30, \"played\": true")!), "",
+           "⚠ a part-watched SERIES Jellyfin also marks played gets no chip either")
 checkEqual(HomeRules.cardStateText(item("q", ", \"runtime\": 600")!), "",
            "a title nobody has started says nothing")
 

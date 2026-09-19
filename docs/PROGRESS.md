@@ -1,10 +1,13 @@
-## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-19, session 8) · branch **`feat/tvos-client`** — cut from `dev` (35ddc0e), pushed, ⚠ **NOT merged** · ✅ **PHASE A IS VERIFIED ON HIS SIMULATOR** — screens 0–2 work end to end (Part 4) · ⚠ **the working tree is on THAT branch**, so that is what `.\rkm-cinema.ps1 apply` would build — and **nothing needs `apply`**: no file under `backend/`, `frontend/` or `nginx/` changed this session
+## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-19) · ✅ **PHASE A OF THE tvOS CLIENT IS MERGED TO `dev`** and verified on his Apple TV simulator · ⚠ **the working tree is on `dev`** (`be2072a`) · **next branch: `feat/tvos-library`, cut from `dev`** · **nothing needs `apply`** — no file under `backend/`, `frontend/` or `nginx/` has changed
 
 **Say this first:** *"continue rkm-cinema — pick up the RESUME-HERE block, we're on the tvOS app."*
 
-⚠ **This session's work is worth nothing until it has been built on his Mac, and it needs ONE thing from
-him that no agent can do: the Xcode project.** `apple/tvos/README.md` §1 is that step, written out. Until
-it exists, `mac-round.sh tvos` correctly refuses with `Project not found: apple/tvos/RKMCinemaTV.xcodeproj`.
+⚠ **The Xcode project exists now, and Phase A is accepted on his hardware** (Part 4). His one-time GUI
+work is DONE — the project, `INFOPLIST_FILE`, the shared scheme and the local package are all committed, so
+every round from here is one command and no Xcode GUI. `apple/tvos/README.md` §2 has it.
+
+⚠ **His instruction, 2026-09-19: every RESUME-HERE block must carry an explicit "WHAT WILL BE DONE" plan** —
+not just the next action. §*What will be done* below is that plan, and it is what the next session executes.
 
 ### What he asked for
 
@@ -190,32 +193,111 @@ would be a large dark box). Unidentified. Cosmetic, affects no acceptance item �
 screenshot is evidence, so it is recorded rather than forgotten: the next session should ask whether it also
 appears on a **real Apple TV**, where there is no Simulator chrome to blame.
 
-### ⚠ What is NOT verified — and it is most of the app
+### ⚠ What is NOT verified — AFTER Phase A (this section was rewritten: it used to say "everything UI")
 
-**Everything UI.** No SwiftUI exists on Linux to stub, so the views have **never been compiled**, let
-alone run: the profile grid, the password overlay, the focus behaviour of every screen, whether the
-remote's Back is right, and the tvOS type scale. They deliberately use only APIs available on tvOS 15+
-and **omit every iOS-only modifier** (`keyboardType`, `textContentType`, `submitLabel`,
-`textInputAutocapitalization`, `autocorrectionDisabled`, `textSelection`) — that avoidance is a design
-choice, not an oversight, and it is the reason the code reads plainer than its iOS twin.
+**Phase A's own screens are now verified on his hardware** (Part 4): they compile, they render, the focus
+ring moves, and the address → sign-in → profile-switch path works end to end. What remains unverified is
+everything Phase A did not contain:
 
-⚠ The focus engine is the single largest unknown, exactly as `APPLE_CLIENTS_PLAN.md` §4.5 predicted.
+* **Every Phase B screen** — Home, Browse, item detail, artwork. No SwiftUI exists on Linux to stub, so
+  Phase B's views will again be *written, never compiled here* until his round. The `check-apple-typecheck.sh`
+  tvOS loop covers the six portable files only, and the SwiftUI views are deliberately outside it.
+* **The focus engine at grid scale.** Phase A proved focus works between three buttons and two fields. A
+  poster wall is a 2-D focus grid with scrolling — a different problem, and `APPLE_CLIENTS_PLAN.md` §4.5
+  calls it the thing that costs the time.
+* **Artwork over the session cookie.** `GET /api/jellyfin/poster` is session-scoped; whether the image
+  pipeline (whatever we choose in B0) sends the cookie is unproven, and a poster wall with no posters looks
+  exactly like a broken screen.
+* **Playback** — the whole of Phase C, including the one backend change this app will ever need (B1–B3).
+* **Real Apple TV hardware.** Everything so far is the simulator. The top-left text strip in Part 4's
+  screenshot is still unexplained.
 
-### ▶ THE NEXT ACTION, in order
+### ▶ WHAT WILL BE DONE — the plan the next session executes, in order
 
-1. ⚠ **THE MERGE IS HIS CALL AND IT IS OUTSTANDING.** `feat/tvos-client` is Phase-A-complete and verified on
-   his simulator; it is **not merged to `dev`**. Nothing outside `apple/` changed, so merging cannot affect
-   the running stack — but he asks for merges, so ask rather than assume.
-2. **Then Phase B** — Home (Continue Watching / Recently Added), Browse (folders → items), item detail,
-   posters. ⚠ This is where the **focus engine becomes the work**, not a fix-up: the web app's hover menus,
-   `PopupMenu`, `Dialog` and its pointer-capture seek bar all need focusable equivalents, and the poster grid
-   is a 2-D focus grid that must be designed rather than inherited. New contract models for
-   `GET /api/library/*` and `GET /api/jellyfin/detail`, checked by `check-tvos-models.py`.
-3. **Round commands** — clean screen vs diagnostics:
-   `./apple/scripts/mac-round.sh tvos --sim` · `./apple/scripts/mac-round.sh tvos --sim -RKMDebugHUD YES`
-4. ⚠ **To type on the tvOS Simulator he must connect the Mac keyboard**: click the simulator window first,
-   then **I/O → Keyboard → Connect Hardware Keyboard** (⇧⌘K). The mouse does nothing on tvOS — arrows =
-   remote swipes, Return = Select, Esc = Menu. Both learned the slow way this session (Part 3a).
+**Phase A is closed. Phase B is next, and it changes the shape of the work: A proved the plumbing, B is
+where the focus engine stops being a fix-up and becomes the design.**
+
+#### B0 — THE FIRST TASK IS A DECISION, AND IT IS NOT CODE ⚠⚠
+
+**The contract does not describe the item shape, and Phase B is entirely about items.** Read from
+`docs/api/openapi.v1.json` on 2026-09-19:
+
+| Where | What the contract says | Consequence for tvOS |
+|---|---|---|
+| `GET /api/library/folders` → `LibrariesResponse` | `folders`: `LibraryFolder[]` (**typed**), `libraries`: `ConfiguredLibrary[]` (**typed**) | ✅ Browse's folder list is contract-checkable as-is |
+| `GET /api/library/folders/{id}/items` → `FolderItemsResponse.items` | `array` of `object` with `additionalProperties: true` | ❌ **the poster/item shape is UNDOCUMENTED** |
+| `GET /api/library` → `LibraryResponse.recent` | same — untyped objects | ❌ same |
+| `continue-watching`, `recently-watched`, `series/{id}/episodes`, `jellyfin/detail`, `jellyfin/poster` | **no documented 200 schema at all** | ❌ nothing to check against |
+
+⚠ So `check-tvos-models.py`'s rules cannot cover a single Phase B model as written: **R1 fails an invented
+model, and there is no schema to point at.** Two honest options, and this must be decided deliberately
+rather than drifted into:
+
+1. **RECOMMENDED — extend the contract, additively (ADR-0001 allows only additions).** Give these routes
+   pydantic response models so one item shape is described once. This is a *backend* change, it would be
+   the second one this workstream touches, and it pays for itself twice: the tvOS models become
+   contract-checked, **and the frontend's generated TypeScript types stop being untyped `object`s** — the
+   same drift the contract exists to prevent is currently unguarded on the web side too.
+2. **Weaker — carry the item model outside the contract**, declared in `NON_CONTRACT_MODELS` with the reason.
+   Honest and fast, but Phase B would then be the one part of this app with no wire-format gate at all.
+
+⚠ Do not start B1 without settling B0, because the model's field list *is* the decision.
+
+#### B1 — models and gate
+Types for the item shape, hand-written beside `AuthModels.swift` with explicit `CodingKeys`; extend
+`check-tvos-models.py` with them (and, if B0 chose option 1, the new schemas). ⚠ Also add the **artwork**
+question: `GET /api/jellyfin/poster?id=…` is session-scoped, so whatever loads images must send the session
+cookie — `AsyncImage` shares `URLSession`'s cookie store, which is the cheapest option to try first, but a
+poster wall with no posters looks identical to a broken screen, so it needs its own log line.
+
+#### B2 — Home: two rows, horizontally scrolling
+`GET /api/library/continue-watching` and `/recently-watched` (or `/api/library`'s `recent`). ⚠ Design for
+focus FIRST: a row is a 1-D focus path, the card grows on focus, and the row scrolls to keep the focused
+card visible. ⚠ **No hover, no pointer** — everything the web app does on hover must be on focus or on a
+button. Backend items and progress bars are what make this screen worth having; a poster wall alone is not.
+
+#### B3 — Browse: the 2-D focus grid
+`GET /api/library/folders` → a folder → `GET /api/library/folders/{id}/items`. ⚠ This is the focus
+engine's hard case: a grid needs row/column memory so that moving down from the middle of a row stays in
+the same column, and the grid must cap what it draws. ⚠ Reuse the iOS lesson: anything drawn OVER the grid
+(the debug HUD — already inert) must be checked for focus participation before it is trusted.
+
+#### B4 — Item detail: the read-only half
+`GET /api/jellyfin/detail?id=…`, plus episodes for a series via `/series/{id}/episodes`. **Play is a
+placeholder in B** — it is Phase C — and the screen must say so rather than doing nothing. ⚠ Deliberately
+NOT in scope: Request/download, Household admin, subtitle vendor search, global search (`APPLE_CLIENTS_PLAN.md`
+§4.1 — TV is a viewing surface).
+
+#### B5 — the round, and what to send back
+`./apple/scripts/mac-round.sh tvos --sim` (clean) or `… -RKMDebugHUD YES` (diagnostics). Send the short
+summary **and a screenshot**. ⚠ To type anything on the simulator: click the simulator window first, then
+**I/O → Keyboard → Connect Hardware Keyboard** (⇧⌘K); the mouse does nothing on tvOS (arrows = swipes,
+Return = Select, Esc = Menu).
+
+#### Phase C (after B) — the player, and the ONLY backend change this app needs
+`AVPlayer` + `GET /api/jellyfin/hls/{id}/master.m3u8`, resume and progress reporting, plus **B1–B3**: return
+a `session_token` from login, accept it in `api/session.py::session_context_from_request`, and inject it
+into each rewritten HLS URI. ⚠ Auth is cookie-only today (verified `backend/api/session.py:236`) and
+**playback must not be bet on cookie propagation to segment requests**. Needs its own ADR. ⚠ Log
+`AVPlayerItem.status`, `accessLog()` and `errorLog()` — that pair is the entire diagnosis for an HLS
+problem, and on a TV there is no other way to see it. ⚠ Apple silicon decodes HEVC **and** EAC3 in
+hardware, so this client can ask for `mode=remux` far more often than the browser can: **less** transcoder
+load, not more.
+
+#### Phase D (last) — focus and distance polish
+At 1080p from three metres, with a screenshot for each screen.
+
+#### Carried forward — small, real, not forgotten
+* ⚠ **The unexplained text strip** at the top-left of Part 4's screenshot (Part 4 has the detail). It is not
+  the HUD. Ask whether it appears on **real Apple TV hardware**, where there is no Simulator chrome to blame.
+* **Real Apple TV** — the simulator is not the target. Deployment needs a team set in Xcode (free =
+  7 days at a time) and `TVOS_DEPLOYMENT_TARGET` is currently **17.6** (Xcode 26.6's SDK floor), which
+  installs on any TV on tvOS 18+.
+* **`RKMServerKit` is linked TWICE** in the target (two identical product dependencies). Harmless — the
+  linker ignores the duplicate — but if a link warning ever appears, that is the first thing to remove:
+  target → General → Frameworks, Libraries, and Embedded Content.
+* **The tvOS app icon is an empty set** named to match the template's build setting. Cosmetic; Xcode can
+  generate one in one click, and it is NOT needed to run on a simulator.
 
 ## ⚠ HISTORY — session 7 (2026-09-19): the cold-launch offline shell on `feat/offline-cold-launch`. ⚠ **NOT merged, and no longer the branch in the tree** — carry its device items forward from NEXT STEPS below; nothing in it was dropped.
 

@@ -1,7 +1,10 @@
 # tvOS UX — the Profile Switcher and the Home — plan
 
 ⚠ **Every number and every file path in this file came from a command run on 2026-09-19**, on branch
-`feat/tvos-ux` cut from `dev` (`0d75e1f`). The design input is his, and it is committed alongside this plan:
+`feat/tvos-ux` cut from `dev` (`0d75e1f`) — measured here, or computed here (the WCAG ratios in §2b).
+**Claims about Apple's platform are quoted from Apple's own documentation, cited where they appear** — they are
+not recollection, and none of them has been tested on this machine. The design input is his, and it is committed
+alongside this plan:
 
 * `tvos_ux/1. UserProfileSelection_HomePage/rkm-cinema-tvos-concept.html` — the clickable prototype (572 lines)
 * `tvos_ux/1. UserProfileSelection_HomePage/rkm-cinema-tvos-buildspec.md` — the build spec (219 lines)
@@ -54,9 +57,22 @@ rest in our favour:
   focus moves to them … consider applying these effects to custom controls … by adopting the standard focus
   APIs."* — which is §3's rule arriving from Apple's side: **use `.buttonStyle(.card)` and the glass is free.**
 
-⇒ The decision is not "Liquid Glass or not", it is **whether to raise the floor to 26.0** (one code path, drops
-tvOS 17–25) **or keep 17.6 with `#available`** (two paths, nothing dropped). This plan recommends the second,
-and it is his call (§3).
+⇒ **DECIDED (his call, 2026-09-19): RAISE THE FLOOR TO 26.0.** One code path, no `#available` branching, and
+Liquid Glass unconditionally — his Apple TV is a **4K 2nd generation or newer**, which is exactly the hardware
+Apple says gets the glass.
+
+⚠ **The cost, stated plainly, because it is a real one:** the app will not install on tvOS 17–25, so the 17.6
+floor this client has shipped with through Phases A and B is gone. If an older Apple TV ever appears in the
+house, this is the line that broke it.
+
+⚠ **And it is a `project.pbxproj` edit.** That file carries a standing warning in this repo — *never touch it* —
+but that rule is about **file membership** under synchronized groups, not build settings. A deployment-target
+change (four occurrences of `TVOS_DEPLOYMENT_TARGET`) is a legitimate build-setting edit and is the correct way
+to make it; it is not the thing the rule forbids.
+
+⚠⚠ **It is also the phase's one change that CANNOT be verified in this sandbox.** There is no Xcode here, so a
+new deployment floor can only be proven by his Mac build — and it can surface deprecations the 17.6 floor was
+hiding. That makes it a **first thing the round must confirm**, not a footnote.
 
 **3. Both screens already exist, and both were accepted on his simulator.** This is a **redesign with a
 measurable delta**, not a new build:
@@ -101,11 +117,11 @@ tested and gated — `HomeRules.recentlyAddedItems` and `HomeRailLimit.recentlyA
 
 ⚠⚠ **Two real hazards here, and both are the repo's most-repeated defect:**
 
-* **Vocabulary.** The app already has one set of words for exactly these states; the spec introduces a second.
-  That is *"a second vocabulary for one idea"* — the same fault `HomeSnapshot`'s own comment warns about for rail
-  headings. **One set wins**, and the honest default is the app's existing strings, which the spec's table
-  simplifies into something the server does not exactly say (`"Profile · password"` cannot distinguish a
-  disabled profile from a plain one, and the app's `"Disabled — cannot be selected"` can).
+* **Vocabulary.** ⚠ **DECIDED (his call, 2026-09-19): the app's existing words win** — `"Password protected"`,
+  `"Administrator — asks for a password"`, `"No password"`, `"Disabled — cannot be selected"`. The spec's
+  `"Profile · password"` / `"Administrator · password"` set is **not adopted**, and for the reason this repo
+  keeps re-learning: two vocabularies for one idea is the fault `HomeSnapshot`'s own comment warns about for rail
+  headings — and the spec's set cannot express the disabled case at all, which the app's can.
 * **The spec's example data is HARDCODED and must not be.** It shows `meenu`/`raj`/`rkm` locked and `sharanya`
   not, and labels `rkm` `Administrator`. Those facts come from the **server** — `profile.has_password` and
   `profile.is_admin` — and `ProfilesView` already reads them. Hardcoding the example would ship a screen that
@@ -199,6 +215,16 @@ distance makes small text harder still. Derived fix, **same hue and saturation, 
 
 ⇒ **`#81858f` clears AA on every surface the app puts it on**, and stays recognisably the same grey.
 
+⚠ **DECIDED (his call, 2026-09-19): tvOS only — the web keeps `#70747e`.** ⚠ The consequence to hold onto: the
+tvOS app now **deliberately holds a value the web app does not**, which is precisely what §2's drift gate must
+permit. So the gate covers the **generated** `DesignTokens.swift` only; `TVTokens.swift` is hand-written and
+lives outside it, and its entire job is to carry justified differences. A value that migrates from the second
+file into the first stops being a tvOS decision and becomes a brand change.
+
+⚠ Worth telling the web side eventually anyway: `#70747e` is a genuine accessibility miss *there* — it is the
+app's own caption colour, below AA on every surface. Fixing it on the phone is a separate, one-line change, and
+this plan deliberately does not make it (nothing here writes `frontend/`).
+
 ⚠ **What is deliberately NOT in this layer, and why:**
 * **the brand hue.** `#ffc400` at 12.47:1 is not a contrast problem, and a tvOS-only accent would make the TV app
   a *different product* from the one on the phone. The spec's `#F2B93A` was not a tvOS adjustment — it was the
@@ -254,8 +280,14 @@ platform's focus lift first, hand-rolled only where the platform has nothing.
 **plus the hand-written `Design/TVTokens.swift`** (the tvOS-only layer of §2b — the adjusted `--text-muted` and
 the spacing/safe-margin/type-scale constants that were never in the CSS), plus a check that regenerating is a
 no-op. ⚠ The tvOS project uses **synchronized groups** — a file's presence IS its target membership, so **never
-touch `project.pbxproj`**; adding the file is enough. Add both to `check-apple-typecheck.sh`'s list in the same
-commit.
+touch `project.pbxproj`** for membership; adding the file is enough. Add both to `check-apple-typecheck.sh`'s
+list in the same commit.
+
+⚠ **U1 also carries the two changes that are not tokens**, because both are "tell the truth about the build"
+work and belong with the build settings: the **deployment-target bump to 26.0** (§0.2, the one legitimate
+`project.pbxproj` edit) and the **`README.md:73` fix** (`17.0` → the real value). ⚠ The target bump is the
+phase's only change **no gate here can verify** — no Xcode in this sandbox — so it is confirmed by his Mac build
+and nothing else.
 
 ### U2 — the Profile Switcher
 The delta in §1a, on the existing accepted screen: the circular initials avatar, the lock badge, the row, the
@@ -283,9 +315,10 @@ A **screen** round, **without** `-RKMDebugHUD YES`. Falsifiers, written before t
 | F4 | moving down a shelf and back **keeps the card's column** | focus jumps to the first card — the platform is NOT doing it, which means a hand-rolled map is genuinely needed after all |
 | F5 | a real poster draws in the hero and the rail (**B4's falsifier, still unmeasured**) | the "no photo" marker |
 | F6 | the top bar dims when focus leaves it | it stays at full opacity — then §3's fallback applies |
+| F7 | **the build succeeds at the new 26.0 floor**, and a focused card shows Liquid Glass | `BUILD FAILED`, or a deprecation the 17.6 floor was hiding — ⚠ this is the ONLY change in the phase the sandbox cannot test (§0.2) |
 
 ⚠ **What the round CANNOT prove:** nothing about real Apple TV hardware (the simulator is not an Apple TV), and
-**a failed build proves nothing about the layouts** — a `BUILD FAILED` is a build round, and F1–F6 were never
+**a failed build proves nothing about the layouts** — a `BUILD FAILED` is a build round, and F1–F7 were never
 attempted.
 
 ---
@@ -294,9 +327,9 @@ attempted.
 
 The player (Phase C — its C1 is already built and parked on `feat/tvos-player`, see below) · **the web UI**
 (nothing here changes `frontend/`; the CSS is *read* by the token generator, never written) · subtitles · search
-· the Discover/Suggest/Watchlist **screens** (they become tabs, which is all §1c asks for) · the tvOS app icon ·
-**raising the deployment target to 26.0** — it is not needed for Liquid Glass (§0.2, `#available` covers it) and
-it is his call · `GlassEffectContainer` for custom controls beyond the platform's own focus treatment.
+· the Discover/Suggest/Watchlist **screens** (they become tabs, which is all §1c asks for) · the tvOS app icon
+· **Liquid Glass beyond the platform's own focus treatment** — no `GlassEffectContainer` and no custom glass
+until a screen actually needs a shape the system will not give it (§0.2: the standard focus APIs already do it).
 
 ⚠ **README drift found while measuring, and it should be fixed in U1's commit:** `apple/tvos/README.md:73` states
 `TVOS_DEPLOYMENT_TARGET = 17.0` while the project carries **17.6**. That is this repo's "one rule in two places"

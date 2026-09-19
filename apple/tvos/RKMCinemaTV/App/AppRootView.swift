@@ -80,6 +80,12 @@ struct AppRootView: View {
             } else {
                 ConnectingView()
             }
+        case .browse:
+            if let browse = app.browse, let session = app.session {
+                BrowseView(store: browse, base: session.address.url)
+            } else {
+                ConnectingView()
+            }
         }
     }
 }

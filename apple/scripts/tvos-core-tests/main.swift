@@ -463,6 +463,106 @@ check(sentences.allSatisfy { !$0.isEmpty && $0.hasSuffix(".") },
       "every failure kind is a whole sentence")
 checkEqual(Set(sentences).count, everyKind.count, "and no two kinds share a sentence")
 
+// MARK: - Browse's rules (Phase B3)
+
+section("the library list")
+
+/// ⚠ Built by DECODING, so a fixture cannot describe a shape the wire does not produce — and it must carry
+/// **every non-optional field**, which is what a real payload does. That is not pedantry: the contract
+/// `default`s `path`, `ok`, `warning`, `collection_type`, R3 accepts them as non-optional for exactly that
+/// reason, and Swift's synthesised `Decodable` does **not** apply a default from the contract — so a
+/// fixture that omits one is a fixture the server could never send. (It failed here first, loudly, with a
+/// `Fatal error: Unexpectedly found nil` on the force-unwrap below. Fix the fixture, not the model.)
+func library(_ name: String, ok: Bool, folderID: String? = nil,
+             collectionType: String = "movies", warning: String = "") -> ConfiguredLibrary? {
+    var json = "{\"name\": \"\(name)\", \"path\": \"/media/movies\", \"ok\": \(ok), "
+        + "\"collection_type\": \"\(collectionType)\", \"warning\": \"\(warning)\""
+    if let folderID { json += ", \"folder_id\": \"\(folderID)\"" }
+    json += "}"
+    return try? JSONDecoder().decode(ConfiguredLibrary.self, from: Data(json.utf8))
+}
+
+let resolvedLib = library("Movies", ok: true, folderID: "abc")!
+// ⚠⚠ THE FIXTURE THAT MAKES THE GATE PROVABLE. `ok` false but a folder id STILL PRESENT is the case the
+// `ok &&` half exists for, and the first draft of this fixture omitted the id — so removing the gate changed
+// nothing and the falsification pass reported the rule as unpinned. A fixture that cannot tell a rule from
+// its absence tests nothing, which is exactly what `--falsify` is for.
+let unresolvedLib = library("Old TV", ok: false, folderID: "ghost", collectionType: "tvshows",
+                            warning: "Path not found on the server")!
+// …and the plain case: no id at all.
+let noFolderLib = library("Music", ok: false, folderID: nil)!
+
+let navEntries = BrowseRules.libraryNavEntries([resolvedLib, unresolvedLib])
+checkEqual(navEntries.count, 2, "both libraries get a row")
+checkEqual(navEntries.first?.isOpenable, true, "a resolved library is openable")
+checkEqual(navEntries.first?.folderID, "abc", "and carries its folder id")
+checkEqual(navEntries.first?.icon, .film, "a `movies` library gets the film icon")
+// ⚠⚠ THE RULE HIS iPAD REPORT BOUGHT (2026-09-14): an unresolved library is KEPT, with its warning — never
+// dropped, which is how a library "disappears" on one surface and not another.
+checkEqual(navEntries.last?.isOpenable, false, "an unresolved library is NOT openable")
+checkEqual(navEntries.last?.folderID, nil,
+           "…and has no folder to open, even though the payload carried one")
+checkEqual(BrowseRules.libraryNavEntries([noFolderLib]).first?.folderID, nil,
+           "a library with no folder id has none to open")
+checkEqual(navEntries.last?.warning, "Path not found on the server", "…and keeps the server's own warning")
+checkEqual(navEntries.last?.name, "Old TV", "…and is still listed by name")
+check(navEntries.last?.id.hasPrefix("unresolved:") ?? false, "an unresolved row has its own stable identity")
+checkEqual(BrowseRules.libraryNavEntries(nil).count, 0, "no libraries is no rows, not a crash")
+let noWarning = BrowseRules.libraryNavEntries([library("Mystery", ok: false)!])
+checkEqual(noWarning.first?.warning, "Library unavailable",
+           "an unresolved library with no warning still says why")
+
+checkEqual(LibraryIcon.forCollectionType("Movies"), .film, "Movies is the film icon")
+checkEqual(LibraryIcon.forCollectionType("tvshows"), .tv, "tvshows is the tv icon")
+checkEqual(LibraryIcon.forCollectionType("TV"), .tv, "the type match is case-insensitive")
+checkEqual(LibraryIcon.forCollectionType("music"), .folder, "an unknown type falls back to a folder")
+checkEqual(LibraryIcon.forCollectionType(""), .folder, "…and so does an empty one")
+
+// ⚠ The server's own folders are the fallback ONLY when nothing is configured — a tvOS-only decision,
+// recorded in `BrowseRules`. With libraries configured (his server), the TV and the phone agree exactly.
+let serverFolder = try! JSONDecoder().decode(LibraryFolder.self,
+                                            from: Data(#"{ "id": "srv1", "name": "Movies", "collection_type": "movies", "path": "/media/movies" }"#.utf8))
+checkEqual(BrowseRules.browseEntries(libraries: [resolvedLib], serverFolders: [serverFolder]).first?.folderID,
+           "abc", "configured libraries win when there are any")
+checkEqual(BrowseRules.browseEntries(libraries: [], serverFolders: [serverFolder]).count, 1,
+           "with nothing configured, the server's own folders are shown")
+checkEqual(BrowseRules.browseEntries(libraries: nil, serverFolders: nil).count, 0,
+           "with neither, there is nothing to show")
+checkEqual(BrowseRules.libraryByFolderID([resolvedLib], folderID: "abc")?.name, "Movies",
+           "a folder is titled by its library")
+checkEqual(BrowseRules.libraryByFolderID([resolvedLib], folderID: nil)?.name, nil,
+           "no folder id means no library name")
+
+checkEqual(BrowseRules.folderCountLabel(0), "0 titles", "zero titles is plural")
+checkEqual(BrowseRules.folderCountLabel(1), "1 title", "one title is singular")
+checkEqual(BrowseRules.folderCountLabel(6), "6 titles", "six titles is plural")
+
+section("the wall, and how much of it is drawn")
+
+checkEqual(BrowseRules.wallItems([cwRow, item("")!]).count, 1, "a wall drops a row with no id")
+checkEqual(BrowseRules.wallItems(nil).count, 0, "no payload is no rows")
+
+// ⚠ 48 and 48 are the WEB APP's numbers (`FIRST_PAINT_CARDS` / `MOUNT_STEP`), mirrored. A 400-title wall
+// must not be drawn in one go — on a TV every card also starts an image request and joins the focus engine.
+checkEqual(BrowseRules.Mount.firstCount(10), 10, "a small wall mounts whole")
+checkEqual(BrowseRules.Mount.firstCount(100), 48, "a big wall mounts the first paint only")
+checkEqual(BrowseRules.Mount.firstCount(0), 0, "an empty wall mounts nothing")
+checkEqual(BrowseRules.Mount.firstCount(-5), 0, "a nonsense total mounts nothing")
+
+checkEqual(BrowseRules.Mount.mountedCount(100, extra: 0), 48, "nothing grown: the first paint")
+checkEqual(BrowseRules.Mount.mountedCount(100, extra: 48), 96, "one step grown: 96 of 100")
+checkEqual(BrowseRules.Mount.mountedCount(100, extra: 999), 100, "growth is capped at the wall's length")
+checkEqual(BrowseRules.Mount.mountedCount(10, extra: 48), 10, "a small wall cannot be over-mounted")
+
+checkEqual(BrowseRules.Mount.nextExtra(0, total: 100), 48, "the first growth step is a full step")
+checkEqual(BrowseRules.Mount.nextExtra(48, total: 100), 52, "…and it stops at the room left, not past it")
+checkEqual(BrowseRules.Mount.nextExtra(52, total: 100), 52, "…and then it is finished")
+checkEqual(BrowseRules.Mount.nextExtra(0, total: 10), 0, "a wall already mounted has nothing to grow")
+
+checkEqual(BrowseRules.Mount.needsMore(shown: 48, total: 100), true, "48 of 100 needs more")
+checkEqual(BrowseRules.Mount.needsMore(shown: 100, total: 100), false, "100 of 100 needs nothing")
+checkEqual(BrowseRules.Mount.needsMore(shown: 0, total: 0), false, "an empty wall needs nothing")
+
 // MARK: - Report
 
 print("")

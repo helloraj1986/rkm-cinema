@@ -25,6 +25,26 @@ extension APIClient {
     func recentlyWatched(correlation: CorrelationID = .next()) async throws -> LibraryItemsResponse {
         try await get("api/library/recently-watched", correlation: correlation)
     }
+
+    /// `GET /api/library/folders` — the libraries a profile may see, plus the server's own folders.
+    ///
+    /// ⚠ **`libraries` is a SERVER-DECIDED list, and this app never filters it.** See
+    /// `BrowseRules.libraryNavEntries` — his iPad report of 2026-09-14 is the reason that rule exists, and
+    /// the TV must not reintroduce the second, silently-narrower filter the mobile bar used to apply.
+    func libraryFolders(correlation: CorrelationID = .next()) async throws -> LibrariesResponse {
+        try await get("api/library/folders", correlation: correlation)
+    }
+
+    /// `GET /api/library/folders/{id}/items` — ONE folder's poster wall.
+    ///
+    /// ⚠ The path is INTERPOLATED, and that is deliberate: `check-tvos-models.py` (R4) turns a literal with
+    /// an interpolation into `.../folders/[^/]+/items` and requires it to match a real contract path
+    /// exactly, so a typo in the static parts still fails the round. (Before B3 there was no parameterised
+    /// endpoint in this app at all; `POST /api/jellyfin/hls/{id}/master.m3u8` arrives in Phase C and gets
+    /// the same treatment.)
+    func folderItems(folderID: String, correlation: CorrelationID = .next()) async throws -> FolderItemsResponse {
+        try await get("api/library/folders/\(folderID)/items", correlation: correlation)
+    }
 }
 
 // ⚠ The failure COPY is not here. `RowFailureKind` and `HomeRowFailure` live in `HomeRails.swift` on

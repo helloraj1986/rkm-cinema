@@ -11,8 +11,9 @@
 | **B0 — DECIDED (his call, 2026-09-19)** | **The contract is NOT extended.** Option 2. The item shape is undocumented in `openapi.v1.json` (measured: `FolderItemsResponse.items` is `array` of `object`; five routes have no 200 schema), so the shape source is instead **the frontend's own TypeScript interfaces** in `frontend/src/lib/api/client.ts`. ⚠ **No `backend/` file changes on this branch.** |
 | **B1 — BUILT + PUSHED** (`5076987`) | `Core/Models/LibraryModels.swift` and `Core/PosterURL.swift` (both portable), `check-tvos-models.py` R6/R7 (+4 mutations, 10 total), and a NEW `check-tvos-core.py` + `tvos-core-tests/main.swift` that **compiles and RUNS** the two pure sources — 68 checks, 10/10 rules falsified. |
 | **B2 — BUILT** (this commit) | **Home: Continue Watching + Recently Played on the focus engine.** `Core/HomeRails.swift` (the web app's own rules + the screen's four states — RUN here), `Core/LibraryAPI.swift`, `Core/HomeStore.swift`, `Core/PosterLoader.swift`, and `Home/{HomeView,RailView,PosterCard}.swift`. ⚠ **`Core/RailFocus.swift` was written and DELETED** — tvOS scrolls a rail to reveal focus by itself, so hand-rolled offsets would fight it; `RailView`'s header says so. ⚠ B1's open cookie question is now answered by a LOG LINE, not a guess: `PosterLoader` reports status + byte count + whether the session cookie reached the image request. |
-| **B3 — NEXT, not started** | **Browse: the 2-D focus grid** (`/api/library/folders` → a folder → `/folders/{id}/items`). ⚠ This is the focus case the platform does NOT solve for you: the grid needs row/column memory so moving down from the middle of a row stays in the same column, and it must cap what it draws. |
-| **Then B4 · B5** | Item detail (read-only, Play is a placeholder until Phase C), then the Mac round — which is when ALL of B2–B4's SwiftUI is compiled for the first time. |
+| **B3 — BUILT** (this commit) | **Browse: the library list, then one folder's poster wall.** `Core/BrowseRules.swift` (the web's own `libraryNavEntries` + the 48/48 mounting plan — RUN here), `Core/BrowseStore.swift`, `Browse/BrowseView.swift`, and `LibraryFolder`/`ConfiguredLibrary`/`LibrariesResponse` added to the models (all contract schemas, so fully gated). ⚠ **The first PARAMETERISED endpoint in the app** (`/folders/{id}/items`) needed a real R4 extension — an interpolation now becomes one path component and must match a contract path exactly. ⚠ **The 2-D grid is NOT hand-rolled**: `LazyVGrid` + focusable Buttons get column memory from the platform's focus engine, same finding as B2's deleted `RailFocus`; what the app owns is how much it draws. |
+| **B4 — NEXT, not started** | **Item detail, read-only** (`/api/jellyfin/detail` + `/series/{id}/episodes`). Play stays a placeholder until Phase C, and the screen must say so. |
+| **Then B5** | The Mac round — the first time B3's SwiftUI is ever compiled, and the round that tests the grid's column memory. |
 
 ⚠ **Two facts B1 established that the plan below does not yet say:** `FolderItemsResponse` IS a contract
 schema (only its `items` is untyped), so R3 forced `items` to be **optional** — a pydantic
@@ -105,6 +106,25 @@ He sent the debug panel on its own, cropped — **legible, and it settles the me
   unclipped route (`rk-ios.log` in the iOS notes; this is the tvOS one).
 * **What to ask for next, precisely:** shoot only once the poster cards are drawn on screen (~5 s in).
   That is the falsifier — a panel taken with cards visible that still shows no `poster` line is a real defect.
+
+### ✅ B2 IS ACCEPTED — and the last open item was CLOSED by the screenshots, not by a log line (2026-09-19)
+
+⚠⚠ **THE SESSION-COOKIE QUESTION IS ANSWERED, AND ASKING FOR THE `poster` LOG LINE WAS UNNECESSARY.**
+`GET /api/jellyfin/poster` is **session-scoped**: with no cookie the api answers `401`, and `PosterLoader`
+renders **a "no photo" marker with the reason, never an image**. His screenshots show **real poster
+artwork** — therefore the request carried the cookie and came back `2xx`. The rendered picture is *stronger*
+evidence than the log line would have been, and it was in hand from the second round. ⚠ Lesson for the next
+session: **before asking for a third round, check whether an earlier artefact already proves the claim.**
+Two extra rounds were spent re-photographing something the screen had already settled.
+
+⚠ And the panel itself was never broken: the ring's capacity is **250** (`RKMLog.init(ringCapacity:)`) and
+the HUD reported **`12 line(s) held`** — nothing had been evicted, so that frame genuinely was ~1 s into a
+launch, before `HomeStore.load()` ran. A timing artefact end to end.
+
+**B2 status: ACCEPTED on his simulator.** Verified on screen: the Home header and its four exits, the
+`Continue Watching` heading, two cards with real artwork, the web app's own meta lines, and a resume bar at
+~28%. ⚠ Not yet verified anywhere: **B3 has not been written**, an item detail screen does not exist, and
+nothing has run on real Apple TV hardware.
 
 ⚠ **The Xcode project exists now, and Phase A is accepted on his hardware** (Part 4). His one-time GUI
 work is DONE — the project, `INFOPLIST_FILE`, the shared scheme and the local package are all committed, so

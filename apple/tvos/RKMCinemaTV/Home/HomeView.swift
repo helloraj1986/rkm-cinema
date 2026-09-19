@@ -69,6 +69,11 @@ struct HomeView: View {
             }
 
             HStack(spacing: 18) {
+                // ⚠ Browse is FIRST and the only filled button in this row: on the Home screen it is the way
+                // further in, and the rest of the row is ways out. (Phase A's round is why the row exists at
+                // all — a screen whose only control is unreachable with a remote is a dead end.)
+                Button("Browse") { app.showBrowse() }
+                    .buttonStyle(.borderedProminent)
                 Button("Change profile") { Task { await app.changeProfile() } }
                 Button("Sign out") { Task { await app.signOut() } }
                 Button("Change server") { app.changeServer() }

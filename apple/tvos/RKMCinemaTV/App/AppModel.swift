@@ -36,8 +36,17 @@ final class AppModel: ObservableObject {
         case signIn
         /// Screen #2 — signed in, no profile chosen yet.
         case profiles
-        /// Screen #3+ — Phase B. For now: proof that the session works, with the ways out.
+        /// Screen #3 — Home: the Continue Watching / Recently Played rails. (Named `library` since Phase A,
+        /// when it was a placeholder; it IS the Home screen now.)
         case library
+        /// Screen #4 — Browse: the library list, then one folder's poster wall.
+        ///
+        /// ⚠ **A `TabView` is the idiomatic tvOS chrome for two side-by-side content screens, and it was
+        /// considered and NOT taken here.** It would restructure the root view that Phase A's round verified
+        /// (each screen owns one way forward and one way out), for a navigation change no round has tested.
+        /// So Browse is a peer screen reached by a button, and the tab-bar question belongs with Phase D's
+        /// polish once both screens exist on hardware.
+        case browse
     }
 
     @Published private(set) var phase: Phase = .setup
@@ -49,6 +58,11 @@ final class AppModel: ObservableObject {
     /// one mistake this app's whole identity model exists to prevent. A view-owned store could not be
     /// replaced on that transition.
     @Published private(set) var home: HomeStore?
+
+    /// ⚠ **Browse's store, built and dropped with the Home's, for the same reason** — it reads the same
+    /// profile-scoped library, so a profile switch has to rebuild it or the next viewer browses the last
+    /// one's libraries.
+    @Published private(set) var browse: BrowseStore?
     @Published private(set) var storedValueWasInvalid = false
     @Published private(set) var setupError: String?
     @Published private(set) var isConnecting = false
@@ -212,6 +226,20 @@ final class AppModel: ObservableObject {
     /// call sites setting `phase = .library` directly is how one of them eventually forgets.
     private func enterLibrary() {
         home = session.map { HomeStore(client: $0.api) }
+        browse = session.map { BrowseStore(client: $0.api) }
+        phase = .library
+    }
+
+    /// Home → Browse. ⚠ A no-op when the stores are missing rather than a phase with nothing behind it: an
+    /// empty Browse screen and a Browse that could not be built must not look the same.
+    func showBrowse() {
+        guard browse != nil else { return }
+        phase = .browse
+    }
+
+    /// Browse → Home. The same guard, the same reason.
+    func showHome() {
+        guard home != nil else { return }
         phase = .library
     }
 
@@ -226,6 +254,7 @@ final class AppModel: ObservableObject {
         // ⚠ Dropped, not kept: the rows in it belong to the session that just ended, and a store that
         // survived a sign-out is one relaunch away from rendering the last viewer's Continue Watching.
         home = nil
+        browse = nil
         phase = .signIn
     }
 
@@ -255,6 +284,7 @@ final class AppModel: ObservableObject {
         // Same reason as sign-out: a different server is a different library, and the old rows must not
         // survive the switch.
         home = nil
+        browse = nil
         phase = .setup
         setupError = nil
         typedAddress = store.address?.displayString ?? typedAddress

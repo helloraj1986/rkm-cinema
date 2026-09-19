@@ -53,6 +53,8 @@ PURE_SOURCES = [
     # be executed here: `HomeStore` and `LibraryAPI` are NOT in this list (they import `RKMServerKit`), and
     # that is the split the phase is built on — every DECISION is runnable, only I/O is not.
     TVOS / "Core" / "HomeRails.swift",
+    # Phase B3 — Browse's rules: the library list, the wall's mounting plan. Same split, same reason.
+    TVOS / "Core" / "BrowseRules.swift",
 ]
 
 HARNESS = REPO / "apple" / "scripts" / "tvos-core-tests" / "main.swift"
@@ -134,6 +136,28 @@ MUTATIONS = [
     ("the transport sentence", "HomeRails.swift",
      'return "Couldn\'t reach the server."', 'return "Error."',
      "a transport failure says the server was not reached"),
+    # ---- B3: Browse's rules
+    ("an unresolved library kept", "BrowseRules.swift",
+     "        (libraries ?? []).map { lib in", "        (libraries ?? []).filter { $0.ok }.map { lib in",
+     "an unresolved library is NOT openable"),
+    ("the openable gate", "BrowseRules.swift",
+     "let folderID = resolved ? lib.folderID : nil", "let folderID = lib.folderID",
+     "…and has no folder to open"),
+    ("the movies icon", "BrowseRules.swift",
+     'case "movies": return .film', 'case "movies": return .folder',
+     "a `movies` library gets the film icon"),
+    ("the count label plural", "BrowseRules.swift",
+     '"\\(count) title\\(count == 1 ? "" : "s")"', '"\\(count) title"',
+     "one title is singular"),
+    ("the first-paint cap", "BrowseRules.swift",
+     "static let firstPaint = 48", "static let firstPaint = 500",
+     "a big wall mounts the first paint only"),
+    ("the wall's id filter", "BrowseRules.swift",
+     "(items ?? []).filter { !$0.itemID.isEmpty }", "(items ?? [])",
+     "a wall drops a row with no id"),
+    ("the server-folders fallback", "BrowseRules.swift",
+     "if !configured.isEmpty { return configured }", "if false { return configured }",
+     "configured libraries win when there are any"),
 ]
 
 

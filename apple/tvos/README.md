@@ -143,7 +143,7 @@ bent to look like the other.
 | 1 | Sign in | `POST /api/auth/login` | **A ✅ built** |
 | 2 | Who's watching | `GET /api/auth/profiles` · `POST /api/auth/profile` · `GET /api/auth/me` | **A ✅ built** |
 | 3 | Home | `GET /api/library/continue-watching` · `/recently-watched` | **B ✅ built (B2)** |
-| 4 | Browse | `GET /api/library/folders` → `/items` | B |
+| 4 | Browse | `GET /api/library/folders` → `/items` | **B ✅ built (B3)** |
 | 5 | Item detail | `GET /api/jellyfin/detail` · `/api/status` | B |
 | 6 | Player | `GET /api/jellyfin/hls/{id}/master.m3u8` · `POST /api/jellyfin/progress` | C |
 
@@ -193,10 +193,10 @@ makes the next fix possible.
 
 ```bash
 python3 apple/scripts/check-tvos-models.py            # models + endpoints vs the frozen contract
-python3 apple/scripts/check-tvos-models.py --falsify  # 10 mutations, each must go red
+python3 apple/scripts/check-tvos-models.py --falsify  # 11 mutations, each must go red
 python3 apple/scripts/check-tvos-core.py              # RUNS the poster URL, the models + the Home rules
-python3 apple/scripts/check-tvos-core.py --falsify    # 18 rules reverted, each must go red
-TMPDIR=/root/tmp bash apple/scripts/check-apple-typecheck.sh   # compiles the 13 portable files
+python3 apple/scripts/check-tvos-core.py --falsify    # 25 rules reverted, each must go red
+TMPDIR=/root/tmp bash apple/scripts/check-apple-typecheck.sh   # compiles the 15 portable files
 python3 apple/scripts/check-imports.py apple/tvos/RKMCinemaTV  # missing imports — INCLUDING the views
 python3 apple/scripts/check-imports.py --selftest     # 6 snippets, incl. the RKMServerKit rule's edges
 bash apple/scripts/test-mac-round.sh                  # the round script, stubbed, 10 cases
@@ -220,7 +220,7 @@ wolf is worse than a gate that is honestly absent. The views stay Mac-round busi
 ⚠ **`check-tvos-core.py` is not a duplicate of the typecheck — it EXECUTES.** `swiftc -parse` and even a
 clean compile prove nothing about behaviour, so `PosterURL.swift`, `LibraryModels.swift` and
 `HomeRails.swift` are pure `Foundation` and are compiled **and run** against fixtures shaped like the real
-payloads (119 checks across B1 and B2). That is what makes the silent failures visible here instead of on
+payloads (160 checks across B1, B2 and B3). That is what makes the silent failures visible here instead of on
 the TV: a poster URL that 404s, a payload that cannot decode, and a Home whose four states are wrong —
 all three of which look like nothing at all on a screen.
 
@@ -234,9 +234,9 @@ all three of which look like nothing at all on a screen.
   (`apple/WORKFLOW.md` §7b), caught for free.
 
 **And all four gates that matter have been falsified**, not just observed green:
-`check-tvos-models.py --falsify` reverts each rule and requires the matching check to fail (10/10 red,
-including the two Phase B rules R6/R7 against the frontend's own interfaces); `check-tvos-core.py
---falsify` does the same for the 18 rules the running harness pins (18/18 red — and it earned its keep on
+`check-tvos-models.py --falsify` reverts each rule and requires the matching check to fail (11/11 red,
+including the two Phase B rules R6/R7 and the interpolated-endpoint case against the frontend's own interfaces); `check-tvos-core.py
+--falsify` does the same for the 25 rules the running harness pins (25/25 red — and it earned its keep on
 its first B2 run by finding a TAUTOLOGY in the harness itself); `test-mac-round.sh` asserts on the
 stubs' call log, and goes red against the previous revision of
 `mac-round.sh` on two separate faults: the truncating device-name extraction fails 2 of its 10 cases, and

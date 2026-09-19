@@ -235,3 +235,73 @@ struct EpisodesResponse: Decodable, Equatable {
         case episodes
     }
 }
+
+// MARK: - The library list (Phase B3 — Browse)
+
+/// `#/components/schemas/LibraryFolder` — one library folder the media server actually exposes.
+///
+/// ⚠ **This one IS a contract schema**, so R1-R3 check it and there is no second source to name. `id` and
+/// `name` are the only `required` fields; `collection_type` and `path` carry `default`s in the contract, so
+/// they may be non-optional here (a defaulted scalar is a promise — the same reading `AuthModels` uses).
+struct LibraryFolder: Decodable, Equatable, Identifiable {
+    let id: String
+    let name: String
+    let collectionType: String
+    let path: String
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case collectionType = "collection_type"
+        case path
+    }
+}
+
+/// `#/components/schemas/ConfiguredLibrary` — one library from the repo `.env`, resolved against the server.
+///
+/// ⚠⚠ **`folder_id` is OPTIONAL and that is load-bearing, not tidiness.** It is `string | null` in the
+/// contract AND is neither `required` nor defaulted — so a server that omitted it must not fail the decode.
+/// It is also the field that says whether this library resolved at all: `ok && folder_id` is what makes a
+/// row openable, and an unresolvable library still gets a row with its warning (`BrowseRules`).
+struct ConfiguredLibrary: Decodable, Equatable {
+    let name: String
+    let path: String
+    let folderID: String?
+    let collectionType: String
+    let ok: Bool
+    let warning: String
+
+    private enum CodingKeys: String, CodingKey {
+        case name
+        case path
+        case folderID = "folder_id"
+        case collectionType = "collection_type"
+        case ok
+        case warning
+    }
+}
+
+/// `#/components/schemas/LibrariesResponse` — `GET /api/library/folders`.
+///
+/// ⚠⚠ **NOTHING in this schema is `required`** — not even the two lists — so R3 forces `folders`,
+/// `libraries` and `warnings` to be optional, exactly as `FolderItemsResponse.items` is. The coalescing
+/// accessors below are the call sites' way out; ⚠ unlike `items`, an absent list here is not worth a log
+/// line of its own, because `browseEntries` already has an honest answer for "no libraries" (the server's
+/// own folders) and an empty screen is a legitimate outcome of a correctly-empty config.
+struct LibrariesResponse: Decodable, Equatable {
+    let provider: String?
+    let folders: [LibraryFolder]?
+    let libraries: [ConfiguredLibrary]?
+    let warnings: [String]?
+
+    private enum CodingKeys: String, CodingKey {
+        case provider
+        case folders
+        case libraries
+        case warnings
+    }
+
+    var folderRows: [LibraryFolder] { folders ?? [] }
+    var libraryRows: [ConfiguredLibrary] { libraries ?? [] }
+    var warningRows: [String] { warnings ?? [] }
+}

@@ -166,10 +166,43 @@ the closest thing to a production-verified description this repo has.
   into its "no media server connected" screen, which is a *configuration* sentence) and renders nothing at
   all for an empty library — which on a TV with nothing else on it reads as a fault.
 
-### B3 — Browse: the 2-D focus grid
-`/api/library/folders` → a folder → `/folders/{id}/items`. ⚠ The focus engine's hard case: the grid needs
-row/column memory (down from the middle of a row stays in the same column) and a cap on what it draws.
-⚠ Everything drawn over the grid must be checked for focus participation — Phase A's HUD bug, same class.
+### B3 — Browse: the library list and the poster wall *(built)*
+`/api/library/folders` → a folder → `/folders/{id}/items`.
+
+* **`Core/BrowseRules.swift`** (pure, **RUN**) — mirrored from `features/library/lib.ts`: `libraryIconFor`,
+  `libraryByFolderId`, **`libraryNavEntries`**, `folderCountLabel`, and the web's **`FIRST_PAINT_CARDS` /
+  `MOUNT_STEP`** mounting plan. ⚠ `libraryNavEntries` is the rule his **iPad report of 2026-09-14** bought —
+  an unresolvable library keeps its row, its icon and its warning rather than being silently dropped, which is
+  how a library "disappears" on one surface and not another. `BrowseRules` names that report, so the TV
+  cannot quietly reintroduce the narrower filter.
+* **`Core/BrowseStore.swift`** (ported) — the library list and one folder's wall, with the same
+  `APIError` → sentence mapping Home uses.
+* **`Core/Models/LibraryModels.swift`** — `LibraryFolder`, `ConfiguredLibrary`, `LibrariesResponse`. ⚠ All
+  three **are** contract schemas, so R1-R3 gate them fully; `LibrariesResponse` has **nothing** `required`, so
+  `folders`/`libraries`/`warnings` are optional with coalescing accessors, and `ConfiguredLibrary.folderID` is
+  optional because the contract neither requires nor defaults it.
+* **`Browse/BrowseView.swift`** (SwiftUI, Mac-only) — both modes, reusing `PosterCard` from B2 so the two
+  screens cannot draw different cards. Every state carries a focusable way out (`Back to Home`), and the
+  mounting rule is what keeps a 400-title wall from being drawn in one go.
+* **`LibraryAPI.swift`** gained `libraryFolders()` and `folderItems(folderID:)` — ⚠ **the folder path is this
+  app's first PARAMETERISED endpoint**, which needed a real extension to `check-tvos-models.py`: R4 now turns
+  a literal containing an interpolation into a pattern (each interpolation = one path component) and requires
+  an **exact** match against a contract path, so `.../itemss` still fails while
+  `"api/library/folders/\(folderID)/items"` passes. **Phase C's HLS endpoint needs the same rule**, which is
+  why it was worth building properly rather than concatenating strings to please the checker.
+* **`AppModel`** gained a `.browse` phase + `showBrowse()`/`showHome()`, and **both stores are rebuilt on
+  every entry to `.library`** (a profile switch is a different library). ⚠ **A `TabView` was considered and
+  NOT taken** — it would restructure the root view Phase A's round verified, for a navigation change no round
+  has tested; the tab-bar question belongs with Phase D's polish.
+* ⚠⚠ **The 2-D focus grid is NOT hand-rolled, and that is the finding — the plan expected it to be.** The
+  plan said the grid "needs row/column memory so moving down from the middle of a row stays in the same
+  column". Checked against how tvOS works: **`LazyVGrid` + focusable `Button`s get column memory and
+  reveal-scrolling from the platform's focus engine for free** — the same finding as B2's deleted `RailFocus`,
+  and a hand-rolled index map would fight it. What the app DOES own is **how much it draws**. ⚠ This could not
+  be exercised from the sandbox, so: **falsifier — if the round shows the grid losing its column when moving
+  down, that is a real defect, and the fix goes in the view (`@FocusState` + an index map), not in
+  `BrowseRules`.**
+* ⚠ **Still no item detail screen** (B4), so Select logs rather than doing nothing visible — B2's honesty rule.
 
 ### B4 — Item detail, read-only
 `/api/jellyfin/detail?id=` (+ `/series/{id}/episodes` for a series). **Play is a placeholder in B** and

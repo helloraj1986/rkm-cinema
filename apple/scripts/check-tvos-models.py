@@ -28,7 +28,11 @@ R3  every NON-optional property of a `Decodable` model is `required` in the cont
     `SelectProfileResponse.profile` and both of `MeResponse`'s are optional *in the contract*, and
     decoding them as non-optional would turn a server that omitted one into a decoding failure;
 R4  every endpoint string literal in the tvOS sources is a real path in the contract, so a typo is a
-    failed round here rather than a 404 on a TV;
+    failed round here rather than a 404 on a TV. ⚠ A literal with an **interpolation**
+    (`"api/library/folders/\\(folderID)/items"`) is turned into a pattern — each interpolation becomes one
+    path component (`[^/]+`) and the result must match a contract path EXACTLY, so the static parts are
+    still fully checked; `".../itemss"` fails. This is what lets a parameterised endpoint be written the
+    natural way, and Phase C's `/api/jellyfin/hls/{id}/master.m3u8` needs the same rule;
 R5  no `Decodable`/`Codable` type is declared OUTSIDE `Core/Models/` unless it is named in
     `NON_CONTRACT_MODELS` below with a reason — otherwise a model could be smuggled past R1-R3 by
     moving the file. (One is: FastAPI's error envelope, which the framework generates and which is not
@@ -186,6 +190,10 @@ CASE_RE = re.compile(r"^\s*case\s+(\w+)\s*(?:=\s*\"([^\"]*)\")?\s*$", re.M)
 
 MODEL_CONFORMANCES = ("Decodable", "Codable", "Encodable")
 
+#: A Swift string interpolation, `\(expr)`, as it survives in a collected string literal. R4 replaces each
+#: one with a single path component — see `endpoint_matches`.
+INTERPOLATION_RE = re.compile(r"\\\([^)]*\)")
+
 
 def parse_models(path: Path, root: Path) -> list[dict]:
     """Every `struct` in a Swift file, with its conformances, properties and CodingKeys mapping.
@@ -297,6 +305,23 @@ def parse_ts_shapes(path: Path) -> dict:
 
 
 # --------------------------------------------------------------------------- checks
+def endpoint_matches(literal: str, paths: set) -> bool:
+    """Does this endpoint literal name a real contract path?
+
+    ⚠ A literal WITHOUT an interpolation matches a path exactly. One WITH an interpolation
+    (`api/library/folders/\\(folderID)/items`) becomes a pattern in which each interpolation stands for
+    exactly ONE path component — so the static parts are checked character for character and a typo like
+    `.../itemss` still fails, while the parameterised form can be written the natural way.
+    ⚠ Without this, R4 would reject every parameterised endpoint (it would compare the literal text,
+    `\\(folderID)` and all, against the path list) — and Phase C's HLS endpoint is parameterised.
+    """
+    if INTERPOLATION_RE.search(literal):
+        parts = INTERPOLATION_RE.split(literal)
+        pattern = "^/" + "[^/]+".join(re.escape(part) for part in parts) + "$"
+        return any(re.match(pattern, candidate) for candidate in paths)
+    return "/" + literal in paths
+
+
 def check(root: Path) -> tuple[list[str], list[str]]:
     """Run every rule against `root`. Returns (failures, notes)."""
     failures: list[str] = []
@@ -414,12 +439,11 @@ def check(root: Path) -> tuple[list[str], list[str]]:
             if not literal.startswith("api/"):
                 continue
             endpoints += 1
-            if "/" + literal not in paths:
+            if not endpoint_matches(literal, paths):
                 failures.append(
                     f"R4: {path.relative_to(root)} uses \"{literal}\", which is not a path in "
                     f"{CONTRACT.name}"
                 )
-
     # ---- R5, wire types hiding outside Core/Models/
     outside = 0
     for path in sorted(tvos.rglob("*.swift")):
@@ -462,6 +486,13 @@ MUTATIONS = [
     ("R4 a mistyped endpoint",
      "RKMCinemaTV/Server/ServerProbe.swift",
      'appendingPathComponent("api/status")', 'appendingPathComponent("api/stauts")'),
+    # ⚠ The INTERPOLATED case, which is a different code path: R4 builds a pattern from the literal and
+    # requires an exact match against a contract path, so a typo in the STATIC part must still fail. Without
+    # this mutation the rule could be silently comparing the literal (interpolation and all) and letting
+    # every parameterised endpoint through.
+    ("R4 a typo in an interpolated endpoint",
+     "RKMCinemaTV/Core/LibraryAPI.swift",
+     'api/library/folders/\\(folderID)/items', 'api/library/folders/\\(folderID)/itemss'),
     ("R5 a wire type outside Models/",
      "RKMCinemaTV/Debug/DebugHUD.swift",
      "struct DebugHUD: View {", "struct Sneaky: Decodable { let a: String }\n\nstruct DebugHUD: View {"),

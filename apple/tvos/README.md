@@ -131,9 +131,8 @@ search and download, global search.
 On the simulator, with `-RKMDebugHUD YES`:
 
 1. **Screen #0 opens with the field already filled** — `http://rkm-hp.tail8d5e8.ts.net:8124`. Press
-   Connect once. *(If the simulator cannot reach the tailnet, type the LAN address instead —
-   `http://192.168.x.x:8124`. Simulators use the Mac's network, so the Mac must be on the tailnet or the
-   LAN.)*
+   Connect once. *(A simulator uses the Mac's network. If the Mac is not on the tailnet, the field is
+   editable — clear it and type the LAN address the web app uses on the home network, then Connect.)*
 2. **A wrong address is refused with a reason**, and `Can't reach this server` offers `Try again` and
    `Change server` — both reachable with the d-pad.
 3. **Sign-in screen**: the household username/password signs in.

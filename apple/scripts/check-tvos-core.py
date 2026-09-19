@@ -171,9 +171,14 @@ MUTATIONS = [
      'static let recentlyPlayedTitle = "Recently Played"',
      'static let recentlyPlayedTitle = "Recently played"',
      "the Recently Played rail has the web app's own heading"),
-    ("the meta line's separator", "HomeRails.swift",
-     '        .joined(separator: " · ")', '        .joined(separator: ", ")',
-     "a film reads year · runtime"),
+    # ⚠⚠ REPAIRED IN PHASE V (2026-09-20): this mutation had gone STALE — the line it reverted had been
+    # rewritten (`return parts.joined(…)` instead of a bare `.joined(…)`), and the check it NAMED
+    # ("a film reads year · runtime") belongs to `DetailRules.metaBits`, which returns an ARRAY and was never
+    # reachable from this line. Both halves are now the real ones: the line as it actually reads, in
+    # `HomeRules.heroMetaLine`, and the check that actually exercises it.
+    ("the hero's meta separator", "HomeRails.swift",
+     '        return parts.joined(separator: " · ")', '        return parts.joined(separator: ", ")',
+     "the hero's meta reads year and genres"),
     ("the runtime floor", "HomeRails.swift",
      'return "\\(max(1, minutes))m"', 'return "\\(minutes)m"',
      "a runtime under a minute still reads 1m, never 0m"),
@@ -425,7 +430,7 @@ MUTATIONS = [
     ("a part-watched series claiming to be watched", "HomeRails.swift",
      '        if let fraction = item.progressFraction, fraction < 1 { return "" }',
      '        if let fraction = item.progressFraction, fraction < 0 { return "" }',
-     "a part-watched SERIES gets no chip"),
+     "a part-watched SERIES Jellyfin also marks played gets no chip either"),
 
     # ---- U6: the card's badge
     ("the badge losing the episode code", "HomeRails.swift",

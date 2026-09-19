@@ -362,10 +362,8 @@ struct DetailView: View {
         }
         .padding(.vertical, TVTokens.Title.pillPaddingH)
         .padding(.horizontal, TVTokens.Title.pillPaddingH)
-        .background(
-            RoundedRectangle(cornerRadius: TVTokens.Grid.cardRadius, style: .continuous)
-                .fill(RKMColour.surface1)
-        )
+        .background(RKMColour.surface1,
+                    in: RoundedRectangle(cornerRadius: TVTokens.Grid.cardRadius, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: TVTokens.Grid.cardRadius, style: .continuous)
                 .stroke(RKMColour.border, lineWidth: 1)
@@ -507,10 +505,8 @@ struct DetailView: View {
         .padding(.vertical, TVTokens.Title.pillGap)
         .padding(.horizontal, TVTokens.Title.pillGap)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: TVTokens.Grid.cardRadius, style: .continuous)
-                .fill(RKMColour.primary.opacity(progress.inProgress ? 0.10 : 0.04))
-        )
+        .background(RKMColour.primary.opacity(progress.inProgress ? 0.10 : 0.04),
+                    in: RoundedRectangle(cornerRadius: TVTokens.Grid.cardRadius, style: .continuous))
     }
 
     /// `ItemDetail.tsx::EpisodeRow`'s three cases, in its order: watched, in progress, else the episode's own

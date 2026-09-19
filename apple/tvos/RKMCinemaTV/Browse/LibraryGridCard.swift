@@ -110,8 +110,13 @@ struct LibraryGridCard: View {
         .padding(.top, TVTokens.Grid.labelInsetTop)
         .padding(.horizontal, TVTokens.Grid.labelInsetH)
         .padding(.bottom, TVTokens.Grid.labelInsetBottom)
+        // ⚠ `.background(_:in:)` and NOT `.background(_:)`: the two-argument form is the current API, the
+        // single-view form has been deprecated since iOS 15, and this app builds against the tvOS 26 SDK.
+        // ⚠ `.black` is deliberate — it is the prototype's own `rgba(0,0,0,.85)` scrim, not a brand colour,
+        // and R3 of `check-design-tokens.py` leaves system colours alone.
         .background(
-            LinearGradient(colors: [.clear, .black.opacity(0.85)], startPoint: .top, endPoint: .bottom)
+            LinearGradient(colors: [.clear, .black.opacity(0.85)], startPoint: .top, endPoint: .bottom),
+            in: Rectangle()
         )
     }
 }

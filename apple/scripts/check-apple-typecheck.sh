@@ -192,7 +192,7 @@ TV_WORK=()
 for rel in Core/ServerDefaults.swift Core/APIClient.swift Core/Models/AuthModels.swift \
            Core/Models/LibraryModels.swift Core/Models/DetailModels.swift \
            Core/HomeRails.swift Core/BrowseRules.swift Core/DetailRules.swift Core/RequestURL.swift \
-           Core/ProfileRules.swift \
+           Core/ProfileRules.swift Core/LibraryRules.swift \
            Core/LibraryAPI.swift Core/HomeStore.swift Core/BrowseStore.swift Core/DetailStore.swift \
            Core/PosterURL.swift Core/PosterLoader.swift \
            Design/DesignTokens.swift Design/TVTokens.swift \

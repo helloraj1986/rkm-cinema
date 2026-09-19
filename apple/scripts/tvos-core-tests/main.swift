@@ -1366,6 +1366,208 @@ checkEqual(snapshot(continueWatching: .loaded([cwRow, cwRow2]), recentlyPlayed: 
                     libraryRecent: .failed("boom")).rails.map(\.id), [.continueWatching],
            "a failed Recently Added fetch renders no third rail")
 
+// MARK: - The library grid's rules (Phase V)
+
+// ⚠⚠ EVERY ONE OF THESE IS A PORT OF `frontend/src/features/library/lib.ts`, which the desktop, the phone
+// and the iPad already run. The tie-breaks are where a port goes silently wrong — each comparator falls back
+// to `cmpRecentDesc`, and two of them have a leading rule of their own.
+
+section("the library grid's chips")
+
+let chipRows = [
+    item("g1", ", \"genres\": [\"Action\", \"Drama\"]"),
+    item("g2", ", \"genres\": [\"drama\", \"Drama\", \"\"]"),
+    item("g3"),
+]
+
+// ⚠ The empty name and the duplicate both go; `Drama` sorts before `drama` because the web's sort is
+// code-unit and this one must agree with it (localeCompare is explicitly NOT what the web uses here).
+checkEqual(LibraryRules.genres(chipRows.compactMap { $0 }), ["Action", "Drama", "drama"],
+           "genres are unique and code-unit sorted")
+checkEqual(LibraryRules.genres([item("g4", ", \"genres\": [\"\", \"Action\"]")!]), ["Action"],
+           "an empty genre name is dropped")
+
+checkEqual(LibraryRules.chipTitles(genres: ["Action"]), ["All", "Action"], "All is the first chip")
+check(LibraryRules.isSelected(chip: "All", genre: ""), "All is selected when nothing is filtered")
+check(!LibraryRules.isSelected(chip: "Action", genre: ""), "no genre chip is selected while All is")
+check(LibraryRules.isSelected(chip: "Action", genre: "Action"), "the active genre chip is the selected one")
+check(!LibraryRules.isSelected(chip: "All", genre: "Action"), "All stops being selected once a genre filters")
+checkEqual(LibraryRules.genre(forChip: "All"), "",
+           "All clears the filter rather than filtering by the word 'All'")
+checkEqual(LibraryRules.genre(forChip: "Drama"), "Drama", "a genre chip filters by its own name")
+
+checkEqual(LibraryRules.countLabel(shown: 140, total: 140, genre: ""), "140 titles",
+           "unfiltered count is the web's own line, not '140 of 140'")
+checkEqual(LibraryRules.countLabel(shown: 1, total: 1, genre: ""), "1 title", "one title is singular")
+checkEqual(LibraryRules.countLabel(shown: 12, total: 140, genre: "Action"), "12 titles in Action",
+           "a filtered count names the genre")
+checkEqual(LibraryRules.countLabel(shown: 1, total: 140, genre: "Drama"), "1 title in Drama",
+           "a filtered count of one is singular")
+
+section("the grid's arithmetic")
+
+// ⚠⚠ THE CARD'S WIDTH IS AN INVARIANT, not a hope: `repeat(6, 1fr)` with a `64px` page margin and a `28px`
+// column gap, pinned to the platform's 1920pt canvas. This is the same trade as the profile row's fit — the
+// alternative is finding out on his television.
+check(abs(LibraryRules.cardWidth(containerWidth: 1920) - 263.72) < 0.01,
+      "six columns at 1920pt are 263.72pt wide")
+check(abs(LibraryRules.cardWidth(containerWidth: 1920) * TVTokens.Grid.cardAspect - 395.58) < 0.01,
+      "a 2:3 card at that width is 395.58pt tall")
+check(abs(6 * LibraryRules.cardWidth(containerWidth: 1920)
+          + 5 * TVTokens.Grid.columnGap
+          + 2 * LibraryRules.marginFromPrototype - 1920) < 0.01,
+      "six cards, five gaps and two margins are exactly the screen")
+check(abs(LibraryRules.marginFromPrototype - TVTokens.Metric.safeMargin) < 0.001,
+      "the grid's margin IS the app's one margin")
+checkEqual(LibraryRules.cardWidth(containerWidth: 1920, columns: 0), 0,
+           "no columns is no width, not a crash")
+
+section("the library's dates")
+
+// ⚠ Jellyfin emits 7-digit fractional seconds, which some date parsers reject outright. Measured on this
+// machine 2026-09-20: `ISO8601DateFormatter` ACCEPTS them (with `.withFractionalSeconds`) and REJECTS a
+// timestamp with no fraction — so both forms are needed, and the second is what stops every fraction-less
+// row sorting last.
+check(LibraryRules.addedTime(item("d1", ", \"added\": \"2024-05-06T12:34:56.0000000Z\"")!) != nil,
+      "a 7-digit fractional timestamp parses")
+check(LibraryRules.addedTime(item("d2", ", \"added\": \"2024-05-06T12:34:56Z\"")!) != nil,
+      "a timestamp with no fraction parses too")
+check(LibraryRules.addedTime(item("d3", ", \"added\": \"not a date\"")!) == nil,
+      "an unparseable date is nil, never a fabricated one")
+check(LibraryRules.addedTime(item("d4")!) == nil, "a missing added date is nil")
+checkEqual(LibraryRules.normaliseFractionalSeconds("2024-05-06T12:34:56.0000000Z"),
+           "2024-05-06T12:34:56.000Z", "seven fraction digits are trimmed to three")
+checkEqual(LibraryRules.normaliseFractionalSeconds("2024-05-06T12:34:56.123Z"),
+           "2024-05-06T12:34:56.123Z", "three digits are left alone")
+checkEqual(LibraryRules.normaliseFractionalSeconds("2024-05-06T12:34:56Z"),
+           "2024-05-06T12:34:56Z", "no fraction is left alone")
+
+section("the eight sorts")
+
+let older = item("older", ", \"year\": 1999, \"runtime\": 7200, \"added\": \"2024-01-01T00:00:00.0000000Z\"")!
+let newer = item("newer", ", \"year\": 2024, \"runtime\": 3600, \"added\": \"2025-01-01T00:00:00.0000000Z\"")!
+// ⚠ No `added` at all — the row that must sort LAST and never first.
+let nodate = item("nodate", ", \"year\": 2010, \"runtime\": 5400")!
+// ⚠ Played AND carrying a resume position, because that is the only shape where the `progress` rule's
+// `i.played` clause is observable: the real rule scores it 0, and a port that dropped `played` would sort it
+// FIRST as 100 % watched.
+let finished = item("played", ", \"played\": true, \"playback_position\": 3600, \"runtime\": 3600, \"added\": \"2024-06-01T00:00:00.0000000Z\"")!
+let half = item("half", ", \"playback_position\": 300, \"runtime\": 600, \"added\": \"2024-07-01T00:00:00.0000000Z\"")!
+let watched = item("watched", ", \"played\": true, \"last_played\": \"2025-06-01T00:00:00.0000000Z\"")!
+// ⚠ A date but NOT played: the web's rule is `a.played && a.last_played`, so this row is never-played.
+let stray = item("stray", ", \"last_played\": \"2025-12-01T00:00:00.0000000Z\"")!
+
+let library = [older, newer, nodate, finished, half]
+
+checkEqual(LibraryRules.filter(library, sort: .recent).map(\.itemID),
+           ["newer", "half", "played", "older", "nodate"],
+           "recent is newest first and puts the undated row last")
+checkEqual(LibraryRules.filter(library, sort: .title).map(\.itemID),
+           ["half", "newer", "nodate", "older", "played"],
+           "title is A–Z, case-insensitively")
+checkEqual(LibraryRules.filter(library, sort: .titleDesc).map(\.itemID),
+           ["played", "older", "nodate", "newer", "half"],
+           "title-desc is Z–A")
+checkEqual(LibraryRules.filter(library, sort: .release).map(\.itemID),
+           ["newer", "nodate", "older", "half", "played"],
+           "release is the newest year first, with an unknown year last")
+checkEqual(LibraryRules.filter([older, newer, nodate, finished, half, watched], sort: .runtime).map(\.itemID),
+           ["older", "nodate", "newer", "played", "half", "watched"],
+           "runtime is longest first, a tie falls back to recent, and an unknown runtime is last")
+checkEqual(LibraryRules.filter(library, sort: .unwatched).map(\.itemID),
+           ["newer", "half", "older", "nodate", "played"],
+           "unwatched puts the unplayed first and keeps the recent order inside each group")
+checkEqual(LibraryRules.filter(library, sort: .progress).map(\.itemID),
+           ["half", "newer", "played", "older", "nodate"],
+           "progress is the highest resume fraction first")
+checkEqual(LibraryRules.resumeFraction(finished), 0,
+           "a finished title scores zero, so it is not the most-watched thing in the library")
+
+checkEqual(LibraryRules.filter([older, newer, nodate, finished, half, watched, stray], sort: .recentlyPlayed)
+            .map(\.itemID),
+           ["watched", "newer", "half", "played", "older", "nodate", "stray"],
+           "recently played leads with a played row that has a date, and never-played comes last")
+
+// ⚠⚠ STABILITY. JavaScript's `sort` has been stable since ES2019 and every comparator above depends on it:
+// `cmpRecentDesc` returns 0 for two rows with no dates, so the SERVER'S order is what a viewer sees. Swift's
+// `sorted(by:)` is not documented as stable, so the tie-break is written by hand — and this pair of checks is
+// what proves it, in both directions.
+let tieA = item("tieA")!
+let tieB = item("tieB")!
+checkEqual(LibraryRules.filter([tieA, tieB], sort: .recent).map(\.itemID), ["tieA", "tieB"],
+           "two undated rows keep the server's order")
+checkEqual(LibraryRules.filter([tieB, tieA], sort: .recent).map(\.itemID), ["tieB", "tieA"],
+           "…and it really is the server's order, not the ids'")
+
+section("the genre filter")
+
+let actionRow = item("action", ", \"genres\": [\"Action\"]")!
+let comedyRow = item("comedy", ", \"genres\": [\"Comedy\"]")!
+let plainRow = item("none")!
+
+checkEqual(LibraryRules.filter([actionRow, comedyRow, plainRow], genre: "Action").map(\.itemID), ["action"],
+           "the genre filter is membership, not containment")
+checkEqual(LibraryRules.filter([actionRow, comedyRow, plainRow], genre: "action").map(\.itemID), [],
+           "…and it is case-sensitive, exactly as the web's Array.includes is")
+checkEqual(LibraryRules.filter([actionRow, comedyRow, plainRow], genre: "").count, 3,
+           "no genre is no filter")
+checkEqual(LibraryRules.filter([actionRow, comedyRow], genre: "  ").count, 2,
+           "a whitespace-only genre is no filter either")
+
+section("the grid card's caption")
+
+checkEqual(LibraryRules.cardMetaLine(item("c1", ", \"year\": 2021, \"runtime\": 6720")!),
+           "2021 · 1h 52m",
+           "the caption is year · runtime, through the app's ONE runtime formatter")
+checkEqual(LibraryRules.cardMetaLine(item("c2", ", \"year\": 2021")!), "2021",
+           "a row with no runtime reads its year alone, never '2021 · '")
+checkEqual(LibraryRules.cardMetaLine(item("c3")!), "", "a row with neither reads nothing at all")
+
+section("the top bar's tabs")
+
+let navRows = [
+    LibraryNavEntry(id: "folder:f1", name: "Movies", icon: .film, folderID: "f1", warning: ""),
+    LibraryNavEntry(id: "unresolved:Kids", name: "Movies Kids", icon: .folder, folderID: nil,
+                    warning: "Library unavailable"),
+]
+
+let homeTabs = BrowseRules.tabPlan(entries: navRows, current: .home)
+checkEqual(homeTabs.map(\.title), ["Home", "Movies", "Movies Kids"],
+           "Home is first, then this profile's own libraries")
+checkEqual(homeTabs.map(\.isCurrent), [true, false, false], "on the Home screen only Home is current")
+checkEqual(homeTabs.map(\.isEnabled), [true, true, false],
+           "an unresolved library keeps its tab and cannot be selected")
+checkEqual(homeTabs.map(\.warning), ["", "", "Library unavailable"],
+           "…and it keeps its warning, on the bar as well as in the list")
+checkEqual(homeTabs.map(\.id), ["home", "folder:f1", "unresolved:Kids"],
+           "the tabs carry the entries' own identities")
+
+let folderTabs = BrowseRules.tabPlan(entries: navRows, current: .folder("f1"))
+checkEqual(folderTabs.map(\.isCurrent), [false, true, false],
+           "on a folder's wall that folder's tab is the current one")
+
+let emptyTabs = BrowseRules.tabPlan(entries: [], current: .browse)
+checkEqual(emptyTabs.map(\.title), ["Home", "Browse"],
+           "with no libraries at all the Browse fallback is the only way in")
+checkEqual(emptyTabs.map(\.isCurrent), [false, true], "…and it is current on the Browse screen")
+checkEqual(BrowseRules.tabPlan(entries: navRows, current: .browse).count, 3,
+           "the fallback is never offered beside real libraries")
+
+section("the cast avatars")
+
+let personA = DetailPerson(id: "p1", name: "Brendan Fraser", role: "Rick O'Connell", hasImage: true)
+let personAOther = DetailPerson(id: "p1", name: "Someone Else", role: "Rick O'Connell", hasImage: false)
+let personB = DetailPerson(id: "p2", name: "Brendan Fraser", role: "Evelyn", hasImage: false)
+let personNoID = DetailPerson(id: "", name: "Rachel Weisz", role: "Evelyn", hasImage: false)
+
+checkEqual(DetailRules.castHue(personA), DetailRules.castHue(personAOther),
+           "one person id is one colour, whatever else the row says")
+check(DetailRules.castHue(personA) != DetailRules.castHue(personB),
+      "two people are not forced to the same colour")
+checkEqual(DetailRules.castHue(personNoID), DetailRules.castHue(personNoID),
+           "a person with no id still has one stable colour")
+check((0..<360).contains(Int(DetailRules.castHue(personB))), "the hue is a real hue")
+
 // MARK: - Report
 
 print("")

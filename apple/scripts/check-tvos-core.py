@@ -75,6 +75,12 @@ PURE_SOURCES = [
     TVOS / "Design" / "TVTokens.swift",
     TVOS / "Core" / "Models" / "AuthModels.swift",
     TVOS / "Core" / "ProfileRules.swift",
+    # Phase V — the LIBRARY GRID's rules: the genre chips (derived from the rows), the filter and the web
+    # app's eight sorts. ⚠ It joins this list because the sorts are where a port goes SILENTLY wrong — every
+    # comparator has a tie-break that falls back to `cmpRecentDesc`, two of them have a leading rule
+    # (`release`'s unknown-years-last, `progress`'s played-scores-zero), and Swift's `sorted(by:)` is not
+    # documented as stable where JavaScript's is. None of that is visible on a television.
+    TVOS / "Core" / "LibraryRules.swift",
 ]
 
 HARNESS = REPO / "apple" / "scripts" / "tvos-core-tests" / "main.swift"
@@ -446,6 +452,78 @@ MUTATIONS = [
      "        if libraryRecent.failedMessage != nil { out.append(Self.recentlyAddedTitle) }",
      "        if false { out.append(Self.recentlyAddedTitle) }",
      "a failed Recently Added fetch is named in the footer"),
+
+    # ---- V: the library grid's rules. ⚠ Every one of these is a PORT of `frontend/src/features/library/lib.ts`,
+    # which is where a silent difference would live: the same wall, sorted differently on the TV than on the
+    # phone, with nothing on screen to say so.
+    ("the genre list's order", "LibraryRules.swift",
+     "        return seen.sorted()",
+     "        return Array(seen.sorted().reversed())",
+     "genres are unique and code-unit sorted"),
+    ("an empty genre name kept", "LibraryRules.swift",
+     "            for genre in item.genres ?? [] where !genre.isEmpty {",
+     "            for genre in item.genres ?? [] {",
+     "an empty genre name is dropped"),
+    ("the All chip losing its meaning", "LibraryRules.swift",
+     '        return chip == allChipTitle ? current.isEmpty : chip == current',
+     "        return chip == current",
+     "All is selected when nothing is filtered"),
+    ("All filtering by the word All", "LibraryRules.swift",
+     '        chip == allChipTitle ? "" : chip',
+     "        chip",
+     "All clears the filter rather than filtering by the word 'All'"),
+    ("the count line becoming the prototype's demo sentence", "LibraryRules.swift",
+     "        guard !wanted.isEmpty else { return BrowseRules.folderCountLabel(total) }",
+     '        guard !wanted.isEmpty else { return "\\(shown) of \\(total) titles" }',
+     "unfiltered count is the web's own line, not '140 of 140'"),
+    ("a filtered count losing its plural rule", "LibraryRules.swift",
+     '        return "\\(shown) title\\(shown == 1 ? "" : "s") in \\(wanted)"',
+     '        return "\\(shown) titles in \\(wanted)"',
+     "a filtered count of one is singular"),
+    # ⚠⚠ THE U7b SHAPE, ON THE NEW SCREEN: one margin subtracted instead of two. It is the defect that put the
+    # `Add profile` tile off the edge of his screenshot, and on a 6-column grid it is a card that overflows the
+    # screen instead of a tile that hangs off it.
+    ("the grid's second margin", "LibraryRules.swift",
+     "        let usable = containerWidth - 2 * margin - CGFloat(columns - 1) * columnGap",
+     "        let usable = containerWidth - margin - CGFloat(columns - 1) * columnGap",
+     "six cards, five gaps and two margins are exactly the screen"),
+    ("the fraction trimmed to the wrong length", "LibraryRules.swift",
+     "        let keep = iso.index(iso.startIndex, offsetBy: iso.distance(from: iso.startIndex, to: dot) + 4)",
+     "        let keep = iso.index(iso.startIndex, offsetBy: iso.distance(from: iso.startIndex, to: dot) + 3)",
+     "seven fraction digits are trimmed to three"),
+    ("the undated row sorting FIRST", "LibraryRules.swift",
+     "        case (.some, nil): return -1\n        case (nil, .some): return 1",
+     "        case (.some, nil): return 1\n        case (nil, .some): return -1",
+     "recent is newest first and puts the undated row last"),
+    ("a finished title scoring its position", "LibraryRules.swift",
+     "        guard !(item.played ?? false), let runtime = item.runtime, runtime > 0 else { return 0 }",
+     "        guard let runtime = item.runtime, runtime > 0 else { return 0 }",
+     "a finished title scores zero, so it is not the most-watched thing in the library"),
+    ("recently-played ignoring the played flag", "LibraryRules.swift",
+     "        let pa = (a.played ?? false) ? parseISO(a.lastPlayed ?? \"\") : nil",
+     "        let pa = parseISO(a.lastPlayed ?? \"\")",
+     "recently played leads with a played row that has a date, and never-played comes last"),
+    # ⚠⚠ STABILITY — the tie-break that JavaScript gives for free and Swift does not.
+    ("the sort losing its stability", "LibraryRules.swift",
+     "            return left.offset < right.offset",
+     "            return left.element.itemID > right.element.itemID",
+     "two undated rows keep the server's order"),
+    ("the card caption's runtime", "LibraryRules.swift",
+     '        [item.year.map(String.init) ?? "", HomeRules.runtimeText(item.runtime)]',
+     '        [item.year.map(String.init) ?? "", "\\(item.runtime ?? 0)s"]',
+     "the caption is year · runtime, through the app's ONE runtime formatter"),
+    ("the Browse fallback not current", "BrowseRules.swift",
+     "                                       isCurrent: current == .browse, isEnabled: true, warning: \"\"))",
+     "                                       isCurrent: false, isEnabled: true, warning: \"\"))",
+     "…and it is current on the Browse screen"),
+    ("an unresolved library losing its row's state", "BrowseRules.swift",
+     "                                  isCurrent: isCurrent, isEnabled: entry.isOpenable, warning: entry.warning)",
+     "                                  isCurrent: isCurrent, isEnabled: true, warning: \"\")",
+     "an unresolved library keeps its tab and cannot be selected"),
+    ("the cast colour keyed on the wrong field", "DetailRules.swift",
+     "        let key = person.id.isEmpty ? person.name : person.id",
+     "        let key = person.name",
+     "one person id is one colour, whatever else the row says"),
 ]
 
 

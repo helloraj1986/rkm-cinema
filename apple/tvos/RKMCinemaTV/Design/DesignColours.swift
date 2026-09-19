@@ -61,4 +61,16 @@ enum RKMColour {
         startPoint: .top,
         endPoint: .bottom
     )
+
+    /// A cast avatar's circle from the HUE ONLY — the saturation and brightness are the prototype's own and
+    /// live in `TVTokens.Title`.
+    ///
+    /// ⚠ **The hue comes from `DetailRules.castHue` and is a RULE, not a stored colour**: the wire sends no
+    /// per-person colour, so the derivation happens in the pure file where it can be run, and this is the
+    /// mechanical conversion to a `Color` — which is all this file is for.
+    static func castAvatar(hue: Double) -> Color {
+        Color(hue: hue / 360,
+              saturation: TVTokens.Title.avatarSaturation,
+              brightness: TVTokens.Title.avatarBrightness)
+    }
 }

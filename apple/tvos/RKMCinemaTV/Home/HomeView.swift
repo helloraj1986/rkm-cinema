@@ -86,31 +86,45 @@ struct HomeView: View {
                onProfile: { Task { await app.changeProfile() } })
     }
 
+    /// ⚠⚠ **THE TABS ARE THE PROFILE'S LIBRARIES, from the SAME rule Browse uses, and `BrowseRules.tabPlan`
+    /// IS that rule as of Phase V.** It used to be built here inline; the Library screen needs the same row
+    /// with a different tab marked current, which is exactly the shape of this repo's most-repeated defect
+    /// ("one rule in two places"), so the DECISION moved into the pure file — where it is RUN — and this
+    /// property only attaches the closures.
+    ///
+    /// ⚠ The `Browse` fallback inside `tabPlan` is not cosmetic: a profile with no libraries would otherwise
+    /// have an empty bar and **no way into the one screen that explains the empty config**.
     private var topBarTabs: [TopBarTab] {
         // ⚠ The prototype marks the tab you are on (`[aria-current="true"]` → white and semibold). On this
         // screen that is always `Home`; a library tab the viewer has not entered cannot be current here.
-        var tabs: [TopBarTab] = [
-            TopBarTab(id: "home", title: "Home", isCurrent: true, isEnabled: true, warning: "",
-                      action: { app.showHome() }),
-        ]
-
-        let entries = store.snapshot.navEntries
-        if entries.isEmpty {
-            tabs.append(TopBarTab(id: "browse", title: "Browse", isCurrent: false, isEnabled: true, warning: "",
-                                  action: { app.showBrowse() }))
-        } else {
-            tabs.append(contentsOf: entries.map { entry in
-                TopBarTab(id: entry.id,
-                          title: entry.name,
-                          isCurrent: false,
-                          // ⚠ An unresolved library keeps its tab and its warning and simply cannot be
-                          // selected — `BrowseRules`' rule, on the top bar as well as in Browse.
-                          isEnabled: entry.isOpenable,
-                          warning: entry.warning,
-                          action: { app.openLibrary(folderID: entry.folderID) })
-            })
+        BrowseRules.tabPlan(entries: store.snapshot.navEntries, current: .home).map { plan in
+            TopBarTab(id: plan.id,
+                      title: plan.title,
+                      isCurrent: plan.isCurrent,
+                      // ⚠ An unresolved library keeps its tab and its warning and simply cannot be
+                      // selected — `BrowseRules`' rule, on the top bar as well as in Browse.
+                      isEnabled: plan.isEnabled,
+                      warning: plan.warning,
+                      action: { go(to: plan) })
         }
-        return tabs
+    }
+
+    /// ⚠ The closures for `BrowseRules.tabPlan`'s three kinds — the only part of the bar this screen owns.
+    private func go(to plan: BrowseRules.LibraryTabPlan) {
+        switch plan.kind {
+        case .home:
+            app.showHome()
+        case .browse:
+            app.showBrowse()
+        case .library:
+            // ⚠ An unresolved library is `.disabled` in the bar, so this is only ever reached with a real
+            // folder — the fallback keeps the branch total rather than force-unwrapping a `String?`.
+            if let folderID = plan.folderID {
+                app.openLibrary(folderID: folderID)
+            } else {
+                app.showBrowse()
+            }
+        }
     }
 
     // MARK: - The three non-content states

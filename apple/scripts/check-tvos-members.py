@@ -57,6 +57,14 @@ TYPE_SOURCES = {
     "DetailSnapshot": "Core/DetailRules.swift",
     "LibraryNavEntry": "Core/BrowseRules.swift",
     "TopBarTab": "Home/TopBar.swift",
+    # ⚠⚠ Phase V. The Library screen and the detail screen read four more types, and **two of them are
+    # NESTED** (`BrowseRules.LibraryTabPlan`) — the table is keyed by the name the VIEW spells, and the scan
+    # finds a declaration at any depth for exactly this reason.
+    "BrowseRules.LibraryTabPlan": "Core/BrowseRules.swift",
+    "SeasonGroup": "Core/DetailRules.swift",
+    "EpisodeProgress": "Core/DetailRules.swift",
+    "EpisodeItem": "Core/Models/LibraryModels.swift",
+    "DetailPerson": "Core/Models/DetailModels.swift",
 }
 
 #: (view file, variable, type). ⚠ `snapshot` appears twice with DIFFERENT types, which is exactly why the
@@ -66,6 +74,8 @@ USES = [
     ("Home/HomeView.swift", "snapshot", "HomeSnapshot"),
     ("Home/HomeView.swift", "hero", "MediaItem"),
     ("Home/HomeView.swift", "app", "AppModel"),
+    # ⚠ Phase V: the top bar's tabs became a VALUE (`BrowseRules.tabPlan`), so the Home names its members.
+    ("Home/HomeView.swift", "plan", "BrowseRules.LibraryTabPlan"),
     ("Home/HeroBand.swift", "item", "MediaItem"),
     ("Home/PosterCard.swift", "item", "MediaItem"),
     ("Home/RailView.swift", "rail", "HomeRail"),
@@ -74,10 +84,17 @@ USES = [
     ("Browse/BrowseView.swift", "store", "BrowseStore"),
     ("Browse/BrowseView.swift", "entry", "LibraryNavEntry"),
     ("Browse/BrowseView.swift", "app", "AppModel"),
+    ("Browse/BrowseView.swift", "plan", "BrowseRules.LibraryTabPlan"),
+    ("Browse/BrowseView.swift", "item", "MediaItem"),
+    ("Browse/LibraryGridCard.swift", "item", "MediaItem"),
     ("Detail/DetailView.swift", "store", "DetailStore"),
     ("Detail/DetailView.swift", "snapshot", "DetailSnapshot"),
     ("Detail/DetailView.swift", "detail", "ItemDetail"),
     ("Detail/DetailView.swift", "app", "AppModel"),
+    ("Detail/DetailView.swift", "person", "DetailPerson"),
+    ("Detail/DetailView.swift", "episode", "EpisodeItem"),
+    ("Detail/DetailView.swift", "group", "SeasonGroup"),
+    ("Detail/DetailView.swift", "progress", "EpisodeProgress"),
     ("Auth/ProfilesView.swift", "session", "SessionStore"),
     ("Auth/ProfilesView.swift", "profile", "ProfileUser"),
     ("Auth/ProfilesView.swift", "app", "AppModel"),
@@ -95,6 +112,9 @@ INHERITED = {
     "LibraryNavEntry": {"id"},
     "HomeRail": {"id"},
     "TopBarTab": {"id"},
+    "BrowseRules.LibraryTabPlan": {"id"},
+    "SeasonGroup": {"id"},
+    "EpisodeItem": {"id"},
 }
 
 #: ⚠⚠ RULE 2 — the CALL SITES. A view that names a real type with the WRONG LABEL is a compile error of the
@@ -109,6 +129,11 @@ VIEW_TYPES = {
     "PosterImageView": "Home/PosterCard.swift",
     "HomeView": "Home/HomeView.swift",
     "BrowseView": "Browse/BrowseView.swift",
+    # ⚠ Phase V's two new views: the library grid's card and its filter chip. Both are constructed from
+    # `BrowseView` with labelled arguments, so a renamed or misspelled label is a compile error this rule
+    # catches before a round.
+    "LibraryGridCard": "Browse/LibraryGridCard.swift",
+    "FilterChip": "Browse/FilterChip.swift",
     "DetailView": "Detail/DetailView.swift",
     "ProfilesView": "Auth/ProfilesView.swift",
     "LoginView": "Auth/LoginView.swift",
@@ -121,6 +146,8 @@ VIEW_TYPES = {
     "TabButtonStyle": "Home/TopBar.swift",
     "IconButtonStyle": "Home/TopBar.swift",
     "ProfileTileStyle": "Auth/ProfilesView.swift",
+    "LibraryCardStyle": "Browse/LibraryGridCard.swift",
+    "ChipButtonStyle": "Browse/FilterChip.swift",
 }
 
 #: Where a call to one of those types may appear. ⚠ Their own declaration files are excluded: `HomeView`'s
@@ -128,6 +155,7 @@ VIEW_TYPES = {
 CALL_SITES = [
     "Home/HomeView.swift", "Home/TopBar.swift", "Home/HeroBand.swift", "Home/RailView.swift",
     "Home/PosterCard.swift", "Browse/BrowseView.swift", "Detail/DetailView.swift",
+    "Browse/LibraryGridCard.swift", "Browse/FilterChip.swift",
     "Auth/ProfilesView.swift", "Auth/LoginView.swift", "App/AppRootView.swift",
     "Server/ServerSetupView.swift", "Server/UnreachableServerView.swift",
 ]
@@ -140,6 +168,16 @@ DECL = re.compile(
 NESTED = re.compile(r"^\s*(?:enum|struct|class|typealias)\s+([A-Za-z_][A-Za-z0-9_]*)")
 
 
+def declaration_name(type_name: str) -> str:
+    """⚠ The name to look for in the DECLARATION line — the last component of a dotted key.
+
+    A type may be nested (`BrowseRules.LibraryTabPlan` is declared as `struct LibraryTabPlan` INSIDE
+    `enum BrowseRules`), and the table is keyed by the name the VIEW spells. Stripping the qualifier is what
+    lets one table hold both spellings.
+    """
+    return type_name.rsplit(".", 1)[-1]
+
+
 def members_of(root: pathlib.Path, type_name: str) -> set[str]:
     """Every member DECLARED inside a type, plus its nested type names, plus what it inherits for free.
 
@@ -150,13 +188,14 @@ def members_of(root: pathlib.Path, type_name: str) -> set[str]:
     path = root / rel
     if not path.exists():
         raise FileNotFoundError(f"{rel} declares {type_name} and does not exist")
+    decl_name = declaration_name(type_name)
     found: set[str] = set()
     inside = False
     depth = 0
     for line in path.read_text(encoding="utf-8").splitlines():
         stripped = line.strip()
         if not inside:
-            if re.match(rf"^(?:public\s+|final\s+)*(?:enum|struct|class|extension)\s+{type_name}\b", stripped):
+            if re.match(rf"^(?:public\s+|final\s+)*(?:enum|struct|class|extension)\s+{decl_name}\b", stripped):
                 inside = True
                 depth = stripped.count("{") - stripped.count("}")
                 continue
@@ -195,6 +234,7 @@ def call_labels(root: pathlib.Path, type_name: str) -> set[str]:
     path = root / rel
     if not path.exists():
         raise FileNotFoundError(f"{rel} declares {type_name} and does not exist")
+    decl_name = declaration_name(type_name)
     labels: set[str] = set()
     inside = False
     depth = 0
@@ -203,7 +243,7 @@ def call_labels(root: pathlib.Path, type_name: str) -> set[str]:
     for line in path.read_text(encoding="utf-8").splitlines():
         stripped = line.strip()
         if not inside:
-            if re.match(rf"^(?:public\s+|final\s+)*(?:enum|struct|class|extension)\s+{type_name}\b", stripped):
+            if re.match(rf"^(?:public\s+|final\s+)*(?:enum|struct|class|extension)\s+{decl_name}\b", stripped):
                 inside = True
                 depth = stripped.count("{") - stripped.count("}")
                 continue
@@ -242,6 +282,14 @@ def call_labels(root: pathlib.Path, type_name: str) -> set[str]:
     return labels
 
 
+#: ⚠⚠ A STRING LITERAL IS NOT AN ARGUMENT LABEL, and this line exists because the rule fired on one.
+#: Measured 2026-09-20, adding the Title screen: `TopBarTab(id: "detail:back", …)` — the text INSIDE the
+#: quotes reads as a label to a regex, so the gate reported a label `TopBarTab` does not take and **the tree
+#: was correct**. A gate that cries wolf is worse than an absent one (this file's own header), so literals are
+#: stripped before the labels are read — including escaped quotes, which is why the pattern is not `[^"]*`.
+STRING_LITERAL = re.compile(r'"(?:[^"\\]|\\.)*"')
+
+
 def check_calls(root: pathlib.Path) -> list[str]:
     """⚠ Every label used when this app constructs one of its OWN views/types must exist on that type."""
     problems: list[str] = []
@@ -266,7 +314,7 @@ def check_calls(root: pathlib.Path) -> list[str]:
                     if name not in cache:
                         cache[name] = call_labels(root, name)
                     known = cache[name]
-                    tail = line[match.end():]
+                    tail = STRING_LITERAL.sub('""', line[match.end():])
                     for label in re.finditer(r"([A-Za-z_][A-Za-z0-9_]*)\s*:(?!\s*//)", tail):
                         if label.group(1) not in known:
                             problems.append(
@@ -282,7 +330,10 @@ def check_calls(root: pathlib.Path) -> list[str]:
 NAMESPACES = ("HomeRules", "ProfileRules", "BrowseRules", "DetailRules", "PosterURL", "DesignTokens", "TVTokens",
               "RKMColour", "LibraryIcon", "DetailCopy", "HomeSnapshot", "HomeRowFailure", "HomeStore",
               "BrowseStore", "DetailStore", "SessionStore", "AppModel", "AppLog", "ServerDefaults",
-              "LibraryAPI", "RequestURL")
+              "LibraryAPI", "RequestURL",
+              # ⚠ Phase V: the library grid's rules and its copy. Both are read from the two new views many
+              # times over, and every one of those references is a hand-typed name.
+              "LibraryRules", "LibraryCopy")
 
 
 def namespace_members(root: pathlib.Path, namespace: str, cache: dict) -> set[str]:
@@ -387,7 +438,11 @@ def check_nested_body(root: pathlib.Path) -> list[str]:
 #: brace-delimited closure from that region (the action closure, the label closure — both legitimately contain
 #: padding and backgrounds) and looks at what is left: the modifier chain applied to the BUTTON. That is
 #: exactly the place the box must not be.
-STYLE_TYPES = ("TabButtonStyle", "IconButtonStyle", "CtaButtonStyle", "PillButtonStyle", "ProfileTileStyle")
+STYLE_TYPES = ("TabButtonStyle", "IconButtonStyle", "CtaButtonStyle", "PillButtonStyle", "ProfileTileStyle",
+               # ⚠ Phase V's two, added the moment they existed: a style that owns its box is only protected
+               # by this rule if the rule KNOWS about it, and a new style silently outside the list is how
+               # the sixth one would re-introduce the defect his screenshot bought.
+               "LibraryCardStyle", "ChipButtonStyle")
 BOX_CHROME = (".padding(", ".background", ".overlay", ".frame(")
 CLOSURE = re.compile(r"\{[^{}]*\}")
 
@@ -491,6 +546,19 @@ def selftest() -> int:
         # ⚠ …and it must NOT fire on the three labels that view DOES take, or the rule is noise.
         if any("base:" in problem or "onSelect:" in problem for problem in reports):
             failures.append("it fired on a label RailView does take")
+
+        # ⚠⚠ AND A COLON INSIDE A STRING LITERAL IS NOT A LABEL — measured on the REAL tree 2026-09-20, when
+        # `TopBarTab(id: "detail:back", …)` produced a report naming a label `TopBarTab` does not take, on a
+        # file that was CORRECT. Both halves are pinned: the real wrong label still fires, and the literal
+        # inside the quotes stays silent.
+        browse.write_text(browse.read_text(encoding="utf-8")
+                          + "\nlet scratchBad3b = TopBarTab(rails: [], title: \"detail:back\")\n",
+                          encoding="utf-8")
+        reports = check_calls(scratch)
+        if not any("'rails:'" in problem for problem in reports):
+            failures.append("it did not fire on `TopBarTab(rails: …)` — a label TopBarTab does not take")
+        if any("detail:" in problem for problem in reports):
+            failures.append("it fired on a colon inside a string literal — the 2026-09-20 false positive")
 
         if check(TVOS):
             failures.append("it fires on the REAL tree, so its red above proved nothing")

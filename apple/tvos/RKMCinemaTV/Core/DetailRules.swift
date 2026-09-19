@@ -263,6 +263,31 @@ enum DetailRules {
         /// `ItemDetail.tsx::people.actors.slice(0, 10)`.
         static let limit = 10
     }
+
+    /// The hue of a cast avatar — **DERIVED from the person, never sent.**
+    ///
+    /// ⚠⚠ **WHY A DERIVATION AND NOT A COLOUR.** His prototype's `.avatar` is `hsl(${c.hue} 55% 62%)` with a
+    /// hand-picked hue per demo person. The wire does not carry a colour and it must not: inventing one would
+    /// be inventing data. What the design actually needs is that **the same person is always the same colour
+    /// and two people in a row are usually different**, so the hue is a stable hash of the person's identity —
+    /// the same trade `ProfileRules.initials` makes for a name.
+    ///
+    /// ⚠ The id is the key (Jellyfin's person id is stable for a person), with the NAME as a fallback: a
+    /// payload without ids would otherwise give every avatar the same colour, which is the one visibly wrong
+    /// answer. `id` and `name` are both non-optional in the interface, so the fallback is belt-and-braces
+    /// rather than a case that normally happens.
+    ///
+    /// ⚠ djb2 over the key's UTF-8 bytes — a fixed, documented algorithm rather than `hashValue`, which is
+    /// **seeded per process** in Swift and would therefore give one person two colours on two launches.
+    static func castHue(_ person: DetailPerson) -> Double {
+        let key = person.id.isEmpty ? person.name : person.id
+        guard !key.isEmpty else { return 0 }
+        var hash: UInt64 = 5381
+        for byte in key.utf8 {
+            hash = (hash &* 33) &+ UInt64(byte)
+        }
+        return Double(hash % 360)
+    }
 }
 
 /// `ItemDetail.tsx::creditsLine`'s `kind` argument — only two of `DetailPeople`'s three groups have a

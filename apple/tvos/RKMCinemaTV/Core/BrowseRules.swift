@@ -33,6 +33,20 @@ enum LibraryIcon: String, Equatable {
         default: return .folder
         }
     }
+
+    /// The SF Symbol a screen draws for this icon.
+    ///
+    /// ⚠ **ONE RULE, ONE PLACE, and it was moved here in U3 for that reason.** `BrowseView` had this mapping
+    /// as a private function, and the Home's poster badge needed the same three names — a second switch would
+    /// have been this repo's most-repeated defect (and a `String`, so it stays in the Foundation-only file and
+    /// can still be checked on Linux without SwiftUI).
+    var systemImage: String {
+        switch self {
+        case .film: return "film"
+        case .tv: return "tv"
+        case .folder: return "folder"
+        }
+    }
 }
 
 /// `lib.ts::LibraryNavEntry` — one library, ready to render as navigation.

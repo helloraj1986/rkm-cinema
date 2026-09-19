@@ -108,7 +108,9 @@ struct BrowseView: View {
             }
         } label: {
             HStack(spacing: 22) {
-                Image(systemName: symbol(for: entry.icon))
+                // ⚠ `LibraryIcon.systemImage` — the ONE mapping, shared with the Home's card badge (U3).
+                // It used to be a private function here, which is how the two would have drifted.
+                Image(systemName: entry.icon.systemImage)
                     .font(.system(size: 30))
                     .frame(width: 44)
                 Text(entry.name)
@@ -133,14 +135,6 @@ struct BrowseView: View {
         // the failure the rule exists to prevent.
         .disabled(!entry.isOpenable)
         .buttonStyle(.bordered)
-    }
-
-    private func symbol(for icon: LibraryIcon) -> String {
-        switch icon {
-        case .film: return "film"
-        case .tv: return "tv"
-        case .folder: return "folder"
-        }
     }
 
     // MARK: - One folder's wall

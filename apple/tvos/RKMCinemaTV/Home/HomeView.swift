@@ -4,37 +4,40 @@ import SwiftUI
 // written for Apple's frameworks, and nobody asked whether `RKMServerKit` needed the same rule), and this
 // file is SwiftUI, so `check-apple-typecheck.sh`'s list does not include it either. Two gates, one blind
 // spot each, and the round found it. The checker now has the rule AND a `--selftest` that pins it.
-//
-// ⚠ B4 moved this screen's last `RKMLog` call out (Select now OPENS the detail screen instead of logging
-// that it cannot), so the import is kept for the next line that needs it rather than removed and re-added —
-// and the checker is what makes that safe either way.
 import RKMServerKit
 
-/// The Home screen — Phase B's first real content screen, and the replacement for Phase A's
-/// `SessionReadyView` placeholder.
+/// The Home screen — Phase B's first real content screen, and **Phase U3's redesign of it**.
 ///
 /// ⚠ **THE WAYS OUT STAY.** Phase A's note applies unchanged: a TV screen with no focusable exit is a dead
-/// end, and a dead end on a TV is a phone call. So `Change profile`, `Sign out` and `Change server` sit at
-/// the top of this screen exactly as they did on the placeholder — the middle of the screen changed, the
-/// exits did not.
+/// end, and a dead end on a TV is a phone call. U3 moved them rather than removing them: the top bar's avatar
+/// button opens the PROFILE SWITCHER, which is where `Change profile`, `Sign out`, `Change server` and the
+/// administrator's `Manage profiles` already live — one press away, and the buildspec's own instruction
+/// ("fold Settings into the profile menu") is the same move.
 ///
 /// ⚠ **Everything this screen SHOWS is decided in `HomeRails.swift`**, which is pure and executed on Linux:
-/// which rails exist, their order, their caps, and which of the four states (loading / content / empty /
-/// failed) the screen is in. This type lays that out, and nothing else. A state decision made here would be
-/// a decision no test could reach.
+/// which rails exist, their order, their caps, which title is the hero, and which of the four states
+/// (loading / content / empty / failed) the screen is in. This type lays that out, and nothing else. A state
+/// decision made here would be a decision no test could reach.
 ///
-/// ⚠ **A hero is deliberately absent** — the plan's two rows, nothing more (`TVOS_LIBRARY_PLAN.md` §B2),
-/// and `PosterCard`/`RailView` keep the rail's own layout so a hero can be added above them later without
-/// touching either.
+/// ⚠⚠ **THE REDESIGN'S THREE PIECES, all in `docs/TVOS_UX_PLAN.md` §1b:** the top bar (tabs from
+/// `BrowseRules.browseEntries` — the profile's OWN libraries, never a literal list), the hero band (whose
+/// every word and number is a mirrored web rule), and the card's type badge. ⚠ **No focus arithmetic
+/// anywhere** — §3 of the plan: the rail is a `ScrollView` of focusable cards and that is the platform's
+/// business. The two focus-adjacent behaviours this screen owns (the hero's de-duplication, and the top bar's
+/// recede) are stated as falsifiers **F4** and **F6** in the round, not asserted here.
 struct HomeView: View {
 
     @EnvironmentObject private var app: AppModel
     @ObservedObject var store: HomeStore
     let base: URL
 
+    /// ⚠ The Playback placeholder, exactly as B4's detail screen shows it: the primary button cannot start a
+    /// film (Phase C is parked), so it says where playback comes from instead of doing nothing.
+    @State private var playbackVerb: String?
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            header
+            topBar
 
             Group {
                 if !store.hasLoaded && store.isLoading {
@@ -42,7 +45,7 @@ struct HomeView: View {
                 } else if let placeholder = store.snapshot.placeholder {
                     message(placeholder.title, placeholder.sub)
                 } else {
-                    rails
+                    content
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -50,58 +53,55 @@ struct HomeView: View {
             footer
         }
         // ⚠ `.task` and not `.onAppear`: the load is async and the screen must not be re-fetched by a
-        // re-render — `HomeStore.load()` is idempotent in effect but each call is two requests.
+        // re-render — `HomeStore.load()` is idempotent in effect but each call is five requests.
         .task {
             await store.load()
         }
+        .overlay {
+            if let verb = playbackVerb {
+                playbackNotice(verb)
+            }
+        }
     }
 
-    // MARK: - The exits, and who is watching
+    // MARK: - The top bar
 
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .firstTextBaseline, spacing: 20) {
-                Text("RKMCinemaTV")
-                    .font(.system(size: 44, weight: .bold))
-                Spacer(minLength: 20)
-                // ⚠ The profile is on screen on purpose. `signed in as X` + `watching as Y` is precisely the
-                // state the server's identity seam exists for, and the one a wrong implementation gets
-                // silently wrong — so the screen names who it is showing a library for.
-                Text(watchingAs)
-                    .font(.system(size: 24))
-                    .foregroundStyle(.secondary)
-            }
-
-            HStack(spacing: 18) {
-                // ⚠ Browse is FIRST and the only filled button in this row: on the Home screen it is the way
-                // further in, and the rest of the row is ways out. (Phase A's round is why the row exists at
-                // all — a screen whose only control is unreachable with a remote is a dead end.)
-                Button("Browse") { app.showBrowse() }
-                    .buttonStyle(.borderedProminent)
-                Button("Change profile") { Task { await app.changeProfile() } }
-                Button("Sign out") { Task { await app.signOut() } }
-                Button("Change server") { app.changeServer() }
-                Button("Refresh") { Task { await store.load() } }
-            }
-            .font(.system(size: 22))
-        }
-        .padding(.horizontal, 60)
-        .padding(.top, 44)
-        .padding(.bottom, 10)
-        .buttonStyle(.bordered)
+    /// ⚠⚠ **THE TABS ARE THE PROFILE'S LIBRARIES, from the SAME rule Browse uses** (`BrowseRules`), so the
+    /// bar and the Browse screen can never disagree — the buildspec's fixed list is rejected in writing
+    /// (`docs/TVOS_UX_PLAN.md` §1b), and falsifier **F3** is what a round would catch it with.
+    ///
+    /// ⚠ **The `Browse` tab is a FALLBACK, and it exists exactly when the tabs cannot do their job**: a
+    /// profile with no libraries at all would otherwise have a top bar with nothing in it and no way into the
+    /// Browse screen (which is the screen that EXPLAINS the empty config). It is not offered beside real tabs,
+    /// because then it would duplicate them.
+    private var topBar: some View {
+        TopBar(tabs: topBarTabs,
+               initials: ProfileRules.initials(app.session?.currentProfile?.name ?? ""),
+               failure: store.snapshot.navFailure,
+               onProfile: { Task { await app.changeProfile() } })
     }
 
-    private var watchingAs: String {
-        let profile = app.session?.currentProfile?.name
-        let user = app.session?.signedInUser?.name
-        switch (user, profile) {
-        case (let user?, let profile?):
-            return "Signed in as \(user) · watching as \(profile)"
-        case (let user?, nil):
-            return "Signed in as \(user)"
-        default:
-            return ""
+    private var topBarTabs: [TopBarTab] {
+        var tabs: [TopBarTab] = [
+            TopBarTab(id: "home", title: "Home", isEnabled: true, warning: "", action: { app.showHome() }),
+        ]
+
+        let entries = store.snapshot.navEntries
+        if entries.isEmpty {
+            tabs.append(TopBarTab(id: "browse", title: "Browse", isEnabled: true, warning: "",
+                                  action: { app.showBrowse() }))
+        } else {
+            tabs.append(contentsOf: entries.map { entry in
+                TopBarTab(id: entry.id,
+                          title: entry.name,
+                          // ⚠ An unresolved library keeps its tab and its warning and simply cannot be
+                          // selected — `BrowseRules`' rule, on the top bar as well as in Browse.
+                          isEnabled: entry.isOpenable,
+                          warning: entry.warning,
+                          action: { app.openLibrary(folderID: entry.folderID) })
+            })
         }
+        return tabs
     }
 
     // MARK: - The three non-content states
@@ -112,9 +112,9 @@ struct HomeView: View {
                 .controlSize(.large)
             Text("Loading your library…")
                 .font(.system(size: 24))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(RKMColour.secondary)
         }
-        .padding(60)
+        .padding(TVTokens.Metric.safeMargin)
     }
 
     private func message(_ title: String, _ sub: String) -> some View {
@@ -123,41 +123,92 @@ struct HomeView: View {
                 .font(.system(size: 36, weight: .semibold))
             Text(sub)
                 .font(.system(size: 24))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(RKMColour.secondary)
             // ⚠ The retry is a real Button, so it is focusable — an error screen whose only action cannot
             // be reached with the remote is the dead end this app keeps designing out.
             Button("Try again") { Task { await store.load() } }
                 .font(.system(size: 22))
                 .padding(.top, 6)
         }
-        .padding(60)
+        .padding(TVTokens.Metric.safeMargin)
         .buttonStyle(.borderedProminent)
     }
 
-    // MARK: - The rails
+    // MARK: - The hero and the rails
 
-    private var rails: some View {
+    private var content: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: 42) {
+                if let hero = store.snapshot.hero {
+                    HeroBand(item: hero,
+                             isContinueWatching: store.snapshot.heroIsContinueWatching,
+                             base: base,
+                             onPrimary: { showPlaybackPlaceholder(for: hero) },
+                             onDetails: { open(hero) })
+                }
+
                 ForEach(store.snapshot.rails) { rail in
                     RailView(rail: rail, base: base, onSelect: open)
                 }
             }
-            .padding(.vertical, 10)
+            // ⚠ The hero is edge-to-edge and the rails keep the safe margin: the band's artwork is meant to
+            // bleed, and `RailView`/`HeroBand` own their own horizontal padding (both read
+            // `TVTokens.Metric.safeMargin`).
+            .padding(.bottom, 10)
         }
     }
 
     /// ⚠ The rows that FAILED, said out loud. A row that did not load and a row that is genuinely empty look
-    /// identical on screen, and only one of them is worth pressing `Refresh` about — so the difference is
+    /// identical on screen, and only one of them is worth pressing `Try again` about — so the difference is
     /// written down rather than left to the viewer to guess. Hidden when nothing failed.
     @ViewBuilder
     private var footer: some View {
         if !store.snapshot.failedRowTitles.isEmpty {
             Text("Couldn't load: \(store.snapshot.failedRowTitles.joined(separator: ", "))")
                 .font(.system(size: 20))
-                .foregroundStyle(.orange)
-                .padding(.horizontal, 60)
+                .foregroundStyle(RKMColour.warning)
+                .padding(.horizontal, TVTokens.Metric.safeMargin)
                 .padding(.bottom, 30)
+        }
+    }
+
+    // MARK: - Playback, said honestly
+
+    /// ⚠⚠ **The primary button's other half, and it is B4's placeholder verbatim**
+    /// (`DetailCopy.playPendingTitle` / `playPendingSub` / `nextUp`). The hero knows the verb the app WILL
+    /// offer — `Resume`, `Play S1E3` — so it names it rather than pretending. The tvOS player is Phase C.
+    private func showPlaybackPlaceholder(for item: MediaItem) {
+        playbackVerb = HomeRules.heroPrimaryLabel(isEpisode: HomeRules.isEpisodeItem(item),
+                                                 episodeCode: HomeRules.episodeItemCode(item) ?? "",
+                                                 isSeries: HomeRules.isSeries(item),
+                                                 percent: HomeRules.heroPercent(item))
+    }
+
+    private func playbackNotice(_ verb: String) -> some View {
+        ZStack {
+            Color.black.opacity(0.78)
+
+            VStack(spacing: 16) {
+                Text(DetailCopy.playPendingTitle)
+                    .font(.system(size: 36, weight: .bold))
+                Text(DetailCopy.playPendingSub)
+                    .font(.system(size: 24))
+                    .foregroundStyle(RKMColour.secondary)
+                Text(DetailCopy.nextUp(verb))
+                    .font(.system(size: 26, weight: .semibold))
+                    .foregroundStyle(RKMColour.accent)
+                Button("Close") { playbackVerb = nil }
+                    .buttonStyle(.borderedProminent)
+                    .font(.system(size: 22))
+                    .padding(.top, 6)
+            }
+            .padding(44)
+            .background(RKMColour.surface3, in: RoundedRectangle(cornerRadius: DesignTokens.Radius.xl,
+                                                                 style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: DesignTokens.Radius.xl, style: .continuous)
+                    .stroke(RKMColour.border, lineWidth: 1)
+            )
         }
     }
 

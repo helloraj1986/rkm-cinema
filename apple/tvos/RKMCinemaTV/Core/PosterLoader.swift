@@ -44,13 +44,19 @@ final class PosterLoader: ObservableObject {
 
     let itemID: String
     let url: URL?
+    /// ⚠ Which artwork route this loader is fetching — `poster` for a card, `backdrop` for a hero band (U3).
+    /// It is carried so the LOG LINES name it: a `401` on a hero's backdrop and a `401` on a card's poster
+    /// are the same defect, but only one of them is on screen when somebody reports "the hero is empty".
+    let route: PosterURL.Route
 
     private let timeout: TimeInterval
     private var started = false
 
-    init(base: URL, itemID: String, width: Int = PosterURL.defaultWidth, timeout: TimeInterval = 20) {
+    init(base: URL, itemID: String, width: Int? = nil, route: PosterURL.Route = .poster,
+         timeout: TimeInterval = 20) {
         self.itemID = itemID
-        self.url = PosterURL.url(base: base, itemID: itemID, width: width)
+        self.route = route
+        self.url = PosterURL.url(base: base, itemID: itemID, width: width, route: route)
         self.timeout = timeout
     }
 
@@ -85,20 +91,20 @@ final class PosterLoader: ObservableObject {
                 let message = status == 401
                     ? "not authorised — the session cookie did not reach the image request"
                     : "the server answered \(status)"
-                RKMLog.error("poster \(Self.short(itemID)) -> \(status) — session-cookie="
+                RKMLog.error("\(route.rawValue) \(Self.short(itemID)) -> \(status) — session-cookie="
                                 + "\(hasSession ? "present" : "ABSENT"), cached-before=\(alreadyCached)",
                              category: .net, correlation: correlation)
                 state = .failed(message)
                 return
             }
-            RKMLog.info("poster \(Self.short(itemID)) -> \(status), \(data.count) bytes, "
+            RKMLog.info("\(route.rawValue) \(Self.short(itemID)) -> \(status), \(data.count) bytes, "
                             + "session-cookie=\(hasSession ? "present" : "absent"), "
                             + "cached-before=\(alreadyCached)",
                         category: .net, correlation: correlation)
             state = .loaded(data)
         } catch {
             let nsError = error as NSError
-            RKMLog.error("poster \(Self.short(itemID)) FAILED — \(nsError.domain) \(nsError.code) · "
+            RKMLog.error("\(route.rawValue) \(Self.short(itemID)) FAILED — \(nsError.domain) \(nsError.code) · "
                             + "session-cookie=\(hasSession ? "present" : "absent")",
                          category: .net, correlation: correlation)
             state = .failed("\(nsError.domain) \(nsError.code)")

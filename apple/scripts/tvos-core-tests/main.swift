@@ -394,7 +394,21 @@ section("the home screen's states")
 let cwRow = item("cw", ", \"playback_position\": 60, \"runtime\": 600")!
 let playedRow = item("rp", ", \"played\": true")!
 
-let nothing = HomeSnapshot.make(continueWatching: .loaded([]), recentlyPlayed: .loaded([]))
+/// ⚠ U3's snapshot carries FIVE inputs; the state-table checks below are about the two RAILS, so they are
+/// written against this shorthand — and the three new inputs default to EMPTY AND LOADED, which is exactly
+/// what "not asked" means (`HomeSnapshot.empty`'s rule: never failed on a screen that has not asked).
+/// ⚠ The shorthand lives HERE and not on `HomeSnapshot`, because `make` deliberately has no defaults: a
+/// production caller that forgot the tab row must not get an empty one silently.
+func snapshot(continueWatching cw: RailOutcome,
+              recentlyPlayed played: RailOutcome,
+              nav: NavOutcome = .loaded([]),
+              libraryRecent: RailOutcome = .loaded([]),
+              libraryItems: RailOutcome = .loaded([])) -> HomeSnapshot {
+    HomeSnapshot.make(continueWatching: cw, recentlyPlayed: played, nav: nav,
+                      libraryRecent: libraryRecent, libraryItems: libraryItems)
+}
+
+let nothing = snapshot(continueWatching: .loaded([]), recentlyPlayed: .loaded([]))
 checkEqual(nothing.rails.count, 0, "an empty library renders no rails")
 checkEqual(nothing.isEmpty, true, "…and says so")
 checkEqual(nothing.allFailed, false, "an empty library is NOT a failure")
@@ -403,7 +417,12 @@ checkEqual(nothing.allFailed, false, "an empty library is NOT a failure")
 // falsification pass caught. The copy is a rule; it is pinned against the words, not against itself.
 checkEqual(nothing.placeholder?.title, "Nothing to play yet", "the empty state has its own sentence")
 
-let content = HomeSnapshot.make(continueWatching: .loaded([cwRow]), recentlyPlayed: .loaded([playedRow]))
+// ⚠⚠ TWO in-progress rows, not one, and that is U3's doing: the HERO takes the first of them and
+// `withoutHero` takes it out of the rail below, so a one-row fixture would leave no Continue Watching rail at
+// all. That is the web app's behaviour and it is correct — the hero IS the continue-watching title, and the
+// rail is what is LEFT (his de-duplication rule, 2026-09-17). The second row is what makes the rail exist.
+let cwRow2 = item("cw2", ", \"playback_position\": 30, \"runtime\": 600")!
+let content = snapshot(continueWatching: .loaded([cwRow, cwRow2]), recentlyPlayed: .loaded([playedRow]))
 checkEqual(content.rails.map(\.id), [.continueWatching, .recentlyPlayed],
            "Continue Watching comes first, then Recently Played")
 checkEqual(content.rails.first?.title, "Continue Watching",
@@ -412,12 +431,12 @@ checkEqual(content.rails.last?.title, "Recently Played",
            "the Recently Played rail has the web app's own heading")
 check(content.placeholder == nil, "a screen with content has no placeholder")
 
-let oneEmpty = HomeSnapshot.make(continueWatching: .loaded([]), recentlyPlayed: .loaded([playedRow]))
+let oneEmpty = snapshot(continueWatching: .loaded([]), recentlyPlayed: .loaded([playedRow]))
 checkEqual(oneEmpty.rails.map(\.id), [.recentlyPlayed],
            "a row that is empty does not render an empty band")
 check(oneEmpty.placeholder == nil, "one working row is still a screen")
 
-let oneFailed = HomeSnapshot.make(continueWatching: .failed("boom"), recentlyPlayed: .loaded([playedRow]))
+let oneFailed = snapshot(continueWatching: .failed("boom"), recentlyPlayed: .loaded([playedRow]))
 checkEqual(oneFailed.rails.count, 1, "a failed row does not take a working one with it")
 checkEqual(oneFailed.failedRowTitles, [HomeSnapshot.continueWatchingTitle],
            "…and the failure is named so it is not silent")
@@ -427,12 +446,12 @@ check(oneFailed.placeholder == nil, "a failed row does not blank a screen that h
 // ⚠⚠ THE MIXED CASE, and the reason `placeholder` checks `rails.isEmpty && hasAnyFailure` rather than
 // `allFailed`: one row failed and the other honestly answered "nothing". Falling through to the empty
 // sentence would tell the viewer "Nothing to play yet" while half the answer never arrived.
-let mixed = HomeSnapshot.make(continueWatching: .loaded([]), recentlyPlayed: .failed("boom"))
+let mixed = snapshot(continueWatching: .loaded([]), recentlyPlayed: .failed("boom"))
 checkEqual(mixed.isEmpty, false, "a failure is not an empty library")
 checkEqual(mixed.placeholder?.title, "Couldn't load your library",
            "with nothing to show, a failed row takes the screen rather than claiming the library is empty")
 
-let bothFailed = HomeSnapshot.make(continueWatching: .failed("a"), recentlyPlayed: .failed("b"))
+let bothFailed = snapshot(continueWatching: .failed("a"), recentlyPlayed: .failed("b"))
 checkEqual(bothFailed.allFailed, true, "both rows failed")
 checkEqual(bothFailed.rails.count, 0, "…so there are no rails")
 checkEqual(bothFailed.failedRowTitles.count, 2, "…and both are named")
@@ -441,7 +460,7 @@ checkEqual(bothFailed.placeholder?.title, "Couldn't load your library", "…and 
 // ⚠ The value the store starts from. Not asked is NOT failed — otherwise every launch would flash an
 // error sentence before the first byte arrives.
 checkEqual(HomeSnapshot.empty.allFailed, false, "the starting snapshot is empty, never failed")
-checkEqual(HomeSnapshot.make(continueWatching: .loaded([]), recentlyPlayed: .loaded([])).placeholder?.sub,
+checkEqual(snapshot(continueWatching: .loaded([]), recentlyPlayed: .loaded([])).placeholder?.sub,
            "Titles appear here as the library is watched and added.", "the empty state explains itself")
 
 section("what a failed row says")
@@ -1073,6 +1092,182 @@ checkEqual(ProfileRules.isAdministrator(signedInUserID: "", profiles: household)
            "an empty signed-in id is not an administrator")
 checkEqual(ProfileRules.isAdministrator(signedInUserID: "u3", profiles: []), false,
            "no profiles means no administrator — the admin controls are not offered on a guess")
+
+// MARK: - The backdrop route (Phase U3)
+
+section("the backdrop URL")
+
+// ⚠ The hero band needs 16:9 artwork beside the cards' 2:3 posters, and it is the SAME builder with the other
+// route word — the trap the poster half pins (`appendingPathComponent(_:)` escaping a query into the PATH)
+// applies here identically, which is the whole reason the two are one function.
+checkEqual(PosterURL.path(itemID: movieID, route: .backdrop),
+           "api/jellyfin/backdrop?id=\(movieID)&width=1600",
+           "a backdrop path is the backdrop route at the backdrop width")
+checkEqual(PosterURL.path(itemID: movieID), "api/jellyfin/poster?id=\(movieID)&width=500",
+           "…and the default route is still the poster at 500")
+check(PosterURL.path(itemID: "", route: .backdrop) == nil, "an empty id builds no backdrop either")
+checkEqual(PosterURL.clamped(99_999, route: .backdrop), 4000,
+           "a backdrop width above its own ceiling is lowered to it")
+checkEqual(PosterURL.clamped(99_999), 2000, "…while the poster's ceiling is unchanged")
+checkEqual(PosterURL.clamped(0, route: .backdrop), 16, "the backdrop's floor is the server's 16 as well")
+checkEqual(PosterURL.url(base: trailing, itemID: movieID, route: .backdrop)?.absoluteString,
+           "http://rkm-hp.tail8d5e8.ts.net:8124/api/jellyfin/backdrop?id=\(movieID)&width=1600",
+           "a backdrop URL is the backdrop route")
+checkEqual(PosterURL.url(base: base, itemID: movieID, width: 800, route: .backdrop)?.absoluteString,
+           "http://rkm-hp.tail8d5e8.ts.net:8124/api/jellyfin/backdrop?id=\(movieID)&width=800",
+           "a given backdrop width is carried")
+check(PosterURL.url(base: base, itemID: "", route: .backdrop) == nil,
+      "an empty id builds no absolute backdrop URL either")
+
+// MARK: - The hero (Phase U3)
+
+section("the hero's pick")
+
+// ⚠⚠ MIRRORED from `lib.ts::pickHomeHero`, and the TIERS are the rule. `movie` (Sholay: in progress, 620 of
+// 7200) and `episode` (1200 of 2700) are the fixtures decoded at the top of this file.
+let finishedWithPosition = item("f1", ", \"played\": true, \"playback_position\": 100, \"runtime\": 1000")!
+let inProgressShow = item("s1", ", \"type\": \"tv\", \"playback_position\": 30, \"runtime\": 600")!
+
+checkEqual(HomeRules.homeHero(continueWatching: [episode!, movie!], recentlyAdded: [], all: [])?.itemID,
+           movieID, "an in-progress MOVIE takes the hero before an episode")
+checkEqual(HomeRules.homeHero(continueWatching: [episode!], recentlyAdded: [], all: [])?.itemID,
+           "1a2b3c4d5e6f708192a3b4c5d6e7f809", "an episode takes the hero when no movie is in progress")
+// ⚠⚠ A FINISHED title never takes the spotlight, even with a position left on it: a hero that says "Resume"
+// over something already watched is a lie.
+checkEqual(HomeRules.homeHero(continueWatching: [finishedWithPosition], recentlyAdded: [], all: []),
+           nil, "a finished title never takes the hero")
+checkEqual(HomeRules.homeHero(continueWatching: [], recentlyAdded: [item("r1")!], all: [])?.itemID, "r1",
+           "the most recently added title takes the hero when nothing is in progress")
+checkEqual(HomeRules.homeHero(continueWatching: [], recentlyAdded: [], all: [inProgressShow, item("a1")!])?.itemID,
+           "a1", "the whole-library fallback prefers a film")
+checkEqual(HomeRules.homeHero(continueWatching: [], recentlyAdded: [], all: [inProgressShow])?.itemID, "s1",
+           "…and falls back to whatever there is")
+checkEqual(HomeRules.homeHero(continueWatching: [], recentlyAdded: [], all: []), nil,
+           "an empty library has no hero")
+checkEqual(HomeRules.homeHero(continueWatching: [item("")!], recentlyAdded: [], all: []), nil,
+           "a row with no id cannot be the hero")
+
+section("the hero title and its exclusion")
+
+// ⚠ HIS RULE (2026-09-17): the title the hero is showing is REMOVED from the rail below, or the same film
+// appears twice on one page — once big at the top, once as the first card.
+let heroRail = [item("a")!, item("b")!, item("c")!]
+checkEqual(HomeRules.withoutHero(heroRail, hero: item("b")!).map(\.itemID), ["a", "c"],
+           "the hero's title is excluded from the rail below it")
+checkEqual(HomeRules.withoutHero(heroRail, hero: nil).count, 3, "no hero removes nothing")
+// ⚠⚠ THE SENTINEL RULE: an id-less hero must not match an id-less row. `"" == ""` is true, and this repo has
+// lost a bug to precisely that (`entryForHit` matched every live hit to the first id-less watchlist entry).
+checkEqual(HomeRules.withoutHero([item("")!, item("a")!], hero: item("")!).count, 2,
+           "a hero with no id removes nothing — never the first row with an empty id")
+
+checkEqual(HomeRules.heroTitle(episode!), "Some Show", "an episode's hero is titled with its series")
+checkEqual(HomeRules.heroTitle(movie!), "Sholay", "a film's hero is titled with the film")
+
+section("the hero's copy and numbers")
+
+checkEqual(HomeRules.heroEyebrow(continueWatching: true, isEpisode: false), "Continue Watching",
+           "a continue-watching hero says Continue Watching")
+checkEqual(HomeRules.heroEyebrow(continueWatching: true, isEpisode: true), "Continue episode",
+           "an in-progress episode says Continue episode")
+checkEqual(HomeRules.heroEyebrow(continueWatching: false, isEpisode: false), "Recently Added",
+           "a hero that is not continue watching says Recently Added")
+
+checkEqual(HomeRules.heroPrimaryLabel(isEpisode: false, episodeCode: "", isSeries: false, percent: 9),
+           "Resume", "a part-watched film resumes")
+checkEqual(HomeRules.heroPrimaryLabel(isEpisode: false, episodeCode: "", isSeries: false, percent: 0),
+           "Play", "an unwatched film plays")
+checkEqual(HomeRules.heroPrimaryLabel(isEpisode: false, episodeCode: "", isSeries: true, percent: 0),
+           "Explore Episodes", "a series is explored, never played")
+checkEqual(HomeRules.heroPrimaryLabel(isEpisode: true, episodeCode: "S1E3", isSeries: false, percent: 44),
+           "Resume S1E3", "a half-watched episode names the episode it resumes")
+checkEqual(HomeRules.heroPrimaryLabel(isEpisode: true, episodeCode: "S1E3", isSeries: false, percent: 0),
+           "Play S1E3", "an unwatched episode names the episode it plays")
+checkEqual(HomeRules.heroPrimaryLabel(isEpisode: true, episodeCode: "", isSeries: false, percent: 0),
+           "Play", "an episode with no code does not leave a dangling space")
+
+// ⚠ The hero's own meta format, `year · S1 E3 · genre · genre` — note the SPACE in `S1 E3`, which is NOT the
+// card's `S1E3`. Both are the web app's, character for character.
+checkEqual(HomeRules.heroMetaLine(movie!), "1975 · Action · Drama", "the hero's meta reads year and genres")
+checkEqual(HomeRules.heroMetaLine(item("g", ", \"year\": 2001, \"genres\": [\"A\", \"B\", \"C\"]")!),
+           "2001 · A · B", "the hero's meta keeps only two genres")
+checkEqual(HomeRules.heroMetaLine(episode!), "S1 E3", "an episode's hero meta carries its code, spaced")
+checkEqual(HomeRules.heroMetaLine(item("n")!), "", "a row with nothing to say says nothing")
+
+checkEqual(HomeRules.heroPercent(movie!), 9, "the hero's percentage is rounded (620 of 7200 is 9%)")
+checkEqual(HomeRules.heroPercent(episode!), 44, "…and 1200 of 2700 is 44%")
+checkEqual(HomeRules.heroPercent(item("z")!), 0, "no runtime means no percentage")
+checkEqual(HomeRules.heroPercent(item("z2", ", \"playback_position\": 10, \"runtime\": 0")!), 0,
+           "a zero runtime means no percentage")
+
+checkEqual(HomeRules.heroRuntimeLeft(movie!), "1h 50m", "a film counts down what is left")
+checkEqual(HomeRules.heroRuntimeLeft(item("done", ", \"playback_position\": 600, \"runtime\": 600")!), "",
+           "a finished film has no countdown")
+checkEqual(HomeRules.heroRuntimeLeft(inProgressShow), "", "a series measures episodes, not minutes")
+checkEqual(HomeRules.heroRuntimeLeft(episode!), "", "an episode has its own code, not a countdown")
+check(HomeRules.heroShowsProgress(movie!), "a film with progress draws the hero's bar")
+check(HomeRules.heroShowsProgress(episode!), "an episode with progress draws the hero's bar")
+check(!HomeRules.heroShowsProgress(inProgressShow), "a series draws no countdown bar")
+
+checkEqual(HomeRules.typeIcon(inProgressShow), .tv, "a series gets the tv glyph")
+checkEqual(HomeRules.typeIcon(movie!), .film, "a film gets the film glyph")
+
+// MARK: - The top bar's tabs (Phase U3)
+
+section("the top bar's tabs")
+
+let tabResolved = library("Movies", ok: true, folderID: "abc")!
+let tabUnresolved = library("Old TV", ok: false, folderID: "ghost", collectionType: "tvshows",
+                            warning: "Path not found on the server")!
+let tabEntries = BrowseRules.browseEntries(libraries: [tabResolved, tabUnresolved], serverFolders: [])
+
+// ⚠⚠ THE BUILDSPEC'S FIXED TAB LIST IS REJECTED IN WRITING, and this is the check that says so: the tabs come
+// from `BrowseRules.browseEntries` — the SAME rule the Browse screen uses — so a profile's libraries and the
+// Browse list can never disagree, and an unresolved library keeps its row and its warning.
+checkEqual(tabEntries.count, 2, "the tabs are this profile's libraries, from the one rule")
+checkEqual(tabEntries.first?.isOpenable, true, "a resolved library opens")
+checkEqual(tabEntries.last?.isOpenable, false, "an unresolved library is a tab that explains itself")
+
+let withTabs = snapshot(continueWatching: .loaded([]), recentlyPlayed: .loaded([playedRow]),
+                        nav: .loaded(tabEntries))
+checkEqual(withTabs.navEntries.count, 2, "the snapshot publishes the tabs the top bar draws")
+
+// ⚠ A tab row that FAILED is named in the footer beside a rail that failed: a top bar with no tabs because
+// the fetch died looks exactly like a profile with no libraries, and only one of those is worth acting on.
+let withTabsFailed = snapshot(continueWatching: .failed("boom"), recentlyPlayed: .loaded([playedRow]),
+                              nav: .failed("Couldn't reach the server."))
+checkEqual(withTabsFailed.failedRowTitles, ["Continue Watching", "Libraries"],
+           "a failed tab row is named in the footer, beside the rail that failed")
+
+let navFailed = snapshot(continueWatching: .loaded([]), recentlyPlayed: .loaded([playedRow]),
+                         nav: .failed("Couldn't reach the server."))
+checkEqual(navFailed.navEntries.count, 0, "a failed tab row draws no tabs")
+check(navFailed.placeholder == nil, "…but does not blank a screen that has content")
+// ⚠ The mixed case again, one tier up: NOTHING to show AND a failed tab row must not read as an empty
+// library — half the answer never arrived.
+checkEqual(snapshot(continueWatching: .loaded([]), recentlyPlayed: .loaded([]),
+                    nav: .failed("boom")).placeholder?.title, "Couldn't load your library",
+           "with nothing to show, a failed tab row takes the screen rather than claiming the library is empty")
+
+section("the hero in the snapshot")
+
+// ⚠ The two sides of the exclusion, together: the hero is chosen from what was fetched, and the rail below it
+// is built from the SAME snapshot with the hero taken out.
+let heroSnapshot = snapshot(continueWatching: .loaded([movie!, playedRow]), recentlyPlayed: .loaded([]))
+checkEqual(heroSnapshot.hero?.itemID, movieID, "the snapshot picks the hero from its own inputs")
+checkEqual(heroSnapshot.heroIsContinueWatching, true, "…and says it came from Continue Watching")
+checkEqual(heroSnapshot.rails.first?.items.map(\.itemID), [playedRow.itemID],
+           "…and the rail below it excludes the hero")
+
+let recentHero = snapshot(continueWatching: .loaded([]), recentlyPlayed: .loaded([]),
+                          libraryRecent: .loaded([item("r1")!]))
+checkEqual(recentHero.hero?.itemID, "r1", "a hero from the recently-added list is still a hero")
+checkEqual(recentHero.heroIsContinueWatching, false, "…and does not claim to be Continue Watching")
+
+let idlessHero = snapshot(continueWatching: .loaded([item("")!]), recentlyPlayed: .loaded([]),
+                          libraryItems: .loaded([item("")!, item("a1")!]))
+checkEqual(idlessHero.hero?.itemID, "", "an id-less fallback can still be the hero of an empty-ish library")
+checkEqual(idlessHero.heroIsContinueWatching, false,
+           "…and is never claimed to have come from Continue Watching (the empty-id sentinel)")
 
 // MARK: - Report
 

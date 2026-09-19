@@ -1,7 +1,7 @@
 import SwiftUI
 import UIKit
 
-/// One poster card: the picture, the resume bar, the title, and the one meta line.
+/// One poster card: the picture, its type badge, the resume bar, the title, and the one meta line.
 ///
 /// ⚠⚠ **NOTHING HERE IS ON HOVER.** The web card reveals Play/Details on hover and shows the ⋯ menu on
 /// hover; a TV has neither. So the card is a plain `Button` — **Select opens the title** — and every state
@@ -11,6 +11,14 @@ import UIKit
 /// ⚠ It carries **no watched control**, matching the web rule his decision fixed on 2026-09-18: the poster
 /// REFLECTS status and the details screen OWNS the watched toggle. B2 has no details screen yet, so for now
 /// the card shows the played state and offers no way to change it — which is correct, not incomplete.
+///
+/// ⚠⚠ **PHASE U3 ADDED THE TYPE BADGE AND DELIBERATELY NOT THE PLAY GLYPH.** The buildspec's §4 card has
+/// "an episode/type badge (`S2·E4`, `MOVIE`), a play glyph, an optional progress bar". The badge is here, its
+/// CONTENT is the web app's own rule (`MediaCard.tsx`: the episode code when there is one, otherwise the
+/// tv/film glyph — `HomeRules.typeIcon`, not the buildspec's word badge, because a word badge here and a glyph
+/// on the phone is a second vocabulary for one fact). **The play glyph is NOT here:** nothing plays yet
+/// (Phase C), and a play triangle that does nothing is the control `docs/ARCHITECTURE.md` §11 forbids. It
+/// lands with the player, on the day the gesture means something.
 struct PosterCard: View {
 
     let item: MediaItem
@@ -35,7 +43,7 @@ struct PosterCard: View {
                         .lineLimit(1)
                     Text(HomeRules.cardMetaLine(item))
                         .font(.system(size: 20))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(RKMColour.muted)
                         .lineLimit(1)
                 }
                 // ⚠ A fixed width for the whole label: without it, a long title makes this card wider than
@@ -44,6 +52,38 @@ struct PosterCard: View {
             }
         }
         .buttonStyle(.card)
+        // ⚠ The badge carries real information (an episode code, or what kind of thing this is) and a screen
+        // reader would otherwise hear only the title — the buildspec's §6 rule, and the same reason the
+        // profile tiles carry one.
+        .accessibilityLabel(badgeText.isEmpty
+                            ? item.title
+                            : "\(item.title), \(badgeText)")
+    }
+
+    // MARK: - The badge
+
+    /// ⚠ The episode code when there is one, otherwise empty — and the caller draws the type GLYPH in that
+    /// case. The code comes from `HomeRules.episodeItemCode`, the same rule the card's meta line uses, so the
+    /// `S1E3` above the artwork and the `S1E3 · Series` underneath cannot disagree.
+    private var badgeText: String {
+        HomeRules.episodeItemCode(item) ?? ""
+    }
+
+    private var badge: some View {
+        Group {
+            if badgeText.isEmpty {
+                Image(systemName: HomeRules.typeIcon(item).systemImage)
+                    .font(.system(size: 15, weight: .semibold))
+            } else {
+                Text(badgeText)
+                    .font(.system(size: 15, weight: .bold))
+            }
+        }
+        .foregroundStyle(RKMColour.primary)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(RKMColour.background.opacity(0.65),
+                    in: RoundedRectangle(cornerRadius: DesignTokens.Radius.sm, style: .continuous))
     }
 
     // MARK: - The picture
@@ -52,7 +92,12 @@ struct PosterCard: View {
     private var poster: some View {
         PosterImageView(base: base, itemID: item.itemID)
             .frame(width: Self.width, height: Self.width / Self.aspect)
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: DesignTokens.Radius.md, style: .continuous))
+            // ⚠ The badge sits on the ARTWORK's top-left corner, as the buildspec draws it — an overlay on the
+            // picture rather than a row above the title, so the rail's rhythm does not change.
+            .overlay(alignment: .topLeading) {
+                badge.padding(8)
+            }
     }
 
     // MARK: - The resume bar
@@ -67,8 +112,8 @@ struct PosterCard: View {
         if let fraction = item.progressFraction {
             GeometryReader { geometry in
                 ZStack(alignment: .leading) {
-                    Capsule().fill(.white.opacity(0.22))
-                    Capsule().fill(.white).frame(width: geometry.size.width * fraction)
+                    Capsule().fill(RKMColour.primary.opacity(0.22))
+                    Capsule().fill(RKMColour.accent).frame(width: geometry.size.width * fraction)
                 }
             }
             .frame(width: Self.width, height: 6)
@@ -76,7 +121,7 @@ struct PosterCard: View {
     }
 }
 
-/// The poster itself: a state-driven image with its own loader, so a card never silently draws nothing.
+/// The artwork itself: a state-driven image with its own loader, so a card never silently draws nothing.
 ///
 /// ⚠ **Why not `AsyncImage`:** it cannot log, and on a TV there is no other way to find out why a wall is
 /// empty. `PosterLoader` logs the HTTP status, the byte count and whether a session cookie was attached —
@@ -86,25 +131,30 @@ struct PosterCard: View {
 /// ⚠ **Made non-private in B4** so the detail screen reuses the SAME poster renderer the cards use: one
 /// load path, one log line, one "no photo" mark. A second image view on the detail screen is a second place
 /// for artwork to fail silently — which is the failure this whole file exists to make visible.
+/// ⚠ **U3 gave it a `route`** so the Home's hero band can ask for the 16:9 backdrop through the same loader.
 struct PosterImageView: View {
 
     let base: URL
     let itemID: String
+    /// `.poster` (2:3, the cards) or `.backdrop` (16:9, the hero band). ⚠ One parameter rather than a second
+    /// image view: the cookie handling, the log line and the failure mark are the parts that must not drift.
+    var route: PosterURL.Route = .poster
 
     @StateObject private var loader: PosterLoader
 
-    init(base: URL, itemID: String) {
+    init(base: URL, itemID: String, route: PosterURL.Route = .poster) {
         self.base = base
         self.itemID = itemID
-        _loader = StateObject(wrappedValue: PosterLoader(base: base, itemID: itemID))
+        self.route = route
+        _loader = StateObject(wrappedValue: PosterLoader(base: base, itemID: itemID, route: route))
     }
 
     var body: some View {
         ZStack {
             // The placeholder: warm, flat, and obviously not a poster — a black rectangle reads as a
             // rendering fault, which is the one thing it must not be mistaken for.
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(.white.opacity(0.08))
+            Rectangle()
+                .fill(RKMColour.primary.opacity(0.08))
 
             switch loader.state {
             case .loaded(let data):
@@ -137,6 +187,6 @@ struct PosterImageView: View {
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 14)
         }
-        .foregroundStyle(.secondary)
+        .foregroundStyle(RKMColour.muted)
     }
 }

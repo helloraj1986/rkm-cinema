@@ -93,10 +93,11 @@ MUTATIONS = [
     # ---- U3: the backdrop route, which is the SAME builder with the other route word and the other limits.
     # ⚠ The route word is a CONTRACT PATH sitting in a string literal (`Route`'s raw value), so R4 in
     # `check-tvos-models.py` checks both routes character for character. This mutation proves the harness
-    # notices when that word is wrong.
+    # notices when that word is wrong. ⚠ It must NOT be changed to another EXISTING raw value: two enum cases
+    # with the same raw value do not compile, and an uncompilable mutation proves nothing (`ERROR`, not red).
     ("the backdrop route word", "PosterURL.swift",
      '        case backdrop = "api/jellyfin/backdrop"',
-     '        case backdrop = "api/jellyfin/poster"',
+     '        case backdrop = "api/jellyfin/backdropX"',
      "a backdrop URL is the backdrop route"),
     ("the backdrop's own width ceiling", "PosterURL.swift",
      "        var widthRange: ClosedRange<Int> { self == .poster ? 16...2000 : 16...4000 }",
@@ -105,7 +106,10 @@ MUTATIONS = [
     ("the backdrop's default width", "PosterURL.swift",
      "        var defaultWidth: Int { self == .poster ? 500 : 1600 }",
      "        var defaultWidth: Int { 500 }",
-     "a backdrop path defaults to 1600 wide"),
+     # ⚠ The expected string must be the FIRST check this mutation turns red, not merely A check it turns red:
+     # a default width of 500 makes the backdrop's own path wrong before the clamp check is ever reached, and
+     # the runner counts a red on the wrong line as a survivor.
+     "a backdrop path is the backdrop route at the backdrop width"),
     # ---- the item shape
     ("the identity key", "LibraryModels.swift",
      'case itemID = "item_id"', 'case itemID = "id"',
@@ -312,7 +316,10 @@ MUTATIONS = [
     # ---- U3: the hero's pick, its copy, and the top bar's tabs
     ("a film no longer preferred for the hero", "HomeRails.swift",
      "        if let movie = resume.first(where: { !isSeries($0) && !isEpisodeItem($0) }) { return movie }",
-     "        if let movie = resume.first(where: { true }) { return movie }",
+     # ⚠ `{ _ in true }` and not `{ true }`: a closure body with no parameters does not satisfy
+     # `(MediaItem) -> Bool`, so the mutation would not compile — and an uncompilable mutation is an ERROR,
+     # never a red (the rule this repo already paid for on Phase B's `playbackPosition`).
+     "        if let movie = resume.first(where: { _ in true }) { return movie }",
      "an in-progress MOVIE takes the hero before an episode"),
     ("a finished title taking the hero", "HomeRails.swift",
      "            !$0.itemID.isEmpty && !($0.played ?? false) && ($0.playbackPosition ?? 0) > 0",
@@ -358,9 +365,12 @@ MUTATIONS = [
      "        return min(100, Int((Double(position) / Double(runtime) * 100)))",
      "the hero's percentage is rounded (620 of 7200 is 9%)"),
     ("a countdown on a finished film", "HomeRails.swift",
-     "              position > 0, runtime > position else { return \"\" }",
      "              position > 0 else { return \"\" }",
-     "a finished film has no countdown"),
+     "              position >= 0 else { return \"\" }",
+     # ⚠ This replaced a mutation on a `runtime > position` clause that was DELETED from the source the moment
+     # the falsification pass showed it could not be told from its absence (`runtimeText` clamps a negative
+     # remainder already). What is pinned now is the clause that DOES change the answer: an unstarted film.
+     "an unstarted film has no countdown"),
     ("a countdown on a series", "HomeRails.swift",
      "        guard !isSeries(item), !isEpisodeItem(item) else { return \"\" }",
      "        guard !isSeries(item) else { return \"\" }",
@@ -376,7 +386,19 @@ MUTATIONS = [
     ("a series drawn with the film glyph", "HomeRails.swift",
      "        isSeries(item) ? .tv : .film", "        .film",
      "a series gets the tv glyph"),
-
+    # ---- U4: the third rail
+    ("the third rail dropped", "HomeRails.swift",
+     "        let added = HomeRules.recentlyAddedItems(libraryRecent.items)\n        if !added.isEmpty {",
+     "        let added = HomeRules.recentlyAddedItems(libraryRecent.items)\n        if false {",
+     "Recently Added is the THIRD rail"),
+    ("the Recently Added heading lowercased", "HomeRails.swift",
+     '    static let recentlyAddedTitle = "Recently Added"',
+     '    static let recentlyAddedTitle = "Recently added"',
+     "the third rail has the web app's own heading"),
+    ("a failed Recently Added row going unnamed", "HomeRails.swift",
+     "        if libraryRecent.failedMessage != nil { out.append(Self.recentlyAddedTitle) }",
+     "        if false { out.append(Self.recentlyAddedTitle) }",
+     "a failed Recently Added fetch is named in the footer"),
 ]
 
 

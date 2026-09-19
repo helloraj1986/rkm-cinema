@@ -22,6 +22,10 @@ import Foundation
 enum HomeRailID: String, Equatable {
     case continueWatching = "continue-watching"
     case recentlyPlayed = "recently-played"
+    /// ⚠ **The third rail, wired in Phase U4** — the screen decision `HomeRails`' header used to defer, using
+    /// the rule and the cap that were already written for it (`recentlyAddedItems`,
+    /// `HomeRailLimit.recentlyAdded`). `useHomeRows` has composed it on the web since M3.
+    case recentlyAdded = "recently-added"
 }
 
 /// How many posters a rail shows.
@@ -224,12 +228,20 @@ enum HomeRules {
         return min(100, Int((Double(position) / Double(runtime) * 100).rounded()))
     }
 
-    /// `"1h 04m left"`-style text under the hero's progress bar, or `""` — never `"0m left"`, and never a
+    /// `"1h 50m left"`-style text under the hero's progress bar, or `""` — never `"0m left"`, and never a
     /// countdown for a SERIES (which measures episodes, not minutes) or an EPISODE (which has its own code).
+    ///
+    /// ⚠⚠ **A THIRD CLAUSE WAS WRITTEN HERE AND DELETED BY THE FALSIFICATION PASS, which is worth the ink:**
+    /// the guard used to read `position > 0, runtime > position`. Reverting the second half changed NOTHING —
+    /// `HomeRules.runtimeText` clamps a negative remainder with `max(0, …)` and returns `""` — so it was a
+    /// clause no check could tell from its absence. **A rule that cannot be falsified is not a rule**, and the
+    /// honest fix is to delete the code rather than to keep a mutation that only pretends to pin it.
+    /// ⚠ What IS pinned: `!isSeries`/`!isEpisodeItem` (a series counts episodes) and `position > 0` (an
+    /// unstarted film has no countdown to show).
     static func heroRuntimeLeft(_ item: MediaItem) -> String {
         guard !isSeries(item), !isEpisodeItem(item) else { return "" }
         guard let runtime = item.runtime, let position = item.playbackPosition,
-              position > 0, runtime > position else { return "" }
+              position > 0 else { return "" }
         return runtimeText(runtime - position)
     }
 
@@ -301,6 +313,10 @@ struct HomeSnapshot: Equatable {
     /// rail is a second vocabulary for one idea.
     static let continueWatchingTitle = "Continue Watching"
     static let recentlyPlayedTitle = "Recently Played"
+    /// ⚠ The web app's own heading (`LibraryHomeView.tsx:198`: `<SectionHeader title="Recently Added" />`),
+    /// pinned by the harness against the literal words.
+    static let recentlyAddedTitle = "Recently Added"
+
     /// What the footer calls the TAB ROW when its fetch failed. ⚠ Not a rail heading — the tabs are the top
     /// bar's — but the failure has to be named, and "Libraries" is the word the web's own sidebar group uses.
     static let tabsLabel = "Libraries"
@@ -350,6 +366,13 @@ struct HomeSnapshot: Equatable {
         if !played.isEmpty {
             out.append(HomeRail(id: .recentlyPlayed, title: Self.recentlyPlayedTitle, items: played))
         }
+        // ⚠ U4's third rail. ⚠ `recentlyAddedItems` is the id-FILTERED one (unlike `recentlyPlayedItems`,
+        // which is only capped) — the web app's asymmetry, mirrored: a recently-ADDED row with no id cannot be
+        // opened and has no poster, so it never reaches the screen.
+        let added = HomeRules.recentlyAddedItems(libraryRecent.items)
+        if !added.isEmpty {
+            out.append(HomeRail(id: .recentlyAdded, title: Self.recentlyAddedTitle, items: added))
+        }
         return out
     }
 
@@ -386,6 +409,9 @@ struct HomeSnapshot: Equatable {
         var out: [String] = []
         if continueWatching.failedMessage != nil { out.append(Self.continueWatchingTitle) }
         if recentlyPlayed.failedMessage != nil { out.append(Self.recentlyPlayedTitle) }
+        // ⚠ The third rail's own fetch, from U4: the response that feeds it also feeds the hero's second tier,
+        // so a failure here can take a whole row off the screen and must say so.
+        if libraryRecent.failedMessage != nil { out.append(Self.recentlyAddedTitle) }
         if nav.failedMessage != nil { out.append(Self.tabsLabel) }
         return out
     }

@@ -1202,6 +1202,10 @@ checkEqual(HomeRules.heroPercent(item("z2", ", \"playback_position\": 10, \"runt
 checkEqual(HomeRules.heroRuntimeLeft(movie!), "1h 50m", "a film counts down what is left")
 checkEqual(HomeRules.heroRuntimeLeft(item("done", ", \"playback_position\": 600, \"runtime\": 600")!), "",
            "a finished film has no countdown")
+// ⚠ The clause the falsification pass made load-bearing once the redundant `runtime > position` half went:
+// without `position > 0` an unstarted film would read its WHOLE runtime as "time left".
+checkEqual(HomeRules.heroRuntimeLeft(item("zero", ", \"playback_position\": 0, \"runtime\": 600")!), "",
+           "an unstarted film has no countdown")
 checkEqual(HomeRules.heroRuntimeLeft(inProgressShow), "", "a series measures episodes, not minutes")
 checkEqual(HomeRules.heroRuntimeLeft(episode!), "", "an episode has its own code, not a countdown")
 check(HomeRules.heroShowsProgress(movie!), "a film with progress draws the hero's bar")
@@ -1268,6 +1272,46 @@ let idlessHero = snapshot(continueWatching: .loaded([item("")!]), recentlyPlayed
 checkEqual(idlessHero.hero?.itemID, "", "an id-less fallback can still be the hero of an empty-ish library")
 checkEqual(idlessHero.heroIsContinueWatching, false,
            "…and is never claimed to have come from Continue Watching (the empty-id sentinel)")
+
+// MARK: - The third rail (Phase U4)
+
+section("the third rail")
+
+// ⚠⚠ **THE RULE AND THE CAP ARE B1's AND WERE UNUSED UNTIL U4** — `HomeRails`' own header said the third row
+// *"lands with the rail it needs rather than being built dead now"*. These are the checks that only became
+// true when it landed; the rule's own checks (`recentlyAddedItems` capped at 16 and id-filtered) are above.
+let manyAdded = (1...20).compactMap { item("ra\($0)") }
+let threeRails = snapshot(continueWatching: .loaded([cwRow, cwRow2]),
+                          recentlyPlayed: .loaded([playedRow]),
+                          libraryRecent: .loaded(manyAdded))
+checkEqual(threeRails.rails.map(\.id), [.continueWatching, .recentlyPlayed, .recentlyAdded],
+           "Recently Added is the THIRD rail")
+checkEqual(threeRails.rails.last?.title, "Recently Added",
+           "the third rail has the web app's own heading")
+checkEqual(threeRails.rails.last?.items.count, 16, "the third rail is capped at 16, like the web's")
+checkEqual(threeRails.rails.last?.items.first?.itemID, "ra1", "the third rail keeps the server's order")
+
+checkEqual(snapshot(continueWatching: .loaded([]), recentlyPlayed: .loaded([]),
+                    libraryRecent: .loaded([item("ra1")!, item("")!])).rails.last?.items.count, 1,
+           "a Recently Added row with no id is dropped from the rail")
+
+// ⚠⚠ THE EXCLUSION IS ONE-SIDED, and that is the web app's shape: `withoutHero` is applied to Continue
+// Watching ONLY. A title can be the hero AND be the newest thing in the library — removing it from the added
+// rail as well would hide it from the one row that says "this is new".
+let heroIsNewest = snapshot(continueWatching: .loaded([movie!]), recentlyPlayed: .loaded([]),
+                            libraryRecent: .loaded([movie!]))
+checkEqual(heroIsNewest.rails.first?.id, .recentlyAdded, "the hero is excluded from Continue Watching…")
+checkEqual(heroIsNewest.rails.first?.items.map(\.itemID), [movieID],
+           "…and NOT from Recently Added")
+
+checkEqual(snapshot(continueWatching: .loaded([cwRow, cwRow2]), recentlyPlayed: .loaded([]),
+                    libraryRecent: .failed("boom")).failedRowTitles, ["Recently Added"],
+           "a failed Recently Added fetch is named in the footer")
+
+// ⚠ …and the fetch failing must not make the row look EMPTY: nothing renders, and the footer explains it.
+checkEqual(snapshot(continueWatching: .loaded([cwRow, cwRow2]), recentlyPlayed: .loaded([]),
+                    libraryRecent: .failed("boom")).rails.map(\.id), [.continueWatching],
+           "a failed Recently Added fetch renders no third rail")
 
 // MARK: - Report
 

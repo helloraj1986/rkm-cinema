@@ -113,7 +113,7 @@ DEPTH-1 members only**: a function body's locals are also `let`/`var`, and `Home
 | Gate | Result (2026-09-20, branch `feat/tvos-ux`) |
 |---|---|
 | `python3 apple/scripts/check-tvos-core.py` | **394 checks, 0 failures** — the pure rules of every phase, COMPILED AND RUN |
-| … `--falsify` | **77/77 rules reverted, every one went red on the check it protects** |
+| … `--falsify` | **79/79 rules reverted, every one went red on the check it protects** (⚠ the 79 include U6's two badge mutations; the run took ~35 min — it recompiles the harness once per rule) |
 | `python3 apple/scripts/check-design-tokens.py --falsify` | R1, R2 and R3 each go red when the thing they guard breaks |
 | `python3 apple/scripts/check-tvos-models.py` | 113 keys, **17 endpoint literals** (both artwork routes included) |
 | `bash apple/scripts/check-apple-typecheck.sh` | every portable tvOS file typechecks, **plus `DesignTokens.swift` and `TVTokens.swift`** |

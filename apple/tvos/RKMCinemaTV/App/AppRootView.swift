@@ -1,7 +1,7 @@
 import SwiftUI
 import RKMServerKit
 
-/// Routing: screen #0 → `connecting` → sign in → who's watching → (Phase B: the library).
+/// Routing: screen #0 → `connecting` → sign in → who's watching → **Home**.
 ///
 /// ⚠ **FOCUS IS THE DESIGN, not a polish pass.** tvOS has no pointer and no hover: everything reachable
 /// must be reachable with four directions and Select. That is why there is no `NavigationStack` and no
@@ -12,6 +12,12 @@ import RKMServerKit
 /// is never a dead end and the HUD can be photographed over the real thing. On tvOS the HUD is not a
 /// convenience — it is **the only diagnostic surface that exists** (no Safari Web Inspector, no console,
 /// and no easy way to get a file off a TV).
+///
+/// ⚠ **Phase B2 replaced the placeholder with `HomeView`.** Phase A's `SessionReadyView` — the screen his
+/// simulator round accepted — is GONE rather than kept beside the new one, and nothing it proved was lost:
+/// the session readout it carried (`signed in as` / `watching as` / `profile selected`) is now the Home
+/// header's, and the address and profile are on the debug HUD. A second screen that displays the same
+/// facts is a second place for them to disagree.
 struct AppRootView: View {
 
     @EnvironmentObject private var app: AppModel
@@ -65,7 +71,30 @@ struct AppRootView: View {
             }
 
         case .library:
-            SessionReadyView()
+            // ⚠ Both must exist for the Home to be showable: the store is built when the app ENTERS the
+            // library (`AppModel.enterLibrary`), and the origin the poster URLs are built against comes from
+            // the session's address. Falling back to `ConnectingView` — rather than to an empty Home — is
+            // what keeps this a state with a way out instead of a blank screen.
+            if let home = app.home, let session = app.session {
+                HomeView(store: home, base: session.address.url)
+            } else {
+                ConnectingView()
+            }
+        case .browse:
+            if let browse = app.browse, let session = app.session {
+                BrowseView(store: browse, base: session.address.url)
+            } else {
+                ConnectingView()
+            }
+        case .detail:
+            // ⚠ `openDetail` refuses to enter this phase without a store (it returns early when the session
+            // is missing), so this fallback is unreachable in practice — it is here for the same reason the
+            // others are: a phase whose store could be nil must have a screen that is not a blank view.
+            if let detail = app.detail, let session = app.session {
+                DetailView(store: detail, base: session.address.url)
+            } else {
+                ConnectingView()
+            }
         }
     }
 }
@@ -96,61 +125,5 @@ struct ConnectingView: View {
                 .padding(.top, 8)
         }
         .padding(60)
-    }
-}
-
-/// ⚠ **Phase A's acceptance screen, and it is deliberately honest about being a placeholder.** It proves
-/// the three things this round is for — the address was reached, the session cookie was accepted, and a
-/// profile was selected — and it carries the ways out that make the app navigable without a library.
-/// Phase B replaces the middle of it; the header and the out-buttons stay.
-struct SessionReadyView: View {
-
-    @EnvironmentObject private var app: AppModel
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 22) {
-            Text("RKMCinemaTV")
-                .font(.system(size: 54, weight: .bold))
-            Text("Phase A — the session works. The library arrives in the next round.")
-                .font(.title3)
-                .foregroundStyle(.secondary)
-
-            VStack(alignment: .leading, spacing: 8) {
-                row("Server", app.session?.address.displayString ?? "—")
-                row("Signed in as", app.session?.signedInUser?.name ?? "—")
-                row("Watching as", app.session?.currentProfile?.name ?? "—")
-                row("Profile selected", (app.session?.profileSelected ?? false) ? "yes" : "no")
-            }
-            .padding(.top, 4)
-
-            if let warning = app.session?.warning, !warning.isEmpty {
-                Text(warning)
-                    .font(.callout)
-                    .foregroundStyle(.orange)
-            }
-
-            HStack(spacing: 20) {
-                Button("Change profile") { Task { await app.changeProfile() } }
-                    .buttonStyle(.borderedProminent)
-                Button("Sign out") { Task { await app.signOut() } }
-                    .buttonStyle(.bordered)
-                Button("Change server") { app.changeServer() }
-                    .buttonStyle(.bordered)
-            }
-            .padding(.top, 10)
-        }
-        .padding(60)
-        .frame(maxWidth: 1400, alignment: .leading)
-    }
-
-    private func row(_ label: String, _ value: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 16) {
-            Text(label)
-                .font(.headline)
-                .foregroundStyle(.secondary)
-                .frame(width: 220, alignment: .leading)
-            Text(value)
-                .font(.system(size: 24, design: .monospaced))
-        }
     }
 }

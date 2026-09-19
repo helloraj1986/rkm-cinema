@@ -80,6 +80,26 @@ struct APIClient {
         return try decode(data, path: path, correlation: correlation)
     }
 
+    /// A GET with query parameters — `GET /api/jellyfin/detail?id=…`.
+    ///
+    /// ⚠⚠ **THIS OVERLOAD EXISTS BECAUSE OF A MEASURED TRAP, not for tidiness.** The no-query path below is
+    /// built with `URL.appendingPathComponent(_:)`, which **percent-escapes its whole argument**: appending
+    /// `"api/jellyfin/detail?id=X"` produces `…/detail%3Fid=X`, i.e. the query becomes part of the PATH and
+    /// the server answers `404` for an item that exists. (`PosterURL`'s header records the same trap for the
+    /// poster proxy, which is why that file has its own builder.) So a parameterised request goes through
+    /// `URLComponents`, where each VALUE is escaped as data and a `+`, `&` or `/` inside an id cannot split
+    /// the query.
+    ///
+    /// ⚠ The path literal itself stays free of the query (`"api/jellyfin/detail"`), which is what lets R4 in
+    /// `check-tvos-models.py` match it against the contract's path list EXACTLY rather than having to
+    /// tolerate a suffix.
+    func get<T: Decodable>(_ path: String, query: [URLQueryItem],
+                           correlation: CorrelationID = .next()) async throws -> T {
+        let data = try await perform(method: "GET", path: path, query: query, body: nil,
+                                     correlation: correlation)
+        return try decode(data, path: path, correlation: correlation)
+    }
+
     func post<T: Decodable, Body: Encodable>(_ path: String, body: Body,
                                              correlation: CorrelationID = .next()) async throws -> T {
         let data = try await perform(method: "POST", path: path, body: try encode(body), correlation: correlation)
@@ -116,11 +136,19 @@ struct APIClient {
 
     /// The one place a request exists. Every line below is logged — including the failures, because a
     /// missing log line is an undiagnosable bug when the app runs on a TV in another room.
-    private func perform(method: String, path: String, body: Data?,
+    private func perform(method: String, path: String, query: [URLQueryItem] = [], body: Data?,
                          correlation: CorrelationID) async throws -> Data {
         // ⚠ Relative to the STORED address, which is the origin — the same reason the page's own `/api`
         // calls need no CORS change. Nothing here knows a host: it comes from the address a human typed.
-        let url = address.url.appendingPathComponent(path)
+        //
+        // ⚠⚠ The builder lives in `Core/RequestURL.swift` rather than here, and that is the point: this file
+        // imports `RKMServerKit`, so nothing in it can be executed in the sandbox. The one rule in the
+        // transport that fails SILENTLY — a query turned into part of the path by
+        // `appendingPathComponent(_:)` — is therefore in a `Foundation`-only file that
+        // `check-tvos-core.py` compiles AND runs.
+        guard let url = RequestURL.url(base: address.url, path: path, query: query) else {
+            throw APIError.transport("could not build the request URL for \\(path)")
+        }
 
         var request = URLRequest(url: url)
         request.httpMethod = method

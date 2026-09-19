@@ -4,8 +4,11 @@ A **native SwiftUI client**. tvOS has no WebKit at all (Apple removed it; the gu
 embedding one), so there is no shell shortcut here — the UI is written for the TV. Full reasoning:
 [`../../docs/APPLE_CLIENTS_PLAN.md`](../../docs/APPLE_CLIENTS_PLAN.md) §4.
 
-**Status: Phase A built — screens 0–2 (address → sign in → who's watching), on branch `feat/tvos-client`,
-not yet built on the Mac.** The Xcode project does not exist yet; §1 is the one-time step that creates it.
+**Status: Phase A ACCEPTED on his Apple TV simulator (2026-09-19)** — screens 0–2 (address → sign in →
+who's watching), merged to `dev`. **Phase B is under way on `feat/tvos-library`**: **B1 (the item models +
+gate), B2 (Home), B3 (Browse) and B4 (item detail) are BUILT**, and only B5 — the Mac round — remains.
+⚠ **None of Phase B's SwiftUI has ever been compiled** — that round is the first time. §1's one-time Xcode
+step is DONE: the project, `INFOPLIST_FILE`, the shared scheme and the local package are all committed.
 
 **Scope rule: TV is a *viewing* surface.** Read + play only. The acquisition and administration half of
 rkm-cinema stays on web/iOS, where a keyboard and forms make sense.
@@ -85,6 +88,22 @@ cd ~/dev/rkm-cinema && ./apple/scripts/mac-round.sh tvos --sim -RKMDebugHUD YES
 It pulls, builds, installs and launches on an Apple TV simulator, logging to `apple/logs/`. Paste the
 short summary back (the errors, then the tail).
 
+⚠⚠ **READING A SCREENSHOT FROM THIS ROUND — three things that have already cost time (2026-09-19):**
+
+1. **The debug HUD covers the top-left of the app.** It is a **980pt-wide** panel at `padding(28)` with
+   `black.opacity(0.88)`, so on Home it hides the header's left side and **the first rail's heading**.
+   A heading missing under the panel is COVERAGE, not absence — and a screenshot taken with
+   `-RKMDebugHUD YES` is *for the log lines*, not for judging layout. Run the round without the flag for a
+   clean screen.
+2. **The HUD reads newest-first**: the newest line is at the TOP. So what you need is at the top of the
+   panel, not the bottom.
+3. ⚠⚠ **A launch that has not finished painting shows the PREVIOUS run's snapshot.** Two consequences: the
+   cards on a very early screenshot are not this launch's, and the log lines will stop at the session read —
+   `/api/library/*` and `poster` lines appear only once Home actually loads. **Wait until the rails are
+   drawn before screenshotting**, or the frame answers nothing (it happened on his first B2 round).
+   Falsified if: a screenshot taken well after the rails appear still shows no `poster` lines — then the
+   HUD is not live or the lines are not emitted, and that is a defect, not a timing artefact.
+
 ⚠ **Two things about the simulator, both fixed in the script on 2026-09-19 and both worth knowing:**
 the script uses the Apple TV that is **already booted** if there is one, and there is **no committed
 default device name** for tvOS because every Apple TV's name contains brackets (`Apple TV 4K (3rd
@@ -123,10 +142,15 @@ bent to look like the other.
 | 0 | Server address (PRE-FILLED) | — (persisted locally) | **A ✅ built** |
 | 1 | Sign in | `POST /api/auth/login` | **A ✅ built** |
 | 2 | Who's watching | `GET /api/auth/profiles` · `POST /api/auth/profile` · `GET /api/auth/me` | **A ✅ built** |
-| 3 | Home | `GET /api/library/continue-watching` · `/recently-watched` | B |
-| 4 | Browse | `GET /api/library/folders` → `/items` | B |
-| 5 | Item detail | `GET /api/jellyfin/detail` · `/api/status` | B |
+| 3 | Home | `GET /api/library/continue-watching` · `/recently-watched` | **B ✅ built (B2)** |
+| 4 | Browse | `GET /api/library/folders` → `/items` | **B ✅ built (B3)** |
+| 5 | Item detail (read-only) | `GET /api/jellyfin/detail?id=` · `/api/library/series/{id}/episodes` | **B ✅ built (B4)** |
 | 6 | Player | `GET /api/jellyfin/hls/{id}/master.m3u8` · `POST /api/jellyfin/progress` | C |
+
+⚠ **Screen #5 has NO Play control, deliberately.** The player is Phase C and the api has no route this app
+may play from, so a Play button would be a promise the app cannot keep (`docs/ARCHITECTURE.md` §11 — never
+OFFER what the server will refuse). It says where playback comes from and shows the verb it **will** offer
+(`Resume S1E4`), computed by the same rule Phase C's button will read.
 
 **Deliberately out of scope:** request/download + quality profiles, Household admin, subtitle *vendor*
 search and download, global search.
@@ -162,8 +186,11 @@ Everything UI. Specifically:
   ⚠ **The focus engine is the single biggest unknown.** How the grid lands, whether the password overlay
   keeps its focus, whether the remote's Back behaves — none of it can be known from here.
 - **What IS verified, on Linux, before any Mac round:** `APIClient`, `AuthModels`, `ServerProbe`,
-  `AppLog`, `SessionStore` and `ServerDefaults` typecheck; the models and every endpoint literal are
-  checked against the frozen contract; every framework import is present. See §6.
+  `AppLog`, `SessionStore`, `ServerDefaults`, `DetailStore` and `DetailView`'s dependencies typecheck
+  (nineteen portable files); the models and every endpoint literal are checked against the frozen contract,
+  with the item and detail shapes checked against the frontend's own TypeScript interfaces where the contract
+  is silent; **the URLs, the models and every screen's rules are EXECUTED** (297 checks); and every framework
+  import is present. See §6.
 
 ⚠ **Say "it builds on the Mac", never "it works"** — and a screenshot with the HUD is the report that
 makes the next fix possible.
@@ -174,11 +201,37 @@ makes the next fix possible.
 
 ```bash
 python3 apple/scripts/check-tvos-models.py            # models + endpoints vs the frozen contract
-python3 apple/scripts/check-tvos-models.py --falsify  # 6 mutations, each must go red
-TMPDIR=/root/tmp bash apple/scripts/check-apple-typecheck.sh   # compiles the 6 portable files
-python3 apple/scripts/check-imports.py apple/tvos/RKMCinemaTV  # missing framework imports
+python3 apple/scripts/check-tvos-models.py --falsify  # 14 mutations, each must go red
+python3 apple/scripts/check-tvos-core.py              # RUNS the URLs, the models + every screen's rules
+python3 apple/scripts/check-tvos-core.py --falsify    # 45 rules reverted, each must go red
+TMPDIR=/root/tmp bash apple/scripts/check-apple-typecheck.sh   # compiles the 19 portable files
+python3 apple/scripts/check-imports.py apple/tvos/RKMCinemaTV  # missing imports — INCLUDING the views
+python3 apple/scripts/check-imports.py --selftest     # 6 snippets, incl. the RKMServerKit rule's edges
 bash apple/scripts/test-mac-round.sh                  # the round script, stubbed, 10 cases
 ```
+
+⚠⚠ **`check-imports.py` IS THE ONLY GATE THAT SEES THE SWIFTUI VIEWS, and it earned that role on
+2026-09-19** — Phase B2's first Mac round died on `Home/HomeView.swift: cannot find 'RKMLog' in scope`. The
+view files are not in `check-apple-typecheck.sh`'s list (no SwiftUI exists on Linux to compile them
+against), and this checker's rule table listed only **Apple's** frameworks, so the app's own
+`RKMServerKit` was in neither. Two gates, one blind spot each, one failed round. The module is now a rule
+like any other, and `--selftest` pins both of its edges: it must fire on a real use without the import, and
+must stay silent on the app's own `RKM`-prefixed types (`RKMCinemaTVApp`) and on a symbol that only appears
+in a comment.
+
+⚠ **A SwiftUI stub is deliberately NOT built.** The three things a view can get wrong are: a missing import
+(now caught above), a typo in a type or member name, and a wrong API shape. A partial stub would catch only
+some of the second kind and would generate cascading false errors for the third — and a gate that cries
+wolf is worse than a gate that is honestly absent. The views stay Mac-round business, which is exactly what
+`TVStubs.swift` says.
+
+⚠ **`check-tvos-core.py` is not a duplicate of the typecheck — it EXECUTES.** `swiftc -parse` and even a
+clean compile prove nothing about behaviour, so the seven pure sources (`LibraryModels`, `PosterURL`,
+`HomeRails`, `BrowseRules`, `DetailModels`, `DetailRules`, `RequestURL`) are compiled **and run** against
+fixtures shaped like the real payloads (**297 checks across B1, B2, B3 and B4**). That is what makes the
+silent failures visible here instead of on the TV: a poster URL that 404s, a request whose query became part
+of the path, a payload that cannot decode, and a screen whose states are wrong — all of which look like
+nothing at all on a screen.
 
 ⚠ **Two of these have already caught real defects, and one of them is the argument for the pair:**
 
@@ -189,9 +242,13 @@ bash apple/scripts/test-mac-round.sh                  # the round script, stubbe
   the missing real import is invisible there. Exactly the iOS-first-build failure mode
   (`apple/WORKFLOW.md` §7b), caught for free.
 
-**And both gates that matter have been falsified**, not just observed green:
-`check-tvos-models.py --falsify` reverts each rule and requires the matching check to fail (6/6 red);
-`test-mac-round.sh` asserts on the stubs' call log, and goes red against the previous revision of
+**And all four gates that matter have been falsified**, not just observed green:
+`check-tvos-models.py --falsify` reverts each rule and requires the matching check to fail (14/14 red,
+including the two Phase B rules R6/R7, the interpolated-endpoint case and three mutations on B4's detail
+models, all against the frontend's own interfaces); `check-tvos-core.py
+--falsify` does the same for the 45 rules the running harness pins (45/45 red — and it earned its keep on
+its first B2 run by finding a TAUTOLOGY in the harness itself); `test-mac-round.sh` asserts on the
+stubs' call log, and goes red against the previous revision of
 `mac-round.sh` on two separate faults: the truncating device-name extraction fails 2 of its 10 cases, and
 the hardcoded bundle id fails case J.
 

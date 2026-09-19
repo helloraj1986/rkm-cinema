@@ -570,6 +570,8 @@ architecture exists to prevent. ⚠ `layouts/desktop/index.ts` is a **thin re-ex
 | a screen (any client) | `frontend/src/features/<area>/` | the phone renders the SAME views — a second UI is the thing this architecture forbids |
 | phone vs desktop layout | `frontend/src/layouts/` (`LayoutMode.tsx`, `mobile/`) | ⚠ `mobile/**` may hold layout/markup/state only — no `fetch`, no re-derived rule (`imports.test.ts` enforces it) |
 | a rule about what a user is OFFERED | the component or `lib.ts` for that feature | the server enforces it too (never UI-only); and do not OFFER what the server will refuse |
+| the tvOS client (`apple/tvos/`) | its `Core/` rules, then a Mac round | ⚠ tvOS has **no WebKit**; its views compile ONLY on the Mac, so every rule that must be RUN lives in a `Foundation`-only file under `Core/` (gated by `check-tvos-core.py`) |
+| a URL the tvOS app requests | `apple/tvos/RKMCinemaTV/Core/RequestURL.swift` | ⚠ **never** `appendingPathComponent(_:)` for a parameterised route — it escapes the query into the PATH, so a working request 404s and the screen reports a missing title |
 | configuration / a new knob | `.env` + `.env.example` + `render_config.py` | ⚠ a container reads `.rkm.env`, and only `render_config.py` writes it — a knob the renderer does not pass is unreachable (see §10) |
 | the deploy script | `rkm-cinema.ps1` | never `docker compose … down -v`, always `-p rkm-bundled` (README's three rules) |
 

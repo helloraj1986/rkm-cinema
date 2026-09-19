@@ -1,6 +1,191 @@
-## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-19) · ✅ **PHASE A OF THE tvOS CLIENT IS MERGED TO `dev`** and verified on his Apple TV simulator · ⚠ **the working tree is on `dev`** (`be2072a`) · **next branch: `feat/tvos-library`, cut from `dev`** · **nothing needs `apply`** — no file under `backend/`, `frontend/` or `nginx/` has changed
+## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-19) · ✅ **PHASE A OF THE tvOS CLIENT IS MERGED TO `dev`** and verified on his Apple TV simulator · ⚠ **Phase B is UNDERWAY on `feat/tvos-library`** — **B0 decided · B1–B4 BUILT AND PUSHED (`253b98d`) · only B5, the Mac round, is left** · **the working tree is on `feat/tvos-library`** · **nothing needs `apply`** — no file under `backend/`, `frontend/` or `nginx/` has changed on this branch
 
 **Say this first:** *"continue rkm-cinema — pick up the RESUME-HERE block, we're on the tvOS app."*
+
+### ▶ WHERE `feat/tvos-library` ACTUALLY IS (read this before the plan below, which it amends)
+
+⚠ **`docs/TVOS_LIBRARY_PLAN.md` is the plan for this branch, and it holds the detail.** State:
+
+| | |
+|---|---|
+| **B0 — DECIDED (his call, 2026-09-19)** | **The contract is NOT extended.** Option 2. The item shape is undocumented in `openapi.v1.json` (measured: `FolderItemsResponse.items` is `array` of `object`; five routes have no 200 schema), so the shape source is instead **the frontend's own TypeScript interfaces** in `frontend/src/lib/api/client.ts`. ⚠ **No `backend/` file changes on this branch.** |
+| **B1 — BUILT + PUSHED** (`5076987`) | `Core/Models/LibraryModels.swift` and `Core/PosterURL.swift` (both portable), `check-tvos-models.py` R6/R7 (+4 mutations, 10 total), and a NEW `check-tvos-core.py` + `tvos-core-tests/main.swift` that **compiles and RUNS** the two pure sources — 68 checks, 10/10 rules falsified. |
+| **B2 — BUILT** (this commit) | **Home: Continue Watching + Recently Played on the focus engine.** `Core/HomeRails.swift` (the web app's own rules + the screen's four states — RUN here), `Core/LibraryAPI.swift`, `Core/HomeStore.swift`, `Core/PosterLoader.swift`, and `Home/{HomeView,RailView,PosterCard}.swift`. ⚠ **`Core/RailFocus.swift` was written and DELETED** — tvOS scrolls a rail to reveal focus by itself, so hand-rolled offsets would fight it; `RailView`'s header says so. ⚠ B1's open cookie question is now answered by a LOG LINE, not a guess: `PosterLoader` reports status + byte count + whether the session cookie reached the image request. |
+| **B3 — BUILT** (this commit) | **Browse: the library list, then one folder's poster wall.** `Core/BrowseRules.swift` (the web's own `libraryNavEntries` + the 48/48 mounting plan — RUN here), `Core/BrowseStore.swift`, `Browse/BrowseView.swift`, and `LibraryFolder`/`ConfiguredLibrary`/`LibrariesResponse` added to the models (all contract schemas, so fully gated). ⚠ **The first PARAMETERISED endpoint in the app** (`/folders/{id}/items`) needed a real R4 extension — an interpolation now becomes one path component and must match a contract path exactly. ⚠ **The 2-D grid is NOT hand-rolled**: `LazyVGrid` + focusable Buttons get column memory from the platform's focus engine, same finding as B2's deleted `RailFocus`; what the app owns is how much it draws. |
+| **B4 — BUILT** (this commit) | **Item detail, read-only.** `Core/Models/DetailModels.swift` (5 non-contract models, each with a shape source, so R6/R7 gate them), `Core/DetailRules.swift` (the web's own rules — meta line, rating, resume %, episode progress, season grouping, credits — RUN here), `Core/RequestURL.swift`, `Core/DetailStore.swift`, and `Detail/DetailView.swift`. ⚠⚠ **`RequestURL.swift` is the phase's real find**: `URL.appendingPathComponent(_:)` percent-escapes its whole argument, so `?id=…` becomes part of the PATH and the api answers **404** — a transport bug that would have worn the screen's own "we couldn't find that title" copy. The builder moved to a `Foundation`-only file (so it can be RUN here) and `APIClient.get` gained a `query:` overload. ⚠ **No Play control, deliberately** — the player is Phase C, so the screen says where playback comes from and shows the verb it WILL offer (`Resume S1E4`). ⚠ ``groupBySeason`` is written the long way: a Swift dictionary has no order, so the obvious port of the web's `Map` shuffles the episodes inside every season. |
+| **B5 — NEXT, and it is HIS ROUND** | The Mac round, and **the first time B2's, B3's and B4's SwiftUI is compiled anywhere at all**. ONE command, on the MacBook Pro: `./apple/scripts/mac-round.sh tvos --sim` — ⚠ run it **without** `-RKMDebugHUD YES` (the panel covers the top-left, and this is a screen round, not a log round). The two falsifiers, written down before the round rather than after it: **the wall keeps its COLUMN when focus moves down a row** (B3), and **the detail screen draws a REAL poster, not the "no photo" marker** (B4). |
+
+⚠ **Two facts B1 established that the plan below does not yet say:** `FolderItemsResponse` IS a contract
+schema (only its `items` is untyped), so R3 forced `items` to be **optional** — a pydantic
+`default_factory=list` is not a `default` in OpenAPI, so the route always sends it but the contract does
+not promise it. And the item shape's trap is now **pinned by a test**: library rows carry `item_id`,
+global-search rows carry `id`.
+
+### ✅ B4 — ITEM DETAIL IS BUILT (2026-09-19) · the newest state on this branch
+
+⚠ **The round records below this point are B2's history.** This is where the branch actually stands.
+
+**Built:** `Core/Models/DetailModels.swift` · `Core/DetailRules.swift` · `Core/RequestURL.swift` ·
+`Core/DetailStore.swift` · `Detail/DetailView.swift`; and `App/AppModel.swift` (a `.detail` phase),
+`App/AppRootView.swift`, `Core/APIClient.swift` (a `query:` GET), `Core/LibraryAPI.swift` (two endpoints),
+`Home/{HomeView,PosterCard}.swift` and `Browse/BrowseView.swift` (Select now OPENS the detail screen).
+
+| Gate | Result |
+|---|---|
+| `check-tvos-models.py` / `--falsify` | ✅ PASS — 113 keys, 14 endpoint literals, 3 model files · **14/14 mutations RED** |
+| `check-tvos-core.py` / `--falsify` | ✅ PASS — **297 checks, 0 failures** · **45/45 mutations RED** |
+| `check-apple-typecheck.sh` | ✅ PASS — the **nineteen** portable tvOS files — ⚠ **after it caught a real Mac build error first** (below) |
+| `check-imports.py` + `--selftest` | ✅ PASS — 31 Swift files, 6/6 snippets |
+| `check_md_links.py` | ✅ PASS |
+| frontend / backend | ⚠ **nothing changed, so no `vitest`/`pytest` is claimed — and no `apply` is needed** |
+
+⚠⚠ **THE PHASE'S REAL FIND — A TRANSPORT BUG WEARING A CONTENT BUG'S CLOTHES.** `APIClient` built every URL
+with `URL.appendingPathComponent(_:)`, which **percent-escapes its whole argument**. `/api/jellyfin/detail`
+takes its id as a QUERY value, so the natural spelling — `"api/jellyfin/detail?id=\(itemID)"` — would have
+sent `…/detail%3Fid=…`: the query becomes part of the **PATH**, the api answers **404**, and this screen
+renders 404 as its own **"We couldn't find that title in the library."** A broken request would have read as
+a missing film, on a TV, in another room.
+⇒ Fixed by giving the rule a home it can be RUN in: **`Core/RequestURL.swift`** (`Foundation` only, so
+`check-tvos-core.py` compiles AND executes it — `APIClient` imports `RKMServerKit`, so nothing inside it can
+be run here), plus an `APIClient.get(_:query:)` overload. ⚠ The **no-query path is byte-for-byte the old
+one**, because that is the path every earlier round exercised. ⚠ `PosterURL` had already recorded the same
+finding for the artwork proxy — it was the second occurrence, not the first.
+
+⚠ **No Play control, and it is a decision rather than an omission.** The tvOS player is Phase C and the api
+has no route this app may play from, so a Play button would be "offering what the server will refuse"
+(`ARCHITECTURE.md` §11) — a promise the viewer only discovers is broken by pressing it. The screen says where
+playback comes from and shows the verb it **will** offer, from the same rule Phase C's button will read
+(`DetailRules.primaryVerb`: `Resume S1E4` / `Resume (25%)` / `Play`). ⚠ **No per-episode Play button either.**
+
+⚠⚠ **A PORTING HAZARD WORTH REMEMBERING, because the obvious translation is the wrong one.** The web's
+`groupBySeason` builds a `Map` and sorts its **keys** — which preserves insertion order *inside* each season.
+A Swift `[Int: [EpisodeItem]]` has **no order at all**, so the idiomatic port silently shuffles the episodes
+within every season: nothing on screen looks wrong until a list arrives out of order. `DetailRules` scans,
+appends and sorts only the season numbers, and a **mutation reverts it** so the long way round is pinned.
+Same family as `nextPlayableEpisode`, where the web relies on JavaScript's **stable** sort and Swift's
+`sorted(by:)` does not promise one — the enumerated comparison restores it by construction.
+
+⚠ **The api's `404` is a CONTENT answer, not a network failure.** `jellyfin_detail.py` 404s an id it has no
+detail for, and `DetailStore` maps exactly that to `DetailState.notFound` ("the title is gone") rather than
+to a "couldn't reach the server" sentence. A `503` (Jellyfin not configured) stays a failure.
+
+⚠ **`check-apple-typecheck.sh` EARNED ITS KEEP HERE — the FIRST run on B4 failed, and it was a real Mac build
+error.** Four errors in `DetailStore.swift`:
+`instance member 'short' cannot be used on type 'Self'; did you mean to use a value of this type instead?`
+— the store had both a static `short(_ itemID:)` and a one-line instance `short()`, and `Self.short(...)`
+resolved to the instance one. The fix is two lines (the instance helper is deleted; every call site passes
+the id), and the point is the *coverage*: this file is in the typecheck list but NOT in `check-tvos-core.py`'s
+runnable set (it imports `RKMServerKit`), so this gate is the only thing between that mistake and a failed
+Mac round.
+
+⚠ **Still open, and it is B5's job:** none of B2/B3/B4's SwiftUI has ever been compiled — this branch's views
+have been *written* here, never *built*. The round's falsifiers are written down: the grid keeping its column
+(B3), and a real poster vs the "no photo" marker on the detail screen (B4).
+
+### ⚠ HIS FIRST B2 ROUND: **BUILD FAILED** — one missing import, now fixed AND gated (2026-09-19)
+
+His round (macOS log `apple/logs/build-tvos-20260919-175938.log`) failed with **two** errors, and they had
+**one** root cause:
+
+```
+Home/HomeView.swift:155:9:  error: cannot find 'RKMLog' in scope
+Home/HomeView.swift:156:32: error: cannot infer contextual base in reference to member 'app'
+```
+
+`HomeView.swift` called `RKMLog.info(...)` with no `import RKMServerKit`; the second error is just
+`category: .app` failing to resolve without the first. **That one import fixes both.**
+
+⚠⚠ **WHY NO GATE SAW IT — the part that matters more than the fix.** Two gates, one blind spot each:
+
+| Gate | Why it was blind |
+|---|---|
+| `check-apple-typecheck.sh` | compiles **thirteen portable files** — a SwiftUI view is not one of them (there is no SwiftUI on Linux to compile against) |
+| `check-imports.py` | its rule table listed only **Apple's** frameworks (Combine/WebKit/UIKit/AVFoundation/Network) — the app's **own** `RKMServerKit` was never asked about |
+
+So the checker now (a) carries an `RKMServerKit` rule — **name-exact, not a prefix**, because the app
+defines its own `RKM`-prefixed types (`RKMCinemaTVApp`) and a prefix rule would force a wrong import — and
+(b) has a `--selftest` (6/6) that pins both of that rule's edges: it fires on a real use without the import,
+and stays silent on the app's own types and on a symbol that appears only in a comment. The new rule was run
+against the **unfixed** tree first and went RED on exactly `HomeView.swift`, which is what makes it
+evidence rather than a claim. ⚠ The iOS target was re-checked with the same rule and is clean (37 files).
+
+⚠ **A SwiftUI stub was considered and rejected**: a partial one catches some typos and produces cascading
+false errors on API shape, and a gate that cries wolf is worse than an honestly absent one.
+
+⚠⚠ **B2's views are still compiled NOWHERE.** `RailView.swift`, `AppModel.swift`, `AppRootView.swift`,
+`LoginView.swift` and `ProfilesView.swift` all **compiled successfully in that round**; `PosterCard.swift`
+was not reached (the build stops at the first error batch), so **nothing may be claimed about it** and the
+re-round is what settles it.
+
+### ✅ HIS SECOND B2 ROUND: the fix held, and **the Home screen is CONFIRMED RENDERING** (2026-09-19)
+
+Second round built clean — so `PosterCard.swift` compiled too, which the first round never reached. He sent
+a **cropped** screenshot (792×792, top-left; he cropped it because the full-size PNG was too big to send),
+and it answers most of Phase B2 at once. Read by OCR + one magnified crop looked at directly:
+
+| On screen | What it confirms |
+|---|---|
+| `RKMCinemaTV` + `Change profile · Sign out · Change server · Refresh` | the Home **header** renders, and every way out is present |
+| **`Continue Watching`** | ⚠ the rail **heading** renders — it was never missing, it was *behind the HUD panel* in the first round (which is now written into `apple/tvos/README.md` §2) |
+| Two cards: *The Book of Life*, *Spider-Man: Into the…*, meta `2014 · 1h 35m` / `2018 · 1h 57m` | `PosterCard` + `cardMetaLine` render the web app's own format, at the right size |
+| **A resume bar with a partial fill (~28%)** | ⚠⚠ the plan's "progress bars are what make this screen worth having" — and it proves these ARE Continue Watching rows, with real positions, not a Recently Played pair |
+| Real poster artwork | `PosterLoader` + the session-cookie image path work end to end |
+
+⚠⚠ **AND A MEASUREMENT LESSON, because it nearly became a wrong bug report.** A luminance-threshold pass on
+the FIRST screenshot was read as *"no progress bars"* — which was a **FALSE NEGATIVE**: the bar's white fill
+is only as wide as the progress (~28%), and its track is only a few levels above the tvOS `.card` button
+style's **own background platter**, which sits behind every card's text and was itself the unexplained
+"mid-grey 282px bands" in that pass. Looking at a magnified crop settled it in one glance. ⇒ **Measure to
+find what to look at, then LOOK at it; "absent" and "below my threshold" are different claims.** The recipe
+(base64 `data:` URL for the small crops) is now in `references/reading-device-screenshots.md`, along with the
+trap that cost three failed `cp`s: **a macOS screenshot filename contains U+202F, so the path you were given
+cannot be typed — glob it.**
+
+⚠ **STILL OPEN: the `poster` log line (the session-cookie answer).** He ran that round WITHOUT
+`-RKMDebugHUD YES`, so there was no panel to read. B1's one open question — does the cookie reach the image
+request — remains unverified: `PosterLoader` logs it (`session-cookie=present|absent`), but nobody has read
+those lines yet.
+
+### ⏱ HIS THIRD B2 ROUND: a GOOD panel, taken too early — the load had not run yet (2026-09-19)
+
+He sent the debug panel on its own, cropped — **legible, and it settles the mechanics of reading it**:
+
+* the panel held **`12 line(s) held`**, and all 12 were displayed (`lineLimit` is 18) — so ⚠ **there is no
+  truncation to work around**: once Home loads, its lines WILL be on the panel, newest at the top. The only
+  problem is *when* the screenshot is taken, not what the panel can carry.
+* the newest line is again `auth after /api/auth/me: session cookie present — 1 cookie (session)`, and there
+  are **no `/api/library/*` and no `poster` lines** — i.e. the app was ~1 s into the launch, before
+  `HomeStore.load()` ran. The Home header is faintly visible *behind* the panel, so `.library` had been
+  reached and the view was on screen; the request simply had not gone out yet.
+* ⚠ **`PosterLoader`'s log line is still unread** — this is a timing artefact, NOT the "HUD is not live"
+  failure mode the README's falsifier describes (that needs a screenshot taken with the cards ON SCREEN).
+* ✅ The panel also confirms, properly, what Phase A claimed: `GET /api/status -> 200 (1.9 KB)`,
+  `GET /api/auth/me -> 200 (213 B)`, `session cookie present — 1 cookie`, and
+  `user=rkm profile=sharanya onOwnProfile=false selected=true`.
+* ⚠ The footer names the **file log**: `…/Library/Application Support/RKMCinemaTV/Logs/rkm-tvos.log`, and
+  `RollingFileLog` is writing to it — so if a HUD screenshot ever clips something, that file is the
+  unclipped route (`rk-ios.log` in the iOS notes; this is the tvOS one).
+* **What to ask for next, precisely:** shoot only once the poster cards are drawn on screen (~5 s in).
+  That is the falsifier — a panel taken with cards visible that still shows no `poster` line is a real defect.
+
+### ✅ B2 IS ACCEPTED — and the last open item was CLOSED by the screenshots, not by a log line (2026-09-19)
+
+⚠⚠ **THE SESSION-COOKIE QUESTION IS ANSWERED, AND ASKING FOR THE `poster` LOG LINE WAS UNNECESSARY.**
+`GET /api/jellyfin/poster` is **session-scoped**: with no cookie the api answers `401`, and `PosterLoader`
+renders **a "no photo" marker with the reason, never an image**. His screenshots show **real poster
+artwork** — therefore the request carried the cookie and came back `2xx`. The rendered picture is *stronger*
+evidence than the log line would have been, and it was in hand from the second round. ⚠ Lesson for the next
+session: **before asking for a third round, check whether an earlier artefact already proves the claim.**
+Two extra rounds were spent re-photographing something the screen had already settled.
+
+⚠ And the panel itself was never broken: the ring's capacity is **250** (`RKMLog.init(ringCapacity:)`) and
+the HUD reported **`12 line(s) held`** — nothing had been evicted, so that frame genuinely was ~1 s into a
+launch, before `HomeStore.load()` ran. A timing artefact end to end.
+
+**B2 status: ACCEPTED on his simulator.** Verified on screen: the Home header and its four exits, the
+`Continue Watching` heading, two cards with real artwork, the web app's own meta lines, and a resume bar at
+~28%. ⚠ Not yet verified anywhere: **B2's, B3's and B4's SwiftUI have never been compiled** (the Mac round is
+B5), and nothing has run on real Apple TV hardware.
 
 ⚠ **The Xcode project exists now, and Phase A is accepted on his hardware** (Part 4). His one-time GUI
 work is DONE — the project, `INFOPLIST_FILE`, the shared scheme and the local package are all committed, so
@@ -213,6 +398,11 @@ everything Phase A did not contain:
   screenshot is still unexplained.
 
 ### ▶ WHAT WILL BE DONE — the plan the next session executes, in order
+
+⚠ **AMENDED 2026-09-19: B0 is DECIDED and B1 is BUILT** (see the table at the top of this file, and
+`docs/TVOS_LIBRARY_PLAN.md` for the full plan). **B2 is the next phase to actually execute** — read the
+plan document's §3, not this summary, for B2–B5: this block is the original brief and has been left
+intact, but it says B0 is still open and B0/B1 were its first two phases.
 
 **Phase A is closed. Phase B is next, and it changes the shape of the work: A proved the plumbing, B is
 where the focus engine stops being a fix-up and becomes the design.**

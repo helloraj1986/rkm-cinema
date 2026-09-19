@@ -45,6 +45,31 @@ extension APIClient {
     func folderItems(folderID: String, correlation: CorrelationID = .next()) async throws -> FolderItemsResponse {
         try await get("api/library/folders/\(folderID)/items", correlation: correlation)
     }
+
+    /// `GET /api/jellyfin/detail?id=` — ONE item's preplay metadata (Phase B4).
+    ///
+    /// ⚠⚠ **The path literal carries NO query string — the id travels as a real query item.** Two reasons
+    /// and both bite: `appendingPathComponent(_:)` would escape the `?` into the path (see
+    /// `Core/RequestURL.swift`), and R4 in `check-tvos-models.py` matches this literal against the
+    /// contract's path list EXACTLY — `"api/jellyfin/detail?id="` would not match `/api/jellyfin/detail`.
+    ///
+    /// ⚠ The api answers **404** for an id it has no detail for, and that is a CONTENT answer, not a
+    /// transport failure — `DetailStore` maps it to `DetailState.notFound` rather than to a network-error
+    /// sentence.
+    func itemDetail(itemID: String, correlation: CorrelationID = .next()) async throws -> ItemDetail {
+        try await get("api/jellyfin/detail",
+                      query: [URLQueryItem(name: "id", value: itemID)],
+                      correlation: correlation)
+    }
+
+    /// `GET /api/library/series/{id}/episodes` — one series' episodes (Phase B4).
+    ///
+    /// ⚠ The second PARAMETERISED endpoint in this app; R4's pattern rule (B3) covers it. The server's order
+    /// is preserved all the way to the screen — `DetailRules.groupBySeason` sorts the season NUMBERS and
+    /// never the episodes inside a season.
+    func seriesEpisodes(seriesID: String, correlation: CorrelationID = .next()) async throws -> EpisodesResponse {
+        try await get("api/library/series/\(seriesID)/episodes", correlation: correlation)
+    }
 }
 
 // ⚠ The failure COPY is not here. `RowFailureKind` and `HomeRowFailure` live in `HomeRails.swift` on

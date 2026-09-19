@@ -563,6 +563,439 @@ checkEqual(BrowseRules.Mount.needsMore(shown: 48, total: 100), true, "48 of 100 
 checkEqual(BrowseRules.Mount.needsMore(shown: 100, total: 100), false, "100 of 100 needs nothing")
 checkEqual(BrowseRules.Mount.needsMore(shown: 0, total: 0), false, "an empty wall needs nothing")
 
+// MARK: - The request URL (Phase B4)
+
+section("the request URL")
+
+// ⚠⚠ THE TRAP THIS SECTION EXISTS FOR. `URL.appendingPathComponent(_:)` percent-escapes its whole argument,
+// so a path carrying `?id=…` arrives as PART OF THE PATH and the api answers `404` on an item that exists —
+// which on this screen wears the app's own "we couldn't find that title" copy, i.e. a transport bug
+// presenting as a content bug. `PosterURL` carries the same finding; this is the JSON request's version.
+checkEqual(RequestURL.url(base: base, path: "api/jellyfin/detail",
+                          query: [URLQueryItem(name: "id", value: movieID)])?.absoluteString,
+           "http://rkm-hp.tail8d5e8.ts.net:8124/api/jellyfin/detail?id=\(movieID)",
+           "a parameterised request puts the parameter in the QUERY")
+checkEqual(RequestURL.url(base: trailing, path: "api/jellyfin/detail",
+                          query: [URLQueryItem(name: "id", value: movieID)])?.absoluteString,
+           "http://rkm-hp.tail8d5e8.ts.net:8124/api/jellyfin/detail?id=\(movieID)",
+           "an address ending in a slash does not double the slash")
+
+// ⚠ The question mark must NOT be in the path — the guard is on the path itself, not on the whole string.
+let detailURL = RequestURL.url(base: base, path: "api/jellyfin/detail",
+                               query: [URLQueryItem(name: "id", value: movieID)])
+checkEqual(detailURL?.path, "/api/jellyfin/detail", "the path is the route and nothing else")
+if let detailURL, let components = URLComponents(url: detailURL, resolvingAgainstBaseURL: false) {
+    checkEqual(components.queryItems?.first(where: { $0.name == "id" })?.value, movieID,
+               "the id is the query's value")
+} else {
+    check(false, "the id is the query's value")
+}
+
+// ⚠ A Jellyfin id is hex, but the builder is not allowed to depend on that: a value with a space, a plus, a
+// slash and an ampersand must survive as DATA rather than splitting the query.
+if let awkward = RequestURL.url(base: base, path: "api/jellyfin/detail",
+                               query: [URLQueryItem(name: "id", value: awkwardID)]),
+   let components = URLComponents(url: awkward, resolvingAgainstBaseURL: false) {
+    checkEqual(components.queryItems?.first(where: { $0.name == "id" })?.value, awkwardID,
+               "an id with a space, a plus, a slash and an ampersand survives the round trip")
+    check(!awkward.path.contains("+") && !awkward.path.contains("&"),
+          "and does not leak into the path")
+} else {
+    check(false, "an id with a space, a plus, a slash and an ampersand survives the round trip")
+}
+
+// ⚠ NO query: the builder must behave EXACTLY as before (this is the path every earlier round exercised),
+// including for the interpolated folder route.
+checkEqual(RequestURL.url(base: base, path: "api/status")?.absoluteString,
+           "http://rkm-hp.tail8d5e8.ts.net:8124/api/status",
+           "a request with no parameters is the address plus the path")
+checkEqual(RequestURL.url(base: base, path: "api/library/folders/abc/items")?.absoluteString,
+           "http://rkm-hp.tail8d5e8.ts.net:8124/api/library/folders/abc/items",
+           "…and an interpolated path still works without parameters")
+
+// MARK: - The detail payload (Phase B4)
+
+section("the detail payload")
+
+/// ⚠ Built by DECODING, like every other fixture in this file, so a fixture cannot describe a shape the
+/// wire does not produce. Shaped from `backend/services/library/jellyfin.py::_detail_from_item`
+/// (read 2026-09-19): every key below is one that route actually sends.
+let movieDetailJSON = #"""
+{
+  "type": "movie",
+  "item_id": "f3c1a9e04b8d4e0a9b7c2d5e6f8a1b3c",
+  "name": "Sholay",
+  "year": 1975,
+  "runtime": 7200,
+  "runtime_ticks": 72000000000,
+  "overview": "Two friends, a village and a bandit.",
+  "genres": ["Action", "Drama"],
+  "community_rating": 7.473,
+  "official_rating": "AU-MA 15+",
+  "studios": ["Sippy Films"],
+  "people": {
+    "actors": [
+      { "id": "p1", "name": "Amitabh Bachchan", "role": "Jai", "has_image": true },
+      { "id": "p2", "name": "Dharmendra", "role": "Veeru", "has_image": false }
+    ],
+    "directors": [ { "id": "p3", "name": "Ramesh Sippy", "role": "", "has_image": false } ],
+    "writers": [ { "id": "p4", "name": "Salim Khan", "role": "Writer", "has_image": false } ]
+  },
+  "has_backdrop": true,
+  "primary_aspect": 0.667,
+  "play": { "played": false, "resume_ticks": 18000000000, "resume": 1800, "play_count": 1 }
+}
+"""#
+
+/// ⚠ The PRESENT-AND-NULL case, which is what this api actually sends for a key it has no value for
+/// (`_float` returns None). A model that required any of these would fail the whole screen for a title that
+/// simply has no rating.
+let nullsDetailJSON = #"""
+{
+  "type": "movie",
+  "item_id": "f3c1a9e04b8d4e0a9b7c2d5e6f8a1b3c",
+  "name": "Untitled",
+  "year": null,
+  "runtime": 0,
+  "runtime_ticks": 0,
+  "overview": "",
+  "genres": [],
+  "community_rating": null,
+  "official_rating": null,
+  "studios": [],
+  "people": { "actors": [], "directors": [], "writers": [] },
+  "has_backdrop": false,
+  "primary_aspect": null,
+  "play": { "played": false, "resume_ticks": 0, "resume": 0, "play_count": 0 }
+}
+"""#
+
+let seriesDetailJSON = #"""
+{
+  "type": "tv",
+  "item_id": "0b7e4d1c93a24f5e8c6d2b9a4e1f7c30",
+  "name": "Some Show",
+  "year": 2021,
+  "runtime": 0,
+  "runtime_ticks": 0,
+  "overview": "A series.",
+  "genres": ["Drama"],
+  "community_rating": 8.0,
+  "official_rating": "AU-M 15+",
+  "studios": [],
+  "people": { "actors": [], "directors": [], "writers": [] },
+  "has_backdrop": true,
+  "primary_aspect": 0.667,
+  "play": { "played": false, "resume_ticks": 0, "resume": 0, "play_count": 0 }
+}
+"""#
+
+/// An EPISODE's detail — the only one that carries the series context, and the only shape where
+/// `season_id`/`season`/`episode` appear.
+let episodeDetailJSON = #"""
+{
+  "type": "episode",
+  "item_id": "1a2b3c4d5e6f708192a3b4c5d6e7f809",
+  "name": "The Reckoning",
+  "year": 2021,
+  "runtime": 2700,
+  "runtime_ticks": 27000000000,
+  "overview": "",
+  "genres": [],
+  "community_rating": null,
+  "official_rating": null,
+  "studios": [],
+  "people": { "actors": [], "directors": [], "writers": [] },
+  "has_backdrop": false,
+  "primary_aspect": null,
+  "play": { "played": false, "resume_ticks": 12000000000, "resume": 1200, "play_count": 0 },
+  "series": { "id": "0b7e4d1c93a24f5e8c6d2b9a4e1f7c30", "name": "Some Show" },
+  "season_id": "aabbccddeeff00112233445566778899",
+  "season": 1,
+  "episode": 3
+}
+"""#
+
+func detail(_ json: String) -> ItemDetail? {
+    try? JSONDecoder().decode(ItemDetail.self, from: Data(json.utf8))
+}
+
+let movieDetail = detail(movieDetailJSON)
+check(movieDetail != nil, "a real detail payload decodes")
+checkEqual(movieDetail?.type, "movie", "the type survives")
+checkEqual(movieDetail?.itemID, movieID, "item_id is the identity key, not id")
+checkEqual(movieDetail?.name, "Sholay", "the name is `name`, not `title`")
+checkEqual(movieDetail?.year, 1975, "the year survives")
+checkEqual(movieDetail?.runtime, 7200, "the runtime survives")
+checkEqual(movieDetail?.runtimeTicks, 72_000_000_000, "the raw ticks survive")
+checkEqual(movieDetail?.genres, ["Action", "Drama"], "the genres survive")
+checkEqual(movieDetail?.communityRating, 7.473, "the community rating survives")
+checkEqual(movieDetail?.officialRating, "AU-MA 15+", "the certification survives")
+checkEqual(movieDetail?.studios, ["Sippy Films"], "the studios survive")
+checkEqual(movieDetail?.play.resume, 1800, "the resume position survives, in SECONDS")
+checkEqual(movieDetail?.play.resumeTicks, 18_000_000_000, "…and in ticks")
+checkEqual(movieDetail?.play.played, false, "the played flag survives")
+checkEqual(movieDetail?.play.playCount, 1, "the play count survives")
+checkEqual(movieDetail?.people?.actors.first?.name, "Amitabh Bachchan", "an actor's name survives")
+checkEqual(movieDetail?.people?.actors.first?.role, "Jai", "an actor's character survives")
+checkEqual(movieDetail?.people?.actors.first?.hasImage, true, "has_image survives")
+checkEqual(movieDetail?.people?.writers.count, 1, "the writers group survives")
+
+check(detail(nullsDetailJSON) != nil, "a payload of present-and-null values still decodes")
+checkEqual(detail(nullsDetailJSON)?.year, nil, "a null year is nil, not zero")
+checkEqual(detail(nullsDetailJSON)?.communityRating, nil, "a null rating is nil")
+checkEqual(detail(nullsDetailJSON)?.officialRating, nil, "a null certification is nil")
+checkEqual(detail(nullsDetailJSON)?.primaryAspect, nil, "a null aspect ratio is nil")
+checkEqual(detail(nullsDetailJSON)?.runtime, 0, "a zero runtime is a number, not an absence")
+
+// ⚠⚠ THE SAME TRIPWIRE AS `MediaItem`'s, on the detail payload: this one carries `id` instead of
+// `item_id`, so it is a GLOBAL-SEARCH-shaped object and must not decode as a detail.
+check(detail(#"{ "type": "movie", "id": "x", "name": "Sholay", "play": { "played": false, "resume_ticks": 0, "resume": 0, "play_count": 0 } }"#) == nil,
+      "a payload with id instead of item_id does NOT decode")
+
+// ⚠ `play` is PROMISED by the interface (non-optional), so its absence is a shape violation, not a title
+// that has never been watched.
+check(detail(#"{ "type": "movie", "item_id": "x", "name": "Sholay" }"#) == nil,
+      "a detail payload without its play state is refused")
+// …and so is a payload without a type or a name.
+check(detail(#"{ "item_id": "x", "name": "Sholay" }"#) == nil, "a detail payload without a type is refused")
+check(detail(#"{ "type": "movie", "item_id": "x" }"#) == nil, "a detail payload without a name is refused")
+// ⚠ All three people groups are non-optional: the server always emits them, so a payload missing one is a
+// shape violation rather than a title with no writers.
+check(detail(#"{ "type": "movie", "item_id": "x", "name": "S", "people": { "actors": [], "directors": [] }, "play": { "played": false, "resume_ticks": 0, "resume": 0, "play_count": 0 } }"#) == nil,
+      "a people object missing a group is refused")
+
+let episodeDetail = detail(episodeDetailJSON)
+checkEqual(episodeDetail?.type, "episode", "an episode's detail carries its type")
+checkEqual(episodeDetail?.series?.id, seriesID, "an episode carries its series id")
+checkEqual(episodeDetail?.series?.name, "Some Show", "…and its series name")
+checkEqual(episodeDetail?.season, 1, "…and its season number")
+checkEqual(episodeDetail?.episode, 3, "…and its episode number")
+checkEqual(movieDetail?.series, nil, "a film carries no series context")
+
+// MARK: - The detail's meta line and rating
+
+section("the detail's meta line")
+
+checkEqual(DetailRules.metaBits(movieDetail!, seasonCount: 0), ["1975", "2h", "AU-MA 15+"],
+           "a film reads year · runtime · certification")
+// ⚠ A series shows its SEASON COUNT and not its runtime, because Jellyfin stores a series' runtime as 0 —
+// without this branch the segment would be dropped and a series would read "2021" alone.
+checkEqual(DetailRules.metaBits(detail(seriesDetailJSON)!, seasonCount: 3),
+           ["2021", "3 seasons", "AU-M 15+"], "a series reads its season count, not its runtime")
+checkEqual(DetailRules.metaBits(detail(seriesDetailJSON)!, seasonCount: 1),
+           ["2021", "1 season", "AU-M 15+"], "one season is singular")
+checkEqual(DetailRules.metaBits(detail(seriesDetailJSON)!, seasonCount: 0), ["2021", "AU-M 15+"],
+           "a series with no episodes drops the season segment rather than saying 0 seasons")
+checkEqual(DetailRules.metaBits(detail(nullsDetailJSON)!, seasonCount: 0), [],
+           "unknown values are dropped, so nothing is left to read")
+checkEqual(DetailRules.seasonsText(6), "6 seasons", "six seasons is plural")
+checkEqual(DetailRules.seasonsText(0), "", "no seasons says nothing")
+
+section("the rating readout")
+
+checkEqual(DetailRules.ratingText(7.473), "7.5", "a rating is one decimal")
+checkEqual(DetailRules.ratingText(8.0), "8", "a whole rating drops the .0")
+checkEqual(DetailRules.ratingText(9.96), "10", "a rating that rounds up to ten reads ten")
+checkEqual(DetailRules.ratingText(0), "", "a zero rating says nothing")
+checkEqual(DetailRules.ratingText(nil), "", "an absent rating says nothing")
+checkEqual(DetailRules.ratingText(-1), "", "a nonsense rating says nothing")
+
+// MARK: - The detail's play state
+
+section("the detail's play state")
+
+checkEqual(DetailRules.resumePercent(movieDetail!.play, runtimeSec: movieDetail!.runtime), 25,
+           "a quarter watched is 25%")
+checkEqual(DetailRules.resumePercent(movieDetail!.play, runtimeSec: 0), 0,
+           "no runtime means no percentage")
+checkEqual(DetailRules.resumePercent(nil, runtimeSec: 7200), 0, "no play state means no percentage")
+checkEqual(DetailRules.resumePercent(DetailPlay(played: false, resumeTicks: 0, resume: 0, playCount: 1),
+                                     runtimeSec: 7200), 0, "an untouched title has nothing to resume")
+checkEqual(DetailRules.resumePercent(DetailPlay(played: true, resumeTicks: 18_000_000_000,
+                                                resume: 1800, playCount: 1), runtimeSec: 7200), 0,
+           "a finished title shows no resume bar")
+checkEqual(DetailRules.resumePercent(DetailPlay(played: false, resumeTicks: 0, resume: 9999,
+                                                playCount: 1), runtimeSec: 7200), 100,
+           "a position past the end is still one bar, never more")
+
+checkEqual(DetailRules.isInProgress(movieDetail!.play), true, "a half-watched film is in progress")
+checkEqual(DetailRules.isInProgress(DetailPlay(played: true, resumeTicks: 0, resume: 1800, playCount: 1)),
+           false, "a finished title is NOT in progress, even with a position on it")
+checkEqual(DetailRules.isInProgress(nil), false, "no play state is not in progress")
+
+checkEqual(DetailRules.primaryLabel(movieDetail!.play), "Resume", "mid-play the verb is Resume")
+checkEqual(DetailRules.primaryLabel(nil), "Play", "otherwise it is Play")
+checkEqual(DetailRules.primaryVerb(movieDetail!.play, runtimeSec: movieDetail!.runtime), "Resume (25%)",
+           "the percentage rides on the verb — the web puts it there too")
+checkEqual(DetailRules.primaryVerb(nil, runtimeSec: 7200), "Play", "an untouched title just says Play")
+
+// MARK: - Episodes (Phase B4)
+
+section("an episode's progress")
+
+/// ⚠ Built by DECODING, so the fixture is the wire shape (`id`/`name`, `playback_position`).
+func ep(_ season: Int, _ episode: Int, played: Bool = false, position: Int = 0,
+        runtime: Int = 2700) -> EpisodeItem {
+    // ⚠ Built with `JSONSerialization` from a DICTIONARY, not a hand-written JSON literal: the
+    // fixture is still the wire shape (`id`/`name`, `playback_position`), and no string escaping sits
+    // between the fixture and the model.
+    let object: [String: Any] = [
+        "id": "ep-S\(season)E\(episode)",
+        "name": "Episode \(episode)",
+        "season": season,
+        "episode": episode,
+        "played": played,
+        "playback_position": position,
+        "runtime": runtime,
+    ]
+    let data = try! JSONSerialization.data(withJSONObject: object)
+    return try! JSONDecoder().decode(EpisodeItem.self, from: data)
+}
+
+checkEqual(DetailRules.episodeCode(ep(1, 4)), "S1E4", "an episode's code is S<season>E<number>")
+// ⚠ The FIXTURE's own id, asserted: the builder interpolates it, and an escaping slip would ship a fixture
+// whose ids are literally `ep-S\(season)E\(episode)` while every rule check still passed.
+checkEqual(ep(1, 4).id, "ep-S1E4", "the fixture's id is built from the numbers")
+checkEqual(DetailRules.episodeCode(season: 2, episode: 11), "S2E11",
+           "…and it is built from the numbers, not the name")
+
+let halfWatched = DetailRules.episodeProgress(ep(1, 3, position: 1200))
+checkEqual(halfWatched.percent, 44, "1200 of 2700 seconds is 44%")
+checkEqual(halfWatched.inProgress, true, "…and it is in progress")
+checkEqual(halfWatched.remainingLabel, "25m left", "…with the time left, in the web's own words")
+checkEqual(DetailRules.episodeProgress(ep(1, 3, played: true, position: 1200)).inProgress, false,
+           "a watched episode is not in progress")
+checkEqual(DetailRules.episodeProgress(ep(1, 3, played: true, position: 1200)).remainingLabel, "",
+           "…and claims no time left")
+// ⚠ `max(1, …)` floors the readout at a minute: an episode at its very end says "1m left", never an empty
+// label, and never "0m left".
+let atTheEnd = DetailRules.episodeProgress(ep(1, 3, position: 2700))
+checkEqual(atTheEnd.percent, 100, "an episode at its end is 100%")
+checkEqual(atTheEnd.remainingLabel, "1m left", "…and still reads 1m left")
+// ⚠ The other half of that rule: no runtime means NO COUNTDOWN — a countdown against a length nobody knows
+// reads as a bug on screen.
+let noRuntime = DetailRules.episodeProgress(ep(1, 3, position: 500, runtime: 0))
+checkEqual(noRuntime.percent, 0, "no runtime means no percentage")
+checkEqual(noRuntime.remainingLabel, "", "…and no countdown")
+checkEqual(DetailRules.playLabel(played: true, position: 0), "Replay", "a watched episode's verb is Replay")
+checkEqual(DetailRules.playLabel(played: false, position: 60), "Resume", "a half-watched one resumes")
+checkEqual(DetailRules.playLabel(played: false, position: 0), "Play", "an untouched one plays")
+
+section("the next episode, and the seasons")
+
+let seriesEpisodes = [ep(1, 1), ep(1, 2, position: 900), ep(1, 3), ep(2, 1)]
+checkEqual(DetailRules.nextPlayableEpisode(seriesEpisodes)?.episode, 2,
+           "a series mid-episode resumes THAT episode")
+checkEqual(DetailRules.nextPlayableEpisode([ep(1, 1, played: true), ep(1, 2)])?.episode, 2,
+           "with nothing in progress, the first unwatched episode is next")
+checkEqual(DetailRules.nextPlayableEpisode([ep(1, 1, played: true), ep(1, 2, played: true)]), nil,
+           "a fully watched series has no next episode")
+// ⚠ Out-of-order arrival is the case the web's `sort` exists for, and it is the case a TV would otherwise
+// resume the wrong episode on.
+checkEqual(DetailRules.nextPlayableEpisode([ep(2, 1), ep(1, 1)])?.episode, 1,
+           "the next episode is chosen by (season, episode), not by arrival order")
+
+let grouped = DetailRules.groupBySeason([ep(2, 1), ep(1, 2), ep(1, 1), ep(2, 2)])
+checkEqual(grouped.map(\.season), [1, 2], "seasons are ascending however the list arrives")
+checkEqual(grouped.first?.episodes.map(\.episode), [2, 1],
+           "…and the episodes INSIDE a season keep the server's order")
+checkEqual(grouped.last?.episodes.map(\.episode), [1, 2], "…in every season")
+checkEqual(DetailRules.groupBySeason([]).count, 0, "no episodes is no seasons")
+
+checkEqual(DetailRules.seriesPlayLabel(target: ep(1, 2, position: 900), first: ep(1, 1)), "Resume S1E2",
+           "a half-watched series resumes that episode by name")
+checkEqual(DetailRules.seriesPlayLabel(target: ep(1, 2), first: ep(1, 1)), "Play S1E2",
+           "an unwatched target plays that episode")
+checkEqual(DetailRules.seriesPlayLabel(target: nil, first: ep(1, 1)), "Replay S1E1",
+           "a finished series offers a replay of the first episode")
+checkEqual(DetailRules.seriesPlayLabel(target: nil, first: nil), "Play",
+           "with no episode list there is nothing to name — the screen says so separately")
+
+// MARK: - The detail screen's value (Phase B4)
+
+section("the detail screen's snapshot")
+
+let movieSnapshot = DetailSnapshot(detail: movieDetail!, episodes: [], episodesFailed: false)
+checkEqual(movieSnapshot.isSeries, false, "a film is not a series")
+checkEqual(movieSnapshot.showsEpisodes, false, "…and has no episode list to draw")
+checkEqual(movieSnapshot.metaBits, ["1975", "2h", "AU-MA 15+"], "the snapshot carries the meta line")
+checkEqual(movieSnapshot.rating, "7.5", "…and the rating")
+checkEqual(movieSnapshot.resumePercent, 25, "…and the resume percentage")
+checkEqual(movieSnapshot.isInProgress, true, "…and the in-progress flag")
+checkEqual(movieSnapshot.primaryVerb, "Resume (25%)", "…and the verb it will offer")
+checkEqual(movieSnapshot.partialWarning, nil, "a film can never be partial — it asked for no episode list")
+checkEqual(movieSnapshot.directorLine, "Director: Ramesh Sippy", "the director line reads the web's words")
+checkEqual(movieSnapshot.writerLine, "Writer: Salim Khan", "…and so does the writer line")
+checkEqual(movieSnapshot.studiosLine, "Sippy Films", "the studios are joined for one line")
+checkEqual(movieSnapshot.cast.map(\.name), ["Amitabh Bachchan", "Dharmendra"],
+           "the cast is the actors, in the server's order")
+checkEqual(movieSnapshot.overview, "Two friends, a village and a bandit.", "the synopsis survives")
+
+// ⚠ episodesFailed on a FILM is ignored on purpose: a film requests no episode list, so a warning about one
+// would be a lie on every movie page.
+checkEqual(DetailSnapshot(detail: movieDetail!, episodes: [], episodesFailed: true).partialWarning, nil,
+           "a film with a failed episode list still shows no episode warning")
+
+let seriesSnapshot = DetailSnapshot(detail: detail(seriesDetailJSON)!, episodes: seriesEpisodes,
+                                    episodesFailed: false)
+checkEqual(seriesSnapshot.isSeries, true, "a series is a series when the SERVER says so")
+checkEqual(seriesSnapshot.showsEpisodes, true, "…and draws its episode list")
+checkEqual(seriesSnapshot.seasons.count, 2, "…grouped into its seasons")
+checkEqual(seriesSnapshot.primaryVerb, "Resume S1E2", "…and its verb names the next episode")
+checkEqual(seriesSnapshot.partialWarning, nil, "a complete answer has no warning")
+
+// ⚠⚠ THE PARTIAL CASE. A series whose episode list did not arrive must not look like a series with no
+// episodes: the sentence is on the snapshot (and therefore on the screen) and the verb drops to "Play",
+// because without the list the app does not know which episode.
+let partial = DetailSnapshot(detail: detail(seriesDetailJSON)!, episodes: [], episodesFailed: true)
+checkEqual(partial.showsEpisodes, true, "a failed episode list still draws the section")
+checkEqual(partial.episodes.count, 0, "…with nothing in it")
+checkEqual(partial.partialWarning, "Couldn't load the episode list.", "…and says so")
+checkEqual(partial.primaryVerb, "Play", "…and does not invent an episode to resume")
+
+checkEqual(DetailRules.castRows(detail(movieDetailJSON)!.people).count, 2, "the cast is the actors")
+checkEqual(DetailRules.castRows(nil).count, 0, "no people is no cast")
+// ⚠ The cap is the web's `slice(0, 10)`, and a rail that decides for itself is a rail nobody scrolls.
+let manyPeople = (1...15).map { _ in DetailPerson(id: "p", name: "N", role: "r", hasImage: false) }
+checkEqual(DetailRules.castRows(DetailPeople(actors: manyPeople, directors: [], writers: [])).count, 10,
+           "the cast rail is capped at ten")
+checkEqual(DetailRules.castRows(DetailPeople(actors: [DetailPerson(id: "p", name: "", role: "r",
+                                                                   hasImage: false)],
+                                             directors: [], writers: [])).count, 0,
+           "a person with no name is not a cast member")
+checkEqual(DetailRules.creditsLine(nil, kind: .directors), nil, "no people means no credits line")
+checkEqual(DetailRules.creditsLine(DetailPeople(actors: [], directors: [DetailPerson(id: "a", name: "A",
+                                                                                     role: "", hasImage: false),
+                                                                           DetailPerson(id: "b", name: "B",
+                                                                                        role: "", hasImage: false)],
+                                              writers: []), kind: .directors),
+           "Directors: A, B", "two directors are Directors")
+checkEqual(DetailRules.studiosLine(["A", "", "B"]), "A · B", "an empty studio is not a segment")
+
+section("the detail screen's copy")
+
+// ⚠⚠ PINNED AGAINST THE LITERAL WORDS, never against the constant that produces them — a comparison against
+// `DetailCopy.x` moves with the constant and stays green, which is the TAUTOLOGY the B2 falsification pass
+// caught. Copy is a rule; it is checked against itself only by accident.
+checkEqual(DetailCopy.notFoundTitle, "We couldn't find that title in the library.",
+           "the not-found title is the web app's own sentence")
+checkEqual(DetailCopy.notFoundSub, "It may have been removed or the link is stale.",
+           "…and so is the sub-line")
+checkEqual(DetailCopy.partialWarning, "Couldn't load the episode list.",
+           "the partial warning names the part that failed")
+checkEqual(DetailCopy.playPendingTitle, "Playback", "the placeholder is labelled Playback")
+checkEqual(DetailCopy.playPendingSub, "Arrives with the tvOS player (Phase C).",
+           "…and says where playback comes from, because this screen cannot play")
+checkEqual(DetailCopy.nextUp("Resume S1E4"), "Next up: Resume S1E4",
+           "the screen names the verb it WILL offer, in the phone's own words")
+checkEqual(DetailCopy.watchedWord, "Watched", "a watched episode reads Watched")
+
+let states: [DetailState] = [.loading, .notFound, .failed("boom"), .content(movieSnapshot)]
+check(states.allSatisfy { $0.snapshot == nil || $0.snapshot == movieSnapshot },
+      "only the content state carries a snapshot")
+checkEqual(states.compactMap(\.failureMessage), ["boom"], "only the failed state carries a sentence")
+
 // MARK: - Report
 
 print("")

@@ -12,14 +12,75 @@
 | **B1 — BUILT + PUSHED** (`5076987`) | `Core/Models/LibraryModels.swift` and `Core/PosterURL.swift` (both portable), `check-tvos-models.py` R6/R7 (+4 mutations, 10 total), and a NEW `check-tvos-core.py` + `tvos-core-tests/main.swift` that **compiles and RUNS** the two pure sources — 68 checks, 10/10 rules falsified. |
 | **B2 — BUILT** (this commit) | **Home: Continue Watching + Recently Played on the focus engine.** `Core/HomeRails.swift` (the web app's own rules + the screen's four states — RUN here), `Core/LibraryAPI.swift`, `Core/HomeStore.swift`, `Core/PosterLoader.swift`, and `Home/{HomeView,RailView,PosterCard}.swift`. ⚠ **`Core/RailFocus.swift` was written and DELETED** — tvOS scrolls a rail to reveal focus by itself, so hand-rolled offsets would fight it; `RailView`'s header says so. ⚠ B1's open cookie question is now answered by a LOG LINE, not a guess: `PosterLoader` reports status + byte count + whether the session cookie reached the image request. |
 | **B3 — BUILT** (this commit) | **Browse: the library list, then one folder's poster wall.** `Core/BrowseRules.swift` (the web's own `libraryNavEntries` + the 48/48 mounting plan — RUN here), `Core/BrowseStore.swift`, `Browse/BrowseView.swift`, and `LibraryFolder`/`ConfiguredLibrary`/`LibrariesResponse` added to the models (all contract schemas, so fully gated). ⚠ **The first PARAMETERISED endpoint in the app** (`/folders/{id}/items`) needed a real R4 extension — an interpolation now becomes one path component and must match a contract path exactly. ⚠ **The 2-D grid is NOT hand-rolled**: `LazyVGrid` + focusable Buttons get column memory from the platform's focus engine, same finding as B2's deleted `RailFocus`; what the app owns is how much it draws. |
-| **B4 — NEXT, not started** | **Item detail, read-only** (`/api/jellyfin/detail` + `/series/{id}/episodes`). Play stays a placeholder until Phase C, and the screen must say so. |
-| **Then B5** | The Mac round — the first time B3's SwiftUI is ever compiled, and the round that tests the grid's column memory. |
+| **B4 — BUILT** (this commit) | **Item detail, read-only.** `Core/Models/DetailModels.swift` (5 non-contract models, each with a shape source, so R6/R7 gate them), `Core/DetailRules.swift` (the web's own rules — meta line, rating, resume %, episode progress, season grouping, credits — RUN here), `Core/RequestURL.swift`, `Core/DetailStore.swift`, and `Detail/DetailView.swift`. ⚠⚠ **`RequestURL.swift` is the phase's real find**: `URL.appendingPathComponent(_:)` percent-escapes its whole argument, so `?id=…` becomes part of the PATH and the api answers **404** — a transport bug that would have worn the screen's own "we couldn't find that title" copy. The builder moved to a `Foundation`-only file (so it can be RUN here) and `APIClient.get` gained a `query:` overload. ⚠ **No Play control, deliberately** — the player is Phase C, so the screen says where playback comes from and shows the verb it WILL offer (`Resume S1E4`). ⚠ ``groupBySeason`` is written the long way: a Swift dictionary has no order, so the obvious port of the web's `Map` shuffles the episodes inside every season. |
+| **Then B5** | The Mac round — **the first time B2's, B3's and B4's SwiftUI is ever compiled**, and the round that tests the grid's column memory and the detail screen's poster. |
 
 ⚠ **Two facts B1 established that the plan below does not yet say:** `FolderItemsResponse` IS a contract
 schema (only its `items` is untyped), so R3 forced `items` to be **optional** — a pydantic
 `default_factory=list` is not a `default` in OpenAPI, so the route always sends it but the contract does
 not promise it. And the item shape's trap is now **pinned by a test**: library rows carry `item_id`,
 global-search rows carry `id`.
+
+### ✅ B4 — ITEM DETAIL IS BUILT (2026-09-19) · the newest state on this branch
+
+⚠ **The round records below this point are B2's history.** This is where the branch actually stands.
+
+**Built:** `Core/Models/DetailModels.swift` · `Core/DetailRules.swift` · `Core/RequestURL.swift` ·
+`Core/DetailStore.swift` · `Detail/DetailView.swift`; and `App/AppModel.swift` (a `.detail` phase),
+`App/AppRootView.swift`, `Core/APIClient.swift` (a `query:` GET), `Core/LibraryAPI.swift` (two endpoints),
+`Home/{HomeView,PosterCard}.swift` and `Browse/BrowseView.swift` (Select now OPENS the detail screen).
+
+| Gate | Result |
+|---|---|
+| `check-tvos-models.py` / `--falsify` | ✅ PASS — 113 keys, 14 endpoint literals, 3 model files · **14/14 mutations RED** |
+| `check-tvos-core.py` / `--falsify` | ✅ PASS — **297 checks, 0 failures** · **45/45 mutations RED** |
+| `check-apple-typecheck.sh` | ✅ PASS — the **nineteen** portable tvOS files — ⚠ **after it caught a real Mac build error first** (below) |
+| `check-imports.py` + `--selftest` | ✅ PASS — 31 Swift files, 6/6 snippets |
+| `check_md_links.py` | ✅ PASS |
+| frontend / backend | ⚠ **nothing changed, so no `vitest`/`pytest` is claimed — and no `apply` is needed** |
+
+⚠⚠ **THE PHASE'S REAL FIND — A TRANSPORT BUG WEARING A CONTENT BUG'S CLOTHES.** `APIClient` built every URL
+with `URL.appendingPathComponent(_:)`, which **percent-escapes its whole argument**. `/api/jellyfin/detail`
+takes its id as a QUERY value, so the natural spelling — `"api/jellyfin/detail?id=\(itemID)"` — would have
+sent `…/detail%3Fid=…`: the query becomes part of the **PATH**, the api answers **404**, and this screen
+renders 404 as its own **"We couldn't find that title in the library."** A broken request would have read as
+a missing film, on a TV, in another room.
+⇒ Fixed by giving the rule a home it can be RUN in: **`Core/RequestURL.swift`** (`Foundation` only, so
+`check-tvos-core.py` compiles AND executes it — `APIClient` imports `RKMServerKit`, so nothing inside it can
+be run here), plus an `APIClient.get(_:query:)` overload. ⚠ The **no-query path is byte-for-byte the old
+one**, because that is the path every earlier round exercised. ⚠ `PosterURL` had already recorded the same
+finding for the artwork proxy — it was the second occurrence, not the first.
+
+⚠ **No Play control, and it is a decision rather than an omission.** The tvOS player is Phase C and the api
+has no route this app may play from, so a Play button would be "offering what the server will refuse"
+(`ARCHITECTURE.md` §11) — a promise the viewer only discovers is broken by pressing it. The screen says where
+playback comes from and shows the verb it **will** offer, from the same rule Phase C's button will read
+(`DetailRules.primaryVerb`: `Resume S1E4` / `Resume (25%)` / `Play`). ⚠ **No per-episode Play button either.**
+
+⚠⚠ **A PORTING HAZARD WORTH REMEMBERING, because the obvious translation is the wrong one.** The web's
+`groupBySeason` builds a `Map` and sorts its **keys** — which preserves insertion order *inside* each season.
+A Swift `[Int: [EpisodeItem]]` has **no order at all**, so the idiomatic port silently shuffles the episodes
+within every season: nothing on screen looks wrong until a list arrives out of order. `DetailRules` scans,
+appends and sorts only the season numbers, and a **mutation reverts it** so the long way round is pinned.
+Same family as `nextPlayableEpisode`, where the web relies on JavaScript's **stable** sort and Swift's
+`sorted(by:)` does not promise one — the enumerated comparison restores it by construction.
+
+⚠ **The api's `404` is a CONTENT answer, not a network failure.** `jellyfin_detail.py` 404s an id it has no
+detail for, and `DetailStore` maps exactly that to `DetailState.notFound` ("the title is gone") rather than
+to a "couldn't reach the server" sentence. A `503` (Jellyfin not configured) stays a failure.
+
+⚠ **`check-apple-typecheck.sh` EARNED ITS KEEP HERE — the FIRST run on B4 failed, and it was a real Mac build
+error.** Four errors in `DetailStore.swift`:
+`instance member 'short' cannot be used on type 'Self'; did you mean to use a value of this type instead?`
+— the store had both a static `short(_ itemID:)` and a one-line instance `short()`, and `Self.short(...)`
+resolved to the instance one. The fix is two lines (the instance helper is deleted; every call site passes
+the id), and the point is the *coverage*: this file is in the typecheck list but NOT in `check-tvos-core.py`'s
+runnable set (it imports `RKMServerKit`), so this gate is the only thing between that mistake and a failed
+Mac round.
+
+⚠ **Still open, and it is B5's job:** none of B2/B3/B4's SwiftUI has ever been compiled — this branch's views
+have been *written* here, never *built*. The round's falsifiers are written down: the grid keeping its column
+(B3), and a real poster vs the "no photo" marker on the detail screen (B4).
 
 ### ⚠ HIS FIRST B2 ROUND: **BUILD FAILED** — one missing import, now fixed AND gated (2026-09-19)
 
@@ -123,8 +184,8 @@ launch, before `HomeStore.load()` ran. A timing artefact end to end.
 
 **B2 status: ACCEPTED on his simulator.** Verified on screen: the Home header and its four exits, the
 `Continue Watching` heading, two cards with real artwork, the web app's own meta lines, and a resume bar at
-~28%. ⚠ Not yet verified anywhere: **B3 has not been written**, an item detail screen does not exist, and
-nothing has run on real Apple TV hardware.
+~28%. ⚠ Not yet verified anywhere: **B2's, B3's and B4's SwiftUI have never been compiled** (the Mac round is
+B5), and nothing has run on real Apple TV hardware.
 
 ⚠ **The Xcode project exists now, and Phase A is accepted on his hardware** (Part 4). His one-time GUI
 work is DONE — the project, `INFOPLIST_FILE`, the shared scheme and the local package are all committed, so

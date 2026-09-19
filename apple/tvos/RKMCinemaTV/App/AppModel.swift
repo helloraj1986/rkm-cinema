@@ -47,6 +47,14 @@ final class AppModel: ObservableObject {
         /// So Browse is a peer screen reached by a button, and the tab-bar question belongs with Phase D's
         /// polish once both screens exist on hardware.
         case browse
+        /// Screen #5 — Item detail, read-only (Phase B4). Reached from Home or Browse, and it knows which
+        /// one it came from so `Back` returns there.
+        ///
+        /// ⚠ **`Play` is not on it, and that is deliberate**: the tvOS player is Phase C and the api has no
+        /// route this app may play from yet, so a Play control would be a promise the app cannot keep — the
+        /// opposite of the app's own rule (`docs/ARCHITECTURE.md` §11: never OFFER what the server will
+        /// refuse). The screen states where playback comes from instead, and shows the verb it WILL offer.
+        case detail
     }
 
     @Published private(set) var phase: Phase = .setup
@@ -63,6 +71,22 @@ final class AppModel: ObservableObject {
     /// profile-scoped library, so a profile switch has to rebuild it or the next viewer browses the last
     /// one's libraries.
     @Published private(set) var browse: BrowseStore?
+
+    /// ⚠ **The detail store is ONE ITEM's, built when it is opened and dropped when it is left** —
+    /// `DetailStore`'s header explains why it is not reused across items. It is also dropped on every entry
+    /// to `.library` and on sign-out / `changeServer`, because it read the previous profile's library.
+    @Published private(set) var detail: DetailStore?
+
+    /// Where `Back` on the detail screen returns to. ⚠ Recorded rather than assumed: the screen is reachable
+    /// from two places, and "back" that always goes to Home would lose a viewer three folders deep in
+    /// Browse. It is a `Phase`, so it cannot drift out of sync with an enum case being added.
+    private var detailReturnPhase: Phase = .browse
+
+    /// What `Back` says — naming the screen is the difference between a viewer pressing it and a viewer
+    /// wondering where it goes.
+    var detailReturnLabel: String {
+        detailReturnPhase == .library ? "Back to Home" : "Back to Browse"
+    }
     @Published private(set) var storedValueWasInvalid = false
     @Published private(set) var setupError: String?
     @Published private(set) var isConnecting = false
@@ -227,6 +251,9 @@ final class AppModel: ObservableObject {
     private func enterLibrary() {
         home = session.map { HomeStore(client: $0.api) }
         browse = session.map { BrowseStore(client: $0.api) }
+        // ⚠ Dropped with the other two: a detail screen holds one title's synopsis, cast and episode list,
+        // read from the profile that was watching a moment ago.
+        detail = nil
         phase = .library
     }
 
@@ -243,6 +270,29 @@ final class AppModel: ObservableObject {
         phase = .library
     }
 
+    /// Home **or** Browse → Item detail. ⚠ **ONE entry point for both screens**, so the two cannot come to
+    /// differ about which store is built, which phase is entered, or where `Back` goes.
+    ///
+    /// ⚠ The return phase is recorded only when this is a FRESH open: re-entering detail from detail (a
+    /// later phase's "more like this") must not overwrite where the viewer originally came from.
+    func openDetail(itemID: String) {
+        guard let session, !itemID.isEmpty else { return }
+        if phase != .detail {
+            detailReturnPhase = (phase == .library) ? .library : .browse
+        }
+        detail = DetailStore(client: session.api, itemID: itemID)
+        phase = .detail
+        RKMLog.info("detail: opened \\(itemID.prefix(8)) — Back returns to \\(detailReturnLabel)",
+                    category: .app)
+    }
+
+    /// Detail → wherever it was opened from. ⚠ The store is DROPPED rather than kept: on a TV one item's
+    /// synopsis, cast and episode list are worth more as memory for the next screen's posters.
+    func closeDetail() {
+        detail = nil
+        phase = detailReturnPhase == .detail ? .browse : detailReturnPhase
+    }
+
     func changeProfile() async {
         guard let session else { return }
         phase = .profiles
@@ -255,6 +305,7 @@ final class AppModel: ObservableObject {
         // survived a sign-out is one relaunch away from rendering the last viewer's Continue Watching.
         home = nil
         browse = nil
+        detail = nil
         phase = .signIn
     }
 
@@ -285,6 +336,7 @@ final class AppModel: ObservableObject {
         // survive the switch.
         home = nil
         browse = nil
+        detail = nil
         phase = .setup
         setupError = nil
         typedAddress = store.address?.displayString ?? typedAddress

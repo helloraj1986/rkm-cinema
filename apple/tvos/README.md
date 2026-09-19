@@ -6,9 +6,9 @@ embedding one), so there is no shell shortcut here — the UI is written for the
 
 **Status: Phase A ACCEPTED on his Apple TV simulator (2026-09-19)** — screens 0–2 (address → sign in →
 who's watching), merged to `dev`. **Phase B is under way on `feat/tvos-library`**: **B1 (the item models +
-gate) and B2 (Home) are BUILT**, B3 (Browse) and B4 (item detail) remain. ⚠ **None of Phase B's SwiftUI has
-ever been compiled** — the next Mac round is the first time. §1's one-time Xcode step is DONE: the project,
-`INFOPLIST_FILE`, the shared scheme and the local package are all committed.
+gate), B2 (Home), B3 (Browse) and B4 (item detail) are BUILT**, and only B5 — the Mac round — remains.
+⚠ **None of Phase B's SwiftUI has ever been compiled** — that round is the first time. §1's one-time Xcode
+step is DONE: the project, `INFOPLIST_FILE`, the shared scheme and the local package are all committed.
 
 **Scope rule: TV is a *viewing* surface.** Read + play only. The acquisition and administration half of
 rkm-cinema stays on web/iOS, where a keyboard and forms make sense.
@@ -144,8 +144,13 @@ bent to look like the other.
 | 2 | Who's watching | `GET /api/auth/profiles` · `POST /api/auth/profile` · `GET /api/auth/me` | **A ✅ built** |
 | 3 | Home | `GET /api/library/continue-watching` · `/recently-watched` | **B ✅ built (B2)** |
 | 4 | Browse | `GET /api/library/folders` → `/items` | **B ✅ built (B3)** |
-| 5 | Item detail | `GET /api/jellyfin/detail` · `/api/status` | B |
+| 5 | Item detail (read-only) | `GET /api/jellyfin/detail?id=` · `/api/library/series/{id}/episodes` | **B ✅ built (B4)** |
 | 6 | Player | `GET /api/jellyfin/hls/{id}/master.m3u8` · `POST /api/jellyfin/progress` | C |
+
+⚠ **Screen #5 has NO Play control, deliberately.** The player is Phase C and the api has no route this app
+may play from, so a Play button would be a promise the app cannot keep (`docs/ARCHITECTURE.md` §11 — never
+OFFER what the server will refuse). It says where playback comes from and shows the verb it **will** offer
+(`Resume S1E4`), computed by the same rule Phase C's button will read.
 
 **Deliberately out of scope:** request/download + quality profiles, Household admin, subtitle *vendor*
 search and download, global search.
@@ -181,8 +186,11 @@ Everything UI. Specifically:
   ⚠ **The focus engine is the single biggest unknown.** How the grid lands, whether the password overlay
   keeps its focus, whether the remote's Back behaves — none of it can be known from here.
 - **What IS verified, on Linux, before any Mac round:** `APIClient`, `AuthModels`, `ServerProbe`,
-  `AppLog`, `SessionStore` and `ServerDefaults` typecheck; the models and every endpoint literal are
-  checked against the frozen contract; every framework import is present. See §6.
+  `AppLog`, `SessionStore`, `ServerDefaults`, `DetailStore` and `DetailView`'s dependencies typecheck
+  (nineteen portable files); the models and every endpoint literal are checked against the frozen contract,
+  with the item and detail shapes checked against the frontend's own TypeScript interfaces where the contract
+  is silent; **the URLs, the models and every screen's rules are EXECUTED** (297 checks); and every framework
+  import is present. See §6.
 
 ⚠ **Say "it builds on the Mac", never "it works"** — and a screenshot with the HUD is the report that
 makes the next fix possible.
@@ -193,10 +201,10 @@ makes the next fix possible.
 
 ```bash
 python3 apple/scripts/check-tvos-models.py            # models + endpoints vs the frozen contract
-python3 apple/scripts/check-tvos-models.py --falsify  # 11 mutations, each must go red
-python3 apple/scripts/check-tvos-core.py              # RUNS the poster URL, the models + the Home rules
-python3 apple/scripts/check-tvos-core.py --falsify    # 25 rules reverted, each must go red
-TMPDIR=/root/tmp bash apple/scripts/check-apple-typecheck.sh   # compiles the 15 portable files
+python3 apple/scripts/check-tvos-models.py --falsify  # 14 mutations, each must go red
+python3 apple/scripts/check-tvos-core.py              # RUNS the URLs, the models + every screen's rules
+python3 apple/scripts/check-tvos-core.py --falsify    # 45 rules reverted, each must go red
+TMPDIR=/root/tmp bash apple/scripts/check-apple-typecheck.sh   # compiles the 19 portable files
 python3 apple/scripts/check-imports.py apple/tvos/RKMCinemaTV  # missing imports — INCLUDING the views
 python3 apple/scripts/check-imports.py --selftest     # 6 snippets, incl. the RKMServerKit rule's edges
 bash apple/scripts/test-mac-round.sh                  # the round script, stubbed, 10 cases
@@ -218,11 +226,12 @@ wolf is worse than a gate that is honestly absent. The views stay Mac-round busi
 `TVStubs.swift` says.
 
 ⚠ **`check-tvos-core.py` is not a duplicate of the typecheck — it EXECUTES.** `swiftc -parse` and even a
-clean compile prove nothing about behaviour, so `PosterURL.swift`, `LibraryModels.swift` and
-`HomeRails.swift` are pure `Foundation` and are compiled **and run** against fixtures shaped like the real
-payloads (160 checks across B1, B2 and B3). That is what makes the silent failures visible here instead of on
-the TV: a poster URL that 404s, a payload that cannot decode, and a Home whose four states are wrong —
-all three of which look like nothing at all on a screen.
+clean compile prove nothing about behaviour, so the seven pure sources (`LibraryModels`, `PosterURL`,
+`HomeRails`, `BrowseRules`, `DetailModels`, `DetailRules`, `RequestURL`) are compiled **and run** against
+fixtures shaped like the real payloads (**297 checks across B1, B2, B3 and B4**). That is what makes the
+silent failures visible here instead of on the TV: a poster URL that 404s, a request whose query became part
+of the path, a payload that cannot decode, and a screen whose states are wrong — all of which look like
+nothing at all on a screen.
 
 ⚠ **Two of these have already caught real defects, and one of them is the argument for the pair:**
 
@@ -234,9 +243,10 @@ all three of which look like nothing at all on a screen.
   (`apple/WORKFLOW.md` §7b), caught for free.
 
 **And all four gates that matter have been falsified**, not just observed green:
-`check-tvos-models.py --falsify` reverts each rule and requires the matching check to fail (11/11 red,
-including the two Phase B rules R6/R7 and the interpolated-endpoint case against the frontend's own interfaces); `check-tvos-core.py
---falsify` does the same for the 25 rules the running harness pins (25/25 red — and it earned its keep on
+`check-tvos-models.py --falsify` reverts each rule and requires the matching check to fail (14/14 red,
+including the two Phase B rules R6/R7, the interpolated-endpoint case and three mutations on B4's detail
+models, all against the frontend's own interfaces); `check-tvos-core.py
+--falsify` does the same for the 45 rules the running harness pins (45/45 red — and it earned its keep on
 its first B2 run by finding a TAUTOLOGY in the harness itself); `test-mac-round.sh` asserts on the
 stubs' call log, and goes red against the previous revision of
 `mac-round.sh` on two separate faults: the truncating device-name extraction fails 2 of its 10 cases, and

@@ -4,6 +4,10 @@ import SwiftUI
 // written for Apple's frameworks, and nobody asked whether `RKMServerKit` needed the same rule), and this
 // file is SwiftUI, so `check-apple-typecheck.sh`'s list does not include it either. Two gates, one blind
 // spot each, and the round found it. The checker now has the rule AND a `--selftest` that pins it.
+//
+// ⚠ B4 moved this screen's last `RKMLog` call out (Select now OPENS the detail screen instead of logging
+// that it cannot), so the import is kept for the next line that needs it rather than removed and re-added —
+// and the checker is what makes that safe either way.
 import RKMServerKit
 
 /// The Home screen — Phase B's first real content screen, and the replacement for Phase A's
@@ -159,11 +163,9 @@ struct HomeView: View {
 
     // MARK: - Select
 
-    /// ⚠ **B2 has no item detail screen, so the honest thing is to say so.** The card is a real Button and
-    /// Select must do *something* the viewer can see — but opening nothing at all reads as a broken remote.
-    /// The detail screen is B4, and this is the one line that changes when it lands.
+    /// ⚠ **The detail screen is B4, so Select opens it.** Until B4 this logged instead — a real Button whose
+    /// press does nothing visible reads as a broken remote, so it said so; now it goes where it says.
     private func open(_ item: MediaItem) {
-        RKMLog.info("home: selected \(item.title) (\(item.itemID.prefix(8))) — the detail screen is Phase B4",
-                    category: .app)
+        app.openDetail(itemID: item.itemID)
     }
 }

@@ -141,8 +141,8 @@ for primary in "${WORK[@]}"; do
 done
 
 echo ""
-echo "== tvOS sources (RKMCinemaTV) — the fifteen files that need no Apple UI framework"
-# ⚠⚠ WHY THIS LIST IS FIFTEEN FILES AND NOT THE WHOLE TARGET. The tvOS app is mostly SwiftUI, and there is
+echo "== tvOS sources (RKMCinemaTV) — the nineteen files that need no Apple UI framework"
+# ⚠⚠ WHY THIS LIST IS NINETEEN FILES AND NOT THE WHOLE TARGET. The tvOS app is mostly SwiftUI, and there is
 # no SwiftUI on Linux to stub (nor a UIKit, nor an AVFoundation), so the views are Mac-round business and
 # saying so is the point. What CAN be checked here is the part where a mistake is silent and expensive:
 #
@@ -151,15 +151,22 @@ echo "== tvOS sources (RKMCinemaTV) — the fifteen files that need no Apple UI 
 #   AuthModels       the wire format, also covered by check-tvos-models.py against the contract
 #   ServerProbe      the reachable/unreachable rule — a 401 reported as "unreachable" is a wrong screen
 #   AppLog           the launch banner, which is what makes a round diagnosable at all
-#   AppModel         which screen the app is on, and the ONE place the Home/Browse stores are built/dropped
+#   AppModel         which screen the app is on, and the ONE place the Home/Browse/Detail stores are built
 #   SessionStore     the session behind that, and the cookie handling
 #   LibraryModels    Phase B's wire format — the item/episode/library shapes, R6/R7-checked against the
 #                    frontend's own TypeScript interfaces where the contract is silent
+#   DetailModels     Phase B4's wire format — the detail payload, same second source, same gate
 #   HomeRails        Phase B2's Home RULES and its four screen states — also EXECUTED by check-tvos-core.py
 #   BrowseRules      Phase B3's Browse rules: the library list and the wall's mounting plan — also EXECUTED
+#   DetailRules      Phase B4's detail rules: the meta line, the episode progress, the season grouping and
+#                    the screen's four states — also EXECUTED
+#   RequestURL       ⚠ the URL builder, and the reason it is its own file: `appendingPathComponent` escapes a
+#                    query into the PATH, and `APIClient` (which would otherwise hold this rule) imports
+#                    `RKMServerKit`, so nothing in it can be RUN here. Also EXECUTED.
 #   LibraryAPI       the endpoints, so no view spells a path
 #   HomeStore        the two Home requests and the APIError -> sentence mapping
 #   BrowseStore      the library list + one folder's wall, same mapping
+#   DetailStore      Phase B4's one item — the detail request, the episode request, and the 404 -> notFound
 #   PosterURL        the artwork URL builder — a 404 poster and a broken screen look identical
 #   PosterLoader     the artwork fetch, and the log line that says whether the session cookie reached it
 #
@@ -175,8 +182,9 @@ mkdir -p "$TMP_TV" || exit 3
 
 TV_WORK=()
 for rel in Core/ServerDefaults.swift Core/APIClient.swift Core/Models/AuthModels.swift \
-           Core/Models/LibraryModels.swift Core/HomeRails.swift Core/BrowseRules.swift \
-           Core/LibraryAPI.swift Core/HomeStore.swift Core/BrowseStore.swift \
+           Core/Models/LibraryModels.swift Core/Models/DetailModels.swift \
+           Core/HomeRails.swift Core/BrowseRules.swift Core/DetailRules.swift Core/RequestURL.swift \
+           Core/LibraryAPI.swift Core/HomeStore.swift Core/BrowseStore.swift Core/DetailStore.swift \
            Core/PosterURL.swift Core/PosterLoader.swift \
            Server/ServerProbe.swift App/AppLog.swift App/AppModel.swift Auth/SessionStore.swift; do
   if [ ! -f "$TV_SRC/$rel" ]; then

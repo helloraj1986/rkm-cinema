@@ -117,6 +117,19 @@ NON_CONTRACT_MODELS = {
                               "shape": ("frontend/src/lib/api/client.ts", "LibraryRecentShape")},
     "EpisodesResponse": {"reason": _ITEM_SHAPE_REASON,
                          "shape": ("frontend/src/lib/api/client.ts", "EpisodesShape")},
+    # ---- Phase B4 — the item detail screen. `GET /api/jellyfin/detail` has no 200 schema in the contract
+    # at all, so the same second source is used: the five interfaces below are what the desktop page and the
+    # phone's detail screen read in production.
+    "ItemDetail": {"reason": _ITEM_SHAPE_REASON,
+                   "shape": ("frontend/src/lib/api/client.ts", "ItemDetail")},
+    "DetailPlay": {"reason": _ITEM_SHAPE_REASON,
+                   "shape": ("frontend/src/lib/api/client.ts", "DetailPlay")},
+    "DetailSeriesContext": {"reason": _ITEM_SHAPE_REASON,
+                            "shape": ("frontend/src/lib/api/client.ts", "DetailSeriesContext")},
+    "DetailPerson": {"reason": _ITEM_SHAPE_REASON,
+                     "shape": ("frontend/src/lib/api/client.ts", "DetailPerson")},
+    "DetailPeople": {"reason": _ITEM_SHAPE_REASON,
+                     "shape": ("frontend/src/lib/api/client.ts", "DetailPeople")},
 }
 
 
@@ -512,6 +525,18 @@ MUTATIONS = [
     ("R6 a shape source that has vanished",
      "frontend/src/lib/api/client.ts",
      "export interface MediaItem {", "export interface MediaItemRenamed {"),
+    # ---- B4's models. ⚠ These exist so the five new models are provably COVERED rather than merely
+    # listed: a `NON_CONTRACT_MODELS` entry whose shape source resolves looks IDENTICAL to one that is
+    # being checked properly, which is why each shape-source rule gets a mutation on a B4 file.
+    ("R6 a mistyped detail key",
+     "RKMCinemaTV/Core/Models/DetailModels.swift",
+     'case itemID = "item_id"', 'case itemID = "id"'),
+    ("R7 a detail optional read as non-optional",
+     "RKMCinemaTV/Core/Models/DetailModels.swift",
+     "let overview: String?", "let overview: String"),
+    ("R7 a second detail optional read as non-optional",
+     "RKMCinemaTV/Core/Models/DetailModels.swift",
+     "let studios: [String]?", "let studios: [String]"),
 ]
 
 

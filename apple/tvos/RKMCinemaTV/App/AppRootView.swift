@@ -86,6 +86,15 @@ struct AppRootView: View {
             } else {
                 ConnectingView()
             }
+        case .detail:
+            // ⚠ `openDetail` refuses to enter this phase without a store (it returns early when the session
+            // is missing), so this fallback is unreachable in practice — it is here for the same reason the
+            // others are: a phase whose store could be nil must have a screen that is not a blank view.
+            if let detail = app.detail, let session = app.session {
+                DetailView(store: detail, base: session.address.url)
+            } else {
+                ConnectingView()
+            }
         }
     }
 }

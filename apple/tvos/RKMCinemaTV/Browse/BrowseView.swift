@@ -218,11 +218,9 @@ struct BrowseView: View {
         }
     }
 
-    /// ⚠ **B3 has no item detail screen — that is B4 — so Select says so.** A real Button whose press does
-    /// nothing visible reads as a broken remote, so it logs instead of being silent, and this is the one line
-    /// that changes when B4 lands.
+    /// ⚠ **The detail screen is B4, so Select opens it.** Until B4 this logged instead — a real Button whose
+    /// press does nothing visible reads as a broken remote, so it said so; now it goes where it says.
     private func open(_ item: MediaItem) {
-        RKMLog.info("browse: selected \(item.title) (\(item.itemID.prefix(8))) — the detail screen is Phase B4",
-                    category: .app)
+        app.openDetail(itemID: item.itemID)
     }
 }

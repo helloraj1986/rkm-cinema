@@ -83,7 +83,10 @@ struct PosterCard: View {
 /// which is the answer to B2's one open device question (`GET /api/jellyfin/poster` is session-scoped).
 /// A placeholder is shown while that happens, and a failure shows the reason rather than a grey rectangle,
 /// because "no poster" and "broken poster" must not look the same.
-private struct PosterImageView: View {
+/// ⚠ **Made non-private in B4** so the detail screen reuses the SAME poster renderer the cards use: one
+/// load path, one log line, one "no photo" mark. A second image view on the detail screen is a second place
+/// for artwork to fail silently — which is the failure this whole file exists to make visible.
+struct PosterImageView: View {
 
     let base: URL
     let itemID: String

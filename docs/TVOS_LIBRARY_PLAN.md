@@ -202,16 +202,62 @@ the closest thing to a production-verified description this repo has.
   be exercised from the sandbox, so: **falsifier — if the round shows the grid losing its column when moving
   down, that is a real defect, and the fix goes in the view (`@FocusState` + an index map), not in
   `BrowseRules`.**
-* ⚠ **Still no item detail screen** (B4), so Select logs rather than doing nothing visible — B2's honesty rule.
+* ⚠ **B3 shipped with no item detail screen, so Select logged rather than doing nothing visible** — B2's
+  honesty rule. **B4 replaced that line with `app.openDetail(itemID:)`** on both Home and Browse, so the card
+  now goes where it says it goes.
 
-### B4 — Item detail, read-only
+### B4 — Item detail, read-only *(built)*
 `/api/jellyfin/detail?id=` (+ `/series/{id}/episodes` for a series). **Play is a placeholder in B** and
 the screen must say so rather than doing nothing. Deliberately out of scope: request/download, Household
 admin, subtitle vendor search, global search.
 
+* **`Core/Models/DetailModels.swift`** — `ItemDetail`, `DetailPlay`, `DetailSeriesContext`, `DetailPerson`,
+  `DetailPeople`. ⚠ **All five are non-contract** (`/api/jellyfin/detail` has no 200 schema at all), so each
+  declares a shape source in the frontend's own interfaces and R6/R7 check them. The episode list reuses
+  **B1's existing** `EpisodesResponse`/`EpisodeItem` — nothing new was needed there, which is the reuse
+  working as intended.
+* **`Core/DetailRules.swift`** (pure, **RUN**) — mirrored from `lib.ts` and `playback/lib.ts`:
+  `metaBits`, `ratingText`, `resumePercent`, `isInProgress`, `primaryLabel`/`primaryVerb`,
+  `seriesPlayLabel`, `episodeCode`, `episodeProgress`, `playLabel`, `nextPlayableEpisode`, `groupBySeason`,
+  `creditsLine`, `castRows`, and the screen's value (`DetailSnapshot`) plus its four states (`DetailState`).
+  ⚠ **`fmtRuntime` was NOT re-implemented** — the meta line calls B2's `HomeRules.runtimeText`, so a runtime
+  reads identically on a card and on the detail page.
+* **`Core/RequestURL.swift`** (pure, **RUN**) — ⚠⚠ **the phase's real find.** `APIClient` built every URL
+  with `URL.appendingPathComponent(_:)`, which **percent-escapes its whole argument**: a path carrying
+  `?id=…` arrives as part of the PATH and the api answers `404` — which this screen then renders with its
+  own "we couldn't find that title in the library" copy. So a transport bug would have presented as a
+  content bug. The builder moved into a `Foundation`-only file (`APIClient` imports `RKMServerKit`, so
+  nothing in it can be RUN here) and `APIClient.get` gained a `query:` overload; the no-query path is
+  byte-for-byte the old one.
+* **`Core/DetailStore.swift`** (ported) — one store PER ITEM, built when the item is opened and dropped when
+  it is left. ⚠ It maps the api's **`404` to `DetailState.notFound`**, not to a network sentence: the server
+  answered, and the answer is that the title is gone.
+* **`Detail/DetailView.swift`** (SwiftUI, Mac-only) — screen #5. ⚠⚠ **IT HAS NO PLAY CONTROL, deliberately
+  and recorded here rather than left as an omission:** the tvOS player is Phase C and the api has no route
+  this app may play from, so a Play button would be "offering what the server will refuse"
+  (`docs/ARCHITECTURE.md` §11) — a promise broken one press later. The screen states where playback comes
+  from, and shows the verb it WILL offer (`DetailRules.primaryVerb` — the phone's own words, e.g.
+  `Resume S1E4`), so Phase C's button reads a value this branch already tested.
+* ⚠⚠ **The porting hazard, and why `groupBySeason` is written the long way.** The web's `groupBySeason`
+  builds a `Map` and sorts its KEYS, which preserves insertion order *within* each season. A Swift
+  `[Int: [EpisodeItem]]` has **no order at all**, so the obvious translation silently shuffles the episodes
+  inside every season — invisible on screen until an episode list is out of order. The scan-append-sort
+  form is what keeps the web's behaviour, and a mutation reverts it. Same class of trap as
+  `nextPlayableEpisode`, where Swift's `sorted(by:)` is not documented stable and the web's `sort` relies on
+  being exactly that.
+* **`AppModel`** gained a `.detail` phase behind ONE entry point (`openDetail(itemID:)`, called by both Home
+  and Browse), a **recorded return phase** so `Back` names where it goes, and the store dropped on
+  sign-out / `changeServer` / every entry to `.library` — the same identity rule as the other two stores.
+* ⚠ **`PosterImageView` became non-private** so the detail screen reuses the cards' loader: one load path,
+  one log line, one "no photo" mark. A second image view is a second place for artwork to fail silently.
+* ⚠ **The episode rows carry no per-row Play button either** (the web's `EpisodeRow` ends in one). They carry
+  the episode's state, computed by the same `episodeProgress` the phone's row reads.
+
 ### B5 — the round
 `./apple/scripts/mac-round.sh tvos --sim`, screenshot + the short summary. Screen-only verification is
-Mac business: the SwiftUI views are **written here, never compiled here**.
+Mac business: the SwiftUI views are **written here, never compiled here**. ⚠ **This is the first time B2's,
+B3's and B4's views are compiled at all**, and the round's specific falsifiers are: the grid keeping its
+column when moving down a row (B3), and the "no photo" marker vs a real poster on the detail screen.
 
 ---
 
@@ -227,9 +273,10 @@ Backend changes (none — that is B0's decision) · the player (Phase C) · the 
 | Hand-write the models with no gate | The one phase made of nothing but field names would have no wire-format check at all — and §1 shows a second source exists, so this would be choosing blindness. |
 
 ## §6 — Gates for this branch
-`check-tvos-models.py` (incl. `--falsify`, **10/10**) · ⚠ **`check-tvos-core.py` (incl. `--falsify`,
-**18/18**) — the one that RUNS the models, the poster URL and the Home's own rules (119 checks)** ·
-`check-apple-typecheck.sh` (incl. the thirteen portable files) · `check-imports.py` (23 Swift files) ·
-`check_md_links.py`. **No frontend/backend gate is claimed on this branch** unless a frontend/backend file
-actually changes — saying so is the point. (The frontend's `client.ts` is *read* by R6/R7 as a shape source;
-it is not modified, so no `vitest` run is claimed.)
+`check-tvos-models.py` (incl. `--falsify`, **14/14** — 113 keys, 14 endpoint literals, 3 model files) ·
+⚠ **`check-tvos-core.py` (incl. `--falsify`, **45/45**) — the one that RUNS the models, the poster and
+request URLs, and the Home/Browse/Detail rules (297 checks)** ·
+`check-apple-typecheck.sh` (incl. the **nineteen** portable files) · `check-imports.py` (31 Swift files,
+`--selftest` 6/6) · `check_md_links.py`. **No frontend/backend gate is claimed on this branch** unless a
+frontend/backend file actually changes — saying so is the point. (The frontend's `client.ts` is *read* by
+R6/R7 as a shape source; it is not modified, so no `vitest` run is claimed.)

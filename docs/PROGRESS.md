@@ -55,6 +55,35 @@ false errors on API shape, and a gate that cries wolf is worse than an honestly 
 was not reached (the build stops at the first error batch), so **nothing may be claimed about it** and the
 re-round is what settles it.
 
+### ✅ HIS SECOND B2 ROUND: the fix held, and **the Home screen is CONFIRMED RENDERING** (2026-09-19)
+
+Second round built clean — so `PosterCard.swift` compiled too, which the first round never reached. He sent
+a **cropped** screenshot (792×792, top-left; he cropped it because the full-size PNG was too big to send),
+and it answers most of Phase B2 at once. Read by OCR + one magnified crop looked at directly:
+
+| On screen | What it confirms |
+|---|---|
+| `RKMCinemaTV` + `Change profile · Sign out · Change server · Refresh` | the Home **header** renders, and every way out is present |
+| **`Continue Watching`** | ⚠ the rail **heading** renders — it was never missing, it was *behind the HUD panel* in the first round (which is now written into `apple/tvos/README.md` §2) |
+| Two cards: *The Book of Life*, *Spider-Man: Into the…*, meta `2014 · 1h 35m` / `2018 · 1h 57m` | `PosterCard` + `cardMetaLine` render the web app's own format, at the right size |
+| **A resume bar with a partial fill (~28%)** | ⚠⚠ the plan's "progress bars are what make this screen worth having" — and it proves these ARE Continue Watching rows, with real positions, not a Recently Played pair |
+| Real poster artwork | `PosterLoader` + the session-cookie image path work end to end |
+
+⚠⚠ **AND A MEASUREMENT LESSON, because it nearly became a wrong bug report.** A luminance-threshold pass on
+the FIRST screenshot was read as *"no progress bars"* — which was a **FALSE NEGATIVE**: the bar's white fill
+is only as wide as the progress (~28%), and its track is only a few levels above the tvOS `.card` button
+style's **own background platter**, which sits behind every card's text and was itself the unexplained
+"mid-grey 282px bands" in that pass. Looking at a magnified crop settled it in one glance. ⇒ **Measure to
+find what to look at, then LOOK at it; "absent" and "below my threshold" are different claims.** The recipe
+(base64 `data:` URL for the small crops) is now in `references/reading-device-screenshots.md`, along with the
+trap that cost three failed `cp`s: **a macOS screenshot filename contains U+202F, so the path you were given
+cannot be typed — glob it.**
+
+⚠ **STILL OPEN: the `poster` log line (the session-cookie answer).** He ran that round WITHOUT
+`-RKMDebugHUD YES`, so there was no panel to read. B1's one open question — does the cookie reach the image
+request — remains unverified: `PosterLoader` logs it (`session-cookie=present|absent`), but nobody has read
+those lines yet.
+
 ⚠ **The Xcode project exists now, and Phase A is accepted on his hardware** (Part 4). His one-time GUI
 work is DONE — the project, `INFOPLIST_FILE`, the shared scheme and the local package are all committed, so
 every round from here is one command and no Xcode GUI. `apple/tvos/README.md` §2 has it.

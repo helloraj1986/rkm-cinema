@@ -141,8 +141,8 @@ for primary in "${WORK[@]}"; do
 done
 
 echo ""
-echo "== tvOS sources (RKMCinemaTV) — the six files that need no Apple UI framework"
-# ⚠⚠ WHY THIS LIST IS SIX FILES AND NOT THE WHOLE TARGET. The tvOS app is mostly SwiftUI, and there is no
+echo "== tvOS sources (RKMCinemaTV) — the eight files that need no Apple UI framework"
+# ⚠⚠ WHY THIS LIST IS EIGHT FILES AND NOT THE WHOLE TARGET. The tvOS app is mostly SwiftUI, and there is no
 # SwiftUI on Linux to stub (nor a UIKit, nor an AVFoundation), so the views are Mac-round business and
 # saying so is the point. What CAN be checked here is the part where a mistake is silent and expensive:
 #
@@ -152,6 +152,10 @@ echo "== tvOS sources (RKMCinemaTV) — the six files that need no Apple UI fram
 #   ServerProbe      the reachable/unreachable rule — a 401 reported as "unreachable" is a wrong screen
 #   AppLog           the launch banner, which is what makes a round diagnosable at all
 #   SessionStore     which screen the app lands on, and the cookie handling behind it
+#   LibraryModels    Phase B's wire format — the item/episode shapes, R6/R7-checked against the frontend's
+#                    own TypeScript interfaces because the contract does not describe them
+#   PosterURL        the artwork URL builder — a 404 poster and a broken screen look identical, so the
+#                    one string every card depends on is compiled rather than eyeballed
 #
 # ⚠ The tvOS stubs are a SEPARATE file (see typecheck-stubs/TVStubs.swift): the iOS stub references iOS
 # types in its WebKit slice, so including it here would fail the gate on symbols tvOS does not have.
@@ -162,6 +166,7 @@ mkdir -p "$TMP_TV" || exit 3
 
 TV_WORK=()
 for rel in Core/ServerDefaults.swift Core/APIClient.swift Core/Models/AuthModels.swift \
+           Core/Models/LibraryModels.swift Core/PosterURL.swift \
            Server/ServerProbe.swift App/AppLog.swift Auth/SessionStore.swift; do
   if [ ! -f "$TV_SRC/$rel" ]; then
     echo "missing source: $TV_SRC/$rel"; exit 3

@@ -14,7 +14,9 @@ apple/
 ├── ios/               ← RKMCinema: a WKWebView shell around the LIVE web UI
 ├── tvos/              ← RKMCinemaTV: a native SwiftUI client (tvOS has no browser)
 └── scripts/           ← the gates that run ON LINUX: check-tvos-models.py (models + endpoints vs the
-                         frozen contract), check-apple-typecheck.sh, check-imports.py,
+                         frozen contract, + the frontend's interfaces for the item shape),
+                         check-tvos-core.py (RUNS the poster URL + the item models against fixtures),
+                         check-apple-typecheck.sh, check-imports.py,
                          test-mac-round.sh (the round script, stubbed), and generate-api.sh
                          ⚠ superseded — see its header
 ```

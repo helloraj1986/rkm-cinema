@@ -87,19 +87,35 @@ the closest thing to a production-verified description this repo has.
 
 ## §3 — Phases
 
-### B1 — models, gate, and the artwork question *(this commit)*
-* `Core/Models/LibraryModels.swift` (new): `MediaItem`, `LibraryItemsResponse`, `FolderItemsResponse`,
-  `LibraryRecentResponse`, `EpisodeItem`, `EpisodesResponse` — every key explicitly mapped in
-  `CodingKeys`, optionality taken from §1.
+### B1 — models, gate, and the artwork question *(built)*
+* `Core/Models/LibraryModels.swift` (new): `MediaItem`, `EpisodeContext`, `EpisodeItem`,
+  `LibraryItemsResponse`, `FolderItemsResponse`, `LibraryRecentResponse`, `EpisodesResponse` — every key
+  explicitly mapped in `CodingKeys`, optionality taken from §1.
 * `Core/PosterURL.swift` (new, portable): the poster URL builder, mirroring the frontend's
-  `posterUrl()` — `/api/jellyfin/poster?id=<item_id>&width=<w>` with percent-encoding. Pure Foundation,
-  so it is typechecked and unit-asserted here; artwork *loading* is not.
-* `apple/scripts/check-tvos-models.py`: R6/R7 as §2, plus falsification mutations for both.
-* `apple/scripts/check-apple-typecheck.sh`: add the two new portable files to the tvOS loop.
+  `posterUrl()` — `/api/jellyfin/poster?id=<item_id>&width=<w>`, with the width clamped to the range the
+  server documents (it 422s outside 16…2000) and the id percent-encoded as a *query* value.
+* `apple/scripts/check-tvos-models.py`: R6/R7 as §2, plus 4 new falsification mutations (10 total).
+* `apple/scripts/check-tvos-core.py` (new) + `apple/scripts/tvos-core-tests/main.swift` (new): ⚠ **the
+  plan's "typechecked and unit-asserted" was too weak, and this is what it became.** The two pure sources
+  are compiled with `swiftc` and **executed** against fixtures shaped like the real payloads — 68 checks,
+  10 rules falsified. It is the same pattern `check-offline-core.py` established for the iOS offline
+  stack, and it is the difference between "it compiles" and "it behaves".
+* `apple/scripts/check-apple-typecheck.sh`: the two new portable files added to the tvOS loop (8 files).
 * ⚠ **The artwork question, recorded for the Mac round:** `GET /api/jellyfin/poster` is session-scoped, so
   whatever loads images must present the session cookie. `AsyncImage` shares `URLSession`'s cookie store —
   the cheapest option to try first — but a poster wall with no posters looks identical to a broken screen,
-  so the load path gets its own log line rather than a silent empty `Image`.
+  so the load path gets its own log line rather than a silent empty `Image`. **Nothing in the sandbox can
+  prove this either way**, and B1 does not claim it does: `PosterURL` builds the URL; whether the cookie
+  travels is B2's first device question.
+* ⚠ Two findings from building the gate, both worth keeping:
+  1. **R6/R7's own parser had a hole on its first run** — an inline object's lines were matched against
+     the PARENT interface too, so `MediaItem` came back with 19 properties instead of 15 and a Swift
+     `number` on the item would have passed as a legitimate key. The check's *own output* exposed it
+     (`not decoded: number, season, series_id, series_name`), the same way R2b did in Phase A.
+  2. **`FolderItemsResponse` is a contract schema after all** (only its `items` is untyped), so it is
+     checked against the contract, not the interface — and R3 forced `items` to be **optional**, because
+     a pydantic `default_factory=list` is not a `default` in OpenAPI. The route always sends it; the
+     contract does not promise it. `rows` is the coalescing accessor.
 
 ### B2 — Home: two horizontally scrolling rows
 `/api/library/continue-watching` + `/recently-watched`. ⚠ Focus FIRST: a row is a 1-D focus path, the card
@@ -135,6 +151,8 @@ Backend changes (none — that is B0's decision) · the player (Phase C) · the 
 | Hand-write the models with no gate | The one phase made of nothing but field names would have no wire-format check at all — and §1 shows a second source exists, so this would be choosing blindness. |
 
 ## §6 — Gates for this branch
-`check-tvos-models.py` (incl. `--falsify`) · `check-apple-typecheck.sh` (incl. the two new portable files)
-· `check-imports.py` · `check_md_links.py`. **No frontend/backend gate is claimed on this branch** unless a
-frontend/backend file actually changes — saying so is the point.
+`check-tvos-models.py` (incl. `--falsify`, 10/10) · ⚠ **`check-tvos-core.py` (incl. `--falsify`, 10/10) —
+the one that RUNS the models and the poster URL** · `check-apple-typecheck.sh` (incl. the two new portable
+files, 8 total) · `check-imports.py` · `check_md_links.py`. **No frontend/backend gate is claimed on this
+branch** unless a frontend/backend file actually changes — saying so is the point. (The frontend's
+`client.ts` is *read* by R6/R7 as a shape source; it is not modified, so no `vitest` run is claimed.)

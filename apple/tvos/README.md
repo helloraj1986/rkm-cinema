@@ -174,11 +174,19 @@ makes the next fix possible.
 
 ```bash
 python3 apple/scripts/check-tvos-models.py            # models + endpoints vs the frozen contract
-python3 apple/scripts/check-tvos-models.py --falsify  # 6 mutations, each must go red
-TMPDIR=/root/tmp bash apple/scripts/check-apple-typecheck.sh   # compiles the 6 portable files
+python3 apple/scripts/check-tvos-models.py --falsify  # 10 mutations, each must go red
+python3 apple/scripts/check-tvos-core.py              # RUNS the poster URL + the item models (swiftc)
+python3 apple/scripts/check-tvos-core.py --falsify    # 10 rules reverted, each must go red
+TMPDIR=/root/tmp bash apple/scripts/check-apple-typecheck.sh   # compiles the 8 portable files
 python3 apple/scripts/check-imports.py apple/tvos/RKMCinemaTV  # missing framework imports
 bash apple/scripts/test-mac-round.sh                  # the round script, stubbed, 10 cases
 ```
+
+⚠ **`check-tvos-core.py` (Phase B) is not a duplicate of the typecheck — it EXECUTES.** `swiftc -parse`
+and even a clean compile prove nothing about behaviour, so `PosterURL.swift` and `LibraryModels.swift`
+are pure `Foundation` and are compiled **and run** against fixtures shaped like the real payloads (68
+checks). That is what makes the two silent Phase B failures visible here instead of on the TV: a poster
+URL that 404s, and a payload that cannot decode — both of which look exactly like an empty library.
 
 ⚠ **Two of these have already caught real defects, and one of them is the argument for the pair:**
 
@@ -189,9 +197,11 @@ bash apple/scripts/test-mac-round.sh                  # the round script, stubbe
   the missing real import is invisible there. Exactly the iOS-first-build failure mode
   (`apple/WORKFLOW.md` §7b), caught for free.
 
-**And both gates that matter have been falsified**, not just observed green:
-`check-tvos-models.py --falsify` reverts each rule and requires the matching check to fail (6/6 red);
-`test-mac-round.sh` asserts on the stubs' call log, and goes red against the previous revision of
+**And all four gates that matter have been falsified**, not just observed green:
+`check-tvos-models.py --falsify` reverts each rule and requires the matching check to fail (10/10 red,
+including the two Phase B rules R6/R7 against the frontend's own interfaces); `check-tvos-core.py
+--falsify` does the same for the 10 rules the running harness pins; `test-mac-round.sh` asserts on the
+stubs' call log, and goes red against the previous revision of
 `mac-round.sh` on two separate faults: the truncating device-name extraction fails 2 of its 10 cases, and
 the hardcoded bundle id fails case J.
 

@@ -37,11 +37,26 @@ The accent is the one that matters: **gold `#F2B93A` is not the brand colour.** 
 treatment is specified in a colour this app does not use. §2 fixes this at the root rather than by hand-editing
 a table.
 
-**2. The target is tvOS 17.6, not tvOS 26.** `TVOS_DEPLOYMENT_TARGET = 17.6`, four times, in
-`apple/tvos/RKMCinemaTV.xcodeproj/project.pbxproj`. So the spec's §5 — *"tvOS 26 adopts Liquid Glass … use
-`Material` / the system glass materials"* — is written against an SDK this target cannot reach. Whether to raise
-the deployment target is **his decision and needs his Xcode version**; it is not a decision this plan can take,
-and it is the one open question the phase starts with (§3).
+**2. tvOS 26 is available to us — the spec's Liquid Glass section is reachable, and the target does NOT have to
+move.** `TVOS_DEPLOYMENT_TARGET = 17.6` (four times, `apple/tvos/RKMCinemaTV.xcodeproj/project.pbxproj`) is a
+*compatibility floor*, not a toolchain limit: **Xcode 26.6 is what built this project** (`PROGRESS.md:2558`), and
+`apple/scripts/test-mac-round.sh:272` fixtures a **`-- tvOS 26.5 --`** simulator with an `Apple TV 4K (3rd
+generation)`. So the tvOS 26 SDK is already in place.
+
+Apple's own guidance (`developer.apple.com/documentation/technologyoverviews/adopting-liquid-glass`) settles the
+rest in our favour:
+
+* Liquid Glass requires **tvOS 26.0+** and Xcode 26.0+ — both satisfied;
+* *"Apple TV 4K (2nd generation) and newer models support Liquid Glass effects. **On older devices, your app
+  maintains its current appearance**"* — the degradation is **the platform's own**, so `if #available(tvOS 26, *)`
+  gives glass on his TV and today's look everywhere else, **with the deployment target left at 17.6**;
+* *"In tvOS, adopt standard focus APIs. … standard buttons and controls take on a Liquid Glass appearance when
+  focus moves to them … consider applying these effects to custom controls … by adopting the standard focus
+  APIs."* — which is §3's rule arriving from Apple's side: **use `.buttonStyle(.card)` and the glass is free.**
+
+⇒ The decision is not "Liquid Glass or not", it is **whether to raise the floor to 26.0** (one code path, drops
+tvOS 17–25) **or keep 17.6 with `#available`** (two paths, nothing dropped). This plan recommends the second,
+and it is his call (§3).
 
 **3. Both screens already exist, and both were accepted on his simulator.** This is a **redesign with a
 measurable delta**, not a new build:
@@ -151,6 +166,56 @@ the 8 pt grid, safe margins, type scale — are **tvOS values** and belong in th
 derivation, never as a second token file pretending to be generated. A generator for a hand-written number is
 worse than no generator.
 
+### 2b. The tvOS-specific layer — measured, and much smaller than a palette
+
+He asked whether the colour tones should be tvOS-specific. **Yes — but the arithmetic says only one token
+actually needs to change, so a second palette would be inventing work.** Computed on 2026-09-19 from the real
+tokens against `--bg #08090b` (WCAG 2.1 relative luminance; normal text needs **4.5:1**, large text **3.0:1**):
+
+| Token | vs `--bg` | Verdict |
+|---|---|---|
+| `--text-primary` `#f5f5f7` | **18.29:1** | AAA — do not touch |
+| `--accent` `#ffc400` | **12.47:1** | AAA — the brand accent is fine on a TV |
+| `--text-secondary` `#a7aab2` | **8.57:1** | AAA |
+| `--danger` `#ff5b5b` | 6.54:1 | AA |
+| **`--text-muted` `#70747e`** | **4.26:1** | ⚠ **AA-large only — and it fails outright on every surface it actually sits on** |
+
+```
+--text-muted on:   --surface-1 4.01:1 · --surface-2 3.83:1 · --card 3.76:1 · --surface-3 3.57:1
+```
+
+**That is the whole palette problem, and it is one token.** `--text-muted` is used for de-emphasised captions —
+exactly the smallest text on the screen — and it is below AA on all four surfaces, before a 10-foot viewing
+distance makes small text harder still. Derived fix, **same hue and saturation, lightness lifted only**
+(`HLS 0.467 → 0.532`):
+
+| | `#70747e` | **`#81858f`** |
+|---|---|---|
+| on `--bg` | 4.26:1 | **5.39:1** |
+| on `--surface-1` | 4.01:1 | **5.08:1** |
+| on `--surface-2` | 3.83:1 | **4.85:1** |
+| on `--card` | 3.76:1 | **4.76:1** |
+| on `--surface-3` | 3.57:1 | **4.52:1** |
+
+⇒ **`#81858f` clears AA on every surface the app puts it on**, and stays recognisably the same grey.
+
+⚠ **What is deliberately NOT in this layer, and why:**
+* **the brand hue.** `#ffc400` at 12.47:1 is not a contrast problem, and a tvOS-only accent would make the TV app
+  a *different product* from the one on the phone. The spec's `#F2B93A` was not a tvOS adjustment — it was the
+  wrong colour (§0.1).
+* **the surface ladder is not a contrast question at all.** `--surface-*`/`--card` measure 1.06–1.19:1 against
+  `--bg` **by design** — they are elevation, not text. ⚠ But that is the honest reason the spec reaches for glass
+  panels: a 1.1:1 elevation step is essentially invisible from a couch. **On tvOS 26 that job belongs to the
+  system's Liquid Glass materials, not to a colour token** — so `glass` should not exist as a hex in the tvOS
+  layer at all, and the spec's `rgba(24,24,27,0.66)` + `backdrop-filter` is exactly the hand-rolled version
+  Apple's guidance tells us to replace.
+* **focus ring and CTA treatment.** Platform (§3).
+
+⇒ So the tvOS layer is **`TVTokens.swift`**: hand-written, tvOS-only, small, and **every entry carries its
+reason** — one adjusted token to start, plus the tvOS-only spacing/safe-margin/type-scale constants that were
+never in the CSS. If a value differs from the web, that difference is visible in one file with an argument
+attached, which is the point.
+
 ---
 
 ## §3 — The platform: two behaviours, and only one of them is ours to write
@@ -186,9 +251,11 @@ platform's focus lift first, hand-rolled only where the platform has nothing.
 
 ### U1 — the token source *(pure, gateable, and the thing both screens need)*
 `apple/scripts/generate-design-tokens.py` + the generated `apple/tvos/RKMCinemaTV/Design/DesignTokens.swift`,
-plus a check that regenerating is a no-op. ⚠ The tvOS project uses **synchronized groups** — a file's presence
-IS its target membership, so **never touch `project.pbxproj`**; adding the file is enough. Add it to
-`check-apple-typecheck.sh`'s list in the same commit.
+**plus the hand-written `Design/TVTokens.swift`** (the tvOS-only layer of §2b — the adjusted `--text-muted` and
+the spacing/safe-margin/type-scale constants that were never in the CSS), plus a check that regenerating is a
+no-op. ⚠ The tvOS project uses **synchronized groups** — a file's presence IS its target membership, so **never
+touch `project.pbxproj`**; adding the file is enough. Add both to `check-apple-typecheck.sh`'s list in the same
+commit.
 
 ### U2 — the Profile Switcher
 The delta in §1a, on the existing accepted screen: the circular initials avatar, the lock badge, the row, the
@@ -228,8 +295,13 @@ attempted.
 The player (Phase C — its C1 is already built and parked on `feat/tvos-player`, see below) · **the web UI**
 (nothing here changes `frontend/`; the CSS is *read* by the token generator, never written) · subtitles · search
 · the Discover/Suggest/Watchlist **screens** (they become tabs, which is all §1c asks for) · the tvOS app icon ·
-any decision about the deployment target (§0.2 — his, and it needs his Xcode) · `ATVStyle`/Liquid Glass
-materials until that decision is made.
+**raising the deployment target to 26.0** — it is not needed for Liquid Glass (§0.2, `#available` covers it) and
+it is his call · `GlassEffectContainer` for custom controls beyond the platform's own focus treatment.
+
+⚠ **README drift found while measuring, and it should be fixed in U1's commit:** `apple/tvos/README.md:73` states
+`TVOS_DEPLOYMENT_TARGET = 17.0` while the project carries **17.6**. That is this repo's "one rule in two places"
+in documentation — the same fault as the stale resume-block headline — and the README is the line a next session
+actually reads.
 
 ⚠ **Parked, and it must not be lost:** `feat/tvos-player` carries **C1 — the playback credential**
 (`PlaybackAuth.swift`, 320 checks / 55 mutations red, pushed as `6919626`). It is pure, self-contained and

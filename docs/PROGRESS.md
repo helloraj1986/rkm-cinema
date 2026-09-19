@@ -70,7 +70,7 @@ DEPTH-1 members only**: a function body's locals are also `let`/`var`, and `Home
 | `python3 apple/scripts/check-tvos-models.py` | 113 keys, **17 endpoint literals** (both artwork routes included) |
 | `bash apple/scripts/check-apple-typecheck.sh` | every portable tvOS file typechecks, **plus `DesignTokens.swift` and `TVTokens.swift`** |
 | `python3 apple/scripts/check-imports.py apple/tvos/RKMCinemaTV` | 37 files, no missing framework imports |
-| **`python3 apple/scripts/check-tvos-members.py`** (NEW) | 23 view/type pair(s) — every member a SwiftUI view names exists on its model. ⚠ Written AFTER the round below failed; `--selftest` proves it fires on that exact defect |
+| **`python3 apple/scripts/check-tvos-members.py`** (NEW) | **TWO rules**, both on the class of error no compiler here can see: (1) every member a listed view variable names exists on its model — 23 `(file, variable, type)` pairs; (2) every label used when a view constructs one of the app's 13 own view/type names is one that type takes. ⚠ Written AFTER the round below failed, and `--selftest` proves both rules fire and stay silent on the real tree |
 | `python3 tools/check_md_links.py` | 74 files, 68 relative links, all resolve |
 | `cd frontend && npx vitest run` · `npm run typecheck` | **589 tests in 23 files, all pass** · `tsc --noEmit` clean — ⚠ **unchanged, as promised**: nothing under `frontend/` was touched |
 | `cd backend && env -u JELLYFIN_API_KEY python -m pytest tests/ -q` | **1338 passed, 0 failed** — ⚠ **unchanged**: `git diff --stat origin/dev -- backend/` is EMPTY |

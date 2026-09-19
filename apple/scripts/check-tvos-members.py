@@ -97,6 +97,34 @@ INHERITED = {
     "TopBarTab": {"id"},
 }
 
+#: ⚠⚠ RULE 2 — the CALL SITES. A view that names a real type with the WRONG LABEL is a compile error of the
+#: same family as a missing member, and the same round would be spent discovering it. Only these types are
+#: checked, only in these files, and every label must be a declared property OR an `init` parameter.
+VIEW_TYPES = {
+    "TopBar": "Home/TopBar.swift",
+    "TopBarTab": "Home/TopBar.swift",
+    "HeroBand": "Home/HeroBand.swift",
+    "RailView": "Home/RailView.swift",
+    "PosterCard": "Home/PosterCard.swift",
+    "PosterImageView": "Home/PosterCard.swift",
+    "HomeView": "Home/HomeView.swift",
+    "BrowseView": "Browse/BrowseView.swift",
+    "DetailView": "Detail/DetailView.swift",
+    "ProfilesView": "Auth/ProfilesView.swift",
+    "LoginView": "Auth/LoginView.swift",
+    "ServerSetupView": "Server/ServerSetupView.swift",
+    "UnreachableServerView": "Server/UnreachableServerView.swift",
+}
+
+#: Where a call to one of those types may appear. ⚠ Their own declaration files are excluded: `HomeView`'s
+#: body calls `TopBar(...)`, and `TopBar.swift` calling `Text(...)` is not a construction to check.
+CALL_SITES = [
+    "Home/HomeView.swift", "Home/TopBar.swift", "Home/HeroBand.swift", "Home/RailView.swift",
+    "Home/PosterCard.swift", "Browse/BrowseView.swift", "Detail/DetailView.swift",
+    "Auth/ProfilesView.swift", "Auth/LoginView.swift", "App/AppRootView.swift",
+    "Server/ServerSetupView.swift", "Server/UnreachableServerView.swift",
+]
+
 DECL = re.compile(
     r"^\s*(?:@[A-Za-z]+(?:\([^)]*\))?\s+)*"          # attributes: @Published, @FocusState, @Environment…
     r"(?:public\s+|internal\s+|private\s*\(set\)\s+|private\s+|fileprivate\s+|final\s+|static\s+)*"
@@ -147,6 +175,98 @@ def members_of(root: pathlib.Path, type_name: str) -> set[str]:
         raise ValueError(f"no members found for {type_name} in {rel} — the scan is looking at nothing")
     found |= INHERITED.get(type_name, set())
     return found
+
+
+def call_labels(root: pathlib.Path, type_name: str) -> set[str]:
+    """The labels a call to this type MAY use: its top-level properties plus any `init` parameters.
+
+    ⚠ Both, because a type may take a parameter it does not store (`PosterLoader(width:)` is passed straight
+    to the URL builder). Allowing an unknown label is the failure this rule is FOR; allowing a known one that
+    is not stored is what keeps it from crying wolf.
+    """
+    rel = VIEW_TYPES.get(type_name) or TYPE_SOURCES.get(type_name)
+    path = root / rel
+    if not path.exists():
+        raise FileNotFoundError(f"{rel} declares {type_name} and does not exist")
+    labels: set[str] = set()
+    inside = False
+    depth = 0
+    in_init = False
+    init_depth = 0
+    for line in path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not inside:
+            if re.match(rf"^(?:public\s+|final\s+)*(?:enum|struct|class|extension)\s+{type_name}\b", stripped):
+                inside = True
+                depth = stripped.count("{") - stripped.count("}")
+                continue
+            continue
+        if stripped.startswith("//"):
+            continue
+        if in_init:
+            # Every `name:` inside the parameter list, until the list closes.
+            for match in re.finditer(r"([A-Za-z_][A-Za-z0-9_]*)\s*:", line):
+                labels.add(match.group(1))
+            if ")" in line:
+                in_init = False
+            depth += line.count("{") - line.count("}")
+            if depth <= 0:
+                break
+            continue
+        if depth == 1:
+            if re.match(r"^\s*(?:public\s+|internal\s+|private\s+|fileprivate\s+)*init\s*\(", line):
+                in_init = True
+                init_depth = depth
+                labels.add("init")   # sentinel, never used as a label
+                for match in re.finditer(r"([A-Za-z_][A-Za-z0-9_]*)\s*:", line):
+                    labels.add(match.group(1))
+                if ")" in line:
+                    in_init = False
+                continue
+            match = DECL.match(line)
+            if match:
+                labels.add(match.group(1))
+        depth += line.count("{") - line.count("}")
+        if depth <= 0:
+            break
+    labels.discard("init")
+    if not labels:
+        raise ValueError(f"no labels found for {type_name} in {rel} — the scan is looking at nothing")
+    return labels
+
+
+def check_calls(root: pathlib.Path) -> list[str]:
+    """⚠ Every label used when this app constructs one of its OWN views/types must exist on that type."""
+    problems: list[str] = []
+    cache: dict[str, set[str]] = {}
+    for rel_file in CALL_SITES:
+        source = root / rel_file
+        if not source.exists():
+            problems.append(f"{rel_file}: listed in CALL_SITES and does not exist")
+            continue
+        text = source.read_text(encoding="utf-8")
+        lines = text.splitlines()
+        for number, line in enumerate(lines, start=1):
+            if line.lstrip().startswith("//"):
+                continue
+            for name in VIEW_TYPES:
+                for match in re.finditer(rf"\b{name}\s*\(", line):
+                    # ⚠ Skip `Type(` inside a declaration (`struct Type(`) and skip the type's own file.
+                    if rel_file == VIEW_TYPES[name]:
+                        continue
+                    if re.search(rf"(?:struct|class|enum|extension)\s+{name}\s*$", line[:match.start()]):
+                        continue
+                    if name not in cache:
+                        cache[name] = call_labels(root, name)
+                    known = cache[name]
+                    tail = line[match.end():]
+                    for label in re.finditer(r"([A-Za-z_][A-Za-z0-9_]*)\s*:(?!\s*//)", tail):
+                        if label.group(1) not in known:
+                            problems.append(
+                                f"{rel_file}:{number}: `{name}(…)` is called with '{label.group(1)}:', which "
+                                f"{name} does not take (it takes {', '.join(sorted(known))})"
+                            )
+    return problems
 
 
 def check(root: pathlib.Path) -> list[str]:
@@ -204,15 +324,29 @@ def selftest() -> int:
         if not any("progressFractions" in problem for problem in check(scratch)):
             failures.append("it did not fire on a member with a typo'd name")
 
+        # Rule 2: one of the app's own views constructed with a label it does not take.
+        browse = scratch / "Browse" / "BrowseView.swift"
+        browse.write_text(browse.read_text(encoding="utf-8")
+                          + "\nlet scratchBad3 = RailView(rails: [], base: URL(string: \"http://x\")!,"
+                            " onSelect: { _ in })\n", encoding="utf-8")
+        reports = check_calls(scratch)
+        if not any("rails:" in problem for problem in reports):
+            failures.append("it did not fire on `RailView(rails: …)` — a label RailView does not take")
+        # ⚠ …and it must NOT fire on the three labels that view DOES take, or the rule is noise.
+        if any("base:" in problem or "onSelect:" in problem for problem in reports):
+            failures.append("it fired on a label RailView does take")
+
         if check(TVOS):
             failures.append("it fires on the REAL tree, so its red above proved nothing")
+        if check_calls(TVOS):
+            failures.append("rule 2 fires on the REAL tree, so its red above proved nothing")
 
     if failures:
         print("SELFTEST FAILED — the members gate does not do what its header claims:")
         for line in failures:
             print(f"  · {line}")
         return 1
-    print("selftest: fires on the defect, stays silent on a real member and on the real tree.")
+    print("selftest: fires on the member defect and on a wrong call label, stays silent on real ones.")
     return 0
 
 
@@ -229,7 +363,7 @@ def main(argv: list[str]) -> int:
         return selftest()
 
     try:
-        problems = check(TVOS)
+        problems = check(TVOS) + check_calls(TVOS)
     except (FileNotFoundError, ValueError) as error:
         print(f"cannot run: {error}", file=sys.stderr)
         return 2
@@ -239,10 +373,12 @@ def main(argv: list[str]) -> int:
         for line in problems:
             print(f"  · {line}")
         return 1
-    print(f"PASS — {len(USES)} view/type pair(s) checked, every member a view names exists on its model.")
-    print("⚠ Not covered: types and call shapes (argument labels still need the compiler), any file not")
-    print("  listed in USES, and behaviour. This gate catches ONE class of mistake — the one that has")
-    print("  already cost a round: a member written in a view that the model does not have.")
+    print(f"PASS — {len(USES)} view/type pair(s) checked: every member a view names exists on its model, "
+          f"and every call to one of the {len(VIEW_TYPES)} app view/type names uses a label it takes.")
+    print("⚠ Not covered: TYPES (a value of the wrong type still needs the compiler), argument ORDER,")
+    print("  any file or type not listed in USES/VIEW_TYPES, and behaviour. Two rules, both aimed at the")
+    print("  class of mistake that has already cost a round: a member a view names that its model lacks,")
+    print("  and a call using a label its own type does not take.")
     return 0
 
 

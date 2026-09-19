@@ -43,7 +43,7 @@ struct AppRootView: View {
             // the second failure — an offset moves what is *drawn* without promising to move where
             // the app *listens*, so the mark sat in the corner while the tap target stayed 59pt
             // lower, and a click on the glyph itself did nothing.
-            HUDCornerToggle { app.toggleHUD() }
+            HUDCornerToggle(isMarkVisible: app.hudVisible) { app.toggleHUD() }
                 .frame(width: HUDCornerToggle.size.width, height: HUDCornerToggle.size.height)
                 .offset(y: HUDCornerToggle.upwardShift)
         }

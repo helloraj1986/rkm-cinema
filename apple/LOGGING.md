@@ -75,9 +75,21 @@ playback accessLog:   bitrate 4.2Mbps · segments 118 · dropped 3 · stalls 1 �
 
 ## 4. The HUD (both apps)
 
-Toggleable overlay. ⚠ **iOS: it opens ON in a Debug build. To toggle it: three taps — or one
-press-and-hold — in the top-left corner of the display** (on a simulator `Device ▸ Shake`, ⌃⌘Z, works
-too). **tvOS: play-pause ×3.**
+Toggleable overlay. ⚠⚠ **iOS: it starts HIDDEN, in Debug and Release alike** (his instruction,
+2026-09-19 — a Debug build used to open with it ON, which put the panel over the centre of the screen and
+made a centred screen's own content, a session-check skeleton included, read as "a blank app").
+
+**To show it, in the order that needs least setup:**
+
+1. **three taps — or one press-and-hold — in the top-left corner of the display.** ⚠ The gesture is
+   installed on the window and works whether or not the corner mark is drawn (the mark appears only while
+   the overlay is up, so nothing sits in the corner on a normal launch);
+2. on a simulator, `Device ▸ Shake` (⌃⌘Z) — and **shake** works on a device too;
+3. launch with `-RKMDebugHUD YES` (Product ▸ Scheme ▸ Edit Scheme ▸ Run ▸ Arguments). ⚠ That is the argument
+   domain: it applies to that launch only. **In a Debug build it is the ONLY way a launch can start with
+   the overlay up** — a Debug build ignores the stored setting on purpose, because remembering a previous
+   session is how the overlay became effectively permanent. A Release build still reads the stored setting.
+   **tvOS: play-pause ×3.**
 
 ⚠⚠ **The tap target cost TWO rounds, and both reasons are worth keeping** (2026-09-14).
 

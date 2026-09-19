@@ -33,7 +33,30 @@ enum AppLog {
 
     static var hudStartsVisible: Bool {
         #if DEBUG
-        return true
+        // ⚠⚠ **A Debug build starts CLEAN — always.** This replaces `#if DEBUG return true`, which
+        // opened every build with the overlay already ON and covering the top-left 380pt of the screen
+        // *including its centre* — where a centred screen keeps its content, which is how a
+        // session-check skeleton read as "a blank app" on 2026-09-19. His instruction: start hidden,
+        // turn it on when it is needed.
+        //
+        // ⚠ The STORED value is deliberately ignored here, not just defaulted. Honouring it is how the
+        // overlay became effectively permanent: one debugging session toggled it on, `setHUD` persisted
+        // that, and every launch afterwards opened with it — which is the state he is asking to be rid
+        // of. A Release build still reads the stored setting, as before.
+        //
+        // ⚠ The two routes IN both still work, which is the point of keeping the argument:
+        //   • `-RKMDebugHUD YES` — `UserDefaults` parses `-Key Value` into the ARGUMENT domain, so it
+        //     applies to that launch only (`UserDefaults.bool(forKey:)` would fold the argument and the
+        //     stored domains together, so the argument domain is read on its own here);
+        //   • three taps, or a one-second press, in the top-left corner — the gestures live on the
+        //     window and are installed whether or not the corner mark is drawn;
+        //   • a shake.
+        let argument = UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)
+        if let flag = argument[hudDefaultsKey] as? Bool { return flag }
+        if let text = argument[hudDefaultsKey] as? String {
+            return ["YES", "TRUE", "1"].contains(text.uppercased())
+        }
+        return false
         #else
         return UserDefaults.standard.bool(forKey: hudDefaultsKey)
         #endif
@@ -85,9 +108,9 @@ enum AppLog {
         // settled by this line and the chip's own log lines; the third by tapping it.
         RKMLog.info(
             "debug overlay: starts \(hudStartsVisible ? "VISIBLE" : "hidden")"
-                + " (\(debugBuild ? "Debug build — always visible at launch" : "Release build — stored setting"));"
+                + " (Debug: hidden unless `-RKMDebugHUD YES` — the stored value is ignored on purpose);"
                 + " stored value \(UserDefaults.standard.bool(forKey: hudDefaultsKey));"
-                + " toggle: the chip in the top-left corner (one tap, or press and hold)",
+                + " to show it: 3 taps or a 1s hold in the top-left corner, a shake, or `-RKMDebugHUD YES`",
             category: .app
         )
 

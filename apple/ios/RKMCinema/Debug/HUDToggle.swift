@@ -32,10 +32,20 @@ import RKMServerKit
 /// ⚠ The visible mark remains, because an invisible control cannot be debugged by looking at the
 /// screen — that is the failure that cost the first round trip.
 ///
-/// ⚠ `LOGGING.md` §4's "build flag / triple-tap" is still honoured, in reverse order of importance:
-/// the **build flag** is the primary route (a Debug build opens with the overlay already on, see
-/// `AppLog.hudStartsVisible`), and this gesture is the way back if it has been hidden.
+/// ⚠ `LOGGING.md` §4's "build flag / triple-tap" now reads in the order that actually applies: the
+/// **gesture** is the primary route (there is no build default since 2026-09-19 — the overlay starts
+/// hidden), the launch argument `-RKMDebugHUD YES` is the one that needs Xcode, and this is how the
+/// overlay is brought back once it has been hidden.
 struct HUDCornerToggle: UIViewRepresentable {
+
+    /// ⚠⚠ **His instruction, 2026-09-19: no bug glyph on a normal launch.** The mark is drawn only
+    /// while the overlay is UP — `AppRootView` passes `hudVisible` — so it reads as "the overlay is on,
+    /// and this is how to hide it" rather than as an app fixture sitting in the corner.
+    /// ⚠ The MARK is what changes: the window gestures are installed either way, which is what keeps
+    /// the overlay reachable when nothing is on screen to point at. That is the whole tension this
+    /// control has always lived with — an invisible control cannot be debugged by looking at the
+    /// screen — so the answer is "invisible until the thing it controls is visible".
+    var isMarkVisible: Bool = false
 
     let onToggle: () -> Void
 
@@ -47,11 +57,13 @@ struct HUDCornerToggle: UIViewRepresentable {
     func makeUIView(context: Context) -> HUDCornerToggleView {
         let view = HUDCornerToggleView(frame: .zero)
         view.onToggle = onToggle
+        view.isMarkVisible = isMarkVisible
         return view
     }
 
     func updateUIView(_ uiView: HUDCornerToggleView, context: Context) {
         uiView.onToggle = onToggle
+        uiView.isMarkVisible = isMarkVisible
     }
 }
 
@@ -59,6 +71,12 @@ struct HUDCornerToggle: UIViewRepresentable {
 final class HUDCornerToggleView: UIView, UIGestureRecognizerDelegate {
 
     var onToggle: (() -> Void)?
+
+    /// ⚠ Drawn only while the overlay is up (see `HUDCornerToggle.isMarkVisible`). The gestures below
+    /// are installed regardless — the mark is a hint, not the control.
+    var isMarkVisible: Bool = false {
+        didSet { marker.isHidden = !isMarkVisible }
+    }
 
     /// ⚠ The tappable corner, in **window** points. Generous on purpose: the status-bar strip is
     /// ~44–62pt tall, and a thumb goes for the corner of the display, not for a 26pt dot.
@@ -117,6 +135,9 @@ final class HUDCornerToggleView: UIView, UIGestureRecognizerDelegate {
         marker.backgroundColor = UIColor.black.withAlphaComponent(0.32)
         marker.layer.cornerRadius = HUDCornerToggleView.markerSize / 2
         marker.isUserInteractionEnabled = false
+        // ⚠ Starts hidden: `isMarkVisible` defaults to false and is set from the overlay's own state,
+        // so a normal launch draws nothing in the corner.
+        marker.isHidden = !isMarkVisible
         addSubview(marker)
     }
 

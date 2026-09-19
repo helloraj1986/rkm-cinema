@@ -20,6 +20,41 @@ schema (only its `items` is untyped), so R3 forced `items` to be **optional** �
 not promise it. And the item shape's trap is now **pinned by a test**: library rows carry `item_id`,
 global-search rows carry `id`.
 
+### ⚠ HIS FIRST B2 ROUND: **BUILD FAILED** — one missing import, now fixed AND gated (2026-09-19)
+
+His round (macOS log `apple/logs/build-tvos-20260919-175938.log`) failed with **two** errors, and they had
+**one** root cause:
+
+```
+Home/HomeView.swift:155:9:  error: cannot find 'RKMLog' in scope
+Home/HomeView.swift:156:32: error: cannot infer contextual base in reference to member 'app'
+```
+
+`HomeView.swift` called `RKMLog.info(...)` with no `import RKMServerKit`; the second error is just
+`category: .app` failing to resolve without the first. **That one import fixes both.**
+
+⚠⚠ **WHY NO GATE SAW IT — the part that matters more than the fix.** Two gates, one blind spot each:
+
+| Gate | Why it was blind |
+|---|---|
+| `check-apple-typecheck.sh` | compiles **thirteen portable files** — a SwiftUI view is not one of them (there is no SwiftUI on Linux to compile against) |
+| `check-imports.py` | its rule table listed only **Apple's** frameworks (Combine/WebKit/UIKit/AVFoundation/Network) — the app's **own** `RKMServerKit` was never asked about |
+
+So the checker now (a) carries an `RKMServerKit` rule — **name-exact, not a prefix**, because the app
+defines its own `RKM`-prefixed types (`RKMCinemaTVApp`) and a prefix rule would force a wrong import — and
+(b) has a `--selftest` (6/6) that pins both of that rule's edges: it fires on a real use without the import,
+and stays silent on the app's own types and on a symbol that appears only in a comment. The new rule was run
+against the **unfixed** tree first and went RED on exactly `HomeView.swift`, which is what makes it
+evidence rather than a claim. ⚠ The iOS target was re-checked with the same rule and is clean (37 files).
+
+⚠ **A SwiftUI stub was considered and rejected**: a partial one catches some typos and produces cascading
+false errors on API shape, and a gate that cries wolf is worse than an honestly absent one.
+
+⚠⚠ **B2's views are still compiled NOWHERE.** `RailView.swift`, `AppModel.swift`, `AppRootView.swift`,
+`LoginView.swift` and `ProfilesView.swift` all **compiled successfully in that round**; `PosterCard.swift`
+was not reached (the build stops at the first error batch), so **nothing may be claimed about it** and the
+re-round is what settles it.
+
 ⚠ **The Xcode project exists now, and Phase A is accepted on his hardware** (Part 4). His one-time GUI
 work is DONE — the project, `INFOPLIST_FILE`, the shared scheme and the local package are all committed, so
 every round from here is one command and no Xcode GUI. `apple/tvos/README.md` §2 has it.

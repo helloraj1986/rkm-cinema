@@ -19,15 +19,26 @@ Mac, which is the most expensive thing in this workflow.
      blind spot had already cost a build. `MEMBER_RULES` is the curated answer; extend it when a new
      one appears. ⚠ It can never be exhaustive — a member is only in it once we have been bitten.
 
+⚠⚠ **AND A THIRD, WHICH COST PHASE B2's FIRST MAC ROUND (2026-09-19): THE APP'S OWN MODULE WAS NEVER IN
+THE TABLE.** This checker was written because three iOS builds died on Apple *framework* imports, so
+`RULES` listed Apple's modules and nobody asked whether `RKMServerKit` — the package this app links and
+imports in sixteen files — needed the same rule. `Home/HomeView.swift` used `RKMLog` with no
+`import RKMServerKit` and **no gate could see it**: the file is SwiftUI, so it is not in
+`check-apple-typecheck.sh`'s list, and the module was not in `RULES` here. Two gates, both blind to it,
+one failed round. `RKMServerKit` is now a rule like any other.
+
 (Foundation is the exception: SwiftUI *does* re-export it — proved by `Date()` compiling in a file that
 imports nothing but SwiftUI.)
 
 False positives cost nothing here (an extra import is harmless); a miss costs a build. So the rules are
-deliberately broad.
+deliberately broad — **except** `RKMServerKit`'s, which must be name-exact: the app defines its own types
+starting with `RKM` (`RKMCinemaTVApp`, `RKMCinema`), so a prefix pattern would demand the import from
+files that need nothing. `--selftest` pins that distinction.
 
 Usage:
     python3 apple/scripts/check-imports.py                 # defaults to apple/ios/RKMCinema
     python3 apple/scripts/check-imports.py apple/tvos/RKMCinemaTV
+    python3 apple/scripts/check-imports.py --selftest       # the rules, against known snippets
 
 Exit code 1 when a file uses a symbol whose module it does not import.
 """
@@ -47,6 +58,18 @@ RULES = {
     # Phase B3's loopback server and the probe's client both speak Network.framework. ⚠ It is easy to miss
     # because every type it contributes is `NW`-prefixed but the file often looks Foundation-only.
     "Network": r"\bNW[A-Z]\w*",
+    # ⚠⚠ NOT an Apple framework — **the app's OWN package**, and it was missing from this table until
+    # Phase B2's first Mac round failed on it (`HomeView.swift` used `RKMLog` with no import). The blind
+    # spot's shape: the table was written for Apple's modules, and the app's own module was never asked.
+    #
+    # ⚠ DELIBERATELY NAME-EXACT, not a prefix. `\bRKM[A-Z]\w*` would be the "consistent" pattern and it is
+    # WRONG here: the app defines its own types starting with `RKM` (`RKMCinemaTVApp`, `RKMCinema`,
+    # `RKMOfflineSpike`), so a prefix rule would demand this import from files that need nothing — and a
+    # false positive that forces a wrong import is worse than a rule one symbol short (the `isHTTPOnly`
+    # lesson, again).
+    "RKMServerKit": r"\bRKMLog\b|\bCorrelationID\b|\bLogRedactor\b|\bRollingFileLog\b"
+                    r"|\bLogRingBuffer\b|\bServerAddress\b|\bServerAddressError\b"
+                    r"|\bServerAddressHost\b|\bServerStore\b",
 }
 
 # ⚠ Members with no prefix, reached through an instance — invisible to `RULES`.
@@ -109,6 +132,31 @@ MEMBER_RULES = {
 
 DEFAULT_TARGETS = ["apple/ios/RKMCinema"]
 
+#: ⚠ The rules, against snippets whose answer is KNOWN — because a rule nobody has seen fail is a rule
+#: that proves nothing (`references/falsification-and-test-stubs.md`). Two of these exist purely to pin the
+#: `RKMServerKit` rule's two edges: it must fire on a real use without the import, and it must NOT fire on
+#: the app's own `RKM`-prefixed types or on a symbol that only appears in a comment.
+SELFTEST = [
+    ("an unimported RKMServerKit symbol",
+     'import SwiftUI\n\nstruct V: View {\n    var body: some View { Text("x").onAppear { RKMLog.info("hi") } }\n}',
+     {"RKMServerKit"}),
+    ("an RKMServerKit symbol WITH its import",
+     'import SwiftUI\nimport RKMServerKit\n\nstruct V: View { let log = RKMLog.self }',
+     set()),
+    ("an RKMServerKit symbol in a COMMENT only",
+     'import SwiftUI\n\n// this file deliberately does not use RKMLog\nstruct V: View {}',
+     set()),
+    ("the app's OWN RKM type (must NOT demand the import)",
+     'import SwiftUI\n\n@main\nstruct RKMCinemaTVApp: App {}',
+     set()),
+    ("an unimported Combine symbol",
+     'import SwiftUI\n\nfinal class M: ObservableObject {}',
+     {"Combine"}),
+    ("an unimported UIKit type",
+     'import SwiftUI\n\nlet label = UILabel()',
+     {"UIKit"}),
+]
+
 
 def framework_imports(text: str) -> set:
     return set(re.findall(r"^\s*import\s+(\w+)", text, re.M))
@@ -168,5 +216,27 @@ def main(targets) -> int:
     return 1
 
 
+def selftest() -> int:
+    print("selftest — the rules against snippets whose answer is known\n")
+    failures = 0
+    for label, source, expected in SELFTEST:
+        got = set(missing_for(without_comments(source), framework_imports(source)))
+        if got == expected:
+            print(f"  ok   {label}")
+        else:
+            failures += 1
+            print(f"  FAIL {label} — got {sorted(got) or 'nothing'}, want {sorted(expected) or 'nothing'}")
+    print()
+    if failures:
+        print(f"FAIL — {failures} snippet(s) answered wrongly; the rule table is not proving what it "
+              f"claims.")
+        return 1
+    print(f"PASS — {len(SELFTEST)}/{len(SELFTEST)} snippets answered as expected.")
+    return 0
+
+
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:] or DEFAULT_TARGETS))
+    args = sys.argv[1:]
+    if "--selftest" in args:
+        sys.exit(selftest())
+    sys.exit(main(args or DEFAULT_TARGETS))

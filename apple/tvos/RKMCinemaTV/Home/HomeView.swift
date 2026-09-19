@@ -1,4 +1,10 @@
 import SwiftUI
+// ⚠ `RKMServerKit` for `RKMLog` — and this import is the whole reason Phase B2's first Mac round failed.
+// `apple/scripts/check-imports.py` did not cover the app's OWN module until that failure (the table was
+// written for Apple's frameworks, and nobody asked whether `RKMServerKit` needed the same rule), and this
+// file is SwiftUI, so `check-apple-typecheck.sh`'s list does not include it either. Two gates, one blind
+// spot each, and the round found it. The checker now has the rule AND a `--selftest` that pins it.
+import RKMServerKit
 
 /// The Home screen — Phase B's first real content screen, and the replacement for Phase A's
 /// `SessionReadyView` placeholder.

@@ -181,9 +181,25 @@ python3 apple/scripts/check-tvos-models.py --falsify  # 10 mutations, each must 
 python3 apple/scripts/check-tvos-core.py              # RUNS the poster URL, the models + the Home rules
 python3 apple/scripts/check-tvos-core.py --falsify    # 18 rules reverted, each must go red
 TMPDIR=/root/tmp bash apple/scripts/check-apple-typecheck.sh   # compiles the 13 portable files
-python3 apple/scripts/check-imports.py apple/tvos/RKMCinemaTV  # missing framework imports
+python3 apple/scripts/check-imports.py apple/tvos/RKMCinemaTV  # missing imports — INCLUDING the views
+python3 apple/scripts/check-imports.py --selftest     # 6 snippets, incl. the RKMServerKit rule's edges
 bash apple/scripts/test-mac-round.sh                  # the round script, stubbed, 10 cases
 ```
+
+⚠⚠ **`check-imports.py` IS THE ONLY GATE THAT SEES THE SWIFTUI VIEWS, and it earned that role on
+2026-09-19** — Phase B2's first Mac round died on `Home/HomeView.swift: cannot find 'RKMLog' in scope`. The
+view files are not in `check-apple-typecheck.sh`'s list (no SwiftUI exists on Linux to compile them
+against), and this checker's rule table listed only **Apple's** frameworks, so the app's own
+`RKMServerKit` was in neither. Two gates, one blind spot each, one failed round. The module is now a rule
+like any other, and `--selftest` pins both of its edges: it must fire on a real use without the import, and
+must stay silent on the app's own `RKM`-prefixed types (`RKMCinemaTVApp`) and on a symbol that only appears
+in a comment.
+
+⚠ **A SwiftUI stub is deliberately NOT built.** The three things a view can get wrong are: a missing import
+(now caught above), a typo in a type or member name, and a wrong API shape. A partial stub would catch only
+some of the second kind and would generate cascading false errors for the third — and a gate that cries
+wolf is worse than a gate that is honestly absent. The views stay Mac-round business, which is exactly what
+`TVStubs.swift` says.
 
 ⚠ **`check-tvos-core.py` is not a duplicate of the typecheck — it EXECUTES.** `swiftc -parse` and even a
 clean compile prove nothing about behaviour, so `PosterURL.swift`, `LibraryModels.swift` and

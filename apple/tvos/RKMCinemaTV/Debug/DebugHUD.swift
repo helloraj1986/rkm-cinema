@@ -13,12 +13,23 @@ import RKMServerKit
 ///
 /// ⚠ **It starts OFF** (`AppLog.hudStartsVisible`), because the panel is large and sits over the middle
 /// of the screen — a build that opens with it on covers whatever that screen was trying to show and reads
-/// as a blank app. That lesson was paid for on iOS on 2026-09-19. Routed in by the Debug toggle on screen
-/// #0, or `-RKMDebugHUD YES` for one launch.
+/// as a blank app. That lesson was paid for on iOS on 2026-09-19. Routed in by `-RKMDebugHUD YES` for one
+/// launch.
+///
+/// ⚠⚠ **THERE IS NO FOCUSABLE CONTROL IN THIS PANEL, AND `.allowsHitTesting(false)` IS LOAD-BEARING — his
+/// first tvOS round, 2026-09-19.** The panel used to carry a `Hide` button. On tvOS **every focusable view
+/// anywhere in the hierarchy joins the focus engine**, overlay included, so that button competed with the
+/// app's own controls: the arrows from the address field went sideways into the diagnostic instead of down
+/// the form, and he reported *"i have to use the arrow button to go left and right which didnt work
+/// properly"*. A readout must not be a participant.
+///
+/// The cost is that hiding it needs a relaunch rather than a button — which is one command
+/// (`./apple/scripts/mac-round.sh tvos --sim`, without the flag), and in a Debug build the stored toggle is
+/// deliberately ignored (`AppLog`), so a relaunch without the argument is *always* enough. That is the
+/// better trade: a diagnostic that fights the remote is worse than one that needs a command.
 struct DebugHUD: View {
 
     let session: SessionStore?
-    let onHide: () -> Void
 
     /// ⚠ `@State` so the publisher is built ONCE. A plain `let` here is rebuilt on every body
     /// evaluation, and each rebuild makes another subscription to a one-second timer.
@@ -40,6 +51,10 @@ struct DebugHUD: View {
         .overlay(
             RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.25), lineWidth: 1)
         )
+        // ⚠ Both of these are about NOT joining the focus engine and NOT swallowing Select presses — see the
+        // note in the header. Without them the panel is a participant in the remote's navigation.
+        .allowsHitTesting(false)
+        .focusable(false)
         .onReceive(ticker) { stamp in
             // ⚠ The tick is not decoration: the ring buffer is not an observable object, and a HUD that
             // redraws only when something else changes is a HUD that shows nothing exactly when the app is
@@ -65,8 +80,11 @@ struct DebugHUD: View {
                 ProgressView().controlSize(.small)
             }
             Spacer(minLength: 0)
-            Button("Hide", action: onHide)
-                .font(.caption)
+            // ⚠ A label, not a control. Hiding it is the Debug toggle on screen #0, or a relaunch
+            //   without `-RKMDebugHUD YES` — either way, not a button in HERE.
+            Text("readout — not focusable")
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(.secondary)
         }
         .padding(.bottom, 2)
     }

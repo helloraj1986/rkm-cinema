@@ -52,9 +52,10 @@ and this session is the first test of it.
 * **⚠ The address field opens PRE-FILLED** (`Core/ServerDefaults.swift`, one line to change) — the plan's
   §4.2 point: a Siri Remote is a poor text input. The tvOS round script has **no committed default device**
   for the same class of reason (Apple TV names contain brackets).
-* **⚠ The debug overlay starts OFF** and is reachable by the `Debug` toggle on screen #0 or
-  `-RKMDebugHUD YES`. It carries a **Hide** button. On tvOS the HUD is not a convenience — **it is the only
-  diagnostic surface that exists**, and its state is displayed rather than remembered.
+⚠ The debug overlay starts OFF and is reachable by `-RKMDebugHUD YES`, or the `Debug` toggle on screen
+  #0. On tvOS the HUD is not a convenience — **it is the only diagnostic surface that exists**, and its
+  state is displayed rather than remembered.
+  ⚠⚠ **It carries NO focusable control, and that was a real bug on his first round.** See Part 3a.
 * **`apple/scripts/check-tvos-models.py`** (new) — the replacement for a generated client. 6 rules: every
   model is a contract schema; every decoded key is a property; every **non-optional** property is
   `required` or `default`ed in the contract; every endpoint literal is a real path; no wire type hides
@@ -142,6 +143,28 @@ the second one is the more interesting:
 between** — the sandbox copy is behind his commit, and the fix is `git fetch && git rebase
 origin/feat/tvos-client` before pushing, every time, without exception. It costs a push and a re-push if
 skipped, and the second push is the one that lands.
+
+### Part 3a — THE FIRST PIECE OF REAL DEVICE FEEDBACK: the diagnostic stole the remote
+
+He could not type on the simulator and reported that the arrows *"didnt work properly"*. Two separate
+faults, and one of them was ours:
+
+1. **Typing on the tvOS Simulator needs the Mac keyboard explicitly connected** — menu bar
+   **I/O → Keyboard → Connect Hardware Keyboard** (⇧⌘K). Clicking the simulator window first is also
+   required, or the keystrokes go to whatever had focus on the Mac. Neither is discoverable, and neither is
+   a fault in the app.
+2. ⚠⚠ **The debug HUD's `Hide` button was in the app's focus chain.** On tvOS **every focusable view
+   anywhere in the hierarchy joins the focus engine — overlays included** — so a control drawn on top of the
+   screen competed with the app's own arrows. An arrow from the address field went sideways into the
+   diagnostic instead of down the form. That is exactly the reported symptom, and it is the *same class* of
+   mistake as `apple/WORKFLOW.md` §7c's overlay-control failures on iOS: **a diagnostic that participates in
+   the UI changes the thing it is measuring.** The panel is now `.allowsHitTesting(false)` +
+   `.focusable(false)` with no button at all — a pure readout, switched by the launch argument and, on
+   screen #0, by the `Debug` toggle (which can also turn it off).
+
+⚠ And the lesson generalises to Phase B, where every screen is a focus grid: **anything drawn over the UI
+must be checked for focus participation before it is trusted**, because on a TV a stray focus stop is a
+control the user cannot escape.
 
 ### ⚠ What is NOT verified — and it is most of the app
 

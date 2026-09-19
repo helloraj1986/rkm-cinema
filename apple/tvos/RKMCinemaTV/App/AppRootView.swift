@@ -26,8 +26,12 @@ struct AppRootView: View {
             }
 
             if app.hudVisible {
+                // ⚠ The panel is a READOUT and takes no focus (`DebugHUD`'s header explains why that is
+                // load-bearing on tvOS): every focusable view in the hierarchy joins the focus engine, so a
+                // control up here fights the app's own arrows. It is switched on with `-RKMDebugHUD YES`
+                // and off by relaunching without it.
                 VStack(alignment: .leading, spacing: 0) {
-                    DebugHUD(session: app.session, onHide: { app.setHUD(false) })
+                    DebugHUD(session: app.session)
                     Spacer(minLength: 0)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)

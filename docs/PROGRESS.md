@@ -84,6 +84,28 @@ cannot be typed — glob it.**
 request — remains unverified: `PosterLoader` logs it (`session-cookie=present|absent`), but nobody has read
 those lines yet.
 
+### ⏱ HIS THIRD B2 ROUND: a GOOD panel, taken too early — the load had not run yet (2026-09-19)
+
+He sent the debug panel on its own, cropped — **legible, and it settles the mechanics of reading it**:
+
+* the panel held **`12 line(s) held`**, and all 12 were displayed (`lineLimit` is 18) — so ⚠ **there is no
+  truncation to work around**: once Home loads, its lines WILL be on the panel, newest at the top. The only
+  problem is *when* the screenshot is taken, not what the panel can carry.
+* the newest line is again `auth after /api/auth/me: session cookie present — 1 cookie (session)`, and there
+  are **no `/api/library/*` and no `poster` lines** — i.e. the app was ~1 s into the launch, before
+  `HomeStore.load()` ran. The Home header is faintly visible *behind* the panel, so `.library` had been
+  reached and the view was on screen; the request simply had not gone out yet.
+* ⚠ **`PosterLoader`'s log line is still unread** — this is a timing artefact, NOT the "HUD is not live"
+  failure mode the README's falsifier describes (that needs a screenshot taken with the cards ON SCREEN).
+* ✅ The panel also confirms, properly, what Phase A claimed: `GET /api/status -> 200 (1.9 KB)`,
+  `GET /api/auth/me -> 200 (213 B)`, `session cookie present — 1 cookie`, and
+  `user=rkm profile=sharanya onOwnProfile=false selected=true`.
+* ⚠ The footer names the **file log**: `…/Library/Application Support/RKMCinemaTV/Logs/rkm-tvos.log`, and
+  `RollingFileLog` is writing to it — so if a HUD screenshot ever clips something, that file is the
+  unclipped route (`rk-ios.log` in the iOS notes; this is the tvOS one).
+* **What to ask for next, precisely:** shoot only once the poster cards are drawn on screen (~5 s in).
+  That is the falsifier — a panel taken with cards visible that still shows no `poster` line is a real defect.
+
 ⚠ **The Xcode project exists now, and Phase A is accepted on his hardware** (Part 4). His one-time GUI
 work is DONE — the project, `INFOPLIST_FILE`, the shared scheme and the local package are all committed, so
 every round from here is one command and no Xcode GUI. `apple/tvos/README.md` §2 has it.

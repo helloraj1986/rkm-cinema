@@ -139,27 +139,82 @@ enum HomeRules {
         return "\(max(1, minutes))m"
     }
 
-    /// `lib.ts::cardMetaLine` — the ONE line under a card's title, shared by every card on every screen.
+    /// ⚠⚠ **THE ONE LINE UNDER A CARD'S TITLE — AND IT IS THE TV CARD'S OWN, TWICE OVER.**
     ///
-    /// ⚠ An episode reads `S1E4 · Series name`; anything else reads year, then `TV` or its runtime, then a
-    /// play count **only when it says something** (>1). Absent fields are dropped, never left as an empty
-    /// segment. At three metres this is the only text on the card a viewer can read, which is why it is a
-    /// rule with a test rather than a string built in a view.
-    static func cardMetaLine(_ item: MediaItem) -> String {
-        if isEpisodeItem(item) {
-            return [episodeItemCode(item), item.episode?.seriesName]
-                .compactMap { $0 }
-                .filter { !$0.isEmpty }
-                .joined(separator: " · ")
+    /// It replaces the mirrored `lib.ts::cardMetaLine` (which read `1975 · 2h`, or `S1E4 · Series name`),
+    /// because his instruction was to make the card *"ultra premium with some additional relevant info which
+    /// the user would appreciate, like duration, ratings etc."* — so this is a **deliberate divergence from the
+    /// web card, on his call**, and the two things it does differently are both content decisions:
+    ///
+    ///   1. **DURATION COMES FIRST.** At three metres (and with a remote in hand) "how long is this?" is the
+    ///      fact a viewer looks for, and the web's order buried it behind the year.
+    ///   2. **IT CARRIES MORE, from fields the wire already has** (`MediaItem`'s own: `runtime`, `genres`,
+    ///      `year`, `play_count`, plus the episode facet's `series_name`) — a genre, and the series name on an
+    ///      episode.
+    ///
+    /// ⚠ Absent facts are DROPPED, never left as an empty segment (the rule the mirrored version had).
+    /// ⚠ `runtime` is **not** printed for a series: Jellyfin's series runtime is not any one episode's, so a
+    /// number there would be a number that means nothing — the same reason `minutesLeft` refuses one.
+    /// ⚠ It returns a LIST, not a joined string, so the view owns the separator (the card draws them as
+    /// separate chips on a wide screen and as one dotted line on a narrow one) — the reason is the same as
+    /// `heroMetaLine` being a string: that one has exactly one consumer with one layout.
+    static func cardFacts(_ item: MediaItem) -> [String] {
+        var facts: [String] = []
+
+        if !isSeries(item) {
+            let duration = runtimeText(item.runtime)
+            if !duration.isEmpty { facts.append(duration) }
         }
-        let plays = (item.playCount ?? 0) > 1 ? "\(item.playCount ?? 0) plays" : ""
-        return [
-            item.year.map(String.init) ?? "",
-            isSeries(item) ? "TV" : runtimeText(item.runtime),
-            plays,
-        ]
-        .filter { !$0.isEmpty }
-        .joined(separator: " · ")
+        if let series = item.episode?.seriesName, !series.isEmpty {
+            facts.append(series)
+        }
+        if let year = item.year {
+            facts.append(String(year))
+        }
+        if let genre = (item.genres ?? []).first, !genre.isEmpty {
+            facts.append(genre)
+        }
+        if let plays = item.playCount, plays > 1 {
+            facts.append("\(plays) plays")
+        }
+        return facts
+    }
+
+    /// How long is left, for anything whose `runtime` IS one title's duration.
+    ///
+    /// ⚠⚠ **A SERIES IS REFUSED, and that is the same trap as the hero's countdown:** Jellyfin reports a
+    /// series' cumulative runtime, so "3h 20m left" on a series card would be a confident number about nothing.
+    /// A FILM and an EPISODE both answer honestly — and for an episode this is the most useful fact on the
+    /// whole card (a viewer deciding whether to start an episode wants to know it is 19 minutes, not 44 %).
+    ///
+    /// ⚠ `""` means "cannot be stated", never "0 minutes": the view draws nothing rather than a zero.
+    static func minutesLeft(_ item: MediaItem) -> String {
+        guard !isSeries(item) else { return "" }
+        guard let runtime = item.runtime, let position = item.playbackPosition,
+              position > 0, runtime > position else { return "" }
+        return runtimeText(runtime - position)
+    }
+
+    /// The state chip the card draws on the artwork's lower-left corner — `"38m left"`, `"Watched"`, or
+    /// nothing at all.
+    ///
+    /// ⚠ **ONE chip, two facts, in priority order**, and the order is the point: a title that is half watched
+    /// says how much is left (the progress bar says *that* it is half watched, not how long that is), and only
+    /// a title with nothing left to say falls through to `"Watched"`.
+    /// ⚠ A title with a position but an unknown runtime (a series) gets NOTHING here: the bar still shows the
+    /// fraction, and a chip reading "Watched" over a half-watched bar would be a lie.
+    static func cardStateText(_ item: MediaItem) -> String {
+        let left = minutesLeft(item)
+        if !left.isEmpty { return "\(left) left" }
+        // ⚠ A PARTIAL BAR WITH NO HONEST COUNTDOWN GETS NO CHIP: that is the series-with-a-position case
+        // (its runtime means nothing, so there is no countdown), and "Watched" printed beside a 5 % bar
+        // would be a lie — the bar is already saying "in progress", which is all that can be said.
+        if let fraction = item.progressFraction, fraction < 1 { return "" }
+        // ⚠ A FINISHED title reaches here with a full bar (`fraction == 1`), and the web's own priority is
+        // that a played title reads as watched — `lib.ts::playbackMarker` checks `played` FIRST for its
+        // watched marker. Without this the card would show a 100 % bar and say nothing at all.
+        if item.played ?? false { return "Watched" }
+        return ""
     }
 
     // ------------------------------------------------ the Home HERO (Phase U3)
@@ -260,10 +315,11 @@ enum HomeRules {
     /// ⚠ What IS pinned: `!isSeries`/`!isEpisodeItem` (a series counts episodes) and `position > 0` (an
     /// unstarted film has no countdown to show).
     static func heroRuntimeLeft(_ item: MediaItem) -> String {
-        guard !isSeries(item), !isEpisodeItem(item) else { return "" }
-        guard let runtime = item.runtime, let position = item.playbackPosition,
-              position > 0 else { return "" }
-        return runtimeText(runtime - position)
+        // ⚠⚠ **THE HERO SPEAKS FOR FILMS ONLY, AND THE ARITHMETIC IS `minutesLeft`'s — ONE COPY.**
+        // An EPISODE hero returns "" on purpose: the hero prints the episode's PERCENTAGE beside the bar, and
+        // the countdown belongs on the card, where a viewer is choosing what to start (`HomeRules.minutesLeft`).
+        // A SERIES returns "" from `minutesLeft` itself (its runtime is not one episode's).
+        isEpisodeItem(item) ? "" : minutesLeft(item)
     }
 
     /// The hero's progress bar is drawn only when it can say something: a percentage alone, or an episode

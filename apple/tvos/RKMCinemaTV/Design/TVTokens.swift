@@ -159,6 +159,36 @@ enum TVTokens {
         static let cardTitleSize = u * 1.05
         static let titleGapTop = u * 0.7
         static let subSize = u * 0.82
+
+        // ---- the PREMIUM pass (his review of the first card that ran, 2026-09-20: *"the card ux doesn't look
+        // good, the text positions are going to the border on left"*). ⚠ The prototype has no card CHROME, only
+        // art + two lines of text, so these are tvOS additions rather than transcriptions — each carries its
+        // reason, and the numbers stay in the prototype's unit.
+
+        /// ⚠ The text block's inset, and it is the fix for what he reported: with no inset the title and the
+        /// facts line started at the artwork's exact left edge, which on a 10-foot screen reads as text running
+        /// off the card rather than as a caption under a picture. `0.5u` is `badgeInset` — the same inset the
+        /// badge uses on the art above it, so the two corners line up.
+        static let textInset = u * 0.5
+        /// The facts line sits under the title. `0.35u` is what stops two lines of different sizes from
+        /// looking like one paragraph.
+        static let factsGapTop = u * 0.35
+        /// The meta chips (duration and state) are QUIETER than the type badge: the badge says what the thing
+        /// IS, the chips are detail. Same box, smaller type, less contrast.
+        static let chipSize = u * 0.62
+        static let chipPaddingH = u * 0.45
+        static let chipPaddingV = u * 0.2
+        /// ⚠ A scrim over the artwork's lower half. The duration, the state chip and the progress bar all sit
+        /// on the art, and keyart is often bright exactly where they are — a chip you cannot read is worse
+        /// than no chip, and this is cheaper than a shadow per element.
+        static let scrimHeight = u * 7
+        static let scrimOpacity = 0.55
+        /// The design input's `box-shadow: 0 0.5u 1.4u rgba(0,0,0,.45)` and its `1px` inner hairline
+        /// (`--hairline` = white 8 %). ⚠ On a black screen a 16:9 card with no edge dissolves into the shelf.
+        static let artShadowY = u * 0.5
+        static let artShadowRadius = u * 1.4
+        static let artShadowOpacity = 0.45
+        static let artBorderWidth = u * 0.05
     }
 
     // MARK: - The Profile Switcher (`.profile-tile` and friends)

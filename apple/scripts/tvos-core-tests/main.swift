@@ -359,21 +359,57 @@ checkEqual(HomeRules.recentlyAddedItems([item("x"), item("")].compactMap { $0 })
 checkEqual(HomeRules.recentlyPlayedItems([item("x"), item("")].compactMap { $0 }).count, 2,
            "…while Recently Played is passed through (the card, not the rule, refuses the dead row)")
 
-section("the card's meta line")
+section("the card's facts")
 
-// ⚠ The ONLY text a viewer can read at three metres, and the rule that decides it is the web app's
-// (`lib.ts::cardMetaLine`) — a TV reading "2021 · TV · 3 plays" where the laptop reads "2021 · TV" is a
-// second vocabulary for one card.
-checkEqual(HomeRules.cardMetaLine(movie!), "1975 · 2h", "a film reads year · runtime")
-checkEqual(HomeRules.cardMetaLine(item("s", ", \"type\": \"tv\", \"year\": 2021, \"play_count\": 3")!), "2021 · TV · 3 plays",
-           "a series reads year · TV · plays")
-checkEqual(HomeRules.cardMetaLine(episode!), "S1E3 · Some Show", "an episode reads S1E3 · series name")
-checkEqual(HomeRules.cardMetaLine(item("n", ", \"runtime\": 2700")!), "45m",
-           "a missing year leaves no leading separator")
-checkEqual(HomeRules.cardMetaLine(item("u", ", \"year\": 2020")!), "2020",
-           "a missing runtime leaves no trailing separator")
-checkEqual(HomeRules.cardMetaLine(item("p", ", \"year\": 2001, \"play_count\": 1")!), "2001",
+// ⚠⚠ THE CARD'S FACTS LINE (U6's premium pass) — it REPLACES the mirrored `lib.ts::cardMetaLine` on his
+// instruction (*"make it ultra premium with some additional relevant info … like duration, ratings"*), and the
+// two things it does differently are both content decisions: duration FIRST, and it carries a genre and an
+// episode's series name. ⚠ It is a LIST, not a joined string — the view owns the separator, because a narrow
+// card draws the same facts as two chips.
+checkEqual(HomeRules.cardFacts(movie!), ["2h", "1975", "Action"],
+           "a film leads with its duration, then the year and a genre")
+checkEqual(HomeRules.cardFacts(episode!), ["45m", "Some Show"],
+           "an episode leads with its duration and names its series")
+checkEqual(HomeRules.cardFacts(item("s", ", \"type\": \"tv\", \"year\": 2021, \"runtime\": 7200, \"play_count\": 3")!),
+           ["2021", "3 plays"],
+           "⚠ a SERIES never prints a runtime — Jellyfin's series runtime is not one episode's")
+checkEqual(HomeRules.cardFacts(item("n", ", \"runtime\": 2700")!), ["45m"],
+           "a fact with nothing beside it stands alone")
+checkEqual(HomeRules.cardFacts(item("u", ", \"year\": 2020")!), ["2020"],
+           "no duration known leaves the year leading, with no empty segment")
+checkEqual(HomeRules.cardFacts(item("p", ", \"year\": 2001, \"play_count\": 1")!), ["2001"],
            "one play says nothing, so it is not shown")
+
+section("how long is left")
+
+// ⚠⚠ The arithmetic the HERO and the CARD now SHARE (`HomeRules.minutesLeft`), with the series refusal that
+// keeps both honest — and the one place they differ on purpose, which is episodes.
+checkEqual(HomeRules.minutesLeft(movie!), "1h 50m", "a half-watched film has 1h 50m left")
+checkEqual(HomeRules.minutesLeft(episode!), "25m",
+           "⚠ an EPISODE answers — this is why the card needs its own countdown: the hero says nothing for one")
+checkEqual(HomeRules.minutesLeft(item("s", ", \"type\": \"tv\", \"runtime\": 600, \"playback_position\": 30")!), "",
+           "⚠ a SERIES has no countdown: its runtime is not one episode's")
+checkEqual(HomeRules.minutesLeft(item("z", ", \"runtime\": 600")!), "",
+           "an unstarted title has nothing left to lose")
+checkEqual(HomeRules.heroRuntimeLeft(episode!), "",
+           "⚠ the HERO still says nothing for an episode — the percentage is what it prints")
+
+section("the card's state chip")
+
+// ⚠⚠ ONE chip, TWO facts, in priority order: how much is left beats whether it is watched, and a title with a
+// partial bar and no honest countdown gets nothing at all.
+checkEqual(HomeRules.cardStateText(movie!), "1h 50m left", "a half-watched film says how much is left")
+checkEqual(HomeRules.cardStateText(episode!), "25m left", "a half-watched episode says how much is left")
+checkEqual(HomeRules.cardStateText(item("w", ", \"played\": true")!), "Watched",
+           "a title marked watched says so")
+checkEqual(HomeRules.cardStateText(item("f", ", \"played\": true, \"runtime\": 600, \"playback_position\": 600")!),
+           "Watched",
+           "⚠ a FINISHED title says Watched beside its full bar, not nothing at all")
+checkEqual(HomeRules.cardStateText(item("s", ", \"type\": \"tv\", \"runtime\": 600, \"playback_position\": 30")!), "",
+           "⚠ a part-watched SERIES gets no chip — the bar says in progress, and Watched would be a lie")
+checkEqual(HomeRules.cardStateText(item("q", ", \"runtime\": 600")!), "",
+           "a title nobody has started says nothing")
+
 checkEqual(HomeRules.episodeItemCode(episode!), "S1E3", "an episode's code is S<season>E<number>")
 checkEqual(HomeRules.episodeItemCode(movie!), nil, "a film has no episode code")
 

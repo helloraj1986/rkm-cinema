@@ -84,7 +84,7 @@ enum ProfileRules {
     /// household; `"1 profiles"` is the kind of thing a viewer notices before anything else.
     ///
     /// ⚠ `signedInAs` empty or nil drops its own segment rather than leaving a dangling `"· "` — the same
-    /// rule `HomeRules.cardMetaLine` applies to its absent fields.
+    /// rule `HomeRules.cardFacts` applies to its absent fields.
     static func eyebrow(profileCount: Int, signedInAs: String?) -> String {
         let count = max(0, profileCount)
         let head = "\(count) profile\(count == 1 ? "" : "s") on this server"

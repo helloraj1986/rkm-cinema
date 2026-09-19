@@ -413,6 +413,48 @@ tile style had been called `TileBody` for exactly that reason and the rule was f
 (`@keyframes drift`, 26 s). It needs real artwork behind it and Reduce Motion handling, and it is exactly the
 "ambient motion" the buildspec §1 asks for — Phase D polish, recorded so it is not mistaken for an oversight.
 
+### U7 — the premium card *(added 2026-09-20, from his review of the first build that ran)*
+
+⚠ **His words:** *"the card ux doesn't look good, the text positions are going to the border on left, make it
+ultra premium with some additional relevant info which the user would appreciate, like duration, ratings etc."*
+He was right about the text: with no inset the title and the meta line began at the artwork's exact left edge.
+
+**What changed, in the card's own anatomy:**
+
+```
+┌──────────────────────────────────┐
+│ [SERIES]                         │   type / episode badge (top-left)
+│            ARTWORK 16:9          │   hairline edge + soft shadow (the prototype's own box-shadow)
+│ [38m left]              (▶)      │   state chip (lower-left) · play chrome (lower-right)
+│ ▓▓▓▓▓░░░░░░░░░░░░░░░░░░░░░░░░░░  │   progress bar, only when the fraction is known
+└──────────────────────────────────┘
+   Adventure Time: Fionna and Cake     1.05u semibold, inset 0.5u
+   44m · 2023 · Animation · 3 plays    0.82u muted — the facts line
+```
+
+* **the inset** (`Shelf.textInset`, the badge's own `0.5u`) — the reported defect;
+* **a scrim** over the artwork's lower half, so the chips and the bar stay readable over bright keyart;
+* **the prototype's shadow and hairline** — on a black screen a card with no edge dissolves into the shelf;
+* **`HomeRules.cardFacts`** — a NEW pure rule that **replaces the mirrored `lib.ts::cardMetaLine`**, which is
+  a **deliberate divergence on his instruction**: duration comes FIRST (at three metres "how long is this?" is
+  the fact a viewer looks for, and the web buried it behind the year), and it carries a genre and an episode's
+  series name. ⚠ A **series prints NO runtime** — Jellyfin's series runtime is not one episode's;
+* **`HomeRules.cardStateText`** — one chip, two facts, in priority order: `38m left` (from `minutesLeft`) beats
+  `Watched`, and a title with a **partial bar and no honest countdown gets NO chip** (`Watched` beside a 5 % bar
+  would be a lie). ⚠ A **finished** title still says `Watched` beside its full bar.
+* **`HomeRules.minutesLeft`** — the countdown arithmetic the hero and the card now **share** (one copy). ⚠ The
+  one place they differ on purpose: an **episode** answers on the card and stays silent on the hero, because the
+  hero already prints the percentage and the card is where someone is choosing what to start.
+
+⚠⚠ **AND THE RATING HE ASKED FOR IS NOT ON THIS WIRE — that is a finding, not an omission.** `MediaItem`
+(pinned key-for-key against the frontend's own interface by R6/R7 of `check-tvos-models.py`) carries no
+`CommunityRating`, no `OfficialRating` and no resolution; the api's `_item_public()`
+(`backend/services/library/jellyfin.py`) drops them, and Jellyfin's `Height`/`Width` and
+`MediaSources`/`MediaStreams` are where a 4K/HD badge would come from. So a rating or a quality chip is a
+**three-file change — backend `_item_public()`, the frontend `MediaItem`, then this model — plus a deploy of
+his stack**, i.e. its own phase. ⚠ It is deliberately NOT smuggled into a UX branch whose whole promise is
+*nothing to deploy*, and **the card must not invent a number** (`docs/ARCHITECTURE.md` §11).
+
 ### U5 — his round, on the MacBook Pro
 A **screen** round, **without** `-RKMDebugHUD YES`. Falsifiers, written before the round rather than after:
 

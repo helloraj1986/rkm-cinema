@@ -206,12 +206,33 @@ enum TVTokens {
         static let avatarFontSize = u * 3.4
         static let nameSize = u * 1.5
         static let subSize = u * 0.95
+        /// ⚠ The prototype's own gaps (`.name { margin-top: 1.1u }`, `.sub { margin-top: 0.25u }`) — they are
+        /// NOT multiples of the font sizes, so they are tokens rather than a fraction of `nameSize`.
+        static let nameGapTop = u * 1.1
+        static let subGapTop = u * 0.25
+        /// ⚠⚠ **DERIVED, AND THE DERIVATION IS THE POINT: this is what makes "does the row fit?" answerable
+        /// without a screen.** One tile is `avatarSize 10.4u + nameGapTop 1.1u + the name's own line 1.8u +
+        /// subGapTop 0.25u + the sub's own line 1.14u ≈ 14.7u`, plus the focus lift (`0.3u`) and the ring
+        /// (`0.28u`) — the two things that overflow FIRST when a row is only just tall enough. Rounded up.
+        static let rowHeight = u * 15.6
+        /// ⚠⚠ **THE ROW'S WIDTH, IN `u`, SO THE FIT IS ARITHMETIC AND NOT A HOPE.** Five tiles (four profiles
+        /// plus `Add profile`) at the prototype's own sizes are `5 × 13u + 4 × 2.6u = 75.4u`, and with the
+        /// screen's own `4.2u` margins that is **83.8 of the 100u available** — it fits with room to spare, and
+        /// it stops fitting the moment a second margin is added anywhere (which is exactly what made the `Add`
+        /// profile tile hang off the right edge of his screenshot).
+        static let rowWidthUnits: CGFloat = 5 * 13 + 4 * 2.6
+        static let rowMarginUnits: CGFloat = 4.2
         static let lockSize = u * 2.2
         static let lockFontSize = u * 1.1
         static let lockRing = u * 0.22
         /// ⚠ The white ring around the FOCUSED avatar only (`0.28u`) — the ring is on the avatar, the lift is
         /// on the tile, exactly as the prototype draws it.
         static let focusRing = u * 0.28
+        /// ⚠ The prototype's own focus shadow (`0 1.4u 2.6u rgba(0,0,0,.6)`), and it is not decoration: on a
+        /// black screen the focused tile has to LIFT, and without the shadow the scale change alone reads as
+        /// the avatar simply being bigger.
+        static let focusShadowY = u * 1.4
+        static let focusShadowRadius = u * 2.6
         static let focusLift = u * 0.3
         static let focusScale: CGFloat = 1.14
         static let unfocusedOpacity: CGFloat = 0.72

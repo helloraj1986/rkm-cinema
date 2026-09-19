@@ -455,6 +455,40 @@ He was right about the text: with no inset the title and the meta line began at 
 his stack**, i.e. its own phase. ⚠ It is deliberately NOT smuggled into a UX branch whose whole promise is
 *nothing to deploy*, and **the card must not invent a number** (`docs/ARCHITECTURE.md` §11).
 
+### 🐞 THE PROFILE ROW DID NOT FIT THE SCREEN *(his second defect report, 2026-09-20 — "the avatars are too big, follow the html to get the right size")*
+
+⚠ **The avatars were already the prototype's size** (`10.4u` — re-read from his CSS, not from memory). The
+screenshot's real tell was the **`Add profile` tile hanging off the right edge**: the row did not fit.
+
+**Cause.** `screenPaddingH` was applied **twice** — once by the screen's outer stack and once by the row inside
+its `GeometryReader`. That took the content area from `1920 − 2 × 6u` down to `1920 − 4 × 6u`, so a row needing
+`5 × 13u + 4 × 2.6u + 2 × 6u = 87.4u` in an `88u` box only fitted until the focused tile's `1.14` scale pushed
+it over — and everything read as oversized because five tiles were jammed against the screen's edges.
+
+**Fix, and the fit is now arithmetic rather than a hope:**
+
+* the duplicate margin is gone — one `screenPaddingH`, on the screen;
+* `TVTokens.Profile.rowWidthUnits` / `.rowMarginUnits` state the row's width **in `u`** (`5 × 13 + 4 × 2.6`),
+  so 75.4u of tiles in 100u of screen is checkable by reading one line;
+* `TVTokens.Profile.rowHeight` is **derived** (avatar + the prototype's own `1.1u`/`0.25u` gaps + the name and
+  subtitle lines + the focus lift and ring) — a row that is only just tall enough loses its subtitle first;
+* the prototype's `1.1u` / `0.25u` gaps are tokens now instead of fractions of the font sizes;
+* the focus ring is the prototype's `0.28u` **exactly** (the old code drew it 1.6× fat, which reads as a second
+  circle), and it carries the prototype's own focus shadow (`0 1.4u 2.6u rgba(0,0,0,.6)`) — without it a focused
+  tile only GROWS, which reads as "the avatar got bigger" rather than "this one is selected".
+
+⚠⚠ **AND THE INVARIANT IS NOW RUNNABLE.** `Design/TVTokens.swift` and the generated `Design/DesignTokens.swift`
+joined `check-tvos-core.py`'s `PURE_SOURCES` (both are Foundation-only — the SwiftUI bridge stays in
+`DesignColours.swift`), so the harness asserts:
+
+```swift
+TVTokens.Profile.rowWidthUnits + 2 * TVTokens.Profile.rowMarginUnits <= 100 - 2 * 6
+// "the profile row fits the screen with a whole margin (6u) to spare — a second margin anywhere is the defect
+//  that clipped the Add profile tile"
+```
+
+with a mutation that pins it. **A layout statement nobody can run is a comment; this one fails the gate.**
+
 ### U5 — his round, on the MacBook Pro
 A **screen** round, **without** `-RKMDebugHUD YES`. Falsifiers, written before the round rather than after:
 

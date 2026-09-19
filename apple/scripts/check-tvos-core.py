@@ -67,6 +67,12 @@ PURE_SOURCES = [
     # against the shape the wire actually produces. `SessionStore` and `ProfilesView` are NOT here (the first
     # imports `RKMServerKit`, the second is SwiftUI) — so `subtitle`, `initials`, the eyebrow and the
     # administrator check are the parts of that screen a machine can check.
+    # ⚠ Both design tables came in together (U7): `TVTokens` NAMES `RGBAColor`, which the generated
+    # `DesignTokens.swift` declares, so one cannot be compiled without the other. They are Foundation-only
+    # on purpose (the SwiftUI bridge is `Design/DesignColours.swift`), which is what lets the profile row's
+    # fit be a RUNNABLE check rather than a comment.
+    TVOS / "Design" / "DesignTokens.swift",
+    TVOS / "Design" / "TVTokens.swift",
     TVOS / "Core" / "Models" / "AuthModels.swift",
     TVOS / "Core" / "ProfileRules.swift",
 ]
@@ -383,6 +389,12 @@ MUTATIONS = [
      "        guard let hero, !hero.itemID.isEmpty else { return false }",
      "        guard let hero else { return false }",
      "…and is never claimed to have come from Continue Watching (the empty-id sentinel)"),
+    # ---- the profile row's FIT (his screenshot: the `Add profile` tile hanging off the right edge)
+    ("the profile row outgrowing the screen", "TVTokens.swift",
+     "        static let rowWidthUnits: CGFloat = 5 * 13 + 4 * 2.6",
+     "        static let rowWidthUnits: CGFloat = 5 * 15 + 4 * 3.2",
+     "the profile row fits the screen with a whole margin to spare"),
+
     # ---- U6's premium card: the facts line, the countdown and the state chip
     ("the card losing its duration", "HomeRails.swift",
      "        if !isSeries(item) {\n            let duration = runtimeText(item.runtime)",

@@ -190,16 +190,23 @@ struct ProfilesView: View {
                             .accessibilityLabel("Add profile")
                     }
                 }
-                .padding(.horizontal, TVTokens.Profile.screenPaddingH)
+                // ⚠⚠ **NO HORIZONTAL PADDING HERE, AND THAT IS THE BUG HE FOUND.** The outer stack already
+                // applies `screenPaddingH` (line ~82), so a second one here made the content area
+                // `1920 − 4 × 6u = 1460pt` while the row needed `5 × 13u + 4 × 2.6u + 2 × 6u = 1678pt` — so it
+                // overflowed, the `Add profile` tile hung off the right edge (visible in his screenshot), and
+                // the avatars read as oversized because five tiles were jammed against the screen's edges.
+                // ⚠ The fit is now arithmetic: `Profile.rowWidthUnits` + the screen's own margins ≤ 100u.
                 // ⚠ The centred-when-it-fits half. When the row is wider than the screen this is a no-op and
                 // the scroll view scrolls; the focus engine brings the focused tile into view either way.
                 .frame(minWidth: geometry.size.width)
             }
         }
         // ⚠ A fixed height, because a `GeometryReader` has none of its own: without it the row would take all
-        // the space left on the screen and push the exits off the bottom. `13u` is the prototype's tile width
-        // — the tile is that wide and as tall as its parts, and the gap below is the row's own `3u`.
-        .frame(height: TVTokens.Profile.avatarSize + TVTokens.u * 3.4)
+        // the space left on the screen and push the exits off the bottom. ⚠ The number is
+        // `TVTokens.Profile.rowHeight`, derived from the tile's own parts plus the focus lift and the ring —
+        // see its doc comment for the arithmetic, because a row that is only just tall enough loses the
+        // subtitle line before it loses anything else.
+        .frame(height: TVTokens.Profile.rowHeight)
         .padding(.bottom, TVTokens.Profile.rowBottomGap)
     }
 
@@ -211,11 +218,11 @@ struct ProfilesView: View {
             Text(profile.name)
                 .font(.system(size: TVTokens.Profile.nameSize, weight: .semibold))
                 .foregroundStyle(profile.disabled ? RKMColour.muted : RKMColour.primary)
-                .padding(.top, TVTokens.Profile.nameSize * 0.73)
+                .padding(.top, TVTokens.Profile.nameGapTop)
             Text(ProfileRules.subtitle(profile))
                 .font(.system(size: TVTokens.Profile.subSize))
                 .foregroundStyle(RKMColour.secondary)
-                .padding(.top, TVTokens.Profile.subSize * 0.26)
+                .padding(.top, TVTokens.Profile.subGapTop)
         }
         .frame(width: TVTokens.Profile.tileWidth)
         .padding(TVTokens.Profile.tilePadding)
@@ -280,12 +287,12 @@ struct ProfilesView: View {
             Text("Add profile")
                 .font(.system(size: TVTokens.Profile.nameSize, weight: .semibold))
                 .foregroundStyle(RKMColour.primary)
-                .padding(.top, TVTokens.Profile.nameSize * 0.73)
+                .padding(.top, TVTokens.Profile.nameGapTop)
             // ⚠ The prototype keeps an empty line here (`<span class="sub">&nbsp;</span>`) so the tiles'
             // names stay on one baseline whether or not they have a subtitle. A `Text(" ")` does the same.
             Text(" ")
                 .font(.system(size: TVTokens.Profile.subSize))
-                .padding(.top, TVTokens.Profile.subSize * 0.26)
+                .padding(.top, TVTokens.Profile.subGapTop)
         }
         .frame(width: TVTokens.Profile.tileWidth)
         .padding(TVTokens.Profile.tilePadding)
@@ -483,7 +490,15 @@ struct FocusRing: View {
         Circle()
             .stroke(RKMColour.primary.opacity(isFocused ? 0.85 : 0),
                     lineWidth: isFocused ? TVTokens.Profile.focusRing : 0)
-            .padding(-TVTokens.Profile.focusRing * 1.6)
+            // ⚠ `padding(-focusRing)` and not a multiple of it: the prototype's `box-shadow: 0 0 0 0.28u`
+            // puts the ring's OUTER edge exactly `0.28u` beyond the avatar, so anything larger draws a ring
+            // that reads as a second, fatter circle rather than as the avatar's edge.
+            .padding(-TVTokens.Profile.focusRing)
+            // ⚠ The prototype's `0 1.4u 2.6u rgba(0,0,0,.6)`. Without it the focused tile only GROWS, which
+            // reads as "the avatar got bigger" instead of "this one is selected".
+            .shadow(color: RKMColour.background.opacity(isFocused ? 0.6 : 0),
+                    radius: isFocused ? TVTokens.Profile.focusShadowRadius : 0,
+                    y: isFocused ? TVTokens.Profile.focusShadowY : 0)
             .animation(.easeOut(duration: 0.28), value: isFocused)
     }
 }

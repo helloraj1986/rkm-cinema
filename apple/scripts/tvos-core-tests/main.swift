@@ -380,6 +380,17 @@ checkEqual(HomeRules.cardFacts(item("u", ", \"year\": 2020")!), ["2020"],
 checkEqual(HomeRules.cardFacts(item("p", ", \"year\": 2001, \"play_count\": 1")!), ["2001"],
            "one play says nothing, so it is not shown")
 
+section("the profile row's fit")
+
+// ⚠⚠ **A RUNNABLE LAYOUT INVARIANT, WHICH IS THE ONLY KIND WORTH STATING.** His screenshot showed the
+// `Add profile` tile hanging off the right edge of the Profile Switcher: the row was `5 × 13u + 4 × 2.6u =
+// 75.4u` of tiles with the screen's `4.2u` margins on top, and a SECOND horizontal margin had been added on
+// top of that. The numbers are the prototype's own (`TVTokens.Profile`), so the fit is arithmetic:
+// ⚠ (One string, not two: Swift does not concatenate adjacent literals the way Python and C do — the first
+// version of this line failed to compile, which is what the gate is for.)
+check(TVTokens.Profile.rowWidthUnits + 2 * TVTokens.Profile.rowMarginUnits <= 100 - 2 * 6,
+      "⚠ the profile row fits the screen with a whole margin (6u) to spare — a second margin anywhere is the defect that clipped the Add profile tile")
+
 section("how long is left")
 
 // ⚠⚠ The arithmetic the HERO and the CARD now SHARE (`HomeRules.minutesLeft`), with the series refusal that

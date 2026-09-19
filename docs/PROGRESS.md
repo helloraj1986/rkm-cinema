@@ -1,6 +1,22 @@
-## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-19) · ✅ **PHASE A OF THE tvOS CLIENT IS MERGED TO `dev`** and verified on his Apple TV simulator · ⚠ **the working tree is on `dev`** (`be2072a`) · **next branch: `feat/tvos-library`, cut from `dev`** · **nothing needs `apply`** — no file under `backend/`, `frontend/` or `nginx/` has changed
+## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-19) · ✅ **PHASE A OF THE tvOS CLIENT IS MERGED TO `dev`** and verified on his Apple TV simulator · ⚠ **Phase B is UNDERWAY on `feat/tvos-library`** — B0 decided, B1 built and pushed (`5076987`) · **the working tree is on `feat/tvos-library`** · **nothing needs `apply`** — no file under `backend/`, `frontend/` or `nginx/` has changed on this branch
 
 **Say this first:** *"continue rkm-cinema — pick up the RESUME-HERE block, we're on the tvOS app."*
+
+### ▶ WHERE `feat/tvos-library` ACTUALLY IS (read this before the plan below, which it amends)
+
+⚠ **`docs/TVOS_LIBRARY_PLAN.md` is the plan for this branch, and it holds the detail.** State:
+
+| | |
+|---|---|
+| **B0 — DECIDED (his call, 2026-09-19)** | **The contract is NOT extended.** Option 2. The item shape is undocumented in `openapi.v1.json` (measured: `FolderItemsResponse.items` is `array` of `object`; five routes have no 200 schema), so the shape source is instead **the frontend's own TypeScript interfaces** in `frontend/src/lib/api/client.ts`. ⚠ **No `backend/` file changes on this branch.** |
+| **B1 — BUILT + PUSHED** (`5076987`) | `Core/Models/LibraryModels.swift` and `Core/PosterURL.swift` (both portable), `check-tvos-models.py` R6/R7 (+4 mutations, 10 total), and a NEW `check-tvos-core.py` + `tvos-core-tests/main.swift` that **compiles and RUNS** the two pure sources — 68 checks, 10/10 rules falsified. |
+| **B2 — NEXT, not started** | Home: Continue Watching + Recently Watched rows on the focus engine. ⚠ **Its first device question is whether the session cookie reaches `AsyncImage`** — `GET /api/jellyfin/poster` is session-scoped, and B1 could only build the URL, not prove the cookie travels. |
+
+⚠ **Two facts B1 established that the plan below does not yet say:** `FolderItemsResponse` IS a contract
+schema (only its `items` is untyped), so R3 forced `items` to be **optional** — a pydantic
+`default_factory=list` is not a `default` in OpenAPI, so the route always sends it but the contract does
+not promise it. And the item shape's trap is now **pinned by a test**: library rows carry `item_id`,
+global-search rows carry `id`.
 
 ⚠ **The Xcode project exists now, and Phase A is accepted on his hardware** (Part 4). His one-time GUI
 work is DONE — the project, `INFOPLIST_FILE`, the shared scheme and the local package are all committed, so
@@ -213,6 +229,11 @@ everything Phase A did not contain:
   screenshot is still unexplained.
 
 ### ▶ WHAT WILL BE DONE — the plan the next session executes, in order
+
+⚠ **AMENDED 2026-09-19: B0 is DECIDED and B1 is BUILT** (see the table at the top of this file, and
+`docs/TVOS_LIBRARY_PLAN.md` for the full plan). **B2 is the next phase to actually execute** — read the
+plan document's §3, not this summary, for B2–B5: this block is the original brief and has been left
+intact, but it says B0 is still open and B0/B1 were its first two phases.
 
 **Phase A is closed. Phase B is next, and it changes the shape of the work: A proved the plumbing, B is
 where the focus engine stops being a fix-up and becomes the design.**

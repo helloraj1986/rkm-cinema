@@ -21,14 +21,29 @@ recorded three additive backend changes (B1–B3) plus the reason for them: *"do
 propagation"* to HLS **segment** requests. §1 and §2 below re-measure that claim and confirm it still holds.
 This plan does not relitigate it.
 
-**What IS open, and is the decision this phase carries**, is the *carrier*: the record says "accept
+**What IS open is the *carrier*: how the credential reaches `AVPlayer`.** The record says "accept
 `Authorization: Bearer`" (B2) **and** "inject the session token into each rewritten URI" (B3) — two different
 carriers for the same credential, and **a header does not carry a segment request from `AVPlayer`**. §2 lays out
-the three ways to close that gap and recommends one.
+the three ways to close that gap.
 
-**What it costs.** This is the **only phase of this client that touches `backend/`** — every earlier phase
-changed `apple/` and `docs/` only, and B0 deliberately kept `backend/` untouched for exactly that reason. So
-this phase is the one that can break the working web app, and the deployment question becomes real again (§6).
+⚠⚠ **But this plan does NOT build it yet, and that ordering is the plan's most important choice.** Whether
+`AVPlayer` carries a credential to a **segment** request is a claim about **Apple's platform** that cannot be
+tested anywhere but the Mac. This repo has twice paid for building on exactly that kind of claim — `RailFocus.swift`
+was written and **deleted** because tvOS's focus engine already scrolled the rail, and B3's 2-D grid was
+"predicted to be the ONE focus case the platform does not solve for you" and was not. The rule it left behind:
+*do not pre-build for a platform behaviour you cannot test; ship the platform's behaviour and let the round's
+falsifier disprove it* — and pick a failure mode that is **visible** and one line to fix.
+
+So the phase is ordered to **measure, not bet**: the player is built first against the **cookie carrier the app
+already has** (zero backend change), and **C4's F2 is the measurement** that either retires the backend change
+for good or supplies the evidence that justifies it. **A `401` on a `…/hls/…` request in the log is that
+visible failure mode.** §2's recommendation is therefore recorded as the *fallback to build if F2 fails*, not as
+work to do up front — and the only cost of being wrong is that F2 is answered by the round that had to happen
+anyway to see the player at all.
+
+**What it costs.** ⚠ If F2 fails, this is the **only phase of this client that touches `backend/`** — every
+earlier phase changed `apple/` and `docs/` only, and B0 deliberately kept `backend/` untouched for exactly that
+reason. If F2 passes, that cost never arrives, and the deployment question in §6 never becomes real.
 
 **And it is the only phase whose risk is concentrated in the identity seam** — the one place
 `ARCHITECTURE.md` §11 says a credential comes from, and the place where a silent fallback once wrote a password
@@ -118,12 +133,14 @@ B2's header does not provide. Three ways:
 | **(b)** | Accept the session id as a query parameter **only on the two HLS routes** — still resolved by the ONE function, called with an explicit opt-in | Narrow: two routes | Resolution logic stays in one place; the opt-in is a parameter, not a second copy of the rule |
 | **(c)** | Mint a **short-lived playback token** bound to (session, item), accepted only by the HLS routes | Narrowest | A new credential type in the identity model — new code, new lifetime rules, new failure modes |
 
-**Recommendation: (b).** It keeps the architecture's stated invariant (*the credential comes from
-`api/session.py` only*) literally true — there is still exactly one function that turns a request into a
-session — while not turning a playback fix into a new way to authenticate to every route in the app. (a) is
-rejected because it changes the meaning of `session_context_from_request` for `admin_users.py` and
-`routes/media.py` as a side effect of a player; (c) is rejected as more identity machinery than a two-client
-private-tailnet app needs, and as the option most likely to grow failure modes nobody has a round for.
+**Recommendation, if the backend change is needed at all: (b).** ⚠ **And it is built only if C4's F2 fails** — it
+is recorded here as the fallback with its reasoning, not as work to do up front (§0). (b) keeps the
+architecture's stated invariant (*the credential comes from `api/session.py` only*) literally true — there is
+still exactly one function that turns a request into a session — while not turning a playback fix into a new way
+to authenticate to every route in the app. (a) is rejected because it changes the meaning of
+`session_context_from_request` for `admin_users.py` and `routes/media.py` as a side effect of a player; (c) is
+rejected as more identity machinery than a two-client private-tailnet app needs, and as the option most likely
+to grow failure modes nobody has a round for.
 
 ⚠ **Log hygiene is part of the decision, not a footnote.** A token in a URI reaches access logs. The codebase
 already solves this class (`_strip_api_keys`, `jellyfin_hls.py:100`; `RKMLog.request` redacts a URL at its one
@@ -135,25 +152,22 @@ is a defect, not a polish item.
 
 ## §3 — Phases
 
-### C1 — the auth carrier, backend only *(backend phase; the risky one)*
+### C1 — the player against the carrier the app already has *(zero backend change)*
 
-| # | Where | Change |
-|---|---|---|
-| B1 | `POST /api/auth/login` | Add `session_token: str = ""` to `LoginResponse` (`backend/api/models.py:101`) — the **opaque session id**, additive. ⚠ Not the Jellyfin token: `auth.py:12`'s rule stands. |
-| B2 | `api/session.py::session_context_from_request` | Accept the same opaque id from an `Authorization: Bearer …` header as an alternative to the cookie — outside any request context the behaviour is unchanged. |
-| B3 | `api/routes/jellyfin_hls.py` | Inject the session id into each rewritten URI (master variant, media playlist, segments) the same way `_strip_api_keys` already removes `api_key`. `AVPlayer` then needs **zero** cookie plumbing. |
+`Core/APIClient.swift` already authenticates every REST call through `URLSession.shared`'s cookie store, so
+`POST /api/jellyfin/progress` and every JSON route need **nothing new**. The only question is `AVPlayer`, whose
+sub-requests are not made by our `URLSession`.
 
-⚠⚠ **The identity rail is the risk, and it is not a theory.** `ARCHITECTURE.md` §11: a request that resolved a
-session and published nothing must **error**, never fall back — that fallback *"once wrote a password to the
-wrong account while reporting success"*. A second way to resolve a session is exactly the place that could
-reopen it. So:
+Build it against the **cookie the app already holds**: read the session cookie out of `HTTPCookieStorage.shared`
+*after sign-in* (never stored a second time, never logged) and hand it to the asset through `AVURLAsset`'s
+documented cookie option — **[hypothesis]** `AVURLAssetHTTPCookiesKey`, an array of `HTTPCookie`
+(⚠ **verify the exact key and its name on the Mac**, per §5: real API, not recalled API).
 
-* the resolution stays in **one** function — `session_context_from_request` — and the query-param path (b) is a
-  parameter on it, not a second resolver;
-* **`set_resolved_session` must still record the request** on every path that can resolve one, so the rail
-  sees a Bearer/query request exactly as it sees a cookie request;
-* C1 is not done until a test proves a **Bearer** request that resolves a session and publishes nothing still
-  raises `UnpublishedIdentityError` — the same guarantee the cookie path has.
+⚠ **This step is deliberately the one that cannot be tested here, and the phase is arranged around that.** The
+claim in play — that a cookie does or does not reach a *media playlist and a segment* — is a statement about
+Apple's platform, so it is **measured by C4's F2 rather than argued in this file**. The failure mode is
+deliberately the visible one: a `401` on a `…/hls/…` URL, named in the log by `RKMLog.request`.**If F2 passes,
+this phase never touches `backend/` at all and C5 is not built.**
 
 ### C2 — the pure playback rules, RUN here *(portable, gateable)*
 
@@ -198,6 +212,33 @@ Screen round, **without** `-RKMDebugHUD YES`; log round for the resume write, wi
 | F3 | `stopped` at ~50% then reopen → **resumes at that position** | the position reads back as 0 |
 | F4 | finishing a film marks it **watched** | it stays in Continue Watching |
 
+⚠ **What C4 CANNOT prove, said before the round rather than after:** nothing about real Apple TV hardware (the
+simulator is not an Apple TV), and **a failed build proves nothing about the player** — a `BUILD FAILED` means
+F1–F4 were never attempted, so it is a build round, not a player round.
+
+### C5 — the backend carrier *(ONLY if F2 fails; the phase's fallback)*
+
+⚠ **Not built, not scheduled.** It exists here so the reasoning is not relitigated if F2 comes back red — and
+so the decision is made on a measurement rather than on a bet in either direction.
+
+| # | Where | Change |
+|---|---|---|
+| B1 | `POST /api/auth/login` | Add `session_token: str = ""` to `LoginResponse` (`backend/api/models.py:101`) — the **opaque session id**, additive. ⚠ Not the Jellyfin token: `auth.py:12`'s rule stands. |
+| B2 | `api/session.py::session_context_from_request` | Accept the same opaque id as an alternative to the cookie — via the HLS-routes-only opt-in of option (b) (§2). ⚠ Note `SessionStore` keeps only the **sha256** of the id (`services/auth.py`), so the id is a bearer credential by construction and this widens where it may travel. |
+| B3 | `api/routes/jellyfin_hls.py` | Inject the session id into each rewritten URI (master variant, media playlist, segments) the same way `_strip_api_keys` already removes `api_key`. `AVPlayer` then needs **zero** cookie plumbing. |
+
+⚠⚠ **The identity rail is the risk, and it is not a theory.** `ARCHITECTURE.md` §11: a request that resolved a
+session and published nothing must **error**, never fall back — that fallback *"once wrote a password to the
+wrong account while reporting success"*. A second way to resolve a session is exactly the place that could
+reopen it. So:
+
+* the resolution stays in **one** function — `session_context_from_request` — and the query-param path (b) is a
+  parameter on it, not a second resolver;
+* **`set_resolved_session` must still record the request** on every path that can resolve one, so the rail sees
+  a query-token request exactly as it sees a cookie request;
+* C5 is not done until a test proves a request that resolves a session via the new carrier and publishes
+  nothing still raises `UnpublishedIdentityError` — the same guarantee the cookie path has.
+
 ---
 
 ## §4 — Out of scope on this branch
@@ -211,14 +252,14 @@ Subtitles (renditions or overlay) · audio-track and quality pickers · the auto
 
 ## §5 — Options rejected, so they are not relitigated
 
-* **Betting on cookie propagation to segment requests.** The recorded decision (`APPLE_CLIENTS_PLAN.md` §4.4),
-  and C1-F2 is the measurement that either retires it for good or proves it was over-cautious — either way the
-  answer is recorded rather than argued.
+* **Betting on cookie propagation to segment requests** — ⚠ **not "rejected": MEASURED.** It is C1 (build against
+  it) with C4-F2 as the test. The record (`APPLE_CLIENTS_PLAN.md` §4.4) cautions against it; this plan refuses to
+  bet *either way*, because a bet against it is the same class of untestable platform claim as a bet for it.
 * **Widening the seam to every route (option (a)).** A player would then have changed how `admin_users.py`
   authenticates.
 * **A playback-token type (option (c)).** More identity machinery than two private-tailnet clients need.
 * **`AVAssetResourceLoaderDelegate`.** The recorded fallback; more code and more edge cases than a URI the
-  proxy already rewrites. Reach for it only if C1-F2 fails *after* B3 is in.
+  proxy already rewrites. Reach for it only if C4-F2 fails *after* C5's B3 is in.
 * **Porting `Player.tsx`.** 1949 lines of DOM, `hls.js` and pointer-capture. The rules port (C2); the view does
   not exist on a TV, where the transport is the platform's.
 
@@ -237,7 +278,8 @@ Subtitles (renditions or overlay) · audio-track and quality pickers · the auto
 | `python3 tools/check_md_links.py` | this file | 
 | `cd frontend && npx vitest run` · `npm run typecheck` | ⚠ expected **unchanged** — if either moves, `frontend/` was touched against §4 |
 
-⚠ **Deploy scope changes on this branch.** `backend/` is the api image, so this is the first tvOS phase with a
-real deployment step: `docker compose -p rkm-bundled up -d --build api` — and **not** a full `deploy`/bootstrap,
-which cancels a running library scan. ⚠ **And it must be deployed BEFORE his Mac round**, or F2 measures the
-old api.
+⚠ **Deploy scope is CONDITIONAL on this branch, and that is the ordering's whole point.** If C4-F2 passes,
+**nothing is deployed** — the api and web images are untouched, exactly as on Phases A and B. Only if F2 fails
+(C5) does `backend/` change, and then it is the api image: `docker compose -p rkm-bundled up -d --build api` —
+and **not** a full `deploy`/bootstrap, which cancels a running library scan. ⚠ **If C5 is ever built, it must be
+deployed BEFORE the round that reads F2**, or the round measures the old api.

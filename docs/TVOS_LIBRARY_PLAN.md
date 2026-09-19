@@ -1,6 +1,10 @@
 # tvOS client — Phase B (Home / Browse / item detail) — plan
 
-**Branch:** `feat/tvos-library`, cut from `dev` @ `23e1f9c` (2026-09-19).
+**Branch:** `feat/tvos-library`, cut from `dev` @ `23e1f9c` (2026-09-19). ⚠ **MERGED to `dev` as `a6190c3`
+(2026-09-19)** — the merge tree is byte-identical to the branch tip, so the plan reads as written.
+**⚠⚠ B5, the round, was NEVER RECORDED:** no build log and no screenshot ever reached a session, so the two
+falsifiers §B5 names are still unmeasured. `PROGRESS.md`'s top block is the live state; this line is here
+only so a reader of this plan does not go looking for a branch that no longer needs cutting.
 **Scope:** Phase B of `APPLE_CLIENTS_PLAN.md` §4 — the tvOS app's *content* screens. Phase A (address →
 sign-in → who's watching) is merged and accepted on his simulator; Phase C (the player) is not in this plan.
 

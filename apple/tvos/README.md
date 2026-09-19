@@ -4,11 +4,25 @@ A **native SwiftUI client**. tvOS has no WebKit at all (Apple removed it; the gu
 embedding one), so there is no shell shortcut here — the UI is written for the TV. Full reasoning:
 [`../../docs/APPLE_CLIENTS_PLAN.md`](../../docs/APPLE_CLIENTS_PLAN.md) §4.
 
-**Status: Phase A ACCEPTED on his Apple TV simulator (2026-09-19)** — screens 0–2 (address → sign in →
-who's watching), merged to `dev`. **Phase B is under way on `feat/tvos-library`**: **B1 (the item models +
-gate), B2 (Home), B3 (Browse) and B4 (item detail) are BUILT**, and only B5 — the Mac round — remains.
-⚠ **None of Phase B's SwiftUI has ever been compiled** — that round is the first time. §1's one-time Xcode
-step is DONE: the project, `INFOPLIST_FILE`, the shared scheme and the local package are all committed.
+**Status: Phase B is MERGED to `dev` (2026-09-19)** — Phase A (screens 0–2: address → sign in → who's
+watching) was accepted on his simulator first; **Phase B — B1 (models + gate), B2 (Home), B3 (Browse) and
+B4 (item detail) — is now on `dev`**.
+
+⚠⚠ **B5, the Mac round, was never recorded.** The merge was his call and it landed, but **no build log and
+no screenshot ever reached a session**, so the two things that round exists to settle are still
+**UNMEASURED**: the wall keeping its **column** when focus moves down a row, and the detail screen drawing
+a **real poster** rather than the "no photo" marker. The round for `dev` is
+
+```bash
+cd ~/dev/rkm-cinema && git checkout dev && git pull --ff-only && ./apple/scripts/mac-round.sh tvos --sim
+```
+
+⚠ **Read the `4. result` block** — if it says `BUILD FAILED`, the SwiftUI that changed after
+`2260687` (his last clean round) is what broke, and these are the files it can be:
+`Browse/BrowseView.swift`, `Detail/DetailView.swift`, `App/{AppModel,AppRootView}.swift`,
+`Core/{APIClient,LibraryAPI}.swift`, `Home/{HomeView,PosterCard}.swift` and the Core rules/stores.
+§1's one-time Xcode step is DONE: the project, `INFOPLIST_FILE`, the shared scheme and the local package are
+all committed.
 
 **Scope rule: TV is a *viewing* surface.** Read + play only. The acquisition and administration half of
 rkm-cinema stays on web/iOS, where a keyboard and forms make sense.

@@ -1,8 +1,37 @@
-## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-19) · ✅ **PHASE A OF THE tvOS CLIENT IS MERGED TO `dev`** and verified on his Apple TV simulator · ⚠ **Phase B is UNDERWAY on `feat/tvos-library`** — **B0 decided · B1–B4 BUILT AND PUSHED (`253b98d`) · only B5, the Mac round, is left** · **the working tree is on `feat/tvos-library`** · **nothing needs `apply`** — no file under `backend/`, `frontend/` or `nginx/` has changed on this branch
+## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-19) · ✅ **PHASE B OF THE tvOS CLIENT IS MERGED TO `dev`** — Home, Browse and item detail, as a `--no-ff` merge (`a6190c3`) · ⚠ **his Mac round for it was never recorded, so read the box below before trusting anything about it** · **the working tree is on `dev`** (switched here by the merge — this tree IS his Windows checkout) · **nothing needs `apply`**: no file under `backend/`, `frontend/` or `nginx/` changed on the branch, so there is no generated artefact and nothing to deploy
 
 **Say this first:** *"continue rkm-cinema — pick up the RESUME-HERE block, we're on the tvOS app."*
 
-### ▶ WHERE `feat/tvos-library` ACTUALLY IS (read this before the plan below, which it amends)
+### ⚠⚠ WHAT IS *NOT* RECORDED — B5's Mac round produced no evidence in any session
+
+**His words were *"all this are looks okay now … yes this is happening and merge it now"*. A merge is his
+call, so it landed — but no build log and no screenshot has ever reached a session:** there is no
+`== 4. result` block, no wall screenshot and no detail screenshot on the record, and nothing has been
+pushed from his Mac. ⇒ **Phase B is on `dev` with its round UNRECORDED — NOT with a pass recorded.**
+The two falsifiers written down before the round are still **UNMEASURED**: the wall keeping its **column**
+when focus moves down a row, and the detail screen drawing a **real poster** rather than the "no photo"
+marker. If he reports anything about those two screens, that is the first thing to establish, and a
+`-RKMDebugHUD YES` run is what names it.
+
+⚠ **Precisely which SwiftUI has and has not ever been compiled** (this is the part a loose note gets
+wrong): his **second B2 round built clean**, so `HomeView`, `PosterCard`, `RailView`, `AppModel`,
+`AppRootView`, `LoginView` and `ProfilesView` **as they stood at `2260687`** were compiled on the Mac.
+Everything changed **after** that commit has not: `Browse/BrowseView.swift`, `Detail/DetailView.swift`,
+`AppModel.swift`, `AppRootView.swift`, `Core/APIClient.swift`, `Core/LibraryAPI.swift`, `Home/HomeView.swift`
+and `Home/PosterCard.swift` (B4 rewrote the last two to open the detail screen), plus `BrowseRules`,
+`BrowseStore`, `DetailRules`, `DetailStore`, `RequestURL` and the two new model files.
+
+| | |
+|---|---|
+| **Phase A** | MERGED to `dev` (`be2072a`), accepted on his simulator — screens 0–2. |
+| **Phase B** | **MERGED to `dev` (`a6190c3`).** ⚠ The merge was verified by **tree equality, not by sight**: `git rev-parse origin/feat/tvos-library^{tree}` and `dev^{tree}` are the same `d07c395…`, i.e. the merged tree IS the branch tip — nothing was dropped and no conflict was auto-resolved. It touches **only `apple/` and `docs/`** (`TVOS_LIBRARY_PLAN.md` included). `feat/tvos-library` is left in place, not deleted. |
+| **What the merged tree is verified BY** | The five apple/docs gates, re-run **on `dev` after the merge**: `check-tvos-models.py` (113 keys, 14 endpoints — 14/14 mutations RED) · `check-tvos-core.py` (**297 checks, 0 failures** — 45/45 RED) · `check-apple-typecheck.sh` (19 portable tvOS files) · `check-imports.py` (31 files, `--selftest` 6/6) · `check_md_links.py`. ⚠ **Type and rule evidence only. Not one view compiled, and no behaviour observed.** |
+| **NEXT — his round, still** | Nothing on this side can close it. On the **MacBook Pro**: `cd ~/dev/rkm-cinema && git checkout dev && git pull --ff-only && ./apple/scripts/mac-round.sh tvos --sim` — then the two falsifiers above. ⚠ **Read the `4. result` block: if it says `BUILD FAILED`, Phase B is on `dev` broken** and the log is the first thing to read. |
+| **Phase C — NOT started, not planned** | The tvOS player, and the **only** backend change this app needs: `AVPlayer` + `GET /api/jellyfin/hls/{id}/master.m3u8`, resume and progress reporting, and a `session_token` returned from login and accepted by `api/session.py::session_context_from_request`. |
+| **`main`** | Not advanced. `git merge-base --is-ancestor main dev` still holds, so `main` can fast-forward to `dev` whenever he accepts on the UI. |
+| **Other un-merged branches** | `feat/request-candidate-ids` (KNOWN_ISSUES #7 option (c) — his decision) and `spike/shell-origin` (a spike: OUT of the flow by convention). Both deliberate. |
+
+### [HISTORY — the branch's own handover, now merged as `a6190c3`] ▶ WHERE `feat/tvos-library` ACTUALLY IS (read this before the plan below, which it amends)
 
 ⚠ **`docs/TVOS_LIBRARY_PLAN.md` is the plan for this branch, and it holds the detail.** State:
 

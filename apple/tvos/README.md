@@ -4,8 +4,11 @@ A **native SwiftUI client**. tvOS has no WebKit at all (Apple removed it; the gu
 embedding one), so there is no shell shortcut here — the UI is written for the TV. Full reasoning:
 [`../../docs/APPLE_CLIENTS_PLAN.md`](../../docs/APPLE_CLIENTS_PLAN.md) §4.
 
-**Status: Phase A built — screens 0–2 (address → sign in → who's watching), on branch `feat/tvos-client`,
-not yet built on the Mac.** The Xcode project does not exist yet; §1 is the one-time step that creates it.
+**Status: Phase A ACCEPTED on his Apple TV simulator (2026-09-19)** — screens 0–2 (address → sign in →
+who's watching), merged to `dev`. **Phase B is under way on `feat/tvos-library`**: **B1 (the item models +
+gate) and B2 (Home) are BUILT**, B3 (Browse) and B4 (item detail) remain. ⚠ **None of Phase B's SwiftUI has
+ever been compiled** — the next Mac round is the first time. §1's one-time Xcode step is DONE: the project,
+`INFOPLIST_FILE`, the shared scheme and the local package are all committed.
 
 **Scope rule: TV is a *viewing* surface.** Read + play only. The acquisition and administration half of
 rkm-cinema stays on web/iOS, where a keyboard and forms make sense.
@@ -123,7 +126,7 @@ bent to look like the other.
 | 0 | Server address (PRE-FILLED) | — (persisted locally) | **A ✅ built** |
 | 1 | Sign in | `POST /api/auth/login` | **A ✅ built** |
 | 2 | Who's watching | `GET /api/auth/profiles` · `POST /api/auth/profile` · `GET /api/auth/me` | **A ✅ built** |
-| 3 | Home | `GET /api/library/continue-watching` · `/recently-watched` | B |
+| 3 | Home | `GET /api/library/continue-watching` · `/recently-watched` | **B ✅ built (B2)** |
 | 4 | Browse | `GET /api/library/folders` → `/items` | B |
 | 5 | Item detail | `GET /api/jellyfin/detail` · `/api/status` | B |
 | 6 | Player | `GET /api/jellyfin/hls/{id}/master.m3u8` · `POST /api/jellyfin/progress` | C |

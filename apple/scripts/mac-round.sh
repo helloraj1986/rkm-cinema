@@ -239,6 +239,19 @@ if [ $RC -eq 0 ] && [ "$WANT_SIM" = "--sim" ]; then
     SETTINGS="$(xcodebuild -project "$PROJ" -scheme "$SCHEME" -destination "$DEST" -showBuildSettings 2>/dev/null || true)"
     APP_DIR="$(printf '%s\n' "$SETTINGS" | awk -F' = ' '/^ *BUILT_PRODUCTS_DIR = /{print $2; exit}')"
     APP_NAME="$(printf '%s\n' "$SETTINGS" | awk -F' = ' '/^ *FULL_PRODUCT_NAME = /{print $2; exit}')"
+    # ⚠⚠ **THE BUNDLE ID IS READ FROM THE PROJECT, NEVER ASSUMED.** It used to be hardcoded as
+    # `com.helloraj1986.rkmcinema.<suffix>`, which made the launch fail with "the application is not
+    # installed" the moment Xcode's template chose its own identifier — and Xcode's default for a new
+    # project is `<org>.<ProductName>`, so `com.helloraj1986.RKMCinemaTV`, not `…rkmcinema.tvos`. That is a
+    # GUI step he would have had to get exactly right, and a mismatch would have read as a build problem.
+    # Now it comes from the same build settings as the .app path, with the old value only as a fallback.
+    BUNDLE_ID="$(printf '%s\n' "$SETTINGS" | awk -F' = ' '/^ *PRODUCT_BUNDLE_IDENTIFIER = /{gsub(/^[ \t]+|[ \t]+$/, "", $2); print $2; exit}')"
+    if [ -n "$BUNDLE_ID" ]; then
+      echo "bundle id: $BUNDLE_ID   (from xcodebuild -showBuildSettings)"
+    else
+      BUNDLE_ID="com.helloraj1986.rkmcinema.${BUNDLE_SUFFIX}"
+      echo "bundle id: $BUNDLE_ID   (fallback — the project did not report one)"
+    fi
     if [ -n "$APP_DIR" ] && [ -n "$APP_NAME" ] && [ -d "${APP_DIR}/${APP_NAME}" ]; then
       APP="${APP_DIR}/${APP_NAME}"
       echo "app: $APP   (from xcodebuild -showBuildSettings)"
@@ -255,9 +268,9 @@ if [ $RC -eq 0 ] && [ "$WANT_SIM" = "--sim" ]; then
       # which arguments the run actually had.
       if [ ${#EXTRA[@]} -gt 0 ]; then
         echo "launching with: ${EXTRA[*]}"
-        xcrun simctl launch --console-pty "$DEV_ID" "com.helloraj1986.rkmcinema.${BUNDLE_SUFFIX}" "${EXTRA[@]}"
+        xcrun simctl launch --console-pty "$DEV_ID" "$BUNDLE_ID" "${EXTRA[@]}"
       else
-        xcrun simctl launch --console-pty "$DEV_ID" "com.helloraj1986.rkmcinema.${BUNDLE_SUFFIX}"
+        xcrun simctl launch --console-pty "$DEV_ID" "$BUNDLE_ID"
       fi
     else
       echo "Built .app not found in DerivedData — open the project in Xcode and run it there." >&2

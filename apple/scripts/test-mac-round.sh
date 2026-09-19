@@ -87,16 +87,24 @@ STATE="$STUB_STATE"
 # ⚠ The product differs per platform: the tvOS scheme builds RKMCinemaTV.app out of
 # Debug-appletvsimulator. A stub that always answered `RKMCinema.app` would let every tvOS assertion below
 # pass against a filename the real build never produces.
-NAME="RKMCinema"; SUFFIX="iphonesimulator"
+NAME="RKMCinema"; SUFFIX="iphonesimulator"; BUNDLE="ios"
 for arg in "$@"; do
-  [ "$arg" = "RKMCinemaTV" ] && { NAME="RKMCinemaTV"; SUFFIX="appletvsimulator"; }
+  [ "$arg" = "RKMCinemaTV" ] && { NAME="RKMCinemaTV"; SUFFIX="appletvsimulator"; BUNDLE="tvos"; }
 done
+# ⚠ `$STATE/bundle_id` exists so a case can set an identifier the script's own fallback would NOT produce —
+# which is the only way to prove the launch id is read from the PROJECT rather than assumed.
+if [ -f "$STATE/bundle_id" ]; then
+  BUNDLE_ID="$(cat "$STATE/bundle_id")"
+else
+  BUNDLE_ID="com.helloraj1986.rkmcinema.$BUNDLE"
+fi
 for arg in "$@"; do
   if [ "$arg" = "-showBuildSettings" ]; then
     # Case E marks this, to make -showBuildSettings useless and exercise the DerivedData fallback.
     [ -f "$STATE/no_settings" ] && exit 0
     echo "    BUILT_PRODUCTS_DIR = $HOME/Library/Developer/Xcode/DerivedData/RKMCinema-abc123/Build/Products/Debug-$SUFFIX"
     echo "    FULL_PRODUCT_NAME = $NAME.app"
+    echo "    PRODUCT_BUNDLE_IDENTIFIER = $BUNDLE_ID"
     exit 0
   fi
 done
@@ -273,6 +281,25 @@ run "H · tvOS: the booted Apple TV wins, and the 3rd-gen line must not be mista
     "ALREADY BOOTED — 'Apple TV 4K \(2nd generation\)'" \
     "CALL simctl install $UTV2 .*RKMCinemaTV.app" \
     "CALL simctl launch --console-pty $UTV2"
+
+# ⚠⚠ J: THE LAUNCH ID MUST COME FROM THE PROJECT, NOT FROM THE SCRIPT'S ASSUMPTION. Xcode's template
+# names a new project's identifier `<org>.<ProductName>` — i.e. `com.helloraj1986.RKMCinemaTV` — while the
+# script used to hardcode `com.helloraj1986.rkmcinema.tvos`. With the hardcoded value the app builds,
+# installs, and then refuses to launch ("the application is not installed"), which reads as a build fault.
+# This case sets the identifier to Xcode's own default and requires BOTH that it is reported and that it is
+# what gets launched.
+RUN_TARGET=tvos
+# ⚠ Its own fixture: case H left a BOOTED Apple TV, and the booted device wins by design — so without this
+# the launch would (correctly) name UTV2 while this case asserts UTV3.
+devices "" \
+        "    Apple TV 4K (3rd generation) ($UTV3) (Shutdown)"
+printf 'com.helloraj1986.RKMCinemaTV' > "$STATE/bundle_id"
+run "J · the bundle id is read from the PROJECT — Xcode's default is not the script's assumption" \
+    "bundle id: com.helloraj1986.RKMCinemaTV   \\(from xcodebuild -showBuildSettings\\)" \
+    "CALL simctl launch --console-pty $UTV3 com.helloraj1986.RKMCinemaTV"
+rm -f "$STATE/bundle_id"
+# ⚠ RUN_TARGET stays `tvos` for case I — it is about the tvOS project being absent, and pointing it at the
+# iOS project (which is committed) would make the case assert a branch it never reaches.
 
 # ⚠ I: WITHOUT THE PROJECT, THE SCRIPT MUST SAY SO AND STOP. This is the exact state of the repo right
 # now — the tvOS project is created ONCE in Xcode and committed (apple/WORKFLOW.md §2) — so this is the

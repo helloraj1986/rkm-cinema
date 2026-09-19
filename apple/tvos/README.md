@@ -56,6 +56,11 @@ sources.
 | Build Settings | `TVOS_DEPLOYMENT_TARGET` | `17.0` | ⚠ Xcode pins the SDK version (26.x) by default. 17.0 installs on anything newer, and the code uses nothing newer |
 | Signing & Capabilities | Team | your Apple ID | only needed for a *device* build; **the simulator needs no signing** |
 
+⚠ **No bundle-id step, deliberately.** `mac-round.sh` reads `PRODUCT_BUNDLE_IDENTIFIER` out of the
+project's build settings and launches that, so Xcode's own default (`com.helloraj1986.RKMCinemaTV`) is
+fine. It used to hardcode `com.helloraj1986.rkmcinema.tvos`, which would have built and installed and then
+refused to launch — a failure that reads like a build fault, and a GUI step nobody should have to get right.
+
 ⚠ **The plist must stay in `Config/`, never inside `RKMCinemaTV/`.** A file inside the target's
 synchronized folder is auto-added as a *resource*, so a custom `Info.plist` there is at once copied into
 the app and processed as the Info.plist → `error: Multiple commands produce …Info.plist`. Learned on the
@@ -172,7 +177,7 @@ python3 apple/scripts/check-tvos-models.py            # models + endpoints vs th
 python3 apple/scripts/check-tvos-models.py --falsify  # 6 mutations, each must go red
 TMPDIR=/root/tmp bash apple/scripts/check-apple-typecheck.sh   # compiles the 6 portable files
 python3 apple/scripts/check-imports.py apple/tvos/RKMCinemaTV  # missing framework imports
-bash apple/scripts/test-mac-round.sh                  # the round script, stubbed, 9 cases
+bash apple/scripts/test-mac-round.sh                  # the round script, stubbed, 10 cases
 ```
 
 ⚠ **Two of these have already caught real defects, and one of them is the argument for the pair:**
@@ -187,7 +192,8 @@ bash apple/scripts/test-mac-round.sh                  # the round script, stubbe
 **And both gates that matter have been falsified**, not just observed green:
 `check-tvos-models.py --falsify` reverts each rule and requires the matching check to fail (6/6 red);
 `test-mac-round.sh` asserts on the stubs' call log, and goes red against the previous revision of
-`mac-round.sh` — the truncating device-name extraction fails 2 of its 9 cases.
+`mac-round.sh` on two separate faults: the truncating device-name extraction fails 2 of its 10 cases, and
+the hardcoded bundle id fails case J.
 
 ---
 

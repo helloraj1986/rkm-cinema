@@ -71,10 +71,17 @@ and this session is the first test of it.
   `sim_names()` helper that keeps the full name, an **exact fixed-string** default match (`-qxF`), a
   `grep -F "NAME ("` UDID lookup that cannot match a *different* Apple TV, and **no committed tvOS default
   at all** (the family name was never a device).
-* **`apple/scripts/test-mac-round.sh`** — 3 new cases (9 total): the tvOS family fallback under its full
-  bracketed name; the **booted** Apple TV winning over a 3rd-generation sibling; and the "no project yet →
-  say what to do" message. ⚠ It now runs the round script from a **temp repo skeleton**, because otherwise
-  the tvOS cases could never reach the device-selection code until the project existed.
+* **`apple/scripts/mac-round.sh` (a SECOND fault, found while he was creating the project)** — ⚠⚠ the
+  launch bundle id was **hardcoded** as `com.helloraj1986.rkmcinema.tvos`. Xcode names a new project
+  `com.helloraj1986.RKMCinemaTV`, so the app would have built, installed, and then **refused to launch** —
+  a message that reads like a build fault. It now reads `PRODUCT_BUNDLE_IDENTIFIER` from the same
+  `-showBuildSettings` call the `.app` lookup already makes, with the old value only as a fallback, which
+  **deletes a GUI step** nobody should have had to get exactly right.
+* **`apple/scripts/test-mac-round.sh`** — 4 new cases (10 total): the tvOS family fallback under its full
+  bracketed name; the **booted** Apple TV winning over a 3rd-generation sibling; the bundle id being taken
+  from the project rather than assumed; and the "no project yet → say what to do" message. ⚠ It now runs
+  the round script from a **temp repo skeleton**, because otherwise the tvOS cases could never reach the
+  device-selection code until the project existed.
 
 ### Gates, measured this session
 
@@ -84,7 +91,7 @@ and this session is the first test of it.
 | `python3 apple/scripts/check-tvos-models.py --falsify` | **PASS — 6/6 mutations went RED**, each on its own rule |
 | `TMPDIR=/root/tmp bash apple/scripts/check-apple-typecheck.sh` | **PASS** — every iOS file as before, **+ 6/6 tvOS files** (2 Darwin-only errors filtered by name) |
 | `python3 apple/scripts/check-imports.py apple/tvos/RKMCinemaTV` | **PASS** — 14 files, no missing framework imports |
-| `bash apple/scripts/test-mac-round.sh` | **PASS — 9/9**, and **falsified**: against the previous `mac-round.sh` it fails 2 of 9 |
+| `bash apple/scripts/test-mac-round.sh` | **PASS — 10/10**, and **falsified**: against the previous `mac-round.sh` it fails 2 of 10, and case J fails on the old hardcoded bundle id |
 | `python3 tools/check_md_links.py` | all links resolve |
 
 ⚠ **No frontend/backend gate was re-run, because no frontend or backend file changed.** Saying so is the

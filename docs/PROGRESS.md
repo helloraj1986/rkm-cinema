@@ -1,4 +1,86 @@
-## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-19) · ✅ **PHASE B OF THE tvOS CLIENT IS MERGED TO `dev`** — Home, Browse and item detail, as a `--no-ff` merge (`a6190c3`) · ⚠ **his Mac round for it was never recorded, so read the box below before trusting anything about it** · ⚠⚠ **TWO UNMERGED BRANCHES NOW EXIST AND `dev` KNOWS ABOUT NEITHER — read the next block FIRST** · **the working tree is on `feat/tvos-ux`** (it was switched to cut that branch — ⚠ this tree IS his Windows checkout, so the branch left checked out is the branch HE builds) · **nothing needs `apply`**: no file under `backend/`, `frontend/` or `nginx/` changed on either branch, so there is no generated artefact and nothing to deploy
+## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-20) · ✅ **PHASE U IS BUILT ON `feat/tvos-ux` (U1–U4, pushed) — U5 IS HIS ROUND** · **the Profile Switcher + Home redesign of the tvOS app** · **the working tree is on `feat/tvos-ux`** (⚠ this tree IS his Windows checkout, so the branch left checked out is the branch HE builds) · ⚠ **`feat/tvos-player` is still parked** (C1 built and pushed, C2–C5 not started) and **`dev` has neither branch** · **nothing needs `apply`**: no file under `backend/`, `frontend/` or `nginx/` changed, so there is no generated artefact and nothing to deploy
+
+### ▶ THE PHASES, AND WHERE THEY ACTUALLY ARE
+
+`docs/TVOS_UX_PLAN.md` is the plan and holds the detail; its §U1 carries the "BUILT 2026-09-20" notes where
+the build added something the plan did not name.
+
+| Phase | State |
+|---|---|
+| **U1** | **BUILT + PUSHED** (`e135930`) — `DesignTokens.swift` is GENERATED from `frontend/src/styles/index.css` by `apple/scripts/generate-design-tokens.py`, with `apple/scripts/check-design-tokens.py` as the gate (R1 drift · R2 the tvOS muted grey · R3 no scattered colours · `--falsify` proves all three can go red). `Design/TVTokens.swift` is the hand-written tvOS-only layer (the measured WCAG fix for the de-emphasised caption grey, plus the tvOS metrics, each carrying its reason) and `Design/DesignColours.swift` is the SwiftUI bridge — the ONE file held outside every gate on purpose, because it holds no rule. ⚠ **`TVOS_DEPLOYMENT_TARGET` is now `26.0`** (four occurrences, his decision) and `apple/tvos/README.md`'s stale `17.0` is fixed. ⚠ The target bump is the **one change NO gate here can verify** — no Xcode in the sandbox — so it is his Mac build and nothing else. |
+| **U2** | **BUILT + PUSHED** (`21f2ad8`) — the Profile Switcher: eyebrow + count, circular gold-initials avatar, lock as a bottom-right badge, a centred scrolling row, the administrator's two controls, focus lift 1.14 with the other tiles at 0.72. Rules are pure and RUN: `Core/ProfileRules.swift` (initials · the accepted subtitle vocabulary · the VoiceOver label · the eyebrow · the administrator gate, **matched by ID, never by name**). |
+| **U3** | **BUILT + PUSHED** (`0052d4f`) — the Home's top bar (tabs from `BrowseRules.browseEntries`, never the buildspec's fixed list), the hero band (every word and number a mirrored web rule), the card's type badge, and the backdrop route in `PosterURL` (both route words are contract-path literals, so R4 checks BOTH — 17 literals). |
+| **U4** | **BUILT** (this commit) — the third rail: `HomeRailID.recentlyAdded`, `HomeRules.recentlyAddedItems` and `HomeRailLimit.recentlyAdded = 16` wired where they were written for (they had been written, tested and **unused** since B1), plus the hero's de-duplication verified on the added rail's side. |
+| **U5** | **NEXT — and it is HIS ROUND, on the MacBook Pro.** Nothing on this side can close it. |
+
+### ▶ U5 — HIS ROUND, AND THE SEVEN FALSIFIERS (written before it, not after)
+
+A **SCREEN** round, so it runs **WITHOUT** `-RKMDebugHUD YES` (the panel is 980pt at the top-left and a
+screenshot carrying it is for the log lines, not for judging layout):
+
+```bash
+cd ~/dev/rkm-cinema && git checkout feat/tvos-ux && git pull --ff-only && ./apple/scripts/mac-round.sh tvos --sim
+```
+
+| # | Falsifier | What DISPROVES it |
+|---|---|---|
+| F1 | the Profile row reads as **one choice** — focused tile up + ringed, the others dimmed | everything looks equally bright: the dim rule is not applying |
+| F2 | **every** profile's lock/admin state matches the SERVER | a profile that has a password shows none (hardcoded example data) |
+| F3 | the top bar's tabs are **this profile's** libraries | the buildspec's fixed list is on screen instead |
+| F4 | moving down a shelf and back **keeps the card's column** | focus jumps to the first card — then the platform is NOT doing it and a hand-rolled map is genuinely needed |
+| F5 | a real poster draws in the hero and the rail | the "no photo" marker (⚠ still B5's own unmeasured falsifier) |
+| F6 | the top bar dims when focus leaves it | it stays at full opacity — then §3's fallback applies (the platform's focus treatment, not a hand-rolled dim) |
+| F7 | **the build succeeds at the new 26.0 floor**, and a focused card shows Liquid Glass | `BUILD FAILED`, or a deprecation the 17.6 floor was hiding — ⚠ **the only change in the phase no gate here can test** |
+
+⚠ **What the round CANNOT prove:** nothing about real Apple TV hardware (the simulator is not an Apple TV),
+and **a failed build proves nothing about the layouts** — a `BUILD FAILED` is a build round, and F1–F7 were
+never attempted. ⚠ `simctl launch --console-pty` HOLDS his terminal until the app exits: tell him to `Ctrl-C`.
+
+### ▶ WHAT IS VERIFIED ON THIS BRANCH, AND WITH WHAT
+
+| Gate | Result (2026-09-20, branch `feat/tvos-ux`) |
+|---|---|
+| `python3 apple/scripts/check-tvos-core.py` | **394 checks, 0 failures** — the pure rules of every phase, COMPILED AND RUN |
+| … `--falsify` | **77/77 rules reverted, every one went red on the check it protects** |
+| `python3 apple/scripts/check-design-tokens.py --falsify` | R1, R2 and R3 each go red when the thing they guard breaks |
+| `python3 apple/scripts/check-tvos-models.py` | 113 keys, **17 endpoint literals** (both artwork routes included) |
+| `bash apple/scripts/check-apple-typecheck.sh` | every portable tvOS file typechecks, **plus `DesignTokens.swift` and `TVTokens.swift`** |
+| `python3 apple/scripts/check-imports.py apple/tvos/RKMCinemaTV` | 37 files, no missing framework imports |
+| `python3 tools/check_md_links.py` | 74 files, 68 relative links, all resolve |
+| `cd frontend && npx vitest run` · `npm run typecheck` | **589 tests in 23 files, all pass** · `tsc --noEmit` clean — ⚠ **unchanged, as promised**: nothing under `frontend/` was touched |
+| `cd backend && env -u JELLYFIN_API_KEY python -m pytest tests/ -q` | **1338 passed, 0 failed** — ⚠ **unchanged**: `git diff --stat origin/dev -- backend/` is EMPTY |
+
+⚠⚠ **THE FALSIFICATION PASS EARNED ITS 26 MINUTES, TWICE.** Run 1 came back **FAIL — 4 rules not actually
+pinned**, and every one of them was a real defect in the *tests*, not the code:
+* a mutation that **did not compile** (two enum cases with one raw value; and a closure written `{ true }`
+  where `{ _ in true }` was needed) — ⚠ **an uncompilable mutation is an `ERROR`, never a red**;
+* a mutation that went **red on the wrong line**, so the runner counted it as a survivor — the expected text
+  must be the FIRST check the mutation turns red;
+* ⚠⚠ and **a clause that could not be falsified at all**: `heroRuntimeLeft`'s `runtime > position` guard, whose
+  removal changes nothing because `runtimeText` already clamps a negative remainder. **It was deleted from the
+  source** rather than kept with a mutation that only pretends to pin it — and the clause that DOES matter
+  (`position > 0`, or an unstarted film reads its whole runtime as "time left") is now pinned instead.
+
+⚠⚠ **NOT ONE SwiftUI VIEW HAS BEEN COMPILED ANYWHERE — including everything U2, U3 and U4 wrote.** The pure
+rules are run; the views are written and unbuilt. That is precisely what U5 exists for, and this table is
+type-and-rule evidence only.
+
+### ▶ TWO THINGS THE NEXT SESSION MUST NOT GET WRONG
+
+1. **His second design input is in the tree, UNTRACKED**: `tvos_ux/2. LibraryViewandItemDetailsView/`
+   (`tvos-ux-principles.md`, `tvos-library-view-spec.md`, `tvos-title-view-spec.md`, two `.html`
+   prototypes + a `README.md`). It is **not part of Phase U** and is not committed — it reads as the input
+   for a **Phase V** (the Library and Title views, i.e. Browse and the item detail), and the same rules
+   apply to it as to set 1: **a design spec is a SOURCE, not a measurement** — measure every factual claim
+   in it against this repo before writing a plan from it.
+2. **The UI plan supersedes the sequencing in `APPLE_CLIENTS_PLAN.md` §4.4 and `apple/tvos/README.md` §8**,
+   which still describe Phase C as "backend first". ⚠ And `apple/tvos/README.md` was amended on
+   `feat/tvos-player` but is **still stale on `dev`** — whoever merges either branch must check that §8 does
+   not get re-staled by the merge order.
+
+**Say this first:** *"continue rkm-cinema — pick up the RESUME-HERE block, we're on the tvOS app."*
+
+### [HISTORY — the 2026-09-19 resume block, superseded 2026-09-20 by the table above] ## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-19) · ✅ **PHASE B OF THE tvOS CLIENT IS MERGED TO `dev`** — Home, Browse and item detail, as a `--no-ff` merge (`a6190c3`) · ⚠ **his Mac round for it was never recorded, so read the box below before trusting anything about it** · ⚠⚠ **TWO UNMERGED BRANCHES NOW EXIST AND `dev` KNOWS ABOUT NEITHER — read the next block FIRST** · **the working tree is on `feat/tvos-ux`** (it was switched to cut that branch — ⚠ this tree IS his Windows checkout, so the branch left checked out is the branch HE builds) · **nothing needs `apply`**: no file under `backend/`, `frontend/` or `nginx/` changed on either branch, so there is no generated artefact and nothing to deploy
 
 ### ▶ THE TWO OPEN BRANCHES, AND THE ORDER HE ASKED FOR
 

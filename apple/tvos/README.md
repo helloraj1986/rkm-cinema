@@ -4,23 +4,31 @@ A **native SwiftUI client**. tvOS has no WebKit at all (Apple removed it; the gu
 embedding one), so there is no shell shortcut here — the UI is written for the TV. Full reasoning:
 [`../../docs/APPLE_CLIENTS_PLAN.md`](../../docs/APPLE_CLIENTS_PLAN.md) §4.
 
-**Status: Phase B is MERGED to `dev` (2026-09-19)** — Phase A (screens 0–2: address → sign in → who's
-watching) was accepted on his simulator first; **Phase B — B1 (models + gate), B2 (Home), B3 (Browse) and
-B4 (item detail) — is now on `dev`**.
+**Status: Phase U is BUILT on `feat/tvos-ux` (2026-09-20) and its round is the next thing that happens.**
+Phase A (screens 0–2: address → sign in → who's watching) was accepted on his simulator; Phase B (B1–B4 —
+models, Home, Browse, item detail) is merged to `dev`. ⚠ **Phase U (U1–U4: the generated design tokens, the
+Profile Switcher, the Home's top bar + hero, the Recently Added rail) sits on `feat/tvos-ux`, which is NOT
+merged and is NOT on `dev`.** The plan is [`../../docs/TVOS_UX_PLAN.md`](../../docs/TVOS_UX_PLAN.md); the
+live handover is the RESUME-HERE block at the top of [`../../docs/PROGRESS.md`](../../docs/PROGRESS.md).
 
-⚠⚠ **B5, the Mac round, was never recorded.** The merge was his call and it landed, but **no build log and
-no screenshot ever reached a session**, so the two things that round exists to settle are still
-**UNMEASURED**: the wall keeping its **column** when focus moves down a row, and the detail screen drawing
-a **real poster** rather than the "no photo" marker. The round for `dev` is
+⚠⚠ **THE tvOS DEPLOYMENT TARGET IS NOW `26.0`** (his decision, 2026-09-19 — one code path and Liquid Glass,
+at the cost of not installing on tvOS 17–25). See §1's build-settings table.
+
+⚠⚠ **No SwiftUI view on this branch has ever been compiled anywhere.** The pure rules are compiled and RUN
+here on Linux (393 checks), but U2's, U3's and U4's views are written and unbuilt — so the round below is not
+a formality, it is the first build. Its seven falsifiers are written down in `docs/PROGRESS.md` and
+`docs/TVOS_UX_PLAN.md` §U5, **before** it runs.
+
+The round, on the **MacBook Pro** (⚠ a SCREEN round, so **without** `-RKMDebugHUD YES`):
 
 ```bash
-cd ~/dev/rkm-cinema && git checkout dev && git pull --ff-only && ./apple/scripts/mac-round.sh tvos --sim
+cd ~/dev/rkm-cinema && git checkout feat/tvos-ux && git pull --ff-only && ./apple/scripts/mac-round.sh tvos --sim
 ```
 
-⚠ **Read the `4. result` block** — if it says `BUILD FAILED`, the SwiftUI that changed after
-`2260687` (his last clean round) is what broke, and these are the files it can be:
-`Browse/BrowseView.swift`, `Detail/DetailView.swift`, `App/{AppModel,AppRootView}.swift`,
-`Core/{APIClient,LibraryAPI}.swift`, `Home/{HomeView,PosterCard}.swift` and the Core rules/stores.
+⚠ **Read the `4. result` block** — if it says `BUILD FAILED`, the two likeliest causes are the tvOS 26 floor
+surfacing a deprecation the 17.6 floor was hiding, and the SwiftUI that has never been compiled
+(`Home/{TopBar,HeroBand,HomeView,PosterCard}.swift`, `Auth/ProfilesView.swift`, `App/AppModel.swift`,
+`Browse/BrowseView.swift` and the Core rules/stores they read).
 §1's one-time Xcode step is DONE: the project, `INFOPLIST_FILE`, the shared scheme and the local package are
 all committed.
 

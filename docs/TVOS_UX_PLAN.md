@@ -309,15 +309,53 @@ The delta in §1a, on the existing accepted screen: the circular initials avatar
 eyebrow, `Add profile`, `Manage profiles`. ⚠ Carries §1a's two hazards: **one set of words** (and the decision
 is his), and **every per-profile fact read from the server**, never from the spec's example.
 
+⚠ **BUILT 2026-09-20** (`21f2ad8`). The rules are a new pure file — `Core/ProfileRules.swift` (initials, the
+accepted subtitle vocabulary, the VoiceOver label, the eyebrow, and the administrator gate matched **by ID,
+never by name**) — so they are EXECUTED here on Linux rather than only seen on a TV. ⚠ **One scope call the
+plan did not name: `Add profile` / `Manage profiles` open a panel that states where profiles are actually
+managed.** Both routes exist server-side, so offering the controls is not offering what the server refuses —
+but this app has no admin WRITE path at all (no model, no client method, no screen), and building one is a
+phase of its own, not a side effect of a redesign. The alternative (hiding the controls) would have the app
+pretend the feature does not exist. ⚠ And **`TVTokens.Metric.profileTitle = 64`** is adopted here, one of
+exactly two sizes taken from the buildspec's type scale (the other is the hero's) — the rest of the scale is
+prose and is not retro-fitted across screens this phase does not touch.
+
 ### U3 — the Home top bar and the hero
 The delta in §1b: `TopBar` from **`BrowseRules.libraryNavEntries`**, the hero band, the card badge/play/progress
 affordances. ⚠ No focus arithmetic (§3).
+
+⚠ **BUILT 2026-09-20** (`0052d4f`). Three things the build decided, all recorded because a plan reads as fact:
+* **The badge is the web's own rule, not the buildspec's word.** The episode code when there is one, otherwise
+  the **tv/film glyph** (`HomeRules.typeIcon` → `LibraryIcon.systemImage`, the mapping MOVED out of
+  `BrowseView` so the two screens cannot drift). The buildspec's `MOVIE` word is a second vocabulary for one
+  fact, and a word badge on the TV beside a glyph on the phone is exactly what §1a's vocabulary decision
+  refuses. **The play glyph is NOT built at all** — nothing plays until Phase C, and a play triangle that does
+  nothing is the control `docs/ARCHITECTURE.md` §11 forbids. It lands with the player.
+* **The hero's primary button does not play either.** A series' primary opens its own screen (the web's
+  `primaryGoesToPage` — a series is explored, not played, so it gets no second `Details` button); anything
+  else shows **B4's** Playback placeholder and names the verb it WILL offer (`DetailCopy.nextUp`). Reusing B4's
+  two sentences is deliberate: a second "playback arrives later" wording is a second vocabulary for one fact.
+* **`PosterURL` gained the backdrop route** rather than a second builder — the same trap, the same clamp, the
+  same empty-id refusal, so the hero's 16:9 artwork goes through the same session-cookie path and the same log
+  line as every poster. ⚠ Both route words are string literals beginning `api/`, so **R4 checks both against
+  the frozen contract**.
+
+⚠ **And it costs a request:** `GET /api/library/items` exists purely for `pickHomeHero`'s LAST tier, so the
+Home now makes five small sequenced requests instead of two (`HomeStore.load`'s note). The alternative was to
+let the TV pick a hero the phone would not, which is a second implementation of a rule rather than one call.
 
 ### U4 — the third rail
 `Recently Added` — a new `HomeRailID` case, the third fetch in `HomeStore` (`GET /api/library`, whose response
 B1 already models as `LibraryRecentResponse`), and `HomeRules.recentlyAddedItems` wired where it was written to
 go. ⚠ `HomeRails`' comment says the third row *"lands with the rail it needs"* — this is that moment, and the
 snapshot/state tests exist to be extended, not replaced.
+
+⚠ **BUILT 2026-09-20.** The fetch itself landed in **U3** (the hero's second tier needs the same response), so
+U4 is the rail: the `HomeRailID` case, the third `rails` entry, its heading pinned against the web's literal
+words, the rail's own failure line in the footer, and the **one-sided exclusion** pinned by a test — the hero
+is taken out of Continue Watching and **never** out of Recently Added (a title can be both the hero and the
+newest thing in the library). ⚠ **`HomeRailLimit.recentlyAdded = 16` and `HomeRules.recentlyAddedItems` had
+been written, tested and UNUSED since B1** — this wired them rather than inventing a third number.
 
 ### U5 — his round, on the MacBook Pro
 A **screen** round, **without** `-RKMDebugHUD YES`. Falsifiers, written before the round rather than after:

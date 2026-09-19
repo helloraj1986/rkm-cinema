@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		A784EEC7305E5D0C006F5457 /* RKMServerKit in Frameworks */ = {isa = PBXBuildFile; productRef = A784EEC6305E5D0C006F5457 /* RKMServerKit */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		A7C635AE305E57D800037B23 /* RKMCinemaTV.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = RKMCinemaTV.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -23,6 +27,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A784EEC7305E5D0C006F5457 /* RKMServerKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -65,6 +70,7 @@
 			);
 			name = RKMCinemaTV;
 			packageProductDependencies = (
+				A784EEC6305E5D0C006F5457 /* RKMServerKit */,
 			);
 			productName = RKMCinemaTV;
 			productReference = A7C635AE305E57D800037B23 /* RKMCinemaTV.app */;
@@ -94,6 +100,9 @@
 			);
 			mainGroup = A7C635A5305E57D800037B23;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				A784EEC5305E5D0C006F5457 /* XCLocalSwiftPackageReference "../Shared" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = A7C635AF305E57D800037B23 /* Products */;
 			projectDirPath = "";
@@ -330,6 +339,20 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		A784EEC5305E5D0C006F5457 /* XCLocalSwiftPackageReference "../Shared" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../Shared;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		A784EEC6305E5D0C006F5457 /* RKMServerKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = RKMServerKit;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = A7C635A6305E57D800037B23 /* Project object */;
 }

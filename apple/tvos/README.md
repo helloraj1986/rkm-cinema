@@ -175,18 +175,19 @@ makes the next fix possible.
 ```bash
 python3 apple/scripts/check-tvos-models.py            # models + endpoints vs the frozen contract
 python3 apple/scripts/check-tvos-models.py --falsify  # 10 mutations, each must go red
-python3 apple/scripts/check-tvos-core.py              # RUNS the poster URL + the item models (swiftc)
-python3 apple/scripts/check-tvos-core.py --falsify    # 10 rules reverted, each must go red
-TMPDIR=/root/tmp bash apple/scripts/check-apple-typecheck.sh   # compiles the 8 portable files
+python3 apple/scripts/check-tvos-core.py              # RUNS the poster URL, the models + the Home rules
+python3 apple/scripts/check-tvos-core.py --falsify    # 18 rules reverted, each must go red
+TMPDIR=/root/tmp bash apple/scripts/check-apple-typecheck.sh   # compiles the 13 portable files
 python3 apple/scripts/check-imports.py apple/tvos/RKMCinemaTV  # missing framework imports
 bash apple/scripts/test-mac-round.sh                  # the round script, stubbed, 10 cases
 ```
 
-⚠ **`check-tvos-core.py` (Phase B) is not a duplicate of the typecheck — it EXECUTES.** `swiftc -parse`
-and even a clean compile prove nothing about behaviour, so `PosterURL.swift` and `LibraryModels.swift`
-are pure `Foundation` and are compiled **and run** against fixtures shaped like the real payloads (68
-checks). That is what makes the two silent Phase B failures visible here instead of on the TV: a poster
-URL that 404s, and a payload that cannot decode — both of which look exactly like an empty library.
+⚠ **`check-tvos-core.py` is not a duplicate of the typecheck — it EXECUTES.** `swiftc -parse` and even a
+clean compile prove nothing about behaviour, so `PosterURL.swift`, `LibraryModels.swift` and
+`HomeRails.swift` are pure `Foundation` and are compiled **and run** against fixtures shaped like the real
+payloads (119 checks across B1 and B2). That is what makes the silent failures visible here instead of on
+the TV: a poster URL that 404s, a payload that cannot decode, and a Home whose four states are wrong —
+all three of which look like nothing at all on a screen.
 
 ⚠ **Two of these have already caught real defects, and one of them is the argument for the pair:**
 
@@ -200,7 +201,8 @@ URL that 404s, and a payload that cannot decode — both of which look exactly l
 **And all four gates that matter have been falsified**, not just observed green:
 `check-tvos-models.py --falsify` reverts each rule and requires the matching check to fail (10/10 red,
 including the two Phase B rules R6/R7 against the frontend's own interfaces); `check-tvos-core.py
---falsify` does the same for the 10 rules the running harness pins; `test-mac-round.sh` asserts on the
+--falsify` does the same for the 18 rules the running harness pins (18/18 red — and it earned its keep on
+its first B2 run by finding a TAUTOLOGY in the harness itself); `test-mac-round.sh` asserts on the
 stubs' call log, and goes red against the previous revision of
 `mac-round.sh` on two separate faults: the truncating device-name extraction fails 2 of its 10 cases, and
 the hardcoded bundle id fails case J.

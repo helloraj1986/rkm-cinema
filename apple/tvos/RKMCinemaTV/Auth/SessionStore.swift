@@ -42,6 +42,13 @@ final class SessionStore: ObservableObject {
     let address: ServerAddress
     private let client: APIClient
 
+    /// ⚠ **The transport, shared with the library screens.** `HomeStore` fetches through THIS client rather
+    /// than building its own, so every request in the app goes through one `URLSession` and therefore one
+    /// cookie store — which is the whole reason the session cookie is available to the poster image
+    /// requests at all (`PosterLoader`). A second client with a second configuration is how an image ends
+    /// up unauthenticated while the JSON is fine.
+    var api: APIClient { client }
+
     @Published private(set) var signedInUser: SessionUser?
     @Published private(set) var currentProfile: SessionUser?
     @Published private(set) var onOwnProfile = true

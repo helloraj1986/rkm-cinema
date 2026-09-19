@@ -42,6 +42,13 @@ final class AppModel: ObservableObject {
 
     @Published private(set) var phase: Phase = .setup
     @Published private(set) var session: SessionStore?
+
+    /// ⚠ **The Home, owned here rather than by the view.** A profile switch changes whose library the
+    /// server will answer from, so the store has to be REBUILT (not merely reloaded) whenever the app
+    /// enters `.library` — a recycled store would keep rendering the previous profile's rows, which is the
+    /// one mistake this app's whole identity model exists to prevent. A view-owned store could not be
+    /// replaced on that transition.
+    @Published private(set) var home: HomeStore?
     @Published private(set) var storedValueWasInvalid = false
     @Published private(set) var setupError: String?
     @Published private(set) var isConnecting = false
@@ -169,7 +176,7 @@ final class AppModel: ObservableObject {
         switch outcome {
         case .signedIn:
             if session.profileSelected {
-                phase = .library
+                enterLibrary()
             } else {
                 phase = .profiles
                 _ = await session.loadProfiles(correlation: correlation)
@@ -187,7 +194,7 @@ final class AppModel: ObservableObject {
     func didSignIn() async {
         guard let session else { return }
         if session.profileSelected {
-            phase = .library
+            enterLibrary()
         } else {
             phase = .profiles
             _ = await session.loadProfiles()
@@ -196,6 +203,15 @@ final class AppModel: ObservableObject {
 
     /// After a successful profile switch.
     func didSelectProfile() {
+        enterLibrary()
+    }
+
+    /// ⚠ **Every path into `.library` goes through here, and there are three of them** (a launch that
+    /// already has a profile, a sign-in, and a profile switch). The store is REBUILT rather than reloaded
+    /// because the session's identity has changed and the rows belong to whoever is watching now — three
+    /// call sites setting `phase = .library` directly is how one of them eventually forgets.
+    private func enterLibrary() {
+        home = session.map { HomeStore(client: $0.api) }
         phase = .library
     }
 
@@ -207,6 +223,9 @@ final class AppModel: ObservableObject {
 
     func signOut() async {
         await session?.signOut()
+        // ⚠ Dropped, not kept: the rows in it belong to the session that just ended, and a store that
+        // survived a sign-out is one relaunch away from rendering the last viewer's Continue Watching.
+        home = nil
         phase = .signIn
     }
 
@@ -233,6 +252,9 @@ final class AppModel: ObservableObject {
     func changeServer() {
         unreachable = nil
         session = nil
+        // Same reason as sign-out: a different server is a different library, and the old rows must not
+        // survive the switch.
+        home = nil
         phase = .setup
         setupError = nil
         typedAddress = store.address?.displayString ?? typedAddress

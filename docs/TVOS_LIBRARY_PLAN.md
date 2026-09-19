@@ -117,11 +117,54 @@ the closest thing to a production-verified description this repo has.
      a pydantic `default_factory=list` is not a `default` in OpenAPI. The route always sends it; the
      contract does not promise it. `rows` is the coalescing accessor.
 
-### B2 — Home: two horizontally scrolling rows
-`/api/library/continue-watching` + `/recently-watched`. ⚠ Focus FIRST: a row is a 1-D focus path, the card
-grows on focus, the row scrolls to keep the focused card visible. ⚠ **No hover, no pointer** — everything
-the web app does on hover must be on focus or on a button. Progress bars + per-item state are what make
-this screen worth having; a bare poster wall is not.
+### B2 — Home: two horizontally scrolling rows *(built)*
+`/api/library/continue-watching` + `/recently-watched`, on the focus engine.
+
+* **`Core/HomeRails.swift`** (pure, **RUN**) — the Home's rules, **mirrored from the web app rather than
+  invented**: `useHomeRows.ts` + `lib.ts` are what the phone/tablet/desktop Homes already render, so the TV
+  cannot disagree with them about what "continue watching" means, what a card says underneath, or how long a
+  rail is. `HomeSnapshot` turns the two responses into the screen's four states (loading / content / empty /
+  failed), so the states are a value with tests instead of a tree of conditionals inside a `body`.
+  ⚠ **`isContinueWatching` delegates to `MediaItem.isResumable`** — the web predicate and the model's are the
+  same rule, and writing it twice is the defect this repo re-learns most often.
+* **`Core/LibraryAPI.swift`** (ported) — the two endpoints, so no view spells a path.
+* **`Core/HomeStore.swift`** (ported) — the two requests, and the `APIError` → sentence mapping. Sequential
+  on purpose (see its header: `async let` would put `self` in two child tasks and the strict-concurrency
+  fallout depends on a language mode this sandbox cannot reproduce).
+* **`Core/PosterLoader.swift`** (ported) — the artwork fetch, **and the answer to B1's open question**: it
+  logs, per poster, the HTTP status, the byte count, whether a **session cookie was attached**, and whether
+  the answer came from the cache. `AsyncImage` was rejected because it cannot log, and on a TV a poster wall
+  with no posters is indistinguishable from an empty library.
+* **`Home/HomeView.swift` · `Home/RailView.swift` · `Home/PosterCard.swift`** (SwiftUI, Mac-only) — the
+  screen, the rail and the card. Phase A's `SessionReadyView` placeholder is **deleted**, not kept beside
+  them: the session readout it carried is the Home header's now, and a second screen showing the same facts
+  is a second place for them to disagree.
+* ⚠⚠ **`Core/RailFocus.swift` WAS WRITTEN AND THEN DELETED, and that is the notable finding of this phase.**
+  The plan said "the row scrolls to keep the focused card visible", so a pure, tested file of rail
+  arithmetic (reveal offsets, index stepping, clamping) was built for it. It was removed before landing:
+  **tvOS's focus engine already scrolls an ancestor `ScrollView` to reveal the focused view**, so a
+  hand-rolled `offset(x:)` would run *in addition to* the platform's and produce a jitter bug that looks
+  like "the arrows are broken" and diagnoses as nothing. And because the claim could not be tested from this
+  sandbox (no tvOS SDK), the phase took the failure mode that is **visible and one line to fix** — if the
+  round shows a focused card going off the edge, add the offset deliberately — over one that is invisible
+  and fights the system. ⚠ `RailView`'s header records this, so the next session does not rebuild it.
+  **B3's 2-D grid is the genuinely different case** (column memory across rows is not free), and the plan is
+  right about that one.
+* ⚠ **Two defects the tests found in the code this phase was writing, both worth keeping:**
+  1. **The placeholder's state table had a hole.** Checking `allFailed` before `isEmpty` left the mixed case
+     (one row failed, the other honestly empty) rendering "Nothing to play yet" — a claim the app cannot
+     make, since half its answer never arrived. `rails.isEmpty && hasAnyFailure` fixes it, and the mixed case
+     is now a named check.
+  2. **A check was a TAUTOLOGY.** The rail headings were asserted against `HomeSnapshot.recentlyPlayedTitle`
+     — the same constant the mutation moved — so it stayed green. The falsification pass caught it; the
+     assertions now use the literal words. ⚠ **Copy is a rule and must be pinned against the words, never
+     against itself.**
+* ⚠ **`AppModel.swift` was added to the typecheck list** — it decides which screen the app is on and nothing
+  compiled it here until now. It passes.
+* ⚠ **New copy, marked as such in the code:** the per-row failure sentences, the all-rows-failed screen and
+  the empty-library screen. The web Home has no per-row failure state (a failed query collapses the page
+  into its "no media server connected" screen, which is a *configuration* sentence) and renders nothing at
+  all for an empty library — which on a TV with nothing else on it reads as a fault.
 
 ### B3 — Browse: the 2-D focus grid
 `/api/library/folders` → a folder → `/folders/{id}/items`. ⚠ The focus engine's hard case: the grid needs
@@ -151,8 +194,9 @@ Backend changes (none — that is B0's decision) · the player (Phase C) · the 
 | Hand-write the models with no gate | The one phase made of nothing but field names would have no wire-format check at all — and §1 shows a second source exists, so this would be choosing blindness. |
 
 ## §6 — Gates for this branch
-`check-tvos-models.py` (incl. `--falsify`, 10/10) · ⚠ **`check-tvos-core.py` (incl. `--falsify`, 10/10) —
-the one that RUNS the models and the poster URL** · `check-apple-typecheck.sh` (incl. the two new portable
-files, 8 total) · `check-imports.py` · `check_md_links.py`. **No frontend/backend gate is claimed on this
-branch** unless a frontend/backend file actually changes — saying so is the point. (The frontend's
-`client.ts` is *read* by R6/R7 as a shape source; it is not modified, so no `vitest` run is claimed.)
+`check-tvos-models.py` (incl. `--falsify`, **10/10**) · ⚠ **`check-tvos-core.py` (incl. `--falsify`,
+**18/18**) — the one that RUNS the models, the poster URL and the Home's own rules (119 checks)** ·
+`check-apple-typecheck.sh` (incl. the thirteen portable files) · `check-imports.py` (23 Swift files) ·
+`check_md_links.py`. **No frontend/backend gate is claimed on this branch** unless a frontend/backend file
+actually changes — saying so is the point. (The frontend's `client.ts` is *read* by R6/R7 as a shape source;
+it is not modified, so no `vitest` run is claimed.)

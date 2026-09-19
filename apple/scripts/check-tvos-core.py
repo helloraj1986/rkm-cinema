@@ -49,6 +49,10 @@ TVOS = REPO / "apple" / "tvos" / "RKMCinemaTV"
 PURE_SOURCES = [
     TVOS / "Core" / "Models" / "LibraryModels.swift",
     TVOS / "Core" / "PosterURL.swift",
+    # Phase B2 — the Home's rules and its state table. Pure `Foundation` + each other, which is why they can
+    # be executed here: `HomeStore` and `LibraryAPI` are NOT in this list (they import `RKMServerKit`), and
+    # that is the split the phase is built on — every DECISION is runnable, only I/O is not.
+    TVOS / "Core" / "HomeRails.swift",
 ]
 
 HARNESS = REPO / "apple" / "scripts" / "tvos-core-tests" / "main.swift"
@@ -79,13 +83,13 @@ MUTATIONS = [
     ("the optional thumb", "LibraryModels.swift",
      "let thumb: String?", "let thumb: String",
      "a missing thumb does not fail the decode"),
-    # ⚠ `playbackPosition` is deliberately NOT the target here: this file uses it with `??` and
-    # `guard let`, so making it non-optional is not valid Swift and the mutation cannot compile — a
-    # mutation that cannot compile proves nothing, so it must not be listed as if it did.
-    # `year` is read but never unwrapped, so removing ITS optionality is a clean test of the rule that
-    # an optional key must tolerate absence.
+    # ⚠ `playbackPosition` and `year` are deliberately NOT the target here: this code unwraps both (`??`,
+    # `map`) and makes them load-bearing, so removing their optionality is not valid Swift and the mutation
+    # cannot compile. A mutation that cannot compile proves nothing, so it must not be listed as if it did.
+    # `genres` is declared and never unwrapped, so it is a clean test of the rule that an optional key must
+    # tolerate absence.
     ("an optional key made required", "LibraryModels.swift",
-     "let year: Int?", "let year: Int",
+     "let genres: [String]?", "let genres: [String]",
      "a row with nothing but title and id still reads"),
     ("the progress claim", "LibraryModels.swift",
      "guard let runtime, runtime > 0, let position = playbackPosition, position > 0 else { return nil }",
@@ -102,6 +106,34 @@ MUTATIONS = [
     ("the folder-id requirement", "LibraryModels.swift",
      "let folderID: String\n", "let folderID: String?\n",
      "a folder payload without a folder id is refused"),
+    # ---- B2: the Home's rules and its state table
+    ("the continue-watching rule", "HomeRails.swift",
+     "item.isResumable", "true",
+     "only in-progress or played rows WITH an id are Continue Watching"),
+    ("the Recently Played cap", "HomeRails.swift",
+     "prefix(HomeRailLimit.recentlyPlayed)", "prefix(HomeRailLimit.recentlyAdded)",
+     "the Recently Played rail caps at 14"),
+    ("the Recently Added id filter", "HomeRails.swift",
+     "Array((items ?? []).filter { !$0.itemID.isEmpty }.prefix(HomeRailLimit.recentlyAdded))",
+     "Array((items ?? []).prefix(HomeRailLimit.recentlyAdded))",
+     "the Recently Added rail drops a row with no id"),
+    ("the empty-vs-failed order", "HomeRails.swift",
+     "        if rails.isEmpty && hasAnyFailure { return (Self.allFailedTitle, Self.allFailedSub) }",
+     "        if allFailed { return (Self.allFailedTitle, Self.allFailedSub) }",
+     "with nothing to show, a failed row takes the screen rather than claiming the library is empty"),
+    ("the Recently Played heading", "HomeRails.swift",
+     'static let recentlyPlayedTitle = "Recently Played"',
+     'static let recentlyPlayedTitle = "Recently played"',
+     "the Recently Played rail has the web app's own heading"),
+    ("the meta line's separator", "HomeRails.swift",
+     '        .joined(separator: " · ")', '        .joined(separator: ", ")',
+     "a film reads year · runtime"),
+    ("the runtime floor", "HomeRails.swift",
+     'return "\\(max(1, minutes))m"', 'return "\\(minutes)m"',
+     "a runtime under a minute still reads 1m, never 0m"),
+    ("the transport sentence", "HomeRails.swift",
+     'return "Couldn\'t reach the server."', 'return "Error."',
+     "a transport failure says the server was not reached"),
 ]
 
 

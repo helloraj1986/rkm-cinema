@@ -323,6 +323,146 @@ checkEqual(decodeItem(#"{ "title": "S", "item_id": "" }"#)?.isResumable, false,
 check(decodeItem(#"{ "item_id": "x" }"#) == nil, "an absent title is refused — the shape promises one")
 check(decodeItem(#"{ "title": "S" }"#) == nil, "an absent id is refused — the shape promises one")
 
+// MARK: - The Home's rules (Phase B2)
+
+section("the home rules")
+
+/// ⚠ A helper that builds a real item by DECODING it, not by a memberwise init — so a fixture can never
+/// describe a shape the wire does not produce.
+func item(_ id: String, _ extra: String = "") -> MediaItem? {
+    decodeItem("{\"title\": \"Title \(id)\", \"item_id\": \"\(id)\"\(extra)}")
+}
+
+let manyRows = (1...20).compactMap { item("id\($0)") }
+checkEqual(HomeRules.recentlyPlayedItems(manyRows).count, 14, "the Recently Played rail caps at 14")
+checkEqual(HomeRules.recentlyAddedItems(manyRows).count, 16, "the Recently Added cap is 16, not 14")
+
+// ⚠ His rule, and the one a wrong implementation gets silently wrong: an in-progress OR played row with a
+// real id is Continue Watching. A row with no id cannot be opened, so it is not.
+let cwCandidates = [
+    item("a", ", \"playback_position\": 60, \"runtime\": 600"),
+    item("b", ", \"played\": true"),
+    item("c", ", \"playback_position\": 0"),
+    item("", ", \"playback_position\": 30"),
+    item("d"),
+].compactMap { $0 }
+checkEqual(HomeRules.continueWatchingItems(cwCandidates).map(\.itemID), ["a", "b"],
+           "only in-progress or played rows WITH an id are Continue Watching")
+checkEqual(HomeRules.continueWatchingItems(nil).count, 0, "no payload is no rows, not a crash")
+checkEqual(HomeRules.continueWatchingItems(cwCandidates).first?.title, "Title a",
+           "the rows keep the server's order, which is newest first")
+
+// ⚠ The two rails are filtered differently ON PURPOSE (the web app's asymmetry, mirrored): Recently Played
+// is only capped, Recently Added is capped AND id-filtered.
+checkEqual(HomeRules.recentlyAddedItems([item("x"), item("")].compactMap { $0 }).count, 1,
+           "the Recently Added rail drops a row with no id")
+checkEqual(HomeRules.recentlyPlayedItems([item("x"), item("")].compactMap { $0 }).count, 2,
+           "…while Recently Played is passed through (the card, not the rule, refuses the dead row)")
+
+section("the card's meta line")
+
+// ⚠ The ONLY text a viewer can read at three metres, and the rule that decides it is the web app's
+// (`lib.ts::cardMetaLine`) — a TV reading "2021 · TV · 3 plays" where the laptop reads "2021 · TV" is a
+// second vocabulary for one card.
+checkEqual(HomeRules.cardMetaLine(movie!), "1975 · 2h", "a film reads year · runtime")
+checkEqual(HomeRules.cardMetaLine(item("s", ", \"type\": \"tv\", \"year\": 2021, \"play_count\": 3")!), "2021 · TV · 3 plays",
+           "a series reads year · TV · plays")
+checkEqual(HomeRules.cardMetaLine(episode!), "S1E3 · Some Show", "an episode reads S1E3 · series name")
+checkEqual(HomeRules.cardMetaLine(item("n", ", \"runtime\": 2700")!), "45m",
+           "a missing year leaves no leading separator")
+checkEqual(HomeRules.cardMetaLine(item("u", ", \"year\": 2020")!), "2020",
+           "a missing runtime leaves no trailing separator")
+checkEqual(HomeRules.cardMetaLine(item("p", ", \"year\": 2001, \"play_count\": 1")!), "2001",
+           "one play says nothing, so it is not shown")
+checkEqual(HomeRules.episodeItemCode(episode!), "S1E3", "an episode's code is S<season>E<number>")
+checkEqual(HomeRules.episodeItemCode(movie!), nil, "a film has no episode code")
+
+section("runtime text")
+
+checkEqual(HomeRules.runtimeText(nil), "", "an unknown runtime says nothing")
+checkEqual(HomeRules.runtimeText(0), "", "a zero runtime says nothing")
+checkEqual(HomeRules.runtimeText(1), "1m", "a runtime under a minute still reads 1m, never 0m")
+checkEqual(HomeRules.runtimeText(45), "1m", "45 seconds rounds up to a minute")
+checkEqual(HomeRules.runtimeText(2700), "45m", "an hour-less runtime reads in minutes")
+checkEqual(HomeRules.runtimeText(3600), "1h", "an exact hour drops the minutes")
+checkEqual(HomeRules.runtimeText(7500), "2h 5m", "hours and minutes together")
+
+// MARK: - The Home screen's states (Phase B2)
+
+section("the home screen's states")
+
+let cwRow = item("cw", ", \"playback_position\": 60, \"runtime\": 600")!
+let playedRow = item("rp", ", \"played\": true")!
+
+let nothing = HomeSnapshot.make(continueWatching: .loaded([]), recentlyPlayed: .loaded([]))
+checkEqual(nothing.rails.count, 0, "an empty library renders no rails")
+checkEqual(nothing.isEmpty, true, "…and says so")
+checkEqual(nothing.allFailed, false, "an empty library is NOT a failure")
+// ⚠⚠ THE LITERALS HERE ARE THE POINT. An earlier draft compared these against `HomeSnapshot.emptyTitle`
+// and so on — a TAUTOLOGY: mutating the constant moved both sides and the check stayed green, which the
+// falsification pass caught. The copy is a rule; it is pinned against the words, not against itself.
+checkEqual(nothing.placeholder?.title, "Nothing to play yet", "the empty state has its own sentence")
+
+let content = HomeSnapshot.make(continueWatching: .loaded([cwRow]), recentlyPlayed: .loaded([playedRow]))
+checkEqual(content.rails.map(\.id), [.continueWatching, .recentlyPlayed],
+           "Continue Watching comes first, then Recently Played")
+checkEqual(content.rails.first?.title, "Continue Watching",
+           "the Continue Watching rail has the web app's own heading")
+checkEqual(content.rails.last?.title, "Recently Played",
+           "the Recently Played rail has the web app's own heading")
+check(content.placeholder == nil, "a screen with content has no placeholder")
+
+let oneEmpty = HomeSnapshot.make(continueWatching: .loaded([]), recentlyPlayed: .loaded([playedRow]))
+checkEqual(oneEmpty.rails.map(\.id), [.recentlyPlayed],
+           "a row that is empty does not render an empty band")
+check(oneEmpty.placeholder == nil, "one working row is still a screen")
+
+let oneFailed = HomeSnapshot.make(continueWatching: .failed("boom"), recentlyPlayed: .loaded([playedRow]))
+checkEqual(oneFailed.rails.count, 1, "a failed row does not take a working one with it")
+checkEqual(oneFailed.failedRowTitles, [HomeSnapshot.continueWatchingTitle],
+           "…and the failure is named so it is not silent")
+checkEqual(oneFailed.allFailed, false, "one failure is not two")
+check(oneFailed.placeholder == nil, "a failed row does not blank a screen that has content")
+
+// ⚠⚠ THE MIXED CASE, and the reason `placeholder` checks `rails.isEmpty && hasAnyFailure` rather than
+// `allFailed`: one row failed and the other honestly answered "nothing". Falling through to the empty
+// sentence would tell the viewer "Nothing to play yet" while half the answer never arrived.
+let mixed = HomeSnapshot.make(continueWatching: .loaded([]), recentlyPlayed: .failed("boom"))
+checkEqual(mixed.isEmpty, false, "a failure is not an empty library")
+checkEqual(mixed.placeholder?.title, "Couldn't load your library",
+           "with nothing to show, a failed row takes the screen rather than claiming the library is empty")
+
+let bothFailed = HomeSnapshot.make(continueWatching: .failed("a"), recentlyPlayed: .failed("b"))
+checkEqual(bothFailed.allFailed, true, "both rows failed")
+checkEqual(bothFailed.rails.count, 0, "…so there are no rails")
+checkEqual(bothFailed.failedRowTitles.count, 2, "…and both are named")
+checkEqual(bothFailed.placeholder?.title, "Couldn't load your library", "…and the failure takes the screen")
+
+// ⚠ The value the store starts from. Not asked is NOT failed — otherwise every launch would flash an
+// error sentence before the first byte arrives.
+checkEqual(HomeSnapshot.empty.allFailed, false, "the starting snapshot is empty, never failed")
+checkEqual(HomeSnapshot.make(continueWatching: .loaded([]), recentlyPlayed: .loaded([])).placeholder?.sub,
+           "Titles appear here as the library is watched and added.", "the empty state explains itself")
+
+section("what a failed row says")
+
+checkEqual(HomeRowFailure.message(for: .transport), "Couldn't reach the server.",
+           "a transport failure says the server was not reached")
+checkEqual(HomeRowFailure.message(for: .unauthorized), "Your session needs signing in again.",
+           "a 401 names the session, not a sign-out")
+checkEqual(HomeRowFailure.message(for: .forbidden), "This profile isn't allowed to see that.",
+           "a 403 names the profile")
+checkEqual(HomeRowFailure.message(for: .server(500)), "The server answered 500.",
+           "another status carries the number the server sent")
+checkEqual(HomeRowFailure.message(for: .decoding), "The server's answer couldn't be read.",
+           "a decode failure says the answer could not be read")
+
+let everyKind: [RowFailureKind] = [.transport, .unauthorized, .forbidden, .server(502), .decoding, .unknown]
+let sentences = everyKind.map(HomeRowFailure.message(for:))
+check(sentences.allSatisfy { !$0.isEmpty && $0.hasSuffix(".") },
+      "every failure kind is a whole sentence")
+checkEqual(Set(sentences).count, everyKind.count, "and no two kinds share a sentence")
+
 // MARK: - Report
 
 print("")

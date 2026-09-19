@@ -44,6 +44,21 @@ enum RKMColour {
     static let warning = DesignTokens.Colour.warning.color
     static let danger = DesignTokens.Colour.danger.color
 
-    // ---- the one tvOS-only colour
+    // ---- the tvOS-only colours (each with its reason in `TVTokens.Colour`)
     static let muted = TVTokens.Colour.textMuted.color
+    static let avatarTop = TVTokens.Colour.avatarTop.color
+    static let avatarBottom = TVTokens.Colour.avatarBottom.color
+    static let profileGlow = TVTokens.Colour.profileGlow.color
+    static let topBarTint = TVTokens.Colour.topBarTint.color
+
+    /// The avatar circle both screens draw — the Profile Switcher's tile and the top bar's button, so the
+    /// same person's initials sit on the same gradient wherever they appear.
+    ///
+    /// ⚠ A `LinearGradient` and not a flat fill: it is the one place in either screen where the app draws a
+    /// lit surface rather than a token colour, and it is the prototype's (`160deg`).
+    static let avatarGradient = LinearGradient(
+        colors: [avatarTop, avatarBottom],
+        startPoint: .top,
+        endPoint: .bottom
+    )
 }

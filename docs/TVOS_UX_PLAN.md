@@ -357,6 +357,48 @@ is taken out of Continue Watching and **never** out of Recently Added (a title c
 newest thing in the library). ⚠ **`HomeRailLimit.recentlyAdded = 16` and `HomeRules.recentlyAddedItems` had
 been written, tested and UNUSED since B1** — this wired them rather than inventing a third number.
 
+### U6 — match the prototype *(added 2026-09-20, after he saw the first build)*
+
+⚠ **His words:** *"can you improve the UX, as per the html given to you — the current one doesn't even look
+like what is seen in the html."* He is right, and the reason is measurable: U2/U3 took the buildspec's
+**words** but kept the app's existing **geometry**, so the screens matched the plan's §1a table and not the
+prototype he actually drew.
+
+⚠⚠ **THE FIX IS THE PROTOTYPE'S OWN SCALE, NOT A SET OF HAND-CONVERTED NUMBERS.** Every size in
+`rkm-cinema-tvos-concept.html` derives from `--u: 1cqw` — one percent of the screen's width — so adopting
+`TVTokens.u = 19.2 pt` (tvOS renders in a fixed 1920 × 1080 point space) makes every value in the TV app
+readable against a line of his HTML, and keeps the two screens from drifting apart. **The metrics now live in
+`TVTokens.Hero` / `.Bar` / `.Shelf` / `.Profile` / `.Metric`, each transcribed as `u * <the number in the
+file>`.**
+
+What actually changed on screen:
+
+| | Before U6 (from §1a's table) | After U6 (the prototype) |
+|---|---|---|
+| **Card** | 2:3 poster, 260 pt wide | **16:9 keyart, `19u` (365 pt)**, `0.7u` radius, badge top-left, gold play chrome bottom-right, progress bar along the artwork's bottom edge |
+| **Card subtitle** | meta line under the art | unchanged — the web's own `cardMetaLine` (year · runtime / `S1E3 · Series`) |
+| **Artwork route** | `poster` (2:3) | **`backdrop` (16:9), with a one-step fall back to the poster** (`PosterLoader.fallBackToPoster`) — a poster-only library would otherwise be a wall of "no photo" marks |
+| **Hero** | 460 pt, title 68, eyebrow 16 | **`32u` (614 pt)**, copy bottom-aligned, title `3.6u` (69) weight 800 capped at 60 %, eyebrow `1u` bold gold, meta `1.05u`, bar `26u × 0.35u`, gold primary + 12 %-white secondary |
+| **Top bar** | glass, 26 pt brand, `.bordered` tabs | **`.regularMaterial` under the prototype's `--glass-strong` tint**, `RKM·CINEMA` wordmark at weight 800 with its gold dot, `1.05u` tabs with the **focused tab inverted to black-on-gold**, `2.6u` circle buttons and the gradient avatar |
+| **Profile screen** | centred row, flat `surface3` avatars, 54 pt title | **the prototype's own light**: a `profileGlow` radial over `--bg`, title at `4.4u` (84), `10.4u` gradient avatars (`#2A2A2E → #161618`) with `3.4u` gold-bright initials, a `2.2u` lock badge with a black ring, `0.72` unfocused / `1.14` + `-0.3u` focused, and the pill row at `1.05u` |
+| **Shelves** | 42 pt between rows, 32 pt heading | **`2u` between sections, `1.5u` bold heading, `1.3u` card gap, `4.2u` insets** — and that same `4.2u` is now the app's margin everywhere |
+| **Motion** | `.easeOut(0.15)` | the prototype's own curves: `cubic-bezier(.2,.9,.3,1)` at `0.28s` for tiles, `ease-out 0.2s` for tabs, CTA and icons |
+
+⚠ **THREE THINGS THAT ARE STILL DELIBERATELY NOT PORTED, each with its reason:**
+* **the prototype's JavaScript.** It hand-rolls nearest-neighbour up/down focus (lines 546-561) and calls
+  `scrollIntoView` on every focus move (line 518). tvOS's focus engine does both — `RailFocus.swift` was
+  deleted for the first and B3's `LazyVGrid` got the second free — so porting them would be the third time
+  this repo pays for the same mistake. **F4** is the falsifier that keeps us honest.
+* **the Search icon and the `Watchlist` / `Discover` / `Suggest` tabs.** Those screens do not exist on tvOS
+  yet (§5), and a control whose every press must be refused is the fault `docs/ARCHITECTURE.md` §11 names.
+* **the prototype's `S1·E3` badge spelling.** The badge uses the app's own `episodeItemCode` (`S1E3`) because
+  the card prints `S1E3 · Series name` underneath it — `S1·E3` above and `S1E3` below would be two spellings
+  of one code on one card. ⚠ One line to change if he wants the dot; say so rather than let it drift.
+
+⚠ **One thing the prototype adds that this phase did NOT build:** the hero's slow background drift
+(`@keyframes drift`, 26 s). It needs real artwork behind it and Reduce Motion handling, and it is exactly the
+"ambient motion" the buildspec §1 asks for — Phase D polish, recorded so it is not mistaken for an oversight.
+
 ### U5 — his round, on the MacBook Pro
 A **screen** round, **without** `-RKMDebugHUD YES`. Falsifiers, written before the round rather than after:
 

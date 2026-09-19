@@ -269,6 +269,72 @@ def check_calls(root: pathlib.Path) -> list[str]:
     return problems
 
 
+#: ⚠⚠ RULE 3 — the STATIC NAMESPACES. `HomeRules.badgeText`, `TVTokens.Shelf.cardWidth`, `RKMColour.accent`.
+#: A typo in one of these is the same family of compile error as a missing member, and after U6 the token
+#: tables are the most hand-typed names in the app (≈150 new references in one phase).
+NAMESPACES = ("HomeRules", "ProfileRules", "BrowseRules", "DetailRules", "PosterURL", "DesignTokens", "TVTokens",
+              "RKMColour", "LibraryIcon", "DetailCopy", "HomeSnapshot", "HomeRowFailure", "HomeStore",
+              "BrowseStore", "DetailStore", "SessionStore", "AppModel", "AppLog", "ServerDefaults",
+              "LibraryAPI", "RequestURL")
+
+
+def namespace_members(root: pathlib.Path, namespace: str, cache: dict) -> set[str]:
+    """Every name declared in the file that declares `namespace` — nested types, statics, computed properties.
+
+    ⚠ ANY depth, unlike rule 1: `TVTokens.Shelf.cardWidth` is a static inside a NESTED enum, and a
+    depth-1-only scan would report every one of those as missing.
+    """
+    if namespace in cache:
+        return cache[namespace]
+    declaring = None
+    for path in sorted(root.rglob("*.swift")):
+        if ".build" in path.parts:
+            continue
+        if re.search(rf"^(?:public\s+|final\s+)*(?:enum|struct|class|extension)\s+{namespace}\b",
+                     path.read_text(encoding="utf-8"), re.M):
+            declaring = path
+            break
+    if declaring is None:
+        raise ValueError(f"no file declares {namespace} — the table is stale")
+    names: set[str] = set()
+    for line in declaring.read_text(encoding="utf-8").splitlines():
+        if line.lstrip().startswith("//"):
+            continue
+        for pattern in (r"^\s*(?:@\w+(?:\([^)]*\))?\s+)*(?:public\s+|internal\s+|private\s*\(set\)\s+|private\s+|fileprivate\s+|static\s+|final\s+)*(?:let|var|func|enum|struct|class|typealias|case)\s+([A-Za-z_][A-Za-z0-9_]*)",
+                        r"^\s*(?:public\s+|internal\s+|private\s+|fileprivate\s+)*enum\s+([A-Za-z_][A-Za-z0-9_]*)"):
+            found = re.match(pattern, line)
+            if found and not line.strip().startswith("//"):
+                names.add(found.group(1))
+    cache[namespace] = names
+    return names
+
+
+def check_namespaces(root: pathlib.Path) -> list[str]:
+    """⚠ Every `<Namespace>.<member>` a tvOS source names must be declared by that namespace's file."""
+    problems: list[str] = []
+    cache: dict = {}
+    for path in sorted(root.rglob("*.swift")):
+        if ".build" in path.parts:
+            continue
+        text = path.read_text(encoding="utf-8")
+        for number, line in enumerate(text.splitlines(), start=1):
+            if line.lstrip().startswith("//"):
+                continue
+            for namespace in NAMESPACES:
+                # ⚠ Skip `extension Foo` / `enum Foo` declarations, which are not member uses.
+                declared = re.search(rf"(?:enum|struct|class|extension)\s+{namespace}\b", line)
+                for match in re.finditer(rf"\b{namespace}\.([A-Za-z_][A-Za-z0-9_]*)", line):
+                    if declared and match.start() >= declared.start():
+                        continue
+                    member = match.group(1)
+                    if member not in namespace_members(root, namespace, cache):
+                        problems.append(
+                            f"{path.relative_to(root)}:{number}: `{namespace}.{member}` — {namespace} does "
+                            f"not declare '{member}'"
+                        )
+    return problems
+
+
 def check(root: pathlib.Path) -> list[str]:
     problems: list[str] = []
     cache: dict[str, set[str]] = {}
@@ -340,13 +406,22 @@ def selftest() -> int:
             failures.append("it fires on the REAL tree, so its red above proved nothing")
         if check_calls(TVOS):
             failures.append("rule 2 fires on the REAL tree, so its red above proved nothing")
+        if check_namespaces(TVOS):
+            failures.append("rule 3 fires on the REAL tree, so its red above proved nothing")
+
+        # Rule 3: a static-namespace member that does not exist.
+        hero = scratch / "Home" / "HeroBand.swift"
+        hero.write_text(hero.read_text(encoding="utf-8")
+                        + "\nlet scratchBad4 = HomeRules.heroEyebrows\n", encoding="utf-8")
+        if not any("heroEyebrows" in problem for problem in check_namespaces(scratch)):
+            failures.append("it did not fire on `HomeRules.heroEyebrows` — a member that does not exist")
 
     if failures:
         print("SELFTEST FAILED — the members gate does not do what its header claims:")
         for line in failures:
             print(f"  · {line}")
         return 1
-    print("selftest: fires on the member defect and on a wrong call label, stays silent on real ones.")
+    print("selftest: fires on all three defects (member, call label, static name), stays silent on the real tree.")
     return 0
 
 
@@ -363,7 +438,7 @@ def main(argv: list[str]) -> int:
         return selftest()
 
     try:
-        problems = check(TVOS) + check_calls(TVOS)
+        problems = check(TVOS) + check_calls(TVOS) + check_namespaces(TVOS)
     except (FileNotFoundError, ValueError) as error:
         print(f"cannot run: {error}", file=sys.stderr)
         return 2
@@ -375,10 +450,10 @@ def main(argv: list[str]) -> int:
         return 1
     print(f"PASS — {len(USES)} view/type pair(s) checked: every member a view names exists on its model, "
           f"and every call to one of the {len(VIEW_TYPES)} app view/type names uses a label it takes.")
-    print("⚠ Not covered: TYPES (a value of the wrong type still needs the compiler), argument ORDER,")
-    print("  any file or type not listed in USES/VIEW_TYPES, and behaviour. Two rules, both aimed at the")
-    print("  class of mistake that has already cost a round: a member a view names that its model lacks,")
-    print("  and a call using a label its own type does not take.")
+    print(f"⚠ Not covered: TYPES (a value of the wrong type still needs the compiler), argument ORDER, and")
+    print("  behaviour. THREE rules, all aimed at the class of mistake that has already cost a round:")
+    print("  a member a view names that its model lacks; a call using a label its own type does not take;")
+    print("  and a static-namespace name (HomeRules.*, TVTokens.* …) that is not declared anywhere.")
     return 0
 
 

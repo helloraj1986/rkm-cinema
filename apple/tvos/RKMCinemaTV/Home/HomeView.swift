@@ -87,18 +87,22 @@ struct HomeView: View {
     }
 
     private var topBarTabs: [TopBarTab] {
+        // ⚠ The prototype marks the tab you are on (`[aria-current="true"]` → white and semibold). On this
+        // screen that is always `Home`; a library tab the viewer has not entered cannot be current here.
         var tabs: [TopBarTab] = [
-            TopBarTab(id: "home", title: "Home", isEnabled: true, warning: "", action: { app.showHome() }),
+            TopBarTab(id: "home", title: "Home", isCurrent: true, isEnabled: true, warning: "",
+                      action: { app.showHome() }),
         ]
 
         let entries = store.snapshot.navEntries
         if entries.isEmpty {
-            tabs.append(TopBarTab(id: "browse", title: "Browse", isEnabled: true, warning: "",
+            tabs.append(TopBarTab(id: "browse", title: "Browse", isCurrent: false, isEnabled: true, warning: "",
                                   action: { app.showBrowse() }))
         } else {
             tabs.append(contentsOf: entries.map { entry in
                 TopBarTab(id: entry.id,
                           title: entry.name,
+                          isCurrent: false,
                           // ⚠ An unresolved library keeps its tab and its warning and simply cannot be
                           // selected — `BrowseRules`' rule, on the top bar as well as in Browse.
                           isEnabled: entry.isOpenable,
@@ -143,7 +147,10 @@ struct HomeView: View {
 
     private var content: some View {
         ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 42) {
+            // ⚠ `2u` between sections and a `3u` tail, both the prototype's (`.shelf { padding: 2u 0 0 }`,
+            // `.tv-scroll { padding-bottom: 3u }`) — a shelf that ends flush against the screen edge reads as
+            // cropped.
+            VStack(alignment: .leading, spacing: TVTokens.u * 2) {
                 if let hero = store.snapshot.hero {
                     HeroBand(item: hero,
                              isContinueWatching: store.snapshot.heroIsContinueWatching,
@@ -156,10 +163,10 @@ struct HomeView: View {
                     RailView(rail: rail, base: base, onSelect: open)
                 }
             }
-            // ⚠ The hero is edge-to-edge and the rails keep the safe margin: the band's artwork is meant to
-            // bleed, and `RailView`/`HeroBand` own their own horizontal padding (both read
-            // `TVTokens.Metric.safeMargin`).
-            .padding(.bottom, 10)
+            // ⚠ The hero is edge-to-edge and the shelves keep the screen margin: the band's artwork is meant
+            // to bleed, and `RailView`/`HeroBand` own their own horizontal padding (both read
+            // `TVTokens.Metric.safeMargin` / the prototype's `4.2u`).
+            .padding(.bottom, TVTokens.u * 3)
         }
     }
 

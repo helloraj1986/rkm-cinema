@@ -1,122 +1,127 @@
 import SwiftUI
 import UIKit
 
-/// One poster card: the picture, its type badge, the resume bar, the title, and the one meta line.
+/// One card in a shelf — the prototype's `.card`.
 ///
-/// ⚠⚠ **NOTHING HERE IS ON HOVER.** The web card reveals Play/Details on hover and shows the ⋯ menu on
-/// hover; a TV has neither. So the card is a plain `Button` — **Select opens the title** — and every state
-/// the web expresses on hover becomes a FOCUS state drawn by the button style. That is the whole design in
-/// one sentence, and it is why this card is much smaller than `MediaCard.tsx`.
+/// ⚠⚠ **U6 REBUILT THIS FROM THE PROTOTYPE, AND THE SHAPE WAS THE BIGGEST DIFFERENCE: the art is 16:9, not
+/// the 2:3 poster this card used to carry.** The prototype's `.card-art { aspect-ratio: 16/9 }` at a
+/// `19u` (~365 pt) card width is what gives the Home its dense, cinematic shelves instead of a row of tall
+/// posters — his words after the first build: *"the current one doesn't even look like what is seen in the
+/// html"*. The artwork now comes from the **backdrop** route, with a ONE-STEP fall back to the poster when an
+/// item has no keyart (`PosterLoader.fallBackToPoster`), because a poster-only library would otherwise be a
+/// wall of "no photo" marks.
+///
+/// ⚠⚠ **NOTHING HERE IS ON HOVER.** The web card reveals Play/Details on hover; a TV has neither. So the card
+/// is one `Button` — **Select opens the title** — and every state the web expresses on hover becomes a FOCUS
+/// state drawn by the button style (`.card`, the platform's own treatment: buildspec §5 asks for exactly that
+/// rather than a hand-rolled scale/glow).
+///
+/// ⚠ **THE PLAY GLYPH IS DECORATIVE, AND THAT IS THE PROTOTYPE'S OWN SHAPE.** `.card-play` in his file is a
+/// `<span>` INSIDE the card button — it is chrome on the artwork, not a control, and the whole card is the
+/// target. So it is drawn (a viewer pressing it gets the card's action, exactly as in the prototype) and
+/// hidden from VoiceOver, because the card's accessible name already says what Select does. ⚠ It does NOT
+/// promise playback: the tvOS player is Phase C, and the detail screen is where the app says so.
 ///
 /// ⚠ It carries **no watched control**, matching the web rule his decision fixed on 2026-09-18: the poster
-/// REFLECTS status and the details screen OWNS the watched toggle. B2 has no details screen yet, so for now
-/// the card shows the played state and offers no way to change it — which is correct, not incomplete.
-///
-/// ⚠⚠ **PHASE U3 ADDED THE TYPE BADGE AND DELIBERATELY NOT THE PLAY GLYPH.** The buildspec's §4 card has
-/// "an episode/type badge (`S2·E4`, `MOVIE`), a play glyph, an optional progress bar". The badge is here, its
-/// CONTENT is the web app's own rule (`MediaCard.tsx`: the episode code when there is one, otherwise the
-/// tv/film glyph — `HomeRules.typeIcon`, not the buildspec's word badge, because a word badge here and a glyph
-/// on the phone is a second vocabulary for one fact). **The play glyph is NOT here:** nothing plays yet
-/// (Phase C), and a play triangle that does nothing is the control `docs/ARCHITECTURE.md` §11 forbids. It
-/// lands with the player, on the day the gesture means something.
+/// REFLECTS status and the details screen OWNS the watched toggle.
 struct PosterCard: View {
 
     let item: MediaItem
     let base: URL
     let onSelect: (MediaItem) -> Void
 
-    /// ⚠ The web card's own dimensions, as a ratio rather than two numbers: a poster is 2:3 everywhere, and
-    /// 260pt wide is what fits four-and-a-bit across a 1920pt TV at the rail's spacing.
-    private static let width: CGFloat = 260
-    private static let aspect: CGFloat = 2.0 / 3.0
+    /// ⚠ The prototype's `flex: 0 0 19u` — one number, in the prototype's own unit (`TVTokens.Shelf`).
+    private static var width: CGFloat { TVTokens.Shelf.cardWidth }
+    /// ⚠ `.card-art { aspect-ratio: 16/9 }`.
+    private static let aspect: CGFloat = 9.0 / 16.0
 
     var body: some View {
         Button {
             onSelect(item)
         } label: {
-            VStack(alignment: .leading, spacing: 10) {
-                poster
-                resumeBar
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(item.title)
-                        .font(.system(size: 26, weight: .semibold))
-                        .lineLimit(1)
-                    Text(HomeRules.cardMetaLine(item))
-                        .font(.system(size: 20))
-                        .foregroundStyle(RKMColour.muted)
-                        .lineLimit(1)
-                }
-                // ⚠ A fixed width for the whole label: without it, a long title makes this card wider than
-                // its neighbours and the rail's rhythm falls apart. The title truncates instead.
-                .frame(width: Self.width, alignment: .leading)
+            VStack(alignment: .leading, spacing: 0) {
+                artwork
+                Text(item.title)
+                    .font(.system(size: TVTokens.Shelf.cardTitleSize, weight: .semibold))
+                    .foregroundStyle(RKMColour.primary)
+                    .lineLimit(1)
+                    .padding(.top, TVTokens.Shelf.titleGapTop)
+                Text(HomeRules.cardMetaLine(item))
+                    .font(.system(size: TVTokens.Shelf.subSize))
+                    .foregroundStyle(RKMColour.muted)
+                    .lineLimit(1)
             }
+            // ⚠ A fixed width for the whole label: without it, a long title makes this card wider than
+            // its neighbours and the shelf's rhythm falls apart. The title truncates instead.
+            .frame(width: Self.width, alignment: .leading)
         }
         .buttonStyle(.card)
-        // ⚠ The badge carries real information (an episode code, or what kind of thing this is) and a screen
-        // reader would otherwise hear only the title — the buildspec's §6 rule, and the same reason the
-        // profile tiles carry one.
-        .accessibilityLabel(badgeText.isEmpty
-                            ? item.title
-                            : "\(item.title), \(badgeText)")
+        // ⚠ The badge and the progress bar carry real information a screen reader would otherwise miss — the
+        // buildspec's §6 rule, and the same reason the profile tiles carry a label.
+        .accessibilityLabel(accessibilityLabel)
     }
 
-    // MARK: - The badge
-
-    /// ⚠ The episode code when there is one, otherwise empty — and the caller draws the type GLYPH in that
-    /// case. The code comes from `HomeRules.episodeItemCode`, the same rule the card's meta line uses, so the
-    /// `S1E3` above the artwork and the `S1E3 · Series` underneath cannot disagree.
-    private var badgeText: String {
-        HomeRules.episodeItemCode(item) ?? ""
+    private var accessibilityLabel: String {
+        let meta = HomeRules.cardMetaLine(item)
+        return meta.isEmpty ? item.title : "\(item.title), \(meta)"
     }
 
+    // MARK: - The artwork, its chrome and its bar
+
+    private var artwork: some View {
+        PosterImageView(base: base, itemID: item.itemID, route: .backdrop)
+            .frame(width: Self.width, height: Self.width * Self.aspect)
+            .clipShape(RoundedRectangle(cornerRadius: TVTokens.Shelf.artRadius, style: .continuous))
+            .overlay(alignment: .topLeading) { badge.padding(TVTokens.Shelf.badgeInset) }
+            .overlay(alignment: .bottomTrailing) { playGlyph.padding(TVTokens.Shelf.playInset) }
+            // ⚠ The bar is INSIDE the art's bottom edge (`position:absolute; left:0; right:0; bottom:0`), so
+            // it is an overlay rather than a row under the picture — that is what the prototype draws, and it
+            // keeps the shelf's vertical rhythm independent of whether a title is in progress.
+            .overlay(alignment: .bottom) { progressBar }
+    }
+
+    /// `S2·E4` / `MOVIE` — the text chip on the artwork's top-left corner. ⚠ The words are
+    /// `HomeRules.badgeText`'s rule, so the TV and every other surface answer "what am I looking at?" the
+    /// same way.
     private var badge: some View {
-        Group {
-            if badgeText.isEmpty {
-                Image(systemName: HomeRules.typeIcon(item).systemImage)
-                    .font(.system(size: 15, weight: .semibold))
-            } else {
-                Text(badgeText)
-                    .font(.system(size: 15, weight: .bold))
-            }
-        }
-        .foregroundStyle(RKMColour.primary)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 5)
-        .background(RKMColour.background.opacity(0.65),
-                    in: RoundedRectangle(cornerRadius: DesignTokens.Radius.sm, style: .continuous))
+        Text(HomeRules.badgeText(item))
+            .font(.system(size: TVTokens.Shelf.badgeSize, weight: .bold))
+            .tracking(0.4)
+            .foregroundStyle(RKMColour.primary)
+            .padding(.horizontal, TVTokens.Shelf.badgePaddingH)
+            .padding(.vertical, TVTokens.Shelf.badgePaddingV)
+            .background(RKMColour.background.opacity(0.55),
+                        in: RoundedRectangle(cornerRadius: TVTokens.Shelf.badgeRadius, style: .continuous))
     }
 
-    // MARK: - The picture
-
-    @ViewBuilder
-    private var poster: some View {
-        PosterImageView(base: base, itemID: item.itemID)
-            .frame(width: Self.width, height: Self.width / Self.aspect)
-            .clipShape(RoundedRectangle(cornerRadius: DesignTokens.Radius.md, style: .continuous))
-            // ⚠ The badge sits on the ARTWORK's top-left corner, as the buildspec draws it — an overlay on the
-            // picture rather than a row above the title, so the rail's rhythm does not change.
-            .overlay(alignment: .topLeading) {
-                badge.padding(8)
-            }
+    /// The gold play circle on the artwork's bottom-right — **chrome, not a control** (see this file's
+    /// header). ⚠ `accessibilityHidden(true)`: it says nothing the card's own label does not already say, and
+    /// a second element inside a `Button` is a second thing for VoiceOver to stop on.
+    private var playGlyph: some View {
+        Image(systemName: "play.fill")
+            .font(.system(size: TVTokens.Shelf.playSize * 0.45))
+            .foregroundStyle(RKMColour.background)
+            .frame(width: TVTokens.Shelf.playSize, height: TVTokens.Shelf.playSize)
+            .background(RKMColour.accent, in: Circle())
+            .accessibilityHidden(true)
     }
 
-    // MARK: - The resume bar
-
-    /// ⚠ **The bar is the reason this screen is worth having.** A Continue Watching row of identical
-    /// posters tells the viewer nothing; the bar is what says how much is left. It is drawn ONLY when the
+    /// ⚠ **The bar is the reason this screen is worth having.** A Continue Watching shelf of identical
+    /// artwork tells the viewer nothing; the bar is what says how much is left. It is drawn ONLY when the
     /// model can state the fraction honestly (`progressFraction` returns nil for an unknown runtime and for
     /// a finished title), so an absent bar means "unknown", never "just started" — the same rule the phone
     /// uses, from the same function.
     @ViewBuilder
-    private var resumeBar: some View {
+    private var progressBar: some View {
         if let fraction = item.progressFraction {
             GeometryReader { geometry in
                 ZStack(alignment: .leading) {
-                    Capsule().fill(RKMColour.primary.opacity(0.22))
-                    Capsule().fill(RKMColour.accent).frame(width: geometry.size.width * fraction)
+                    // The prototype's track: `rgba(0,0,0,.4)` full width, gold fill, `0.22u` tall.
+                    Rectangle().fill(RKMColour.background.opacity(0.4))
+                    Rectangle().fill(RKMColour.accent).frame(width: geometry.size.width * fraction)
                 }
             }
-            .frame(width: Self.width, height: 6)
+            .frame(height: TVTokens.Shelf.progressHeight)
         }
     }
 }
@@ -131,13 +136,16 @@ struct PosterCard: View {
 /// ⚠ **Made non-private in B4** so the detail screen reuses the SAME poster renderer the cards use: one
 /// load path, one log line, one "no photo" mark. A second image view on the detail screen is a second place
 /// for artwork to fail silently — which is the failure this whole file exists to make visible.
-/// ⚠ **U3 gave it a `route`** so the Home's hero band can ask for the 16:9 backdrop through the same loader.
+/// ⚠ **U3 gave it a `route`** so the Home's hero band can ask for the 16:9 backdrop through the same loader;
+/// **U6 made the cards ask for the backdrop too**, and the loader now falls back to the poster once when an
+/// item has no keyart.
 struct PosterImageView: View {
 
     let base: URL
     let itemID: String
-    /// `.poster` (2:3, the cards) or `.backdrop` (16:9, the hero band). ⚠ One parameter rather than a second
-    /// image view: the cookie handling, the log line and the failure mark are the parts that must not drift.
+    /// `.poster` (2:3) or `.backdrop` (16:9 — the cards and the hero from U6). ⚠ One parameter rather than a
+    /// second image view: the cookie handling, the log line, the fallback and the failure mark are the parts
+    /// that must not drift.
     var route: PosterURL.Route = .poster
 
     @StateObject private var loader: PosterLoader
@@ -151,7 +159,7 @@ struct PosterImageView: View {
 
     var body: some View {
         ZStack {
-            // The placeholder: warm, flat, and obviously not a poster — a black rectangle reads as a
+            // The placeholder: warm, flat, and obviously not artwork — a black rectangle reads as a
             // rendering fault, which is the one thing it must not be mistaken for.
             Rectangle()
                 .fill(RKMColour.primary.opacity(0.08))

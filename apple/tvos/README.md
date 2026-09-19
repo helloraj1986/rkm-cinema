@@ -4,7 +4,10 @@ A **native SwiftUI client**. tvOS has no WebKit at all (Apple removed it; the gu
 embedding one), so there is no shell shortcut here — the UI is written for the TV. Full reasoning:
 [`../../docs/APPLE_CLIENTS_PLAN.md`](../../docs/APPLE_CLIENTS_PLAN.md) §4.
 
-**Status: Phase U is BUILT on `feat/tvos-ux` (2026-09-20) and its round is the next thing that happens.**
+**Status: Phase U (U1–U6) is BUILT on `feat/tvos-ux` (2026-09-20) and its round is the next thing that
+happens.** ⚠ **U6 rebuilt the two screens to his prototype's geometry** (`tvos_ux/1. …/rkm-cinema-tvos-concept.html`),
+because the first build did not look like the file he drew: 16:9 cards, a `32u` hero, the `RKM·CINEMA` top bar
+and the gradient-avatar Profile Switcher. `TVTokens.u` (19.2 pt) is the prototype's own scale.
 Phase A (screens 0–2: address → sign in → who's watching) was accepted on his simulator; Phase B (B1–B4 —
 models, Home, Browse, item detail) is merged to `dev`. ⚠ **Phase U (U1–U4: the generated design tokens, the
 Profile Switcher, the Home's top bar + hero, the Recently Added rail) sits on `feat/tvos-ux`, which is NOT

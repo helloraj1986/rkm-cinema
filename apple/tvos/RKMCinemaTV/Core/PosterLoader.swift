@@ -43,19 +43,29 @@ final class PosterLoader: ObservableObject {
     @Published private(set) var state: PosterState = .idle
 
     let itemID: String
-    let url: URL?
-    /// ⚠ Which artwork route this loader is fetching — `poster` for a card, `backdrop` for a hero band (U3).
-    /// It is carried so the LOG LINES name it: a `401` on a hero's backdrop and a `401` on a card's poster
-    /// are the same defect, but only one of them is on screen when somebody reports "the hero is empty".
-    let route: PosterURL.Route
+    /// ⚠ `private(set) var`, not `let`: U6's fallback chain re-points it at the poster when a backdrop is
+    /// missing (see ``fallBackToPoster``).
+    private(set) var url: URL?
+    /// ⚠ Which artwork route this loader is fetching — `poster` for the 2:3 card of old, `backdrop` for the
+    /// 16:9 card and the hero band (U6). It is carried so the LOG LINES name it: a `401` on a backdrop and a
+    /// `401` on a poster are the same defect, but only one of them is on screen when somebody reports "the
+    /// hero is empty".
+    private(set) var route: PosterURL.Route
+    /// The width this loader was asked for, so the fallback rebuilds the URL with the SAME width.
+    private let width: Int?
 
+    private let base: URL
     private let timeout: TimeInterval
     private var started = false
+    /// ⚠ Guards the fallback: **one** step, and it never runs back the other way.
+    private var fellBack = false
 
     init(base: URL, itemID: String, width: Int? = nil, route: PosterURL.Route = .poster,
          timeout: TimeInterval = 20) {
         self.itemID = itemID
         self.route = route
+        self.width = width
+        self.base = base
         self.url = PosterURL.url(base: base, itemID: itemID, width: width, route: route)
         self.timeout = timeout
     }
@@ -94,6 +104,9 @@ final class PosterLoader: ObservableObject {
                 RKMLog.error("\(route.rawValue) \(Self.short(itemID)) -> \(status) — session-cookie="
                                 + "\(hasSession ? "present" : "ABSENT"), cached-before=\(alreadyCached)",
                              category: .net, correlation: correlation)
+                // ⚠ A missing BACKDROP is not a broken card: fall back to the poster, exactly as the web
+                // app's own hero does, and only report a failure once BOTH routes are exhausted.
+                if await fallBackToPoster(correlation: correlation) { return }
                 state = .failed(message)
                 return
             }
@@ -109,6 +122,36 @@ final class PosterLoader: ObservableObject {
                          category: .net, correlation: correlation)
             state = .failed("\(nsError.domain) \(nsError.code)")
         }
+    }
+
+    /// ⚠⚠ **THE WEB'S OWN FALLBACK CHAIN, and the reason U6 needs it: a 16:9 card cannot be filled by a
+    /// 2:3 poster.** The prototype draws every card as 16:9 keyart, which is what Jellyfin's *Backdrop*
+    /// image is — but not every item has one, and the api answers a plain **404** for a missing image
+    /// (`jellyfin_poster.py::_proxy_image`: *"A MISSING image is never cached"*). Without this step a library
+    /// full of poster-only titles would draw a wall of "no photo" marks — the exact failure this file's
+    /// header exists to make visible, arriving by design.
+    ///
+    /// So a failed BACKDROP is retried ONCE as the item's POSTER, which is the artwork every item is
+    /// guaranteed to have (the whole app was built on that), and the web's hero does the same thing
+    /// (`LibraryHomeView.tsx`: backdrop → poster → seeded art).
+    ///
+    /// ⚠ Returns true when it took over — i.e. when the caller should NOT write its own failure state. It
+    /// never runs twice (`fellBack`), never runs for a poster request (there is nothing below a poster), and
+    /// **never runs on a TRANSPORT error**: a network that went away is not a missing image, and retrying it
+    /// would double the load for every dead request.
+    @discardableResult
+    private func fallBackToPoster(correlation: CorrelationID) async -> Bool {
+        guard route == .backdrop, !fellBack else { return false }
+        fellBack = true
+        route = .poster
+        url = PosterURL.url(base: base, itemID: itemID, width: width, route: .poster)
+        RKMLog.info("artwork \(Self.short(itemID)) — no backdrop; falling back to the poster",
+                    category: .net, correlation: correlation)
+        // ⚠ `started` is cleared so `load()`'s own guard lets the retry through — the guard exists to stop a
+        // card re-requesting an immutable image, not to stop this deliberate second request.
+        started = false
+        await load()
+        return true
     }
 
     /// ⚠ The first 8 characters only. A Jellyfin id is 32 hex characters and the HUD is a fixed-width

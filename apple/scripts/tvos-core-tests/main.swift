@@ -1213,6 +1213,12 @@ check(HomeRules.heroShowsProgress(episode!), "an episode with progress draws the
 check(!HomeRules.heroShowsProgress(inProgressShow), "a series draws no countdown bar")
 
 checkEqual(HomeRules.typeIcon(inProgressShow), .tv, "a series gets the tv glyph")
+
+// ⚠⚠ THE CARD'S BADGE (U6). The prototype puts a text chip on the artwork — `S2·E4` / `MOVIE` — and this is
+// the rule that decides what it says. Pinned against the literal words, never against the expression.
+checkEqual(HomeRules.badgeText(episode!), "S1E3", "an episode's badge is the app's own S1E3 code")
+checkEqual(HomeRules.badgeText(movie!), "MOVIE", "a film's badge says MOVIE")
+checkEqual(HomeRules.badgeText(inProgressShow), "SERIES", "a series with no episode badge says SERIES")
 checkEqual(HomeRules.typeIcon(movie!), .film, "a film gets the film glyph")
 
 // MARK: - The top bar's tabs (Phase U3)

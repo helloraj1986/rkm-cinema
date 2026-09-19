@@ -80,16 +80,37 @@ enum HomeRules {
         ["tv", "show", "series"].contains(item.type ?? "")
     }
 
-    /// `lib.ts::LibraryIcon` selection — the card's top-left type glyph.
+    /// `lib.ts::LibraryIcon` selection — kept because the Browse rows and the library tabs read it, and
+    /// because the card's TYPE glyph was its first caller before U6 gave the card a text badge.
     ///
-    /// ⚠ **The buildspec asks for a WORD here (`MOVIE`)**, and this is the glyph the web app already draws on
-    /// every poster instead (`MediaCard.tsx`: the `tv`/`film` icon, replaced by the episode code when there is
-    /// one). The app's own vocabulary wins, exactly as it does for the profile subtitles — a word badge on the
-    /// TV and a glyph on the phone would be a second vocabulary for one fact. ⚠ `LibraryIcon` is reused rather
-    /// than a new enum, so the card, the Browse rows and the library tabs cannot disagree about which icon
-    /// means "series".
+    /// ⚠ **The badge is now a WORD** (`MOVIE` / `SERIES`, from his prototype) and this is still the icon
+    /// mapping the rest of the app shares. Both exist because they answer different questions: the icon says
+    /// *what kind of library row is this*, the badge says *what am I looking at* on a poster at three metres.
+    /// ⚠ `LibraryIcon` is reused rather than a new enum, so the card, the Browse rows and the tabs cannot
+    /// disagree about which icon means "series".
     static func typeIcon(_ item: MediaItem) -> LibraryIcon {
         isSeries(item) ? .tv : .film
+    }
+
+    /// ⚠⚠ **THE CARD'S BADGE — `S2·E4` / `MOVIE` in his prototype, and the ONE word in it the app does not
+    /// already own.** `rkm-cinema-tvos-concept.html` puts a text chip on the artwork's top-left corner:
+    ///
+    ///     <span class="card-badge">S2·E4</span>   ·   <span class="card-badge">MOVIE</span>
+    ///
+    /// ⚠ **The episode code is `episodeItemCode` — the app's own `S1E3`, NOT the prototype's `S1·E3`.** The
+    /// prototype has no equivalent of the card's subtitle, and the app's card prints `S1E3 · Series name`
+    /// underneath the artwork (the web's own `cardMetaLine`, shared with the phone). Rendering `S1·E3` above
+    /// and `S1E3` below would be two spellings of one code ON THE SAME CARD — a worse fault than a missing
+    /// middle dot, and the kind this file exists to prevent. ⚠ Say so if the dot matters: it is a one-line
+    /// change in this function, and the mismatch it creates should be decided rather than unnoticed.
+    ///
+    /// ⚠ **`MOVIE` / `SERIES` are the prototype's own words** (it shows `MOVIE` on film cards; a series card
+    /// in it always carries an episode code, so `SERIES` is this file's parallel for the case it leaves open)
+    /// — and they replace the tv/film GLYPH the card used to draw. The badge is his element, so its words are
+    /// his; the glyph stays in ``typeIcon`` for the screens that still read it.
+    static func badgeText(_ item: MediaItem) -> String {
+        if let code = episodeItemCode(item) { return code }
+        return isSeries(item) ? "SERIES" : "MOVIE"
     }
 
     /// `lib.ts::isEpisodeItem`.

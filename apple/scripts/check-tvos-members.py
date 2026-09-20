@@ -614,6 +614,132 @@ def check_async_calls(root: pathlib.Path) -> list[str]:
     return problems
 
 
+#: ⚠⚠ RULE 8 — AN ESCAPE THAT HAS LEAKED OUT OF ITS STRING LITERAL. Bought by Phase C's FIFTH failed round
+#: (2026-09-20), and the first defect in this phase whose author was the SANDBOX side of the toolchain rather
+#: than the sources: a `\(…)` interpolation was written into a line that CONCATENATES fragments, so the
+#: backslash survived after the quotes it belonged to had moved to the previous line. His Mac printed:
+#:
+#:     PlayerView.swift:260:21: error: binary operator '+' cannot be applied to operands of type 'String'
+#:                               and 'WritableKeyPath<_, _> & Sendable'
+#:     PlayerView.swift:260:37: error: string interpolation can only appear inside a string literal
+#:
+#: ⚠ TWO errors, ONE backslash — and no gate here can compile the file. Sweeping the class found its SILENT
+#: half in files that DO compile: `AppModel.swift` and `APIClient.swift` each carried a DOUBLED escape
+#: (`\\(…)`), which is legal Swift that prints its own source into a log line instead of the value — a defect
+#: that POISONS A MEASUREMENT (F2 is read from exactly such a line) rather than failing a build.
+#:
+#: ⚠⚠ **IT LEXES, BECAUSE THE CHEAP VERSION CRIED WOLF.** An escape inside an interpolation inside ANOTHER
+#: string — `RKMLog.error("… \((error as? APIError)…. ?? "\(error)")")` in `SessionStore` — is CORRECT Swift,
+#: and both a quote-parity test and a "was a quote opened earlier on this line" test read the nested literal
+#: as code. A gate that cries wolf is worse than an absent one (this file's header), so `scan_escapes` carries
+#: a STACK of frames: a string literal (single-line or `"""`), or an interpolation opened by `\(` and closed
+#: by its matching `)`. A literal inside an interpolation is simply another frame.
+def scan_escapes(source: str) -> list[tuple[int, int, bool]]:
+    """⚠ (line, column, inside-a-string) for EVERY backslash — with Swift's literal/interpolation nesting."""
+    results: list[tuple[int, int, bool]] = []
+    frames: list[dict] = []
+    line = 1
+    line_start = 0
+    i = 0
+    while i < len(source):
+        character = source[i]
+        if character == "\n":
+            if frames and frames[-1]["kind"] == "string" and not frames[-1]["multiline"]:
+                # An unterminated single-line literal does not leak into the next line (`"""` is how a literal
+                # spans lines) — without this the whole rest of the file reads as string content.
+                frames.pop()
+            line += 1
+            i += 1
+            line_start = i
+            continue
+        if frames and frames[-1]["kind"] == "string":
+            if character == "\\":
+                results.append((line, i - line_start, True))
+                if source[i + 1:i + 2] == "(":
+                    frames.append({"kind": "interp", "depth": 1})
+                    i += 2
+                    continue
+                i += 2          # `\\`, `\"`, `\n`, a line continuation … every escape is one step
+                continue
+            if character == '"':
+                if frames[-1]["multiline"]:
+                    if source[i:i + 3] == '"""':
+                        frames.pop()
+                        i += 3
+                        continue
+                    i += 1
+                    continue
+                frames.pop()
+                i += 1
+                continue
+            i += 1
+            continue
+        # ---- everything else is code, including the inside of an interpolation ----
+        if source[i:i + 2] == "//":
+            end = source.find("\n", i)
+            i = len(source) if end == -1 else end
+            continue
+        if source[i:i + 3] == '"""':
+            frames.append({"kind": "string", "multiline": True})
+            i += 3
+            continue
+        if character == '"':
+            frames.append({"kind": "string", "multiline": False})
+            i += 1
+            continue
+        if character == "\\":
+            results.append((line, i - line_start, False))
+            i += 2
+            continue
+        if frames and frames[-1]["kind"] == "interp":
+            if character == "(":
+                frames[-1]["depth"] += 1
+            elif character == ")":
+                frames[-1]["depth"] -= 1
+                if frames[-1]["depth"] == 0:
+                    frames.pop()
+        i += 1
+    return results
+
+
+#: ⚠ A key path can never be an OPERAND of one of these, so a backslash directly after one is a leaked escape.
+OPERATOR_BEFORE_ESCAPE = "+-*/%&|^"
+
+
+def check_leaked_escapes(root: pathlib.Path) -> list[str]:
+    """⚠ A backslash in the wrong place: outside every string literal, or doubled inside one."""
+    problems: list[str] = []
+    for path in sorted(root.rglob("*.swift")):
+        if ".build" in path.parts:
+            continue
+        source = path.read_text(encoding="utf-8")
+        lines = source.splitlines()
+        for line_number, column, in_string in scan_escapes(source):
+            line = lines[line_number - 1] if line_number <= len(lines) else ""
+            head = line[:column]
+            tail = line[column + 1:]
+            where = f"{path.relative_to(root)}:{line_number}"
+            if not in_string:
+                if tail[:1] == "(":
+                    problems.append(
+                        f"{where}: `\\(…)` with NO string literal open — the escape has leaked out of the "
+                        f"string it belongs to, and the Mac reads it as a key path: 'binary operator + "
+                        f"cannot be applied to operands of type String and WritableKeyPath'"
+                    )
+                    continue
+                if tail[:1].isalpha() and head.rstrip()[-1:] in OPERATOR_BEFORE_ESCAPE:
+                    problems.append(
+                        f"{where}: a `\\` directly after `{head.rstrip()[-1:]}` with NO string literal open — "
+                        f"a key path cannot be an operand there, so the escape has leaked out of a string"
+                    )
+            elif tail[:1] == "\\" and tail[1:2] == "(":
+                problems.append(
+                    f"{where}: a DOUBLED escape (`\\\\(…)`) inside a string literal — it prints its own "
+                    f"source into the log instead of the value; an interpolation takes ONE backslash"
+                )
+    return problems
+
+
 #: ⚠⚠ RULE 4 — `Body` IS NOT A SAFE NAME TO NEST, and this is the SECOND round U6 spent on the same blind
 #: spot. Every `Style` protocol (and `View`) declares an associatedtype requirement called `Body`, so a helper
 #: view nested inside a conformer and named `Body` collides with it. Measured on his Mac, 2026-09-20:
@@ -808,6 +934,34 @@ def selftest() -> int:
                             "asleep on the third segment it exists for")
         probe.unlink()
 
+        # ⚠⚠ Rule 8 — THE ESCAPE THAT LEAKED OUT OF ITS STRING, which is his Mac's FIFTH failed round. Three
+        # halves pinned: the leak fires, the DOUBLED escape fires, and the CORRECT nesting — an escape inside an
+        # interpolation inside ANOTHER string — stays silent. That last one is not decoration: it is the false
+        # positive that would make this rule a nuisance, and it is why rule 8 is a lexer rather than a quote count.
+        escape_probe = scratch / "Player" / "EscapeProbe.swift"
+        escape_probe.write_text(
+            "import Foundation\n\n"
+            "let target = 1\n"
+            "let leaked = \"a\"\n"
+            "    + \\(target)\n",
+            encoding="utf-8")
+        if not any("leaked out" in problem for problem in check_leaked_escapes(scratch)):
+            failures.append("rule 8 did not fire on a `\\(…)` laying OUTSIDE any string literal — the "
+                            "backslash his Mac read as a key path")
+        escape_probe.write_text("import Foundation\n\nlet target = 1\nlet doubled = \"path \\\\(target)\"\n",
+                                encoding="utf-8")
+        if not any("DOUBLED" in problem for problem in check_leaked_escapes(scratch)):
+            failures.append("rule 8 did not fire on a DOUBLED escape (`\\(…)` inside a string) — the shape "
+                            "that logs its own source instead of the value")
+        escape_probe.write_text(
+            "import Foundation\n\nlet target = 1\n"
+            "let nested = \"outer \\(target) and \\(\"inner \\(target)\")\"\n",
+            encoding="utf-8")
+        if check_leaked_escapes(scratch):
+            failures.append("rule 8 fires on the CORRECT nesting (an escape inside an interpolation inside "
+                            "another string) — it would cry wolf")
+        escape_probe.unlink()
+
         if check(TVOS):
             failures.append("it fires on the REAL tree, so its red above proved nothing")
         if check_calls(TVOS):
@@ -822,6 +976,8 @@ def selftest() -> int:
             failures.append("rule 6 fires on the REAL tree, so its red above proved nothing")
         if check_async_calls(TVOS):
             failures.append("rule 7 fires on the REAL tree, so its red above proved nothing")
+        if check_leaked_escapes(TVOS):
+            failures.append("rule 8 fires on the REAL tree, so its red above proved nothing")
 
         # Rule 5: the defect he found — chrome on the Button rather than in the style.
         profile = scratch / "Auth" / "ProfilesView.swift"
@@ -892,7 +1048,7 @@ def selftest() -> int:
         for line in failures:
             print(f"  · {line}")
         return 1
-    print("selftest: fires on all SEVEN defects (member, call label, static name, nested `Body`, chrome on a styled Button, a passed `FocusState` binding used as a wrapper, an unawaited `async` store call) — and each rule is also proved SILENT on the correct form beside it, which is what stops it crying wolf.")
+    print("selftest: fires on all EIGHT defects (member, call label, static name, nested `Body`, chrome on a styled Button, a passed `FocusState` binding used as a wrapper, an unawaited `async` store call, an escape leaked out of its string literal) — and each rule is also proved SILENT on the correct form beside it, which is what stops it crying wolf.")
     return 0
 
 
@@ -911,7 +1067,8 @@ def main(argv: list[str]) -> int:
     try:
         problems = (check(TVOS) + check_calls(TVOS) + check_namespaces(TVOS)
                     + check_nested_body(TVOS) + check_style_ownership(TVOS)
-                    + check_focus_binding(TVOS) + check_async_calls(TVOS))
+                    + check_focus_binding(TVOS) + check_async_calls(TVOS)
+                    + check_leaked_escapes(TVOS))
     except (FileNotFoundError, ValueError) as error:
         print(f"cannot run: {error}", file=sys.stderr)
         return 2
@@ -924,13 +1081,14 @@ def main(argv: list[str]) -> int:
     print(f"PASS — {len(USES)} view/type pair(s) checked: every member a view names exists on its model, "
           f"and every call to one of the {len(VIEW_TYPES)} app view/type names uses a label it takes.")
     print("⚠ Not covered: TYPES (a value of the wrong type still needs the compiler), argument ORDER, and")
-    print("  behaviour. SEVEN rules, every one bought by a defect that reached his Mac:")
+    print("  behaviour. EIGHT rules, every one bought by a defect that reached his Mac:")
     print("  1 a member a view names that its model lacks;  2 a call using a label its type does not take;")
     print("  3 a static-namespace name (HomeRules.*, TVTokens.* …) declared nowhere;  4 a nested `struct Body`")
     print("  (a `Style` protocol owns that name);  5 chrome applied to a `Button` whose style already "
           "draws it;  6 `$name` / `name = …` where `name` is a PASSED `FocusState` binding (no "
           "wrapper to project, and a binding is a `let`);  7 an `async` store call from a line that "
-          "neither awaits it nor runs in a `Task`.")
+          "neither awaits it nor runs in a `Task`;  8 an escape that leaked out of its string literal "
+          "(an interpolation where no string is open, or a DOUBLED one, which logs its own source).")
     return 0
 
 

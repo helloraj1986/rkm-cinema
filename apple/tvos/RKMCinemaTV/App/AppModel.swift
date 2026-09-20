@@ -311,7 +311,7 @@ final class AppModel: ObservableObject {
         }
         detail = DetailStore(client: session.api, itemID: itemID)
         phase = .detail
-        RKMLog.info("detail: opened \\(itemID.prefix(8)) — Back returns to \\(detailReturnLabel)",
+        RKMLog.info("detail: opened \(itemID.prefix(8)) — Back returns to \(detailReturnLabel)",
                     category: .app)
     }
 

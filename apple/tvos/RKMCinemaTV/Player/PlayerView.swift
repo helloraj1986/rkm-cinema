@@ -257,7 +257,7 @@ struct PlayerView: View {
         RKMLog.info("player: attaching item (\(reason)) mode=\(store.mode.rawValue) "
                     + "resume=\(Int(store.position))s "
                     + "credential=\(session == nil ? "MISSING" : "handed to the asset") "
-                    + \(LogRedactor.redact(url: url)), category: .app)
+                    + LogRedactor.redact(url: url), category: .app)
         let wasPlaying = store.isPlaying
         player.replaceCurrentItem(with: AVPlayerItem(asset: makeAsset(url: url, session: session)))
         player.rate = Float(store.rate)

@@ -160,7 +160,7 @@ struct APIClient {
         // `appendingPathComponent(_:)` — is therefore in a `Foundation`-only file that
         // `check-tvos-core.py` compiles AND runs.
         guard let url = RequestURL.url(base: address.url, path: path, query: query) else {
-            throw APIError.transport("could not build the request URL for \\(path)")
+            throw APIError.transport("could not build the request URL for \(path)")
         }
 
         var request = URLRequest(url: url)

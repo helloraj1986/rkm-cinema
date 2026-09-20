@@ -302,10 +302,8 @@ MUTATIONS = [
      "    var showsEpisodes: Bool { isSeries }",
      "    var showsEpisodes: Bool { !episodes.isEmpty }",
      "a failed episode list still draws the section"),
-    ("the placeholder losing the next verb", "DetailRules.swift",
-     '    static func nextUp(_ verb: String) -> String { "Next up: \\(verb)" }',
-     '    static func nextUp(_ verb: String) -> String { "\\(verb)" }',
-     "the screen names the verb it WILL offer, in the phone's own words"),
+    # ⚠ `the placeholder losing the next verb` WAS HERE and is deleted with `DetailCopy.nextUp` itself
+    # (2026-09-20) — a mutation that reverts a constant nothing renders proves nothing about the app.
     # ---- C1: the playback credential
     ("the session cookie's name", "PlaybackAuth.swift",
      'static let sessionCookieName = "rkm_session"',
@@ -592,7 +590,12 @@ MUTATIONS = [
     ("the cast colour keyed on the wrong field", "DetailRules.swift",
      "        let key = person.id.isEmpty ? person.name : person.id",
      "        let key = person.name",
-     "one person id is one colour, whatever else the row says"),    # ⚠⚠ ---- PHASE C2: THE PLAYER'S RULES. Every one of these reverts a decision the SCREEN would have made
+     "one person id is one colour, whatever else the row says"),    # ---- C3: the screen's own geometry, in the unit the prototype uses
+    ("the title hero drifting from its fraction", "TVTokens.swift",
+     "        static let heroHeight = u * 37.125",
+     "        static let heroHeight = u * 33",
+     "the title hero is 66% of the platform's 1080 pt canvas — no measurement needed"),
+    # ⚠⚠ ---- PHASE C2: THE PLAYER'S RULES. Every one of these reverts a decision the SCREEN would have made
     # invisibly: a mode chosen for the wrong client, a URL that turns a query into a path, a subtitle that
     # silently does not apply. What is NOT here: the SwiftUI itself, which no gate on this machine can compile.
     ("the clock rounding instead of flooring", "PlaybackRules.swift",

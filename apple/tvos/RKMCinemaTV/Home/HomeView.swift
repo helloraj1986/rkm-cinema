@@ -33,7 +33,6 @@ struct HomeView: View {
 
     /// ⚠ The Playback placeholder, exactly as B4's detail screen shows it: the primary button cannot start a
     /// film (Phase C is parked), so it says where playback comes from instead of doing nothing.
-    @State private var playbackVerb: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -56,11 +55,6 @@ struct HomeView: View {
         // re-render — `HomeStore.load()` is idempotent in effect but each call is five requests.
         .task {
             await store.load()
-        }
-        .overlay {
-            if let verb = playbackVerb {
-                playbackNotice(verb)
-            }
         }
     }
 
@@ -169,7 +163,7 @@ struct HomeView: View {
                     HeroBand(item: hero,
                              isContinueWatching: store.snapshot.heroIsContinueWatching,
                              base: base,
-                             onPrimary: { showPlaybackPlaceholder(for: hero) },
+                             onPrimary: { play(hero) },
                              onDetails: { open(hero) })
                 }
 
@@ -198,44 +192,28 @@ struct HomeView: View {
         }
     }
 
-    // MARK: - Playback, said honestly
+    // MARK: - Play
 
-    /// ⚠⚠ **The primary button's other half, and it is B4's placeholder verbatim**
-    /// (`DetailCopy.playReadyTitle` / `playReadySub` / `nextUp`). The hero knows the verb the app DOES
-    /// offer — `Resume`, `Play S1E3` — so it names it rather than pretending. The tvOS player is Phase C.
-    private func showPlaybackPlaceholder(for item: MediaItem) {
-        playbackVerb = HomeRules.heroPrimaryLabel(isEpisode: HomeRules.isEpisodeItem(item),
-                                                 episodeCode: HomeRules.episodeItemCode(item) ?? "",
-                                                 isSeries: HomeRules.isSeries(item),
-                                                 percent: HomeRules.heroPercent(item))
-    }
-
-    private func playbackNotice(_ verb: String) -> some View {
-        ZStack {
-            Color.black.opacity(0.78)
-
-            VStack(spacing: 16) {
-                Text(DetailCopy.playReadyTitle)
-                    .font(.system(size: 36, weight: .bold))
-                Text(DetailCopy.playReadySub)
-                    .font(.system(size: 24))
-                    .foregroundStyle(RKMColour.secondary)
-                Text(DetailCopy.nextUp(verb))
-                    .font(.system(size: 26, weight: .semibold))
-                    .foregroundStyle(RKMColour.accent)
-                Button("Close") { playbackVerb = nil }
-                    .buttonStyle(.borderedProminent)
-                    .font(.system(size: 22))
-                    .padding(.top, 6)
-            }
-            .padding(44)
-            .background(RKMColour.surface3, in: RoundedRectangle(cornerRadius: DesignTokens.Radius.xl,
-                                                                 style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: DesignTokens.Radius.xl, style: .continuous)
-                    .stroke(RKMColour.border, lineWidth: 1)
-            )
+    /// ⚠⚠ **THE HERO'S PRIMARY BUTTON IS A PLAY BUTTON, AND IT COST HIS ROUND-3 REPORT TO MAKE IT ONE.**
+    /// His words: *"when i tried to play from the title from continue watching section in home screen, i cant
+    /// play it"* — and the screenshot he sent with it was THIS screen with the hero's verb on it, because B4's
+    /// placeholder notice was still what the press did. Phase C landed the player, so the press plays.
+    ///
+    /// ⚠⚠ **A SERIES IS THE ONE PRESS THAT DOES NOT PLAY, AND THAT IS A RULE RATHER THAN A GAP.**
+    /// `HomeRules.heroPrimaryLabel` says *"Explore Episodes"* for a series — there is no single thing to play —
+    /// so the press does what its own label says and opens the detail screen, where the episode list lives.
+    /// ⚠ An EPISODE plays (its `itemID` is the episode's), which is exactly what a Continue Watching row means.
+    ///
+    /// ⚠ The notice (`playbackVerb`, `playbackNotice`, `showPlaybackPlaceholder`) and the two `DetailCopy`
+    /// strings it printed are DELETED rather than kept beside the player: dead copy that says playback is
+    /// coming is the thing this screen has been apologising for since B4.
+    private func play(_ item: MediaItem) {
+        if HomeRules.isSeries(item) && !HomeRules.isEpisodeItem(item) {
+            open(item)
+            return
         }
+        guard !item.itemID.isEmpty else { return }
+        app.openPlayer(itemID: item.itemID, detail: nil, facts: .from(item))
     }
 
     // MARK: - Select

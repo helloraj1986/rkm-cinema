@@ -116,6 +116,28 @@ feedback (a saved position, a refused write, a quality change) had nowhere to ap
 narrow — the sandbox-compiled surface builds on the Mac, and the only failures are SwiftUI in the two files no
 gate on this machine can compile.
 
+### 🐞 HIS ROUND 3 — THE BUILD PASSES, AND THREE NAVIGATION DEFECTS (2026-09-20)
+
+**`BUILD FAILED` is over: the app builds and runs.** His words, and what each half is:
+
+| His report | What it actually was | Fix |
+|---|---|---|
+| *"when i tried to play from the title from continue watching section in home screen, i cant play it"* — with a screenshot of the HOME | ⚠⚠ **THE HOME HERO'S PLAY BUTTON WAS STILL THE B4 PLACEHOLDER.** `onPrimary` called `showPlaybackPlaceholder`, which printed *"Playback / Press Details, then Play"* — a sentence that was true for one day. **This one is a plain miss of mine: C3 wired the DETAIL screen's Play and left the Home's apologising.** | `HomeView.play(_:)` opens the player with the row's own facts (`PlaybackStore.PlaybackFacts.from(item)` — title, runtime and position, all in SECONDS on that wire), and the player REFINES them from `GET /jellyfin/detail` for the exact `resumeTicks`. ⚠ A SERIES still opens the detail screen — its label says *"Explore Episodes"* and there is no single thing to play. ⚠ `DetailCopy.playReady*` and `nextUp(_:)`, their harness pins and the `nextUp` mutation are DELETED: copy that explains where a control is, when the control is right there, is the placeholder in a new coat. |
+| *"i can not go to the play button on any title"* | The detail screen's scroll content was wrapped in a **`GeometryReader`** — the SAME structure `BrowseView.cardWidth` blames for KNOWN_ISSUES #11, and the Play control is the only focusable thing inside it. tvOS's canvas is fixed at 1080 pt, so `66vh` needs no measurement at all. | The reader is REMOVED. `TVTokens.Title.heroHeight = u * 37.125` (0.66 × 1080 = 712.8 pt), and **the harness PINS it against the fraction it came from** (`heroHeight == 1080 × heroHeightFraction`), with a mutation. The container is now the app's proven shape: a `ScrollView` whose content is a plain `VStack`, exactly like the Home's. |
+| *"i cant go up from tags to upper navbar where the homebutton is there"* (Library, Movies/Kids) | The filter row was a **SIBLING above the wall's `ScrollView`** — a focus ISLAND. On the Home every focusable row lives inside the ONE vertical scroller and Up/Down work there; nothing on the Library screen did. | The chips JOIN the wall's scroll container — one scroller, the app's proven shape. ⚠ **A deliberate divergence from his prototype** (whose `.filterbar` is a sibling of `.grid-wrap`): in a browser a sticky bar costs nothing; on tvOS the same structure was a dead end in one direction. ⚠ **Cost, stated:** the filter bar now scrolls away with the wall. If he wants it pinned, `.safeAreaInset(edge: .top)` is the one-line change — and its own round, because whether focus can leave a `safeAreaInset` upward is a platform claim this sandbox cannot test. |
+
+⚠⚠ **THE MECHANISM BEHIND THE TWO FOCUS FIXES IS A HYPOTHESIS, NOT A MEASUREMENT — and this repo's own rule says so.**
+Both changes remove a difference from the screen that WORKS (the Home), which is the strongest evidence available
+without a television in the room; neither proves the focus engine was navigating on the frames the reader handed
+its children. ⇒ **The round's falsifiers are what settle it**, and if a direction is still blocked the next step is
+a screenshot of the state PLUS the answer to one question (*does a second press of Up work?*), never another blind
+structural change.
+
+⚠ **AND ONE PROCESS NOTE ABOUT THE AUDIT.** The 151-mutation falsification run was stopped mid-flight and restarted,
+because the tree moved under it while it ran (this round's changes to `DetailRules`, `TVTokens` and the mutation
+list). Its verdict is only meaningful on a settled tree — a run whose sources change halfway reports a STALE entry
+that is an artefact of the edit, not a rotten rule.
+
 ### ▶ WHAT HIS THIRD DESIGN INPUT CANNOT GIVE THIS APP (measured, not a preference)
 
 ⚠⚠ **Two things in his file are drawn from data that does not exist on the wire**, and both are recorded in the

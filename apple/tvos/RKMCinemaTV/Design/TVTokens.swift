@@ -367,6 +367,19 @@ enum TVTokens {
         /// …and its `min-height`, which matters on no tvOS screen (1080 pt is fixed) but is transcribed so the
         /// two numbers stay side by side with their source.
         static let heroMinHeight = px * 520
+        /// ⚠⚠ **THE HERO'S HEIGHT IN POINTS, SO THE SCREEN DOES NOT NEED A `GeometryReader` — and that is a
+        /// FOCUS fix, not tidiness.** His `.hero { height:66vh }` is a fraction of the VIEWPORT; the first
+        /// build measured it with a `GeometryReader` wrapped around the whole scroll content, which is the
+        /// exact structure `BrowseView.cardWidth` blames for his *"i cant come to the titles by pressing down
+        /// arrow"* (KNOWN_ISSUES #11): a `GeometryReader` reports its size only AFTER layout, and the frames it
+        /// hands its children are what the focus engine navigates on. On tvOS the canvas is FIXED at 1080 pt,
+        /// so `66vh` has exactly one value and needs no measurement:
+        ///
+        ///     0.66 × 1080 = 712.8 pt, and 712.8 / 19.2 = **37.125u**  (u = 1 % of the 1920 pt width)
+        ///
+        /// ⚠ The harness pins `heroHeight == 1080 × heroHeightFraction`, so this constant cannot drift from the
+        /// fraction it came from.
+        static let heroHeight = u * 37.125
         /// `.hero::after`'s `linear-gradient(to top, var(--void) 0%, rgba(10,11,13,.65) 32%, transparent 68%)`.
         static let scrimSolidStop: CGFloat = 0
         static let scrimMidStop: CGFloat = 0.32

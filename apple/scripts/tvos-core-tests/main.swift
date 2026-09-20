@@ -1063,11 +1063,9 @@ checkEqual(DetailCopy.notFoundSub, "It may have been removed or the link is stal
            "…and so is the sub-line")
 checkEqual(DetailCopy.partialWarning, "Couldn't load the episode list.",
            "the partial warning names the part that failed")
-checkEqual(DetailCopy.playReadyTitle, "Playback", "the Details panel is labelled Playback")
-checkEqual(DetailCopy.playReadySub, "Press Details, then Play — resume, subtitles and progress are shared with the web app.",
-           "…and says where playback comes from, because this screen cannot play")
-checkEqual(DetailCopy.nextUp("Resume S1E4"), "Next up: Resume S1E4",
-           "the screen names the verb it WILL offer, in the phone's own words")
+// ⚠⚠ `DetailCopy.nextUp` WAS CHECKED HERE UNTIL 2026-09-20 and is gone with the placeholder it belonged to
+// (*"Next up: Resume S1E4"* — the sentence B4 rendered where Phase C now renders a real Play control). Its only
+// renderer died with the Home hero's notice, and **copy nothing draws is not a rule, it is a memento**.
 checkEqual(DetailCopy.watchedWord, "Watched", "a watched episode reads Watched")
 
 let states: [DetailState] = [.loading, .notFound, .failed("boom"), .content(movieSnapshot)]
@@ -1749,6 +1747,13 @@ check(abs(prototypeFraction - 0.4058) < 0.001, "the prototype's own 2:40:02 of 6
       "got \(prototypeFraction)")
 checkEqual(PlaybackRules.progressFraction(position: 10, total: 0), 0,
            "an unknown total divides by nothing and draws an empty bar")
+
+// ⚠⚠ THE TITLE HERO'S HEIGHT IS ARITHMETIC ON A FIXED CANVAS, and it is checked here because the alternative
+// was a `GeometryReader` around the whole scroll content — the structure this repo already blames for a focus
+// defect (KNOWN_ISSUES #11). tvOS renders in a fixed 1920 × 1080 point space, so `66vh` has one value.
+check(abs(TVTokens.Title.heroHeight - 1080 * TVTokens.Title.heroHeightFraction) < 0.01,
+      "the title hero is 66% of the platform's 1080 pt canvas — no measurement needed",
+      "got \(TVTokens.Title.heroHeight), want \(1080 * TVTokens.Title.heroHeightFraction)")
 
 section("the route: which mode this client should ask the api for")
 

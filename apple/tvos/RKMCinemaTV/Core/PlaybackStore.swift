@@ -51,7 +51,37 @@ final class PlaybackStore: ObservableObject {
     /// The detail snapshot the player was opened with — the top bar's title/year, the synopsis, and the
     /// RESUME POSITION all come from it, so the player makes no second fetch for metadata the screen
     /// behind it already has.
-    let detail: ItemDetail?
+    ///
+    /// ⚠ **IT IS OPTIONAL, AND MUTABLE, BECAUSE THE PLAYER IS REACHED FROM TWO KINDS OF SCREEN.** The detail
+    /// screen hands one over; the Home's hero has only a `MediaItem` (a row), so it passes `facts` and `load()`
+    /// refines them from `GET /jellyfin/detail` — which is where the exact `resumeTicks` live.
+    private(set) var detail: ItemDetail?
+
+    /// What the player knows about the title when nobody handed it an `ItemDetail`.
+    ///
+    /// ⚠⚠ **WHY THIS TYPE EXISTS: the Home's hero has a Play button** (`HomeRules.heroPrimaryLabel`'s verb) and
+    /// a row, not a detail payload. Pressing it is his round-3 report — *"when i tried to play from the title
+    /// from continue watching section in home screen, i cant play it"*. ⚠ Both numbers are in SECONDS on this
+    /// wire: the api converts `PlaybackPositionTicks` and `RunTimeTicks` with `_ticks_to_sec` before a row is
+    /// ever sent (`backend/services/library/jellyfin.py:469`), which is why this is not a ticks conversion.
+    struct PlaybackFacts: Equatable {
+        let title: String
+        let runtimeSeconds: Double
+        let resumeSeconds: Double
+
+        static let unknown = PlaybackFacts(title: "", runtimeSeconds: 0, resumeSeconds: 0)
+
+        /// ⚠ From a Home/Browse row — the title the ROW shows (an episode's own title, not its series', which
+        /// is the hero's choice and not the player's).
+        static func from(_ item: MediaItem) -> PlaybackFacts {
+            PlaybackFacts(title: item.title,
+                          runtimeSeconds: Double(item.runtime ?? 0),
+                          resumeSeconds: Double(item.playbackPosition ?? 0))
+        }
+    }
+
+    /// The row's facts, kept so a failed detail fetch still leaves a titled, resumable player.
+    let facts: PlaybackFacts
 
     private let client: APIClient
     private var correlation = CorrelationID.next()
@@ -101,19 +131,27 @@ final class PlaybackStore: ObservableObject {
 
     // MARK: - Init
 
-    init(client: APIClient, itemID: String, detail: ItemDetail?) {
+    init(client: APIClient, itemID: String, detail: ItemDetail?,
+         facts: PlaybackFacts = .unknown) {
         self.client = client
         self.itemID = itemID
         self.detail = detail
-        let resume = detail.map { PlaybackRules.seconds(fromTicks: $0.play.resumeTicks) } ?? 0
+        self.facts = facts
+        let resume = detail.map { PlaybackRules.seconds(fromTicks: $0.play.resumeTicks) }
+            ?? max(0, facts.resumeSeconds)
         self.resumePosition = max(0, resume)
         self.position = self.resumePosition
-        self.duration = detail.map { Double($0.runtime ?? 0) } ?? 0
+        self.duration = detail.map { Double($0.runtime ?? 0) } ?? max(0, facts.runtimeSeconds)
     }
 
     // MARK: - Derived labels (the top bar and the drawer)
 
-    var title: String { detail?.name ?? "This title" }
+    /// ⚠ The `ItemDetail`'s name when there is one, else the ROW's title, else a neutral sentence — never an
+    /// empty bar over the film.
+    var title: String {
+        if let name = detail?.name, !name.isEmpty { return name }
+        return facts.title.isEmpty ? "This title" : facts.title
+    }
 
     /// ⚠ The badge is derived from the mode the app actually chose — never a fixed string. A badge that
     /// said "Remux · HLS" while the stream was a direct play is exactly the kind of lie the app's rule
@@ -266,6 +304,26 @@ final class PlaybackStore: ObservableObject {
         load = .loading
         playbackFailure = nil
         correlation = CorrelationID.next()
+
+        // ⚠⚠ **THE FACTS ARE REFINED, NOT DEMANDED.** Arrived from the Home? There is no `ItemDetail` — so ask
+        // for it once, and treat a failure as SOFT: the row's own facts still open a titled, resumable player,
+        // and the position it starts from is the row's own. ⚠ This is what makes the Home's hero Play button
+        // honest rather than a second, thinner playback path.
+        if detail == nil {
+            if let fresh = try? await client.itemDetail(itemID: itemID, correlation: correlation) {
+                detail = fresh
+                duration = Double(fresh.runtime ?? 0)
+                resumePosition = max(0, PlaybackRules.seconds(fromTicks: fresh.play.resumeTicks))
+                position = resumePosition
+                RKMLog.info("player: facts refined from the detail payload", category: .app,
+                            correlation: correlation)
+            } else {
+                RKMLog.info("player: opened without a detail payload — using the row's own facts "
+                            + "(resume \(Int(facts.resumeSeconds))s of \(Int(facts.runtimeSeconds))s)",
+                            category: .app, correlation: correlation)
+            }
+        }
+
         do {
             let info = try await client.playbackInfo(itemID: itemID, correlation: correlation)
             self.info = info

@@ -19,10 +19,15 @@ import SwiftUI
 ///   * **a SERIES' primary goes to its DETAIL screen**, exactly as the web's does — its label is
 ///     `"Explore Episodes"`, because a series is explored rather than played. That is a real destination and
 ///     it works today;
-///   * **anything else's primary shows the Playback placeholder** the detail screen already shows
-///     (`DetailCopy.playReadyTitle/playReadySub`), and the screen names the verb it offers
-///     (`DetailCopy.nextUp`). ⚠ The same two sentences as B4, deliberately: a second "playback arrives later"
-///     wording is a second vocabulary for one fact.
+///   * **anything else's primary PLAYS** — `HomeView.play(_:)` opens the tvOS player with the row's own facts.
+///     ⚠⚠ **That press used to print a placeholder** (`DetailCopy.playReadyTitle` / `playReadySub`, the pair of
+///     sentences that said where playback would come from), and his round-3 report is what killed it:
+///     *"when i tried to play from the title from continue watching section in home screen, i cant play it"* —
+///     the hero was still apologising. The strings and the notice are DELETED.
+///     ⚠ The verb in the label is still the SAME RULE the button obeys (`HomeRules.heroPrimaryLabel`:
+///     `Resume S1E3` / `Play` / `Explore Episodes`), so the label cannot promise one thing and the press do
+///     another — and a SERIES is the one case where the press opens the detail screen, because there is no
+///     single thing to play.
 struct HeroBand: View {
 
     let item: MediaItem

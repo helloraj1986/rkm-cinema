@@ -314,19 +314,17 @@ enum DetailCopy {
     /// first is kept — a partial failure must still read as the same failure the phone reports.
     static let partialWarning = "Couldn't load the episode list."
 
-    /// ⚠ **NEW copy for tvOS — the web app has nothing to mirror here, because it plays.** This is the
-    /// "Play is a placeholder" requirement of `docs/TVOS_LIBRARY_PLAN.md` §B4, said out loud instead of
-    /// rendered as a button that cannot work.
-    /// ⚠⚠ **RENAMED AND REWRITTEN WHEN PHASE C LANDED (2026-09-20).** These two were `playPendingTitle` /
-    /// `playPendingSub` and said *"Arrives with the tvOS player (Phase C)."* — which became FALSE the moment
-    /// the player shipped, and a stale sentence on the Home's Details panel is worse than no sentence: the
-    /// detail screen carries the real control now, and this pair says where it is.
-    static let playReadyTitle = "Playback"
-    static let playReadySub = "Press Details, then Play — resume, subtitles and progress are shared with the web app."
-
-    /// The line naming the verb this screen WILL offer — the phone's own words, e.g. `Resume S1E4`.
-    /// ⚠ A function rather than an interpolation in the view, so the sentence is pinned by the harness.
-    static func nextUp(_ verb: String) -> String { "Next up: \(verb)" }
+    // ⚠⚠ **THE WHOLE PLACEHOLDER VOCABULARY IS DELETED (2026-09-20), AND IT WENT IN TWO STEPS.**
+    // `playPendingTitle`/`playPendingSub` said *"Arrives with the tvOS player (Phase C)."*; they were renamed
+    // to `playReadyTitle`/`playReadySub` and rewritten the moment Phase C landed, to say where the control is.
+    // ⚠⚠ Then his round-3 report showed the HOME's hero was still only printing that sentence —
+    // *"when i tried to play from the title from continue watching section in home screen, i cant play it"* —
+    // and the honest answer was not better copy: the hero's button plays now (`HomeView.play(_:)`).
+    // **Copy that explains where a control is, when the control is right there, is the placeholder wearing a new
+    // coat.** So these two and `nextUp(_:)` ("Next up: Resume S1E4", whose only renderer was the same notice)
+    // are gone, with the harness's literal pins and the falsification entry that reverted `nextUp`. ⚠ Nothing
+    // here is kept "in case": a constant nothing renders is a memento, and this file's own header says copy is
+    // a rule.
 
     /// The seasons heading and the per-episode "watched" word — the web's own.
     static let watchedWord = "Watched"

@@ -330,9 +330,10 @@ final class AppModel: ObservableObject {
     ///
     /// ⚠ The store is built HERE and not in the view, so a profile switch, a sign-out or a `changeServer`
     /// cannot leave a player alive that holds the previous viewer's position (see `enterLibrary`).
-    func openPlayer(itemID: String, detail: ItemDetail?) {
+    func openPlayer(itemID: String, detail: ItemDetail?,
+                    facts: PlaybackStore.PlaybackFacts = .unknown) {
         guard let session, !itemID.isEmpty else { return }
-        playback = PlaybackStore(client: session.api, itemID: itemID, detail: detail)
+        playback = PlaybackStore(client: session.api, itemID: itemID, detail: detail, facts: facts)
         phase = .player
         RKMLog.info("player: opened \(itemID.prefix(8))", category: .app)
     }

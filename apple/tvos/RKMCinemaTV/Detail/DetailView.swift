@@ -151,28 +151,32 @@ struct DetailView: View {
     // MARK: - The title
 
     private func content(_ snapshot: DetailSnapshot) -> some View {
-        // ⚠ The hero's height is a FRACTION of the screen (his `66vh`), so it needs the screen's own height:
-        // measured here and handed down, rather than `UIScreen.main` — a view that reads the display directly
-        // is a view that is wrong the first time it is not full-screen.
-        GeometryReader { geometry in
-            ScrollView(.vertical, showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 0) {
-                    hero(snapshot, height: geometry.size.height * TVTokens.Title.heroHeightFraction)
+        // ⚠⚠ **NO `GeometryReader` — AND REMOVING IT IS A FOCUS FIX, NOT A TIDY-UP.** His round-3 report:
+        // *"i can not go to the play button on any title"*, and the Play control is the only focusable thing
+        // inside this scroll content. The reader was here to measure `66vh`, which is the SAME structure
+        // `BrowseView.cardWidth` blames for KNOWN_ISSUES #11 (*"i cant come to the titles by pressing down
+        // arrow"*): a `GeometryReader` reports its size only AFTER layout, and the frames it hands its children
+        // are what the focus engine navigates on. On tvOS the canvas is fixed at 1080 pt, so `66vh` is a
+        // CONSTANT (`TVTokens.Title.heroHeight`, pinned by the harness against the fraction it came from) and
+        // nothing needs measuring. ⚠ What is left is the app's own working shape — a `ScrollView` whose content
+        // is a plain `VStack`, exactly like the Home's rails.
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 0) {
+                hero(snapshot, height: TVTokens.Title.heroHeight)
 
-                    below(snapshot)
+                below(snapshot)
 
-                    if snapshot.showsEpisodes {
-                        episodes(snapshot)
-                    }
-
-                    // `.spacer-bottom { height:100px }` — the tail, so the last shelf is not flush with the
-                    // screen's bottom edge. ⚠ A fixed-height `Color.clear` and NOT a `Spacer()`: a `Spacer`
-                    // inside a `ScrollView`'s stack has no space to claim, so it collapses to nothing.
-                    Color.clear
-                        .frame(height: TVTokens.Title.bottomSpacer)
+                if snapshot.showsEpisodes {
+                    episodes(snapshot)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+
+                // `.spacer-bottom { height:100px }` — the tail, so the last shelf is not flush with the
+                // screen's bottom edge. ⚠ A fixed-height `Color.clear` and NOT a `Spacer()`: a `Spacer`
+                // inside a `ScrollView`'s stack has no space to claim, so it collapses to nothing.
+                Color.clear
+                    .frame(height: TVTokens.Title.bottomSpacer)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 

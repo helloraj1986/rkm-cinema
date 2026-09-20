@@ -202,10 +202,20 @@ struct BrowseView: View {
         let items = store.wall.items
         let shown = LibraryRules.filter(items, genre: genre, sort: sort)
 
-        return VStack(alignment: .leading, spacing: 0) {
-            filterRow(total: items.count, shown: shown.count)
+        // ⚠⚠ **ONE SCROLL CONTAINER — THE APP'S OWN WORKING SHAPE, AND A FOCUS FIX.** The filter row used to be
+        // a SIBLING above this `ScrollView`, which made it a focus ISLAND: his round-3 report is that focus
+        // could not leave the tags UPWARD to the top bar (*"i cant go up from tags to upper navbar where the
+        // homebutton is there"*). On the Home every focusable row lives inside the ONE vertical scroller and
+        // Up/Down between them work, so the chips join it here.
+        // ⚠ **A DELIBERATE DIVERGENCE from his prototype**, whose `.filterbar` is a sibling of `.grid-wrap`: in
+        // a browser a sticky bar costs nothing, and on tvOS the same structure was a dead end in one direction.
+        // ⚠ **The cost, stated rather than hidden:** the filter bar now scrolls away with the wall. If he wants
+        // it pinned, that is `.safeAreaInset(edge: .top)` around this scroller — one line, and its own round,
+        // because whether focus can leave a safeAreaInset upward is a platform claim this sandbox cannot test.
+        return ScrollView(.vertical, showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 0) {
+                filterRow(total: items.count, shown: shown.count)
 
-            ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: TVTokens.Grid.gridTitleGap) {
                     Text(gridTitle)
                         .font(.system(size: TVTokens.Grid.gridTitleSize))
@@ -227,6 +237,7 @@ struct BrowseView: View {
                 .padding(.bottom, TVTokens.Grid.gridBottomPad)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 

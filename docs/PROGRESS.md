@@ -1,4 +1,232 @@
-## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-19) · ✅ **PHASE B OF THE tvOS CLIENT IS MERGED TO `dev`** — Home, Browse and item detail, as a `--no-ff` merge (`a6190c3`) · ⚠ **his Mac round for it was never recorded, so read the box below before trusting anything about it** · **the working tree is on `dev`** (switched here by the merge — this tree IS his Windows checkout) · **nothing needs `apply`**: no file under `backend/`, `frontend/` or `nginx/` changed on the branch, so there is no generated artefact and nothing to deploy
+## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-20, SECOND UPDATE — his UI confirmation) · ✅ **PHASES U (U1–U7b) AND V ARE BUILT ON `feat/tvos-ux`, HIS ROUND HAS RUN, AND BOTH DEFECTS IT FOUND ARE CLOSED — he verified them ON THE UI on 2026-09-20 (#10 the focused card's ring and its black bottom corners · #11 Down into a FILTERED grid)** · ⚠ **what is left is HIS CALL, not mine: the merge of `feat/tvos-ux` into `dev`, and then Phase C (the player), parked on `feat/tvos-player` with only C1 built** · **the Profile Switcher + Home redesign (U), then the Library and Title screens (V) of the tvOS app** · **V was asked for and built on 2026-09-20: the two screens of his SECOND design input, the Library grid and the Title detail** · **the working tree is on `feat/tvos-ux`** (⚠ this tree IS his Windows checkout, so the branch left checked out is the branch HE builds) · ⚠ **`feat/tvos-player` is still parked** (C1 built and pushed, C2–C5 not started) and **`dev` has neither branch** · **nothing needs `apply`**: no file under `backend/`, `frontend/` or `nginx/` changed, so there is no generated artefact and nothing to deploy
+
+### ▶ THE PHASES, AND WHERE THEY ACTUALLY ARE
+
+`docs/TVOS_UX_PLAN.md` is the plan for U and holds its detail; its §U1 carries the "BUILT 2026-09-20" notes where
+the build added something the plan did not name. **`docs/TVOS_LIBRARY_UI_PLAN.md` is the plan for V** (the
+Library and Title screens from his SECOND design input) and carries its own measurement of his spec, its
+falsifiers and an "AS BUILT" record.
+
+| Phase | State |
+|---|---|
+| **U1** | **BUILT + PUSHED** (`e135930`) — `DesignTokens.swift` is GENERATED from `frontend/src/styles/index.css` by `apple/scripts/generate-design-tokens.py`, with `apple/scripts/check-design-tokens.py` as the gate (R1 drift · R2 the tvOS muted grey · R3 no scattered colours · `--falsify` proves all three can go red). `Design/TVTokens.swift` is the hand-written tvOS-only layer (the measured WCAG fix for the de-emphasised caption grey, plus the tvOS metrics, each carrying its reason) and `Design/DesignColours.swift` is the SwiftUI bridge — the ONE file held outside every gate on purpose, because it holds no rule. ⚠ **`TVOS_DEPLOYMENT_TARGET` is now `26.0`** (four occurrences, his decision) and `apple/tvos/README.md`'s stale `17.0` is fixed. ⚠ The target bump is the **one change NO gate here can verify** — no Xcode in the sandbox — so it is his Mac build and nothing else. |
+| **U2** | **BUILT + PUSHED** (`21f2ad8`) — the Profile Switcher: eyebrow + count, circular gold-initials avatar, lock as a bottom-right badge, a centred scrolling row, the administrator's two controls, focus lift 1.14 with the other tiles at 0.72. Rules are pure and RUN: `Core/ProfileRules.swift` (initials · the accepted subtitle vocabulary · the VoiceOver label · the eyebrow · the administrator gate, **matched by ID, never by name**). |
+| **U3** | **BUILT + PUSHED** (`0052d4f`) — the Home's top bar (tabs from `BrowseRules.browseEntries`, never the buildspec's fixed list), the hero band (every word and number a mirrored web rule), the card's type badge, and the backdrop route in `PosterURL` (both route words are contract-path literals, so R4 checks BOTH — 17 literals). |
+| **U4** | **BUILT** — the third rail: `HomeRailID.recentlyAdded`, `HomeRules.recentlyAddedItems` and `HomeRailLimit.recentlyAdded = 16` wired where they were written for (they had been written, tested and **unused** since B1), plus the hero's de-duplication verified on the added rail's side. |
+| **V1 + V2** | **BUILT + PUSHED (2026-09-20, one commit — both screens were asked for in one instruction)** — `Browse/BrowseView.swift` is now his `library-view.html`: the app's own top bar (its tabs from `BrowseRules.tabPlan`, extracted so Home and Library cannot drift) over a filter row of **this library's own genres** (`LibraryRules.genres`) plus a sort control offering **the web app's eight sorts** and its count line, over a **fixed 6-column** grid of **2:3** poster cards (`Browse/LibraryGridCard.swift` — art only at rest, the caption fading in OVER the art on focus) with a skeleton loading state and his empty state. `Detail/DetailView.swift` is now his `title-view.html`: a **66 %-height backdrop hero** with the title block over its lower part (title, `year · runtime · certification · ★ rating`, genre pills), the synopsis at its own measure, and a **single non-scrolling row of round initials** for the cast. ⚠⚠ **NO PLAY CONTROL** (his decision, 2026-09-20 — the player is Phase C: the screen keeps B4's playback notice, and its top bar carries ONE tab, `Back`, which is where the default focus lands) and **NO "Because you watched" shelf** (on the web that row is an ACQUISITION surface: it DROPS what you already own and offers Add/Download — §1 row 3 of the V plan). Rules are pure and RUN: `Core/LibraryRules.swift` (the eight sorts with their tie-breaks and stability · the chips · the count · the grid's arithmetic), `BrowseRules.tabPlan`, `DetailRules.castHue`. |
+| **U7** | **BUILT** — **the premium card**, from his review of the first build that ran (*"the card ux doesn't look good, the text positions are going to the border on left, make it ultra premium with some additional relevant info … like duration, ratings"*). Text inset `0.5u` under the artwork; a scrim, a hairline and the prototype's shadow; a **facts line** (`HomeRules.cardFacts` — duration first, then an episode's series, the year, a genre, plays) that **deliberately replaces the mirrored `lib.ts::cardMetaLine` on his call**; a **state chip** (`HomeRules.cardStateText` — `38m left` beats `Watched`, and a partial bar with no honest countdown gets nothing); and the countdown arithmetic the hero and the card now **share** (`HomeRules.minutesLeft`). ⚠⚠ **The RATING he asked for is not on the wire** — `_item_public()` drops Jellyfin's ratings and resolution, so a rating badge is a backend + frontend + model change AND a deploy → its own phase, offered to him, never invented. |
+| **U7b** | **BUILT** — **the Profile Switcher's row did not fit the screen** (his report: *"the avatars are too big, follow the html to get the right size"*). The avatars were already the prototype's `10.4u`; the screenshot's tell was the **`Add profile` tile clipped at the right edge**. Cause: `screenPaddingH` applied **twice** (the screen's stack *and* the row), so the row needed `87.4u` of an `88u` box and the focused tile's `1.14` scale tipped it over. Fixed → one margin; the prototype's own `1.1u`/`0.25u` gaps are tokens; the focus ring is `0.28u` exactly **plus the prototype's focus shadow** (without it a focused tile only grows, which reads as "the avatar got bigger"); and **the fit is now a RUNNABLE check** (`TVTokens.Profile.rowWidthUnits`, with both design tables joined to `check-tvos-core.py`'s `PURE_SOURCES`) — 409 checks. |
+| **U5** | **HIS ROUND HAS RUN (2026-09-20)** — and it took four rounds to get there: two `BUILD FAILED`s before it built at all (`navFailure`, then the nested `Body`), then on screen the Home `Details` focus ring, the Library card's ring/corners (#10) and the filtered grid's Down (#11). ✅ **#10 and #11 are confirmed by him on the UI (2026-09-20) and are therefore deleted from `KNOWN_ISSUES.md`** (recorded in the closure block below). ⚠⚠ **The falsifier list F1–F7 below was never reported on individually — record those as UNRECORDED, never as passed.** |
+| **U6** | **BUILT** (`U6`, after the first round came back) — **the screens were rebuilt to his prototype's own geometry.** He looked at the first build and said it *"doesn't even look like what is seen in the html"*, and the measurement agrees: U2/U3 took the buildspec's WORDS and kept the app's old GEOMETRY. `TVTokens.u = 19.2 pt` is now the prototype's `--u` (1 % of a 1920pt screen) and **every metric is transcribed as `u * <the number in the HTML>`** — 16:9 cards at `19u`, a `32u` hero, the `RKM·CINEMA` bar with black-on-gold focused tabs, `4.4u` profile titles over gradient avatars, and the prototype's own easing curves. ⚠ Not ported, with reasons: its JavaScript (focus maths + `scrollIntoView`), the Search icon and the three Collections tabs (no screens yet), and the `S1·E3` badge spelling. |
+
+### ▶ U5 — HIS ROUND, AND THE SEVEN FALSIFIERS (written before it, not after)
+
+A **SCREEN** round, so it runs **WITHOUT** `-RKMDebugHUD YES` (the panel is 980pt at the top-left and a
+screenshot carrying it is for the log lines, not for judging layout):
+
+```bash
+cd ~/dev/rkm-cinema && git checkout feat/tvos-ux && git pull --ff-only && ./apple/scripts/mac-round.sh tvos --sim
+```
+
+| # | Falsifier | What DISPROVES it |
+|---|---|---|
+| F1 | the Profile row reads as **one choice** — focused tile up + ringed, the others dimmed | everything looks equally bright: the dim rule is not applying |
+| F2 | **every** profile's lock/admin state matches the SERVER | a profile that has a password shows none (hardcoded example data) |
+| F3 | the top bar's tabs are **this profile's** libraries | the buildspec's fixed list is on screen instead |
+| F4 | moving down a shelf and back **keeps the card's column** | focus jumps to the first card — then the platform is NOT doing it and a hand-rolled map is genuinely needed |
+| F5 | a real poster draws in the hero and the rail | the "no photo" marker (⚠ still B5's own unmeasured falsifier) |
+| F6 | the top bar dims when focus leaves it | it stays at full opacity — then §3's fallback applies (the platform's focus treatment, not a hand-rolled dim) |
+| F7 | **the build succeeds at the new 26.0 floor**, and a focused card shows Liquid Glass | `BUILD FAILED`, or a deprecation the 17.6 floor was hiding — ⚠ **the only change in the phase no gate here can test** |
+
+⚠ **What the round CANNOT prove:** nothing about real Apple TV hardware (the simulator is not an Apple TV),
+and **a failed build proves nothing about the layouts** — a `BUILD FAILED` is a build round, and F1–F7 were
+never attempted. ⚠ `simctl launch --console-pty` HOLDS his terminal until the app exits: tell him to `Ctrl-C`.
+
+### 🐞 HE FOUND A REAL UX BUG ON THE FIRST BUILD THAT RAN (2026-09-20) — rule 5 exists because of it
+
+His words: **"homescreen → scrolling to details button → the ux has bug"**, with a screenshot. The Home's
+`Details` button drew its **focus ring around the word**, inside the button's own grey box.
+
+**Cause.** A `ButtonStyle` receives `configuration.label` — the button's CONTENT and nothing else. The ring was
+drawn inside the style, while `.padding()` and `.background()` were applied to the `Button` itself, so the ring
+never saw the box. ⚠ `TabButtonStyle` and the avatar button already had it right (their box is inside the
+label); `CtaButtonStyle` and `PillButtonStyle` did not.
+
+**Fix — structural, not cosmetic: the style owns its box.** `CtaButtonStyle(kind:)` (`.primary` / `.secondary`)
+and `PillButtonStyle(kind:)` (`.plain` / `.primary`) now draw their own padding, fill, border, radius, focus
+ring and lift, exactly as `TabButtonStyle` already did. **A caller that can only supply content cannot supply it
+in the wrong place**, so the class is gone rather than this instance of it.
+
+⚠ **Rule 5 of `check-tvos-members.py` keeps a sixth style from re-introducing it:** from `.buttonStyle(<a style
+we own>)` it walks back to the enclosing `Button`, deletes every closure from that region (the action and the
+label are allowed to draw anything), and refuses box chrome (`.padding`, `.background`, `.overlay`, `.frame`) in
+what is left. ⚠ **Proved on the real defect**: re-adding `.padding()` to that exact `Details` button makes it
+fire (`Home/HeroBand.swift:182`), and it is silent on the fixed tree.
+
+⚠ **THE LESSON, THIRD TIME:** no gate here can compile SwiftUI, so a defect that only the Mac can see has to be
+answered with a STRUCTURE that makes it impossible, and only then with a text rule as a backstop.
+
+### ⚠⚠ ROUND 2 FAILED TOO (2026-09-20) — ON A NAME, NOT A MEMBER. Rule 4 exists because of it.
+
+```
+Home/TopBar.swift:153:8: error: type 'TabButtonStyle' does not conform to protocol 'ButtonStyle'
+Home/TopBar.swift:161:20: error: struct 'Body' must be as accessible as its enclosing type
+                       because it matches a requirement in protocol 'ButtonStyle'
+Home/TopBar.swift:188:8: error: type 'IconButtonStyle' does not conform to protocol 'ButtonStyle'
+Home/TopBar.swift:193:20: error: struct 'Body' must be as accessible as its enclosing type …
+```
+
+**Every `Style` protocol declares an associatedtype requirement called `Body`**, so the helper view nested
+inside each of U6's four new `ButtonStyle` conformers collided with it. ⚠⚠ **Phase A's tile style is called
+`TileBody` for exactly this reason** — the rule was already known in this repo and was forgotten the moment
+U6 wrote four new styles, which is the whole argument for a gate rather than a convention. Renamed to
+`TabChrome` / `IconChrome` / `CtaChrome` / `PillChrome`; **rule 4 of `check-tvos-members.py` refuses a nested
+`struct Body`** (indented declarations only — a file-scope `struct Body` collides with nothing and flagging it
+would be the false positive that makes a gate worth ignoring).
+
+⚠ **TWO ROUNDS, TWO COMPILE ERRORS, BOTH IN CODE NO GATE HERE CAN COMPILE** — `navFailure` (a member that did
+not exist) and `Body` (a name a protocol owns). The members gate now covers both. That is the only
+compensation available: **there is no SwiftUI on Linux, so a text rule is the entire defence**, and the
+alternative — a SwiftUI stub — is the gate that cries wolf (`docs/TVOS_UX_PLAN.md` §6).
+
+### ⚠⚠ ROUND 1 FAILED (2026-09-20) — ONE LINE, AND A GATE NOW COVERS IT
+
+His first round on this branch was a **`BUILD FAILED` (exit 65)**, on exactly one error:
+
+```
+Home/HomeView.swift:80:40: error: value of type 'HomeSnapshot' has no member 'navFailure'
+```
+
+`HomeView` asked the snapshot for a member that was never written, and **every gate on this machine was blind
+to it by construction** — there is no SwiftUI on Linux, so a view is compiled by nothing here, and
+`check-imports.py` checks imports, not members. ⚠ **The good news in the same log:** the build got all the way
+into the Home's file batch, so the **tvOS 26.0 floor did NOT surface a deprecation error**, and
+`HomeStore`/`LibraryAPI`/`PosterLoader`/`PosterURL` compiled clean in the same pass.
+
+Fixed with `NavOutcome`'s own member (`store.snapshot.nav.failedMessage`) rather than by adding the accessor —
+the shortest truthful path, and no new untested rule. ⚠ **And the GATE was fixed in the same session, which
+is this repo's rule for a blind spot** (`references` in the skill record the identical lesson from B2's
+missing import): **`apple/scripts/check-tvos-members.py`** checks the *first member* a listed view variable
+names against the type that declares it — a deliberately narrow TABLE of `(file, variable, type)` triples,
+because a general dot-access sweep needs a type checker and a gate that cries wolf is worse than an absent
+one. Its `--selftest` fires on the exact `navFailure` line and stays silent on the real tree. ⚠⚠ **It reads
+DEPTH-1 members only**: a function body's locals are also `let`/`var`, and `HomeRails.rails` has locals named
+`cw` and `played` — a scan that counted them would have "found" those members and passed a view naming them.
+
+### ▶ WHAT IS VERIFIED ON THIS BRANCH, AND WITH WHAT
+
+| Gate | Result (2026-09-20, branch `feat/tvos-ux`) |
+|---|---|
+| `python3 apple/scripts/check-tvos-core.py` | **466 checks, 0 failures** — the pure rules of every phase, COMPILED AND RUN |
+| … `--falsify` | ✅ **PASS — 102/102 rules reverted, every one went red on the check it protects** (`GATE EXIT: 0`, `feat/tvos-ux`, 2026-09-20). ⚠ Getting there took THREE runs and the gate found four rotten entries of its own on the way — two STALE (reverting lines that had been rewritten) and one WRONG (red, but on a stale expectation) — all repaired and each proved red by hand; the third run is the one that says 102/102. ⚠ It recompiles the harness once per rule (~20 s each, and ~2× that with another CPU-heavy job running), so it runs BACKGROUNDED with its output in a file: a foreground call dies at the tool's timeout and reads exactly like a FAILING gate. |
+| `python3 apple/scripts/check-design-tokens.py --falsify` | R1, R2 and R3 each go red when the thing they guard breaks |
+| `python3 apple/scripts/check-tvos-models.py` | 113 keys, **17 endpoint literals** (both artwork routes included) |
+| `bash apple/scripts/check-apple-typecheck.sh` | every portable tvOS file typechecks, **plus `DesignTokens.swift` and `TVTokens.swift`** |
+| `python3 apple/scripts/check-imports.py apple/tvos/RKMCinemaTV` | 40 files, no missing framework imports |
+| **`python3 apple/scripts/check-tvos-members.py`** | **FIVE rules**, all on the class of error no compiler here can see: (1) every member a listed view variable names exists on its model — **31 `(file, variable, type)` pairs**; (2) every label used when a view constructs one of the app's **22** own view/type names is one that type takes; (3) every `<Namespace>.<member>` a tvOS source names (`HomeRules.*`, `TVTokens.*`, `RKMColour.*`, `PosterURL.*` …) is declared by that namespace's file; (4) **no nested type named `Body`** — every `Style` protocol owns that name; (5) **no box chrome on a `Button` whose own style already draws it** — his screenshot's focus ring around the word. ⚠ Written AFTER round 1 failed, extended AFTER round 2 failed **and again in V** (the two new styles, and the nested-type scan), and `--selftest` proves all five fire and stay silent on the real tree. ⚠⚠ **V also found and fixed a real FALSE POSITIVE in it: a colon inside a string literal (`TopBarTab(id: "detail:back", …)`) was reported as an argument label on a correct tree** — literals are now stripped first, and the selftest pins both halves. |
+| `python3 tools/check_md_links.py` | **70 files, 70 relative links, all resolve** — re-measured 2026-09-20. ⚠ The count is a property of the TREE, not of the branch: it includes his **untracked** `tvos_ux/` design material, and it moved when the two `RKM-CINEMA_NEW_UX/` files were deleted. Read it live; do not compare it against the 75/68 recorded earlier |
+| `cd frontend && npx vitest run` · `npm run typecheck` | **589 tests in 23 files, all pass** · `tsc --noEmit` clean — ⚠ **unchanged, as promised**: nothing under `frontend/` was touched |
+| `cd backend && env -u JELLYFIN_API_KEY python -m pytest tests/ -q` | **1338 passed, 0 failed** — ⚠ **unchanged**: `git diff --stat origin/dev -- backend/` is EMPTY |
+
+⚠⚠ **THE FALSIFICATION PASS EARNED ITS 26 MINUTES, TWICE.** Run 1 came back **FAIL — 4 rules not actually
+pinned**, and every one of them was a real defect in the *tests*, not the code:
+* a mutation that **did not compile** (two enum cases with one raw value; and a closure written `{ true }`
+  where `{ _ in true }` was needed) — ⚠ **an uncompilable mutation is an `ERROR`, never a red**;
+* a mutation that went **red on the wrong line**, so the runner counted it as a survivor — the expected text
+  must be the FIRST check the mutation turns red;
+* ⚠⚠ and **a clause that could not be falsified at all**: `heroRuntimeLeft`'s `runtime > position` guard, whose
+  removal changes nothing because `runtimeText` already clamps a negative remainder. **It was deleted from the
+  source** rather than kept with a mutation that only pretends to pin it — and the clause that DOES matter
+  (`position > 0`, or an unstarted film reads its whole runtime as "time left") is now pinned instead.
+
+⚠⚠ **UNTIL HIS ROUND, NOT ONE SWIFTUI VIEW HAD EVER BEEN COMPILED ANYWHERE — but that is no longer true: his
+round built and RAN the app on the Mac, which is how #10 and #11 were found on screen.** ⚠⚠ **What is still true
+is the part that matters: nothing on THIS side can compile them.** Every gate number in this table is
+TYPE-AND-RULE evidence from this sandbox — it is not, and never was, evidence that any screen works.
+
+### ▶ HIS SCREEN ROUND ON PHASE V (2026-09-20) — one fixed from proof, one open with a falsifier
+
+He built it and ran it, and reported two things. ⚠ **Note what settled the first one: a ZOOM of his own
+screenshot** — the gold ring visibly inside the card with a black band below it — and not a log line. That is
+the rule this repo keeps re-learning: *his screenshot's tell IS the measurement.*
+
+| Report | State |
+|---|---|
+| *"the yellow line should be covering the card … on the card on the bottom left and right i can see square shape black background corners"* | **FIXED (`accda68`)** — ONE cause, two symptoms. `LibraryCardStyle` applied `.scaleEffect` **before** the ring overlay, so the ring was drawn on the unscaled label while the card grew to 1.14 out of it; and the caption's rectangular scrim was an `.overlay` on an **already-clipped** view, so its square corners landed on the artwork's rounded ones. ⇒ the ring and the shadows now sit **inside** the transform (which is what CSS does with a transform + box-shadow), and one `clipShape` closes over art **and** caption — his own `border-radius` + `overflow:hidden`. ✅ **CONFIRMED BY HIM ON THE UI, 2026-09-20.** |
+| *"when i filter by clicking on any tags … i cant come to the titles by pressing down arrow … i can select the titles only when the all tags is being selected"* | ⚠ **OPEN — `KNOWN_ISSUES.md` #11, cause NOT proven.** Filtering is exactly when the grid's content becomes shorter than the viewport. The ONE structural difference from the app's working pattern (the Home's rails, where Down into a shelf works) was a `GeometryReader` wrapped around the focusable, **lazily** laid-out grid — gone in `accda68`, with the card width now taken from `TVTokens.u * 100` (the canvas is 100u wide by the definition of `u`, and the harness pins that identity). ⚠⚠ **If it recurs, the reader was not it: the next step is a screenshot of the FILTERED state plus "does a second Down press a moment later work?", not another blind change.** ✅ **That step was never needed: he reports Down now reaches the titles. The `GeometryReader` removal is the change that shipped, so the BEHAVIOUR is confirmed while the mechanism stays an untested hypothesis that no longer has to be settled.** |
+
+### ✅ BOTH tvOS DEFECTS ARE CLOSED — HIS UI CONFIRMATION (2026-09-20)
+
+His words: **"these two are working now verified on ui"** — the focused grid card's gold ring and its black bottom
+corners (**#10**), and reaching the titles with Down after picking a genre (**#11**). Per this repo's rule both are
+**deleted from `KNOWN_ISSUES.md`** and recorded here instead.
+
+⚠ **Be precise about what that proves, because the two are NOT the same kind of result:**
+
+* **#10** was a cause **proven** from a zoom of his own screenshot (the ring drawn on the unscaled label; the
+  caption's rectangular scrim landing on the artwork's rounded corners) and fixed structurally in `accda68` — so
+  his confirmation closes it completely.
+* **#11** was **never** a proven cause: removing the `GeometryReader` around the lazy grid was offered as the
+  leading hypothesis, and it is now the change that shipped. ⇒ the DEFECT is gone on the UI, but the explanation
+  was never separately measured. Said plainly: **if a "Down cannot enter a short/filtered grid" problem ever
+  reappears, do not assume "the reader came back" — re-measure it with the filtered-state screenshot.**
+* ⚠ **U5's other falsifiers (F1–F7) and V-F1–V-F7 were never reported on one by one.** No session — including
+  this one — has measured the Profile row's dim state, the platform's column memory, the top bar's dim, or the
+  Liquid Glass focus treatment. They stay **unmeasured** and must not be claimed either way.
+
+**What is next is HIS CALL, not a build:** merge `feat/tvos-ux` into `dev` if he wants it, and then Phase C — the
+player — parked on `feat/tvos-player` (state: `docs/TVOS_PLAYER_PLAN.md` §3).
+
+### ▶ ⚠⚠ TWO COMMITS LANDED ON THIS BRANCH FROM DIFFERENT HANDS ON 2026-09-20 — KNOW WHICH IS WHICH
+
+| Commit | Author | What it is |
+|---|---|---|
+| `70cd71f` | **Rajeev** (23:41) | `test(tvos): pin the two rules the falsification gate caught unpinned` — a commit made **in the middle of the Phase V session, by something other than it**: it adds ONE fixture to `tvos-core-tests/main.swift` (a series Jellyfin marks `played` while an episode is part-played, which makes `cardStateText`'s `fraction < 1` branch load-bearing) and its message describes a falsification **"Run 5"**. ⚠ **That is why the core gate's count moved 465 → 466 mid-session.** Nothing is wrong with it — it is a real improvement to the harness — but a branch where two writers commit interleaved is a branch whose **gate numbers must be read live**, never from a note. |
+| `9849da8`, `9524f52`, `8458c6d`, `1eed977`, `cdc045a` | RKM Agent | Phase V itself (the plan, the two screens, the record, and the gate repairs). |
+
+⚠ If a third party is writing in this checkout, **push carefully**: `git fetch` + a fast-forward check before
+every push. ⚠⚠ **This branch DOES carry merge commits** (`a6190c3` Phase B, `be2072a` Phase A), so the
+standing rule applies — **never `rebase` it**; if the remote has moved, `git merge --ff-only` or reconcile by
+hand. And two agents running `--falsify` at once roughly halve each other's speed.
+
+### ▶ TWO THINGS THE NEXT SESSION MUST NOT GET WRONG
+
+1. **His second design input is in the tree, UNTRACKED, and it is now BUILT**: `tvos_ux/2. LibraryViewandItemDetailsView/`
+   (`tvos-ux-principles.md`, `tvos-library-view-spec.md`, `tvos-title-view-spec.md`, two `.html`
+   prototypes + a `README.md`). ⚠ It stays untracked (it is his working material, not a repo artefact) — the
+   plan that measures it is `docs/TVOS_LIBRARY_UI_PLAN.md`. ⚠⚠ **Its claims were measured against this repo
+   before anything was built, and THREE were false**: its colour table is not the brand (`#E8B33D` vs
+   `#ffc400`), its "Rating" sort is one the WEB APP ITSELF refuses in writing because library rows carry no
+   rating, and its "Because you watched" row — on the web — is an ACQUISITION surface that DROPS everything you
+   already own, so it is not a browse feature at all. ⚠ Its one big instruction, "focus opens on Play", was put
+   to him and **he chose no Play control** until the player lands. Read §1 of that plan before touching either
+   screen, and treat any later design input the same way: **a spec is a SOURCE, not a measurement.**
+2. **The UI plan supersedes the sequencing in `APPLE_CLIENTS_PLAN.md` §4.4 and `apple/tvos/README.md` §8**,
+   which still describe Phase C as "backend first". ⚠ And `apple/tvos/README.md` was amended on
+   `feat/tvos-player` but is **still stale on `dev`** — whoever merges either branch must check that §8 does
+   not get re-staled by the merge order.
+
+**Say this first:** *"continue rkm-cinema — pick up the RESUME-HERE block, we're on the tvOS app."*
+
+### [HISTORY — the 2026-09-19 resume block, superseded 2026-09-20 by the table above] ## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-19) · ✅ **PHASE B OF THE tvOS CLIENT IS MERGED TO `dev`** — Home, Browse and item detail, as a `--no-ff` merge (`a6190c3`) · ⚠ **his Mac round for it was never recorded, so read the box below before trusting anything about it** · ⚠⚠ **TWO UNMERGED BRANCHES NOW EXIST AND `dev` KNOWS ABOUT NEITHER — read the next block FIRST** · **the working tree is on `feat/tvos-ux`** (it was switched to cut that branch — ⚠ this tree IS his Windows checkout, so the branch left checked out is the branch HE builds) · **nothing needs `apply`**: no file under `backend/`, `frontend/` or `nginx/` changed on either branch, so there is no generated artefact and nothing to deploy
+
+### ▶ THE TWO OPEN BRANCHES, AND THE ORDER HE ASKED FOR
+
+Both are cut from `dev` (`0d75e1f`). **He chose the UX first** (*"i want to implment the better ux first before
+going to playback"*), so `feat/tvos-ux` is the one to work on next and `feat/tvos-player` is parked, complete and
+deliberately unfinished.
+
+| Branch | Carries | State |
+|---|---|---|
+| **`feat/tvos-ux`** | `docs/TVOS_UX_PLAN.md` — the Profile Switcher + Home redesign, plus his design input under `tvos_ux/` | **PLAN ONLY — no Swift written.** All four of his decisions are recorded in §0.2/§1a/§2b. **U1 is the next phase** |
+| **`feat/tvos-player`** | **C1 — the playback credential** (`Core/PlaybackAuth.swift` + its gate section + 10 mutations) | **BUILT, GATED, PUSHED** (`6919626`): 320 checks / 55 mutations RED, typecheck + imports + models + md-links green. ⚠ **Parked MID-PHASE** — C2–C5 are not started, and `docs/TVOS_PLAYER_PLAN.md` §3 says C5 (the backend carrier) is built **only if the round's F2 proves it is needed** |
+
+⚠⚠ **The one fact a next session must not get wrong:** the UX plan **supersedes the sequencing in
+`APPLE_CLIENTS_PLAN.md` §4.4 and `apple/tvos/README.md` §8**, both of which still describe Phase C as
+"backend first". `apple/tvos/README.md` was amended on `feat/tvos-player` but is **still stale on `dev`** — so
+whoever merges either branch should confirm that §8 does not get re-staled by the merge order. ⚠ And
+`README.md:73` states `TVOS_DEPLOYMENT_TARGET = 17.0` while the project carries **17.6**; U1 fixes it, and the
+target is going to **26.0** (his decision, `docs/TVOS_UX_PLAN.md` §0.2).
 
 **Say this first:** *"continue rkm-cinema — pick up the RESUME-HERE block, we're on the tvOS app."*
 

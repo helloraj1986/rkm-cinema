@@ -141,7 +141,9 @@ for primary in "${WORK[@]}"; do
 done
 
 echo ""
-echo "== tvOS sources (RKMCinemaTV) — the nineteen files that need no Apple UI framework"
+echo "== tvOS sources (RKMCinemaTV) — every file that needs no Apple UI framework"
+# ⚠ The count is deliberately NOT in that heading any more: it said "nineteen files" while the list grew to
+# 21, which is this repo's "one rule in two places" defect wearing a heading.
 # ⚠⚠ WHY THIS LIST IS NINETEEN FILES AND NOT THE WHOLE TARGET. The tvOS app is mostly SwiftUI, and there is
 # no SwiftUI on Linux to stub (nor a UIKit, nor an AVFoundation), so the views are Mac-round business and
 # saying so is the point. What CAN be checked here is the part where a mistake is silent and expensive:
@@ -169,6 +171,12 @@ echo "== tvOS sources (RKMCinemaTV) — the nineteen files that need no Apple UI
 #   DetailStore      Phase B4's one item — the detail request, the episode request, and the 404 -> notFound
 #   PosterURL        the artwork URL builder — a 404 poster and a broken screen look identical
 #   PosterLoader     the artwork fetch, and the log line that says whether the session cookie reached it
+#   DesignTokens     ⚠ GENERATED from `frontend/src/styles/index.css` by apple/scripts/generate-design-tokens.py,
+#                    and drift-gated by apple/scripts/check-design-tokens.py (R1). It is Foundation-only on
+#                    purpose so this list can compile it — the SwiftUI bridge is Design/DesignColours.swift,
+#                    which no gate here can see (there is no SwiftUI on Linux) and which holds no rule.
+#   TVTokens         the tvOS-only token layer (the one adjusted grey, the tvOS metrics) — Foundation-only for
+#                    the same reason, and the file whose diffability IS the design.
 #
 # ⚠ AppModel is the newest member of this list and it was a real gap: it decides which screen the app is on,
 # and until Phase B2 nothing compiled it here.
@@ -184,8 +192,10 @@ TV_WORK=()
 for rel in Core/ServerDefaults.swift Core/APIClient.swift Core/Models/AuthModels.swift \
            Core/Models/LibraryModels.swift Core/Models/DetailModels.swift \
            Core/HomeRails.swift Core/BrowseRules.swift Core/DetailRules.swift Core/RequestURL.swift \
+           Core/ProfileRules.swift Core/LibraryRules.swift \
            Core/LibraryAPI.swift Core/HomeStore.swift Core/BrowseStore.swift Core/DetailStore.swift \
            Core/PosterURL.swift Core/PosterLoader.swift \
+           Design/DesignTokens.swift Design/TVTokens.swift \
            Server/ServerProbe.swift App/AppLog.swift App/AppModel.swift Auth/SessionStore.swift; do
   if [ ! -f "$TV_SRC/$rel" ]; then
     echo "missing source: $TV_SRC/$rel"; exit 3

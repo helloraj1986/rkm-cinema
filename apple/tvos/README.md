@@ -4,23 +4,43 @@ A **native SwiftUI client**. tvOS has no WebKit at all (Apple removed it; the gu
 embedding one), so there is no shell shortcut here — the UI is written for the TV. Full reasoning:
 [`../../docs/APPLE_CLIENTS_PLAN.md`](../../docs/APPLE_CLIENTS_PLAN.md) §4.
 
-**Status: Phase B is MERGED to `dev` (2026-09-19)** — Phase A (screens 0–2: address → sign in → who's
-watching) was accepted on his simulator first; **Phase B — B1 (models + gate), B2 (Home), B3 (Browse) and
-B4 (item detail) — is now on `dev`**.
+**Status: Phase U (U1–U7b) and Phase V are BUILT on `feat/tvos-ux` (2026-09-20) and their rounds are the next
+thing that happens.** ⚠ **V redesigned the Library and Title screens to his second prototype**
+(`tvos_ux/2. LibraryViewandItemDetailsView/`): a fixed 6-column grid of 2:3 posters whose caption appears only
+on focus, a filter row of this library's own genres with the web app's eight sorts, and a 66 %-height backdrop
+hero with the title block over it. Plan and measurements: [`../../docs/TVOS_LIBRARY_UI_PLAN.md`](../../docs/TVOS_LIBRARY_UI_PLAN.md).
+⚠ **U6 rebuilt the two screens to his prototype's geometry** (`tvos_ux/1. …/rkm-cinema-tvos-concept.html`),
+because the first build did not look like the file he drew: 16:9 cards, a `32u` hero, the `RKM·CINEMA` top bar
+and the gradient-avatar Profile Switcher. `TVTokens.u` (19.2 pt) is the prototype's own scale, and set 2's CSS
+px is `TVTokens.px` (1.26 pt), derived from the page margin the two files share.
+Phase A (screens 0–2: address → sign in → who's watching) was accepted on his simulator; Phase B (B1–B4 —
+models, Home, Browse, item detail) is merged to `dev`. ⚠ **Phase U (U1–U7b: the generated design tokens, the
+Profile Switcher, the Home's top bar + hero, the Recently Added rail, the premium card) and Phase V (the
+Library + Title screens) sit on `feat/tvos-ux`, which is NOT merged and is NOT on `dev`.** The plans are
+[`../../docs/TVOS_UX_PLAN.md`](../../docs/TVOS_UX_PLAN.md) and
+[`../../docs/TVOS_LIBRARY_UI_PLAN.md`](../../docs/TVOS_LIBRARY_UI_PLAN.md); the live handover is the
+RESUME-HERE block at the top of [`../../docs/PROGRESS.md`](../../docs/PROGRESS.md).
 
-⚠⚠ **B5, the Mac round, was never recorded.** The merge was his call and it landed, but **no build log and
-no screenshot ever reached a session**, so the two things that round exists to settle are still
-**UNMEASURED**: the wall keeping its **column** when focus moves down a row, and the detail screen drawing
-a **real poster** rather than the "no photo" marker. The round for `dev` is
+⚠⚠ **THE tvOS DEPLOYMENT TARGET IS NOW `26.0`** (his decision, 2026-09-19 — one code path and Liquid Glass,
+at the cost of not installing on tvOS 17–25). See §1's build-settings table.
+
+⚠⚠ **No SwiftUI view on this branch has ever been compiled anywhere.** The pure rules are compiled and RUN
+here on Linux (466 checks, 102 falsified mutations), but every view is written and unbuilt — so the round
+below is not a formality, it is the first build. Its falsifiers are written down in `docs/PROGRESS.md`,
+`docs/TVOS_UX_PLAN.md` §U5 and `docs/TVOS_LIBRARY_UI_PLAN.md` §7, **before** it runs.
+
+The round, on the **MacBook Pro** (⚠ a SCREEN round, so **without** `-RKMDebugHUD YES`):
 
 ```bash
-cd ~/dev/rkm-cinema && git checkout dev && git pull --ff-only && ./apple/scripts/mac-round.sh tvos --sim
+cd ~/dev/rkm-cinema && git checkout feat/tvos-ux && git pull --ff-only && ./apple/scripts/mac-round.sh tvos --sim
 ```
 
-⚠ **Read the `4. result` block** — if it says `BUILD FAILED`, the SwiftUI that changed after
-`2260687` (his last clean round) is what broke, and these are the files it can be:
-`Browse/BrowseView.swift`, `Detail/DetailView.swift`, `App/{AppModel,AppRootView}.swift`,
-`Core/{APIClient,LibraryAPI}.swift`, `Home/{HomeView,PosterCard}.swift` and the Core rules/stores.
+⚠ **Read the `4. result` block** — if it says `BUILD FAILED`, the two likeliest causes are the tvOS 26 floor
+surfacing a deprecation the 17.6 floor was hiding, and the SwiftUI that has never been compiled
+(`Home/{TopBar,HeroBand,HomeView,PosterCard,RailView}.swift`, `Auth/ProfilesView.swift`, `App/AppModel.swift`,
+`Browse/{BrowseView,LibraryGridCard,FilterChip}.swift`, `Detail/DetailView.swift` and the Core rules/stores they
+read). ⚠ Two rounds of Phase U were lost to exactly one line each — a member that did not exist and a nested
+`struct Body` — and `apple/scripts/check-tvos-members.py` now covers both classes before a round is spent.
 §1's one-time Xcode step is DONE: the project, `INFOPLIST_FILE`, the shared scheme and the local package are
 all committed.
 
@@ -70,7 +90,7 @@ sources.
 |---|---|---|---|
 | Build Settings | `INFOPLIST_FILE` | `Config/Info.plist` | ⚠ ATS is a nested dictionary and `INFOPLIST_KEY_*` cannot express it |
 | Build Settings | `GENERATE_INFOPLIST_FILE` | `NO` | otherwise Xcode generates a second plist |
-| Build Settings | `TVOS_DEPLOYMENT_TARGET` | `17.0` | ⚠ Xcode pins the SDK version (26.x) by default. 17.0 installs on anything newer, and the code uses nothing newer |
+| Build Settings | `TVOS_DEPLOYMENT_TARGET` | `26.0` | ⚠ Xcode pins the SDK version (26.x) by default. **26.0 is the project's floor, raised from 17.6 by his decision on 2026-09-19** (`docs/TVOS_UX_PLAN.md` §0.2): Liquid Glass needs tvOS 26, one code path beats `#available` branching, and his Apple TV is a 4K 2nd generation or newer — the hardware Apple says gets the glass. ⚠ The cost, stated: the app no longer installs on tvOS 17–25 |
 | Signing & Capabilities | Team | your Apple ID | only needed for a *device* build; **the simulator needs no signing** |
 
 ⚠ **No bundle-id step, deliberately.** `mac-round.sh` reads `PRODUCT_BUNDLE_IDENTIFIER` out of the

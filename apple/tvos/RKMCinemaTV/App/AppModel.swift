@@ -264,6 +264,18 @@ final class AppModel: ObservableObject {
         phase = .browse
     }
 
+    /// Home → Browse, already open on one library. ⚠ **Phase U3's top bar is the second caller**: a tab is a
+    /// library, so it must arrive at BUILDING, not at Browse's own library list.
+    ///
+    /// ⚠ One guard, the same as `showBrowse`'s: a no-op when there is no store, rather than a phase with
+    /// nothing behind it. ⚠ And a tab with no folder (an unresolved library) is refused here as well as in the
+    /// bar — the seam that matters is the one the SERVER would refuse.
+    func openLibrary(folderID: String?) {
+        guard let browse, let folderID, !folderID.isEmpty else { return }
+        phase = .browse
+        Task { await browse.openFolder(folderID) }
+    }
+
     /// Browse → Home. The same guard, the same reason.
     func showHome() {
         guard home != nil else { return }

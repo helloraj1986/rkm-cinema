@@ -31,8 +31,32 @@ extension APIClient {
     /// ⚠ **`libraries` is a SERVER-DECIDED list, and this app never filters it.** See
     /// `BrowseRules.libraryNavEntries` — his iPad report of 2026-09-14 is the reason that rule exists, and
     /// the TV must not reintroduce the second, silently-narrower filter the mobile bar used to apply.
+    /// ⚠ From Phase U3 this response has TWO consumers on one screen: the Browse list and the HOME TOP BAR's
+    /// tabs — both through `BrowseRules.browseEntries`, so the two cannot come to differ.
     func libraryFolders(correlation: CorrelationID = .next()) async throws -> LibrariesResponse {
         try await get("api/library/folders", correlation: correlation)
+    }
+
+    /// `GET /api/library` — the legacy Home read: the recently-added ordering (`recent`, capped
+    /// server-side at 8) plus the counts.
+    ///
+    /// ⚠ Phase U3 added this for the HERO's second tier (`pickHomeHero`'s `recentlyAdded`), and U4 wires the
+    /// same response into the Recently Added rail — one fetch, two consumers, which is why it is here rather
+    /// than in either phase's view.
+    func libraryRecent(correlation: CorrelationID = .next()) async throws -> LibraryRecentResponse {
+        try await get("api/library", correlation: correlation)
+    }
+
+    /// `GET /api/library/items` — the whole library as a poster wall, and the **hero's last tier**
+    /// (`pickHomeHero`'s `all`: "the first item of the library").
+    ///
+    /// ⚠⚠ It is the only request in this app that exists PURELY to serve one fallback branch of one rule, and
+    /// that is a deliberate, recorded cost (`HomeStore.load`'s note): the alternative was to let the TV pick a
+    /// hero the phone would not pick, which is a second implementation of a rule rather than one extra call.
+    /// ⚠ The route has no response_model in the api (`backend/api/routes/library.py`), so its shape comes from
+    /// the frontend's own `LibraryItemsShape` — the same second source `LibraryItemsResponse` already uses.
+    func libraryItems(correlation: CorrelationID = .next()) async throws -> LibraryItemsResponse {
+        try await get("api/library/items", correlation: correlation)
     }
 
     /// `GET /api/library/folders/{id}/items` — ONE folder's poster wall.

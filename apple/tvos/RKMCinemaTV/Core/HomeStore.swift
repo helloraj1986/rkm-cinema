@@ -6,7 +6,8 @@ import Foundation
 import Combine
 import RKMServerKit
 
-/// The Home's state: it fetches two rows and publishes what the screen should be.
+/// The Home's state: it fetches the screen's rows (five small requests — see `load`) and publishes what the
+/// screen should be.
 ///
 /// ⚠ **The screen's shape is decided in `HomeRails.swift` (pure, tested); this type only does I/O and
 /// error classification.** That split is the whole point: what Home shows is a value a test can build,
@@ -34,13 +35,19 @@ final class HomeStore: ObservableObject {
         self.client = client
     }
 
-    /// Fetch both rows and publish the snapshot. Safe to call again (it is the screen's Retry).
+    /// Fetch every row and publish the snapshot. Safe to call again (it is the screen's Retry).
     ///
-    /// ⚠ **Sequential on purpose.** Two requests could run concurrently, and on a slow tailnet that would
-    /// be marginally faster — but `async let` here would put the store's `self` into two child tasks, and
-    /// the strict-concurrency diagnostics that follow depend on the language mode his Xcode picks, which
-    /// cannot be reproduced from this sandbox. Two small calls in sequence is the version that cannot fail
-    /// to build on the Mac for a reason nobody can see here.
+    /// ⚠⚠ **FIVE SMALL REQUESTS, SEQUENTIALLY — and the fifth one is worth knowing about.** The Home's rails
+    /// are Continue Watching and Recently Played; the top bar's tabs are `GET /api/library/folders`; the hero
+    /// is picked from three lists (`GET /api/library`, `GET /api/library/items`) exactly as `useHomeRows`
+    /// picks it on the web. So one screen = five round trips, where before U3 it was two.
+    ///
+    /// ⚠ **Sequential on purpose, and this is the Phase B2 note unchanged:** two requests could run
+    /// concurrently and on a slow tailnet that would be faster — but `async let` here would put the store's
+    /// `self` into child tasks, and the strict-concurrency diagnostics that follow depend on the language mode
+    /// his Xcode picks, which cannot be reproduced from this sandbox. Five small calls in sequence is the
+    /// version that cannot fail to build on the Mac for a reason nobody can see here. ⚠ If the round ever
+    /// shows the Home slow to paint, THIS is the line to revisit — not the rails' rules.
     func load() async {
         isLoading = true
         defer { isLoading = false }
@@ -51,9 +58,24 @@ final class HomeStore: ObservableObject {
         let recentlyPlayed = await row("recently-watched") { client in
             try await client.recentlyWatched().items
         }
+        // ⚠ `GET /api/library` — the recently-added ordering. It makes the hero's SECOND TIER in U3 and the
+        // third rail in U4; one fetch, both consumers.
+        let libraryRecent = await row("library") { client in
+            try await client.libraryRecent().recent
+        }
+        // ⚠ `GET /api/library/items` — the whole library, and it exists ONLY for `pickHomeHero`'s last tier
+        // ("the first item of the library" when nothing is in progress and nothing is recent). A tenth of a
+        // second on a LAN; recorded so the day somebody asks "why five?" the answer is on the line.
+        let libraryItems = await row("library-items") { client in
+            try await client.libraryItems().items
+        }
+        let nav = await navRow()
 
         snapshot = HomeSnapshot.make(continueWatching: continueWatching,
-                                    recentlyPlayed: recentlyPlayed)
+                                     recentlyPlayed: recentlyPlayed,
+                                     nav: nav,
+                                     libraryRecent: libraryRecent,
+                                     libraryItems: libraryItems)
         hasLoaded = true
     }
 
@@ -78,6 +100,38 @@ final class HomeStore: ObservableObject {
             return .failed(message)
         } catch {
             RKMLog.error("home: \(label) FAILED — \(error)", category: .net, correlation: correlation)
+            return .failed(HomeRowFailure.message(for: .unknown))
+        }
+    }
+
+    /// The top bar's tabs — `GET /api/library/folders`, turned into navigation by the **same rule Browse
+    /// uses**.
+    ///
+    /// ⚠⚠ **ONE RULE, ONE COPY.** `BrowseRules.browseEntries` is documented as the ONE place that decides what
+    /// the library list contains (his iPad report of 2026-09-14 is why it exists). The top bar reads THAT and
+    /// never a literal array — a second list here would be this repo's most-repeated defect, and the buildspec
+    /// literally asks for one (`Home · Movies Kids · Movies · TV Shows · Watchlist · Discover · Suggest`),
+    /// which is why the plan rejects it in writing.
+    ///
+    /// ⚠ It never throws: the tab row's failure is a VALUE like a rail's, because the rest of the screen has
+    /// to render regardless.
+    private func navRow() async -> NavOutcome {
+        let correlation = CorrelationID.next()
+        do {
+            let response = try await client.libraryFolders(correlation: correlation)
+            let entries = BrowseRules.browseEntries(libraries: response.libraryRows,
+                                                    serverFolders: response.folderRows)
+            RKMLog.info("home: \(entries.count) tab(s) from \(response.libraryRows.count) configured"
+                            + " + \(response.folderRows.count) server", category: .net,
+                        correlation: correlation)
+            return .loaded(entries)
+        } catch let error as APIError {
+            let message = HomeRowFailure.message(for: Self.kind(of: error))
+            RKMLog.error("home: tabs FAILED — \(error.errorDescription ?? message)", category: .net,
+                         correlation: correlation)
+            return .failed(message)
+        } catch {
+            RKMLog.error("home: tabs FAILED — \(error)", category: .net, correlation: correlation)
             return .failed(HomeRowFailure.message(for: .unknown))
         }
     }

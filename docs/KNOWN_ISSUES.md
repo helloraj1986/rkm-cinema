@@ -213,3 +213,5 @@ whoever picks this up:
 **Cheapest investigation when we take it up:** reproduce on the phone with the debug overlay on, filter the
 console for `offline`, and read what the bridge emitted in the seconds after the tap — the overlay's `off`
 line IS the downloader's own state, so page and device can be compared directly.
+
+---

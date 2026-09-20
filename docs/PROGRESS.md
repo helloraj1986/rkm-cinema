@@ -68,6 +68,37 @@ DISCRIMINATES** — *"what is different about the case where it works?"* — not
 read (a log line, a two-case test) is worth more than a mechanism I cannot execute, and `bar-focus`/`detail-focus`
 were the right instrument pointed at the wrong question.
 
+### ✅✅ ROUND 12 — FOUND IT: A FOCUS TARGET MUST SIT **DIRECTLY BENEATH** THE PRESSED ITEM, AND `Play` IS TOO SHORT (2026-09-20)
+
+> *"it still dont work when there is a play button"* — the scroller removal did not fix it either.
+
+⚠⚠ **THE MECHANISM IS APPLE'S, DOCUMENTED, AND HIS ROUND-11 OBSERVATION POINTS STRAIGHT AT IT.** From Apple's
+`focusSection()` docs: *"swiping right on any of the buttons in the "1"-"3" group would do nothing, since the focus
+system finds no focusable views **directly to their right**."* From WWDC23's focus cookbook: *"That button isn't
+**directly beneath** the crème brûlée button, so my gesture fails… to be effective, the focus sections have to take
+up more space than their contents."*
+
+| | the button's frame | the bar's `Back to Browse` tab | directly beneath? |
+|---|---|---|---|
+| in progress | `Resume (9%)`, x ≈ 80–340 | x ≈ 300–450 | ✅ overlaps → `Down` works |
+| not started | `Play`, x ≈ 80–250 | x ≈ 300–450 | ❌ **nothing beneath → the gesture fails** |
+
+⇒ **The label's WIDTH was the difference all along.** Three structural shapes and the scroller changed nothing
+because none of them touched the button or the engine's requirement for a target *under the tab*. ⚠ And it explains
+the two screens that were never broken: `BrowseView`'s band under its bar is the full-width chip row; `HomeView`'s
+is the hero's CTA pair.
+
+**Built:** the action row gets `.frame(maxWidth: .infinity, alignment: .leading)` **then** `.focusSection()`, so the
+section reaches under the tab and the engine delivers focus to `Play`; and the content group's `.focusSection()`
+moved OUTSIDE its `.frame(…)`, because a section is aimed at by its frame and "must take up more space than its
+contents" — inside the frame it was content-sized, which is why the first attempt did nothing.
+
+⚠⚠ **THE SESSION'S REAL LESSON, NOW WITH A CITATION:** the answer was in the PLATFORM DOCUMENTATION and in HIS
+observation, and four structural guesses were made before either was consulted. ⇒ **When a directional-focus defect
+appears, the first question is "what is directly beneath the pressed item?" — the focus engine's search is
+geometric and local, and it is not helped by moving containers around.** ⚠ The `focusSection()` modifier's ORDER
+relative to `.frame()` is part of the API, not a style preference.
+
 ### 🎬 PHASE W — THE SCREENS WERE DRAWN IN THE WRONG BOX, AND THE TITLE SCREEN IS NOW HIS FILE'S STRUCTURE (2026-09-20)
 
 His instruction, a new session: *"there is problem with details screen … can we implement the title view as it is

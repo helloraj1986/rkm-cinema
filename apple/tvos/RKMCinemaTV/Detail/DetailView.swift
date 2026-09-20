@@ -142,9 +142,20 @@ struct DetailView: View {
             .focusSection()
             // ⚠ `maxHeight: .infinity` because the scroller used to fill the screen: every state must keep
             // starting at the TOP edge rather than floating to the middle of a content-hugging stack.
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading))
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            // ⚠⚠ **AND THE SECTION MODIFIER GOES OUTSIDE THE FRAME — ORDER MATTERS, AND THIS WAS WRONG.** A
+            // focus section is a movement TARGET, and the engine aims at *the section's frame* (Apple:
+            // *"the focus sections have to take up more space than their contents"*). Applying `.focusSection()`
+            // inside the `.frame(…)` leaves the section the size of the content that hugs it, so it is not the
+            // full-width box beneath the bar that the gesture needs. The action row's own section (see `below`)
+            // is the precise fix; this one is the coarse one, and both are the platform's own mechanism.
+            .focusSection())
 
             topBar
+                // ⚠ Same rule, the other direction: a section is aimed at BY its frame, so the bar's section
+                // spans the full width rather than hugging its own controls. (It is also what makes `Up` from
+                // `Play` reliable, which is the direction that has always worked.)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .focusSection()
         }
         // ⚠⚠ The screen's default focus — see `playFocused`. `.defaultFocus` is the PLATFORM's way to say
@@ -408,8 +419,30 @@ struct DetailView: View {
             // ⚠⚠ **THE ACTION ROW COMES FIRST — IT IS HIS FILE'S OWN ORDER** (`.hero` → `.actions` → the
             // shelves), and `.actions` holds the `Play` control his prototype OPENS ON. Nothing competes with
             // it: this screen is otherwise information only, and the bar floats above it.
+            // ⚠⚠ **THE ACTION ROW IS ITS OWN FOCUS SECTION, AND THIS IS THE ACTUAL FIX FOR `KNOWN_ISSUES` #15.**
+            //
+            // Apple's `focusSection()` documentation, verbatim: *"swiping right on any of the buttons in the
+            // '1'-'3' group would do nothing, since the focus system finds no focusable views **directly to
+            // their right**."* ⇒ **`Down` from the bar's `Back to Browse` tab only moves if a focusable — or a
+            // focus SECTION — sits directly BENEATH it.**
+            //
+            // ⚠⚠ **AND THAT IS EXACTLY WHY HIS DEVICE FACT WAS THE ONE THAT CRACKED IT:** the tab sits at
+            // x ≈ 300–450 (after the `RKM · CINEMA` wordmark). `Resume (9%)` is a LONG label, so the button
+            // reaches x ≈ 340 — it overlaps the tab's band and `Down` works. `Play` is four characters, ends
+            // near x ≈ 250 — **nothing is directly beneath the tab, so the gesture fails.** The label's WIDTH
+            // was the whole difference, which is why moving the bar, the scroller and the hero changed nothing.
+            //
+            // ⇒ WWDC23's focus cookbook gives the remedy in one line: *"mark the bottom button's container as a
+            // focus section… **to be effective, the focus sections have to take up more space than their
+            // contents.**"* This frame makes the row span the full screen width, so the section's frame reaches
+            // under the tab, and the engine delivers focus to the first focusable inside it — `Play`.
+            //
+            // ⚠ This is the app's ONE piece of focus machinery and it is the PLATFORM's own tool: no frame is
+            // measured and no neighbour is computed (the deleted `RailFocus.swift` is still deleted).
             playAction(snapshot)
                 .padding(.top, TVTokens.Title.actionTopPad)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .focusSection()
 
             if snapshot.isInProgress, snapshot.resumePercent > 0 {
                 resumeBar(percent: snapshot.resumePercent)

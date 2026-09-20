@@ -344,6 +344,41 @@ also the ONE thing all three failed shapes had in common — and deleting a cont
 | ✅ should | `Down` from `Back to Browse` reaches the button | unchanged — this one already worked |
 | ❌ broken | still stuck on the bar | ⚠ **regressed the other way** — say so and the scroller goes back |
 
+### ✅✅ ROUND 12 — THE MECHANISM, FROM APPLE'S OWN DOCUMENTATION, AND HIS OBSERVATION IS WHAT POINTED AT IT
+
+> *"it still dont work when there is a play button"* — after the scroller came out.
+
+⚠⚠ **THE FOCUS SYSTEM REQUIRES A CANDIDATE DIRECTLY IN THE DIRECTION PRESSED, AND `Play` IS TOO NARROW TO BE UNDER
+THE TAB.** Apple's `focusSection()` documentation, verbatim: *"swiping right on any of the buttons in the "1"-"3"
+group would do nothing, since the focus system finds no focusable views **directly to their right**."* And WWDC23's
+focus cookbook: *"That button isn't **directly beneath** the crème brûlée button, so my gesture fails… I'll mark the
+bottom button's container as a focus section… **to be effective, the focus sections have to take up more space than
+their contents.**"*
+
+| | the button's frame | the bar's `Back to Browse` tab | directly beneath? |
+|---|---|---|---|
+| a title **in progress** | `Resume (9%)` — a long label, x ≈ 80–340 | x ≈ 300–450 | ✅ overlaps → `Down` works |
+| a title **not started** | `Play` — four characters, x ≈ 80–250 | x ≈ 300–450 | ❌ **nothing beneath → the gesture fails** |
+
+⇒ **The label's WIDTH was the whole difference** — which is exactly why three structural shapes and the scroller
+all changed nothing: none of them touched the button's width or the engine's need for a target beneath the tab. ⚠
+It also explains the two screens that WORK: `BrowseView`'s first band under its bar is the full-width chip row,
+and `HomeView`'s is the hero's CTA pair — both directly beneath their tabs.
+
+**⇒ The fix is Apple's own remedy, applied in two places:**
+
+1. **the action row is framed full-width and only then marked `.focusSection()`** — the section's frame reaches
+   under the tab, so the engine moves into the section and delivers focus to its first focusable, `Play`;
+2. **the content group's `.focusSection()` moved OUTSIDE its `.frame(…)`** — a section is a target aimed at by
+   *its frame*, and it must "take up more space than its contents", so the modifier has to come after the frame
+   rather than inside it. ⚠ The old order was wrong, which is why the first attempt at sections did nothing.
+
+⚠ No frame is measured and no neighbour is computed: `focusSection()` is the platform's own tool, and the deleted
+`RailFocus.swift` stays deleted.
+
+**His round:** on a title that has never been played (button reads `Play`) — `Down` from `Back to Browse` reaches
+the button, and `Up` returns to the bar. ⚠ On an in-progress title, which already worked, nothing changes.
+
 **⚠⚠ THE FALSIFIER IS ONE LINE OF THE FILE LOG, AND THIS ROUND HAS TO PRODUCE IT.** `TopBar` now publishes every
 change of its own focus, and the screen publishes `Play`'s — so this is no longer a guess about a guess:
 

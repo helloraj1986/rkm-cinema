@@ -317,8 +317,12 @@ enum DetailCopy {
     /// ⚠ **NEW copy for tvOS — the web app has nothing to mirror here, because it plays.** This is the
     /// "Play is a placeholder" requirement of `docs/TVOS_LIBRARY_PLAN.md` §B4, said out loud instead of
     /// rendered as a button that cannot work.
-    static let playPendingTitle = "Playback"
-    static let playPendingSub = "Arrives with the tvOS player (Phase C)."
+    /// ⚠⚠ **RENAMED AND REWRITTEN WHEN PHASE C LANDED (2026-09-20).** These two were `playPendingTitle` /
+    /// `playPendingSub` and said *"Arrives with the tvOS player (Phase C)."* — which became FALSE the moment
+    /// the player shipped, and a stale sentence on the Home's Details panel is worse than no sentence: the
+    /// detail screen carries the real control now, and this pair says where it is.
+    static let playReadyTitle = "Playback"
+    static let playReadySub = "Press Details, then Play — resume, subtitles and progress are shared with the web app."
 
     /// The line naming the verb this screen WILL offer — the phone's own words, e.g. `Resume S1E4`.
     /// ⚠ A function rather than an interpolation in the view, so the sentence is pinned by the harness.

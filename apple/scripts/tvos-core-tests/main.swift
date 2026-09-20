@@ -1063,8 +1063,8 @@ checkEqual(DetailCopy.notFoundSub, "It may have been removed or the link is stal
            "…and so is the sub-line")
 checkEqual(DetailCopy.partialWarning, "Couldn't load the episode list.",
            "the partial warning names the part that failed")
-checkEqual(DetailCopy.playPendingTitle, "Playback", "the placeholder is labelled Playback")
-checkEqual(DetailCopy.playPendingSub, "Arrives with the tvOS player (Phase C).",
+checkEqual(DetailCopy.playReadyTitle, "Playback", "the Details panel is labelled Playback")
+checkEqual(DetailCopy.playReadySub, "Press Details, then Play — resume, subtitles and progress are shared with the web app.",
            "…and says where playback comes from, because this screen cannot play")
 checkEqual(DetailCopy.nextUp("Resume S1E4"), "Next up: Resume S1E4",
            "the screen names the verb it WILL offer, in the phone's own words")
@@ -2010,6 +2010,15 @@ let subtitleURL = PlaybackURLs.absolute(
     query: PlaybackURLs.subtitleQuery(itemID: movieID, mediaSourceID: "src-1", index: 4))
 checkEqual(subtitleURL?.query, "id=\(movieID)&ms=src-1&index=4",
            "the subtitle proxy gets the item, the media source and the stream index")
+// ⚠⚠ AND THE FALLBACK, which is the api's own rule (`ms` defaults to the item id for a single-source item).
+// ⚠ It is here because the full audit caught the mutation above proving NOTHING: with a non-empty media
+// source both spellings produce the same query, so the rule only bites when there is none.
+let noSourceSubtitleURL = PlaybackURLs.absolute(
+    base: appleBase,
+    path: PlaybackURLs.subtitle(),
+    query: PlaybackURLs.subtitleQuery(itemID: movieID, mediaSourceID: "", index: 4))
+checkEqual(noSourceSubtitleURL?.query, "id=\(movieID)&ms=\(movieID)&index=4",
+           "an item with no media source falls back to the item id for ms")
 
 section("the player's wire shapes (decoded, not asserted)")
 

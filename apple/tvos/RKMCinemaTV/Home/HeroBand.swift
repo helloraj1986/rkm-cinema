@@ -20,7 +20,7 @@ import SwiftUI
 ///     `"Explore Episodes"`, because a series is explored rather than played. That is a real destination and
 ///     it works today;
 ///   * **anything else's primary shows the Playback placeholder** the detail screen already shows
-///     (`DetailCopy.playPendingTitle/playPendingSub`), and the screen names the verb it WILL offer
+///     (`DetailCopy.playReadyTitle/playReadySub`), and the screen names the verb it offers
 ///     (`DetailCopy.nextUp`). ⚠ The same two sentences as B4, deliberately: a second "playback arrives later"
 ///     wording is a second vocabulary for one fact.
 struct HeroBand: View {

@@ -326,6 +326,13 @@ final class PlaybackStore: ObservableObject {
         }
     }
 
+    /// ⚠ **The BUFFERING signal, and it is real rather than decorative**: `PlaybackRules.shouldHideChrome`
+    /// keeps the controls on screen while a stream is switching, and the view reports the player's own
+    /// `timeControlStatus`. Without a setter this was a flag nothing ever set — a rule reading a constant.
+    func setSwitching(_ value: Bool) {
+        if isSwitching != value { isSwitching = value }
+    }
+
     func play() {
         isPlaying = true
         Task { await report(.start) }

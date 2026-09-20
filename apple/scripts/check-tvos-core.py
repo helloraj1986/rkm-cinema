@@ -685,7 +685,11 @@ MUTATIONS = [
      "a 639-2/B code maps through the exception table"),
     ("the remembered subtitle TITLE", "PlaybackRules.swift",
      '                $0.name.trimmingCharacters(in: .whitespaces).lowercased() == wanted',
-     '                false',
+     # ⚠⚠ `_ in` is NOT decoration: `{ false }` in this position is inferred as a closure taking ONE argument
+     # and fails to compile ("contextual type for closure argument list expects 1 argument, which cannot be
+     # implicitly ignored") — an UNCOMPILABLE mutation is an ERROR, never a red, which is exactly what the
+     # 2026-09-20 audit reported before this line was fixed.
+     '                _ in false',
      "the remembered TITLE wins over the language"),
     ("the subtitle language fallback", "PlaybackRules.swift",
      '                return same.index',

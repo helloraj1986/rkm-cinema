@@ -12,7 +12,10 @@ import SwiftUI
 struct PlayerSettingsPanel: View {
 
     @ObservedObject var store: PlaybackStore
-    @Binding var focus: DrawerFocus?
+    /// ⚠⚠ **A `FocusState` BINDING, NOT A `@Binding`** — `.focused(_:equals:)` takes only
+    /// `FocusState<Value?>.Binding`, and a plain `Binding<DrawerFocus?>` compiles right up until that call.
+    /// The screen owns the state (`@FocusState private var drawerFocus`) and passes `$drawerFocus`.
+    let focus: FocusState<DrawerFocus?>.Binding
     let onClose: () -> Void
 
     var body: some View {

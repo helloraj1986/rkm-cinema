@@ -4,9 +4,10 @@ A **native SwiftUI client**. tvOS has no WebKit at all (Apple removed it; the gu
 embedding one), so there is no shell shortcut here — the UI is written for the TV. Full reasoning:
 [`../../docs/APPLE_CLIENTS_PLAN.md`](../../docs/APPLE_CLIENTS_PLAN.md) §4.
 
-**Status: Phase U (U1–U7b) and Phase V are BUILT AND MERGED — both are on `dev` (`b78c210`, 2026-09-20), and his
-screen round has RUN: both defects it found are closed, with his own confirmation on the UI (#10 the focused grid
-card's ring and its black bottom corners · #11 Down into a filtered grid).** ⚠ **V redesigned the Library and Title screens to his second prototype**
+**Status: PHASE C (THE PLAYER) IS BUILT on `feat/tvos-player` (2026-09-20) — C1 + C2 + C3 — and HIS ROUND is the
+next thing that happens.** The branch carries one merge from `dev` (Phases U and V), so it is the newest tree
+here. ⚠ **`dev` does not have it yet.** Phases U (U1–U7b) and V are MERGED to `dev` (`b78c210`) with both of the
+defects their round found closed and confirmed on his UI. ⚠ **V redesigned the Library and Title screens to his second prototype**
 (`tvos_ux/2. LibraryViewandItemDetailsView/`): a fixed 6-column grid of 2:3 posters whose caption appears only
 on focus, a filter row of this library's own genres with the web app's eight sorts, and a 66 %-height backdrop
 hero with the title block over it. Plan and measurements: [`../../docs/TVOS_LIBRARY_UI_PLAN.md`](../../docs/TVOS_LIBRARY_UI_PLAN.md).
@@ -15,10 +16,12 @@ because the first build did not look like the file he drew: 16:9 cards, a `32u` 
 and the gradient-avatar Profile Switcher. `TVTokens.u` (19.2 pt) is the prototype's own scale, and set 2's CSS
 px is `TVTokens.px` (1.26 pt), derived from the page margin the two files share.
 Phase A (screens 0–2: address → sign in → who's watching) was accepted on his simulator; Phase B (B1–B4 —
-models, Home, Browse, item detail) is merged to `dev`. ⚠ **Phase U (U1–U7b: the generated design tokens, the
-Profile Switcher, the Home's top bar + hero, the Recently Added rail, the premium card) and Phase V (the
-Library + Title screens) were merged from `feat/tvos-ux` into `dev` on 2026-09-20** — a real `--no-ff` merge,
-verified by tree equality, with the branch left in place. The plans are
+models, Home, Browse, item detail) is merged to `dev`. ⚠ **The player is `Player/{PlayerView,PlayerChrome,PlayerSettingsPanel}.swift` over
+`Core/{PlaybackRules,PlaybackURLs,PlaybackAPI,PlaybackStore}.swift` and `Core/Models/PlaybackModels.swift`**,
+built from his THIRD prototype (`tvos_ux/3. MediaPlayerUx/rkm-cinema-tvos-player.html`). ⚠ Its plan —
+`docs/TVOS_PLAYER_PLAN.md` §7–§9 — measures that file before anything was built, and records the two things it
+draws that CANNOT be built (chapter ticks, the scrub thumbnail: neither is on the wire). ⚠ That plan lives on
+this branch only. The plans are
 [`../../docs/TVOS_UX_PLAN.md`](../../docs/TVOS_UX_PLAN.md) and
 [`../../docs/TVOS_LIBRARY_UI_PLAN.md`](../../docs/TVOS_LIBRARY_UI_PLAN.md); the live handover is the
 RESUME-HERE block at the top of [`../../docs/PROGRESS.md`](../../docs/PROGRESS.md).
@@ -33,12 +36,12 @@ can compile a view.** The pure rules are compiled and RUN there — **467 checks
 moves with every pinned rule, and older notes say 466) and 102 falsified mutations — and that is type-and-rule
 evidence only, never evidence that a screen works.
 
-The round, on the **MacBook Pro** — now against `dev`, because the branch is merged. ⚠ **Pick the HUD flag by the
-round's QUESTION**: a SCREEN round (does it look like the file) runs **without** `-RKMDebugHUD YES`; a LOG round
-is the other way round, and the panel covers the top-left either way.
+The round, on the **MacBook Pro** — against `feat/tvos-player`, which is where the player is. ⚠ **Pick the HUD flag
+by the round's QUESTION**: a SCREEN round (does it look like his file, does the film play) runs **without**
+`-RKMDebugHUD YES`; a LOG round — the resume write, the `401` on a `…/hls/…` segment — is the other way round.
 
 ```bash
-cd ~/dev/rkm-cinema && git checkout dev && git pull --ff-only && ./apple/scripts/mac-round.sh tvos --sim
+cd ~/dev/rkm-cinema && git checkout feat/tvos-player && git pull --ff-only && ./apple/scripts/mac-round.sh tvos --sim
 ```
 
 ⚠ **Read the `4. result` block** — if it says `BUILD FAILED`, the two likeliest causes are the tvOS 26 floor
@@ -319,9 +322,9 @@ repo — and *assuming it fails* is exactly as unproven as *assuming it works*. 
 - **Phase B — DONE**, merged to `dev` (`a6190c3`): Home, Browse, item detail, posters.
 - **Phases U and V — DONE**, merged to `dev` (`b78c210`, 2026-09-20): the generated design tokens, the Profile
   Switcher, the Home (top bar, hero, premium card, Recently Added rail), the Library grid and the Title screen.
-- **Phase C — the player, and it is the next work.** **C1 is already BUILT and parked** on `feat/tvos-player`
-  (`Core/PlaybackAuth.swift`, pushed `6919626`); **C2–C5 are not started.** All four playback endpoints already
-  exist server-side (`docs/TVOS_PLAYER_PLAN.md` §1), and its §3 is the state to read before starting: the phases
-  are ordered so the ROUND measures the cookie question rather than the build betting on it.
+- **Phase C — the player. C1, C2 and C3 are BUILT on `feat/tvos-player`; C4 is HIS ROUND and C5 is still NOT
+  built.** The four playback endpoints already existed server-side (`docs/TVOS_PLAYER_PLAN.md` §1), and the phases
+  are ordered so the round MEASURES the cookie question (F2) rather than the build betting on it: C5 — the backend
+  carrier — is built only on a red F2.
 - **Phase D** — focus/distance polish at 1080p from three metres (partly absorbed by U6, which moved every metric
   onto the prototype's own `u` scale).

@@ -201,7 +201,7 @@ struct HomeView: View {
     // MARK: - Playback, said honestly
 
     /// ⚠⚠ **The primary button's other half, and it is B4's placeholder verbatim**
-    /// (`DetailCopy.playPendingTitle` / `playPendingSub` / `nextUp`). The hero knows the verb the app WILL
+    /// (`DetailCopy.playReadyTitle` / `playReadySub` / `nextUp`). The hero knows the verb the app DOES
     /// offer — `Resume`, `Play S1E3` — so it names it rather than pretending. The tvOS player is Phase C.
     private func showPlaybackPlaceholder(for item: MediaItem) {
         playbackVerb = HomeRules.heroPrimaryLabel(isEpisode: HomeRules.isEpisodeItem(item),
@@ -215,9 +215,9 @@ struct HomeView: View {
             Color.black.opacity(0.78)
 
             VStack(spacing: 16) {
-                Text(DetailCopy.playPendingTitle)
+                Text(DetailCopy.playReadyTitle)
                     .font(.system(size: 36, weight: .bold))
-                Text(DetailCopy.playPendingSub)
+                Text(DetailCopy.playReadySub)
                     .font(.system(size: 24))
                     .foregroundStyle(RKMColour.secondary)
                 Text(DetailCopy.nextUp(verb))

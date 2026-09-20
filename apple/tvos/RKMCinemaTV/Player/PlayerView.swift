@@ -26,7 +26,7 @@ struct PlayerView: View {
     @State private var timeObserver: Any?
     @State private var lastInteraction = Date()
     @State private var now = Date()
-    @State private var drawerFocus: DrawerFocus?
+    @FocusState private var drawerFocus: DrawerFocus?
     @State private var pulseCounter = 0
     @FocusState private var focus: PlayerFocus?
 
@@ -70,7 +70,19 @@ struct PlayerView: View {
         // every move from there); nothing here computes a neighbour.
         .defaultFocus($focus, .play)
         .onAppear { start() }
-        .onDisappear { Task { await store.finish() } }
+        .onDisappear {
+            // ⚠ The time observer is REMOVED here, and that is not tidiness: an observer added to the player
+            // and never removed keeps the player (and this view's closure) alive for the app's lifetime, and a
+            // film's worth of those is a leak nobody sees on a simulator round.
+            if let timeObserver { player.removeTimeObserver(timeObserver) }
+            timeObserver = nil
+            Task { await store.finish() }
+        }
+        // ⚠ A stream that dies mid-film has to say so — the visible failure mode this phase chose. As a
+        // PUBLISHER rather than an `addObserver` token: one subscription, torn down with the screen.
+        .onReceive(NotificationCenter.default.publisher(for: .AVPlayerItemFailedToPlayToEndTime)) { _ in
+            store.reportPlaybackFailure("This stream stopped unexpectedly.")
+        }
         // ⚠ `Back` on the remote leaves the player. It is the ONE way out that must never be missing: a
         // screen you cannot leave is a dead end, which `ARCHITECTURE.md` ranks above any cosmetic rule.
         .onExitCommand { leave() }
@@ -206,7 +218,6 @@ struct PlayerView: View {
         player.rate = Float(store.rate)
         seekPlayer(to: store.position, resume: wasPlaying)
         installTimeObserver()
-        observeItemFailures()
     }
 
     private func start() {
@@ -217,7 +228,6 @@ struct PlayerView: View {
             seekPlayer(to: store.position, resume: store.isPlaying)
         }
         installTimeObserver()
-        observeItemFailures()
         Task { await store.load() }
     }
 
@@ -228,24 +238,10 @@ struct PlayerView: View {
         timeObserver = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { time in
             let seconds = time.seconds.isFinite ? time.seconds : 0
             let duration = player.currentItem?.duration.seconds ?? 0
+            store.setSwitching(player.timeControlStatus == .waitingToPlayAtSpecifiedRate)
             store.tick(position: seconds,
                        duration: duration.isFinite ? duration : store.duration,
                        playing: player.rate > 0)
-        }
-    }
-
-    /// A stream that will not play has to SAY so. ⚠⚠ This is the phase's chosen visible failure mode
-    /// (`docs/TVOS_PLAYER_PLAN.md` §3): a black screen with nothing on it is the outcome this app refuses to
-    /// ship, and the escalation ladder (`PlaybackRules.hlsLadder`) is what the app does about it — once.
-    private func observeItemFailures() {
-        guard let item = player.currentItem else { return }
-        NotificationCenter.default.addObserver(
-            forName: .AVPlayerItemFailedToPlayToEndTime, object: item, queue: .main) { _ in
-                store.reportPlaybackFailure("This stream stopped unexpectedly.")
-            }
-        let url = item.asset as? AVURLAsset
-        if let url, url.url.path.contains("/hls/") {
-            RKMLog.verbose("player: HLS item for \(LogRedactor.redact(url: url.url))", category: .app)
         }
     }
 

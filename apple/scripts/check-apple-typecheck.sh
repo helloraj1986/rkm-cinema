@@ -197,6 +197,8 @@ for rel in Core/ServerDefaults.swift Core/APIClient.swift Core/Models/AuthModels
            Core/HomeRails.swift Core/BrowseRules.swift Core/DetailRules.swift Core/RequestURL.swift \
            Core/PlaybackAuth.swift \
            Core/ProfileRules.swift Core/LibraryRules.swift \
+           Core/PlaybackRules.swift Core/PlaybackURLs.swift Core/Models/PlaybackModels.swift \
+           Core/PlaybackAPI.swift Core/PlaybackStore.swift \
            Core/LibraryAPI.swift Core/HomeStore.swift Core/BrowseStore.swift Core/DetailStore.swift \
            Core/PosterURL.swift Core/PosterLoader.swift \
            Design/DesignTokens.swift Design/TVTokens.swift \

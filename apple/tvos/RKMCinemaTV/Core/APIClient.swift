@@ -113,6 +113,19 @@ struct APIClient {
         _ = try await perform(method: "POST", path: path, body: nil, correlation: correlation)
     }
 
+    /// The body-carrying twin of the call above — `POST /api/jellyfin/progress` and
+    /// `POST /api/jellyfin/subtitle-disable` both take JSON and answer `204`/a body nobody needs.
+    ///
+    /// ⚠⚠ **IT IS NOT A CONVENIENCE OVERLOAD: it is the only shape that lets a WRITE be issued without a
+    /// DECODE.** Decoding a `204` into `T` would report a saved position as a decoding failure — the
+    /// exact bug the no-body version above exists for. ⚠ And a `2xx` here is still not evidence the write
+    /// landed (`PlaybackStore` re-reads the position).
+    func postIgnoringBody<Body: Encodable>(_ path: String, body: Body,
+                                           correlation: CorrelationID = .next()) async throws {
+        _ = try await perform(method: "POST", path: path, body: try encode(body),
+                              correlation: correlation)
+    }
+
     // MARK: - Internals
 
     private func encode<Body: Encodable>(_ body: Body) throws -> Data {

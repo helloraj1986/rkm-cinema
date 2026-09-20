@@ -1700,6 +1700,367 @@ checkEqual(DetailRules.castHue(personNoID), DetailRules.castHue(personNoID),
            "a person with no id still has one stable colour")
 check((0..<360).contains(Int(DetailRules.castHue(personB))), "the hue is a real hue")
 
+// MARK: - Phase C2 — the player's pure rules
+//
+// ⚠⚠ **WHY THE PLAYER'S RULES ARE CHECKED HERE AND NOT ON THE MAC.** The player screen is SwiftUI +
+// AVFoundation, i.e. Mac-only, one round, and expensive to iterate. Everything it DECIDES was therefore
+// pushed into `Core/PlaybackRules.swift` and `Core/PlaybackURLs.swift` — both `Foundation`-only, both
+// compiled AND RUN below. What is left for the Mac is the part that genuinely needs a television.
+//
+// ⚠ The three classes of silent failure this section exists for:
+//   1. **a wrong URL for `AVPlayer`** — whose sub-requests are made by neither this app's transport nor
+//      its logging, so a mistake is a black screen and nothing else (`PlaybackURLs`);
+//   2. **a mode chosen for the wrong client** — the web's codec table is a BROWSER's, and a television's
+//      is different, so "does this need transcoding" must be answered from the codec set that was passed
+//      in rather than from a hardcoded platform (`PlaybackRules.PlaybackCodecs`);
+//   3. **a subtitle that silently does not apply** — the store holds `en` while a stream reports
+//      ffprobe's `eng`, and a literal comparison matches nothing and says nothing.
+
+section("the player's clock and the bar")
+
+checkEqual(PlaybackRules.fmtTime(9602), "2:40:02", "2h40m02s formats as h:mm:ss with padded parts")
+checkEqual(PlaybackRules.fmtTime(160), "2:40", "under an hour has no hour field")
+checkEqual(PlaybackRules.fmtTime(nil), "0:00", "an absent position reads 0:00, never blank or NaN")
+// ⚠ THE FLOOR, and it is a real difference from the prototype: his `fmt` rounds, the web floors.
+checkEqual(PlaybackRules.fmtTime(59.9), "0:59", "a fractional second is floored, never rounded up")
+checkEqual(PlaybackRules.fmtTime(-5), "0:00", "a negative position cannot render")
+
+checkEqual(PlaybackRules.ticks(fromSeconds: 1), 10_000_000, "one second is 10,000,000 Jellyfin ticks")
+checkEqual(PlaybackRules.seconds(fromTicks: 96_020_000_000), 9602, "and ticks convert back to seconds")
+
+checkEqual(PlaybackRules.barTotal(streamDuration: 23661, runtimeHint: 1200), 23661,
+           "the stream's own duration wins once it is known")
+checkEqual(PlaybackRules.barTotal(streamDuration: nil, runtimeHint: 1200.9), 1200,
+           "before that, the api's runtime hint floors into the bar")
+checkEqual(PlaybackRules.barTotal(streamDuration: 0, runtimeHint: 0), 0,
+           "a zero total stays zero rather than becoming NaN")
+
+checkEqual(PlaybackRules.clampSeek(99_999, total: 23661), 23661, "a seek past the end clamps to the end")
+checkEqual(PlaybackRules.clampSeek(-4, total: 23661), 0, "a seek before the start clamps to the start")
+checkEqual(PlaybackRules.clampSeek(30, total: 0), 30, "an unknown total steps forward instead of pinning to 0")
+
+checkEqual(PlaybackRules.skipTarget(from: 3, by: -10, total: 23661), 0,
+           "Back 10s at 3s lands at 0, not at a negative time")
+checkEqual(PlaybackRules.skipTarget(from: 100, by: 30, total: 23661), 130,
+           "the scrubber's own jog is ±30 seconds")
+
+let prototypeFraction = PlaybackRules.progressFraction(position: 9602, total: 23661)
+check(abs(prototypeFraction - 0.4058) < 0.001, "the prototype's own 2:40:02 of 6:34:21 is its 40.6% fill",
+      "got \(prototypeFraction)")
+checkEqual(PlaybackRules.progressFraction(position: 10, total: 0), 0,
+           "an unknown total divides by nothing and draws an empty bar")
+
+section("the route: which mode this client should ask the api for")
+
+checkEqual(PlaybackRules.StreamMode.allCases.map(\.rawValue),
+           ["direct", "remux", "transcode_audio", "transcode"],
+           "the four modes ARE the api's four query values")
+
+// ⚠⚠ THE tvOS SET vs THE BROWSER SET, on one title: an HEVC/EAC3 MKV is a remux for a television and a
+// full transcode for a browser. If this pair ever reads the same, the parameter has been hardcoded away.
+let appleMode = PlaybackRules.pickStreamMode(quality: "Original", container: "mkv",
+                                            videoCodec: "hevc", videoProfile: "Main 10",
+                                            videoBitDepth: 10, activeAudioCodec: "eac3",
+                                            codecs: .tvOS)
+checkEqual(appleMode, .remux, "an HEVC/EAC3 MKV is a remux for a client that decodes both")
+let browserMode = PlaybackRules.pickStreamMode(quality: "Original", container: "mkv",
+                                               videoCodec: "hevc", videoProfile: "Main 10",
+                                               videoBitDepth: 10, activeAudioCodec: "eac3",
+                                               codecs: .webBrowser)
+checkEqual(browserMode, .transcode, "…and a transcode for one that decodes neither")
+checkEqual(PlaybackRules.pickStreamMode(quality: "Original", container: "mp4",
+                                        videoCodec: "h264", videoProfile: "High",
+                                        videoBitDepth: 8, activeAudioCodec: "aac",
+                                        codecs: .tvOS), .direct,
+           "a browser-safe MP4 is the one mode that stays a direct play")
+checkEqual(PlaybackRules.pickStreamMode(quality: "Original", container: "mkv",
+                                        videoCodec: "h264", videoProfile: "High",
+                                        videoBitDepth: 8, activeAudioCodec: "aac",
+                                        codecs: .tvOS), .remux,
+           "an MKV the client CAN decode is remuxed, not re-encoded")
+checkEqual(PlaybackRules.pickStreamMode(quality: "Original", container: "mp4",
+                                        videoCodec: "h264", videoProfile: "High",
+                                        videoBitDepth: 8, activeAudioCodec: "eac3",
+                                        codecs: .webBrowser), .transcodeAudio,
+           "an undecodable AUDIO track costs the audio only, not the picture")
+checkEqual(PlaybackRules.pickStreamMode(quality: "1080p", container: "mp4",
+                                        videoCodec: "h264", videoProfile: "High",
+                                        videoBitDepth: 8, activeAudioCodec: "aac",
+                                        codecs: .tvOS), .transcode,
+           "asking for a quality re-encodes — Jellyfin ignores a bitrate cap on a direct play")
+checkEqual(PlaybackRules.pickStreamMode(quality: "Original", container: "mp4",
+                                        videoCodec: "h264", videoProfile: "High",
+                                        videoBitDepth: 8, activeAudioCodec: "aac",
+                                        forceNonDirect: true, codecs: .tvOS), .remux,
+           "a chosen audio track forces a non-direct mode (Static ignores AudioStreamIndex)")
+
+check(PlaybackRules.videoNeedsTranscode(codec: "h264", profile: "High 10", bitDepth: 10, codecs: .tvOS),
+      "10-bit H.264 is refused even by a client that lists h264")
+check(!PlaybackRules.videoNeedsTranscode(codec: "", profile: nil, bitDepth: nil, codecs: .tvOS),
+      "an UNKNOWN video codec is attempted rather than transcoded")
+check(PlaybackRules.audioCodecNeedsTranscode(codec: "eac3", codecs: .webBrowser),
+      "EAC3 needs transcoding for a browser")
+check(!PlaybackRules.audioCodecNeedsTranscode(codec: "eac3", codecs: .tvOS),
+      "…and does not for the tvOS set")
+check(!PlaybackRules.audioCodecNeedsTranscode(codec: nil, codecs: .webBrowser),
+      "an absent audio codec is not a reason to transcode")
+
+checkEqual(PlaybackRules.streamModeLabel(.transcodeAudio), "Transcode (audio)",
+           "the mode chip spells the audio-only transcode out")
+checkEqual(PlaybackRules.badgeText(.remux), "Remux · HLS",
+           "the top-bar badge is his prototype's spelling, not the web's")
+checkEqual(PlaybackRules.playMethod(.remux), "DirectStream", "a remux reports DirectStream to Jellyfin")
+checkEqual(PlaybackRules.playMethod(.transcode), "Transcode", "a transcode reports Transcode")
+check(!PlaybackRules.usesHLS(.direct), "a direct play does NOT ride the HLS route")
+check(PlaybackRules.usesHLS(.transcodeAudio), "every non-direct mode rides HLS")
+
+checkEqual(PlaybackRules.hlsLadder, [.remux, .transcodeAudio, .transcode],
+           "the escalation order is the web's, and audio-aware")
+checkEqual(PlaybackRules.nextHLSMode(after: .direct), .remux, "a failed direct play escalates into the ladder")
+checkEqual(PlaybackRules.nextHLSMode(after: .remux), .transcodeAudio,
+           "a failed remux goes to the audio transcode, not straight to a full one")
+checkEqual(PlaybackRules.nextHLSMode(after: .transcode), nil, "the ladder ends rather than looping")
+
+section("quality, speed and the picture")
+
+checkEqual(PlaybackRules.qualities.map(\.label), ["Original", "1080p", "720p", "480p"],
+           "the four quality labels are the web app's own")
+checkEqual(PlaybackRules.maxBitrate(for: "Original"), 0,
+           "Original asks for no cap (the api's own 0 = unthrottled)")
+checkEqual(PlaybackRules.maxBitrate(for: "1080p"), 8_000_000,
+           "1080p asks for the web's real 8 Mbps, not a described one")
+checkEqual(PlaybackRules.qualityCaption(for: "720p"), "720p · capped at 5.0 Mbps on a transcode.",
+           "the caption names the bitrate the app will actually ask for")
+checkEqual(PlaybackRules.qualityCaption(for: "Original"), "Original — no bitrate cap.",
+           "and says so plainly when there is no cap")
+
+checkEqual(PlaybackRules.rates, [0.5, 1, 1.25, 1.5, 2], "the five speeds are his file's five")
+checkEqual(PlaybackRules.rateLabel(1), "1×", "1× has no decimals")
+checkEqual(PlaybackRules.rateLabel(0.5), "0.5×", "0.5× keeps its half")
+checkEqual(PlaybackRules.rateLabel(1.25), "1.25×", "1.25× keeps two decimals and no trailing zero")
+checkEqual(PlaybackRules.rateLabel(2), "2×", "2× is bare")
+checkEqual(PlaybackRules.PictureMode.fit.caption, "Whole frame — bars where the screen is wider.",
+           "the Fit caption is his own sentence")
+
+section("progress reporting, and the 0.95 the client and server must agree on")
+
+checkEqual(PlaybackRules.finishFraction, 0.95,
+           "the client's finish fraction IS the server's FINISHED_FRACTION")
+check(PlaybackRules.finished(positionTicks: 9_500_000, runtimeTicks: 10_000_000),
+      "95% of a runtime counts as finished, exactly as the server decides it")
+check(!PlaybackRules.finished(positionTicks: 9_499_000, runtimeTicks: 10_000_000),
+      "just under 95% is still a resume point")
+check(!PlaybackRules.finished(positionTicks: 500, runtimeTicks: 0),
+      "an unknown runtime cannot mark anything finished")
+checkEqual(PlaybackRules.ProgressEvent.start.rawValue, "start", "the three events are the api's own words")
+checkEqual(PlaybackRules.ProgressEvent.stopped.rawValue, "stopped", "…including stopped")
+check(PlaybackRules.shouldReport(elapsedSinceLastReport: 5),
+      "a report goes out on the web's own five-second cadence")
+check(!PlaybackRules.shouldReport(elapsedSinceLastReport: 4.9),
+      "and not more often than that")
+
+section("the chrome, and when it may hide")
+
+check(PlaybackRules.shouldHideChrome(playing: true, switching: false, failed: false,
+                                     hoveringChrome: false, panelOpen: false,
+                                     idleSeconds: PlaybackRules.chromeHideSeconds),
+      "four idle seconds of playback hides the chrome")
+check(!PlaybackRules.shouldHideChrome(playing: true, switching: false, failed: false,
+                                      hoveringChrome: false, panelOpen: false, idleSeconds: 3.9),
+      "…and not before")
+check(!PlaybackRules.shouldHideChrome(playing: true, switching: false, failed: false,
+                                      hoveringChrome: false, panelOpen: true, idleSeconds: 99),
+      "the settings drawer and the info panel pin the chrome on")
+check(!PlaybackRules.shouldHideChrome(playing: false, switching: false, failed: false,
+                                      hoveringChrome: false, panelOpen: false, idleSeconds: 99),
+      "a PAUSED film never hides its controls")
+check(!PlaybackRules.shouldHideChrome(playing: true, switching: true, failed: false,
+                                      hoveringChrome: false, panelOpen: false, idleSeconds: 99),
+      "a stream that is still switching keeps them too")
+
+section("tracks, languages and the subtitle matcher")
+
+checkEqual(PlaybackRules.languageKey("eng"), "en", "ffprobe's eng is the store's en")
+checkEqual(PlaybackRules.languageKey("ger"), "de", "a 639-2/B code maps through the exception table")
+checkEqual(PlaybackRules.languageKey("pt-BR"), "pt", "a region is dropped")
+checkEqual(PlaybackRules.languageKey("EN"), "en", "case does not matter")
+checkEqual(PlaybackRules.languageKey(nil), "", "an absent language is an empty key, not a wildcard")
+
+let audioTracks: [PlaybackTrack] = [
+    .init(index: 1, name: "Hindi (Original)", language: "hin", codec: "eac3"),
+    .init(index: 2, name: "English (Dubbed)", language: "eng", codec: "aac"),
+]
+checkEqual(PlaybackRules.audioCodecFor(index: nil, tracks: audioTracks), "eac3",
+           "no chosen track means the FIRST one — the api's own default")
+checkEqual(PlaybackRules.audioCodecFor(index: 2, tracks: audioTracks), "aac",
+           "a chosen index reads ITS codec, which is what the route decision needs")
+checkEqual(PlaybackRules.audioCodecFor(index: 9, tracks: audioTracks), "eac3",
+           "an index the server did not send falls back to the default rather than to nothing")
+check(PlaybackRules.choosingATrackForcesNonDirect(audioIndex: 2),
+      "choosing a track forces a non-direct mode")
+check(!PlaybackRules.choosingATrackForcesNonDirect(audioIndex: 0),
+      "index 0 is the api's \"no choice\" and does not force anything")
+
+let subtitleTracks: [PlaybackTrack] = [
+    .init(index: 4, name: "English", language: "eng", codec: nil),
+    .init(index: 5, name: "English (SDH)", language: "eng", codec: nil),
+    .init(index: 6, name: "Hindi", language: "hin", codec: nil),
+]
+checkEqual(PlaybackRules.resolveActiveSubtitle(tracks: subtitleTracks,
+                                               preferredDisplayTitle: "English (SDH)",
+                                               preferredLanguage: "en"), 5,
+           "the remembered TITLE wins over the language")
+checkEqual(PlaybackRules.resolveActiveSubtitle(tracks: subtitleTracks,
+                                               preferredDisplayTitle: "Not a track",
+                                               preferredLanguage: "en"), 4,
+           "a stale title falls back to the first track in that LANGUAGE")
+checkEqual(PlaybackRules.resolveActiveSubtitle(tracks: subtitleTracks,
+                                               preferredDisplayTitle: nil,
+                                               preferredLanguage: "de"), nil,
+           "a language with no track selects nothing rather than the wrong one")
+checkEqual(PlaybackRules.resolveActiveSubtitle(tracks: [], preferredDisplayTitle: "English",
+                                               preferredLanguage: "en"), nil,
+           "no tracks at all selects nothing")
+
+checkEqual(PlaybackRules.trackSummary(audioCount: 5, subtitleCount: 1), "5 audio · 1 sub",
+           "the drawer's footer reads his prototype's own line")
+checkEqual(PlaybackRules.trackSummary(audioCount: 5, subtitleCount: 0), "5 audio · 0 subs",
+           "zero subtitles is plural, and is not hidden")
+checkEqual(PlaybackRules.languageLine(activeAudioLanguage: "Hindi", subtitleLanguages: ["English", "Hindi"]),
+           "Hindi · English, Hindi subtitles", "the meta row is built from the tracks the server sent")
+checkEqual(PlaybackRules.languageLine(activeAudioLanguage: nil, subtitleLanguages: []),
+           "No subtitles", "a film with no subtitle tracks says so rather than trailing a dot")
+checkEqual(PlaybackRules.titleCased("pt-br"), "Pt-br", "an unknown code is shown, never invented as a name")
+
+checkEqual(PlaybackRules.SettingsCategory.allCases.map(\.title),
+           ["Picture", "Speed", "Quality", "Audio Track", "Subtitles"],
+           "the drawer's five categories are his file's, in his order")
+checkEqual(PlaybackRules.SettingsCategory.quality.pane, .segmented,
+           "quality is a segmented row, not a list")
+checkEqual(PlaybackRules.SettingsCategory.subtitles.pane, .list,
+           "subtitles are a list of the item's own tracks")
+
+section("subtitles as text (the WebVTT the api hands over)")
+
+checkEqual(PlaybackRules.vttTime("00:02:40.500"), 160.5, "hh:mm:ss.mmm parses to seconds")
+checkEqual(PlaybackRules.vttTime("01:02:03,250"), 3723.25, "an SRT comma works too")
+checkEqual(PlaybackRules.vttTime("02:40.500"), 160.5, "mm:ss.mmm has no hour field")
+checkEqual(PlaybackRules.vttTime("nonsense"), 0, "an unparseable timestamp is 0, not a wild guess")
+checkEqual(PlaybackRules.vttTime(""), 0, "and so is an empty one")
+
+let vtt = """
+WEBVTT
+
+NOTE this block is metadata and is not a cue
+
+00:00:01.000 --> 00:00:04.000 align:start position:10%
+<i>A dusty frontier town</i>
+
+00:00:04.000 --> 00:00:06.000
+
+00:00:04.000 --> 00:00:09.000
+hires two outlaws
+"""
+let cues = PlaybackRules.parseVTT(vtt)
+checkEqual(cues.count, 2, "tags are stripped, settings ignored, and an EMPTY cue is dropped")
+checkEqual(cues.first?.text, "A dusty frontier town", "inline markup never reaches the screen")
+checkEqual(cues.first?.end, 4, "the end token stops at the first space, not at the cue's settings")
+checkEqual(PlaybackRules.activeCue(cues, position: 2), "A dusty frontier town",
+           "the active cue is the one the playhead is inside")
+checkEqual(PlaybackRules.activeCue(cues, position: 4), "hires two outlaws",
+           "a cue that ends where the next begins hands over at the boundary")
+checkEqual(PlaybackRules.activeCue(cues, position: 30), nil, "a gap between cues shows nothing")
+
+section("the URLs AVPlayer is given — built here, because nothing else can log them")
+
+let appleBase = URL(string: "http://rkm-hp.local:8124")!
+
+let hlsPath = PlaybackURLs.hlsMaster(itemID: movieID)
+checkEqual(hlsPath, "api/jellyfin/hls/\(movieID)/master.m3u8",
+           "the HLS master path is the contract's, with the id as ONE path component")
+check(!hlsPath.contains("?"), "⚠⚠ THE PATH CARRIES NO QUERY — the trap that makes a working request a 404")
+
+let hlsURL = PlaybackURLs.playbackURL(base: appleBase, itemID: movieID, mode: .remux,
+                                      audioIndex: nil, maxBitrate: 0)
+checkEqual(hlsURL?.path, "/api/jellyfin/hls/\(movieID)/master.m3u8",
+           "a remux rides the HLS master")
+checkEqual(hlsURL?.query, "mode=remux", "and its mode is a real query parameter")
+check(hlsURL?.absoluteString.contains("%3F") == false,
+      "⚠ the query never becomes part of the path")
+
+let streamURL = PlaybackURLs.playbackURL(base: appleBase, itemID: movieID, mode: .direct,
+                                         audioIndex: nil, maxBitrate: 0)
+checkEqual(streamURL?.path, "/api/jellyfin/stream/\(movieID)",
+           "a direct play rides the byte-rangeable stream route instead")
+checkEqual(streamURL?.query, "mode=direct", "with its own mode")
+
+let cappedURL = PlaybackURLs.playbackURL(base: appleBase, itemID: movieID, mode: .transcode,
+                                         audioIndex: 3, maxBitrate: 8_000_000)
+check(cappedURL?.query?.contains("audio_stream_index=3") == true,
+      "a chosen audio track is sent when the mode can honour it")
+check(cappedURL?.query?.contains("max_bitrate=8000000") == true,
+      "and so is the quality cap")
+let directQuery = PlaybackURLs.streamQuery(mode: .direct, audioIndex: 3, maxBitrate: 8_000_000)
+checkEqual(directQuery.count, 1,
+           "⚠ AudioStreamIndex and MaxStreamingBitrate are NOT sent on a direct play — Jellyfin ignores both under Static, so sending them would make a track choice LOOK applied")
+
+let subtitleURL = PlaybackURLs.absolute(
+    base: appleBase,
+    path: PlaybackURLs.subtitle(),
+    query: PlaybackURLs.subtitleQuery(itemID: movieID, mediaSourceID: "src-1", index: 4))
+checkEqual(subtitleURL?.query, "id=\(movieID)&ms=src-1&index=4",
+           "the subtitle proxy gets the item, the media source and the stream index")
+
+section("the player's wire shapes (decoded, not asserted)")
+
+let playbackInfoJSON = #"""
+{
+  "media_source_id": "src-1",
+  "container": "mkv",
+  "video": {"codec": "hevc", "profile": "Main 10", "bit_depth": 10, "width": 1920, "height": 1080, "bit_rate": 4200000},
+  "audio": [{"index": 1, "name": "Hindi (Original)", "language": "hin", "codec": "eac3"},
+            {"index": 2, "name": "English (Dubbed)", "language": "eng", "codec": "aac"}],
+  "subtitles": [{"index": 4, "name": "English", "language": "eng"}],
+  "preferred_subtitle": {"subtitle_id": "os:1234", "provider": "opensubtitles", "language": "en",
+                         "display_title": "English (SDH)", "index": 4, "used_count": 2}
+}
+"""#
+let decodedInfo = try! JSONDecoder().decode(PlaybackInfo.self, from: Data(playbackInfoJSON.utf8))
+checkEqual(decodedInfo.mediaSourceID, "src-1", "media_source_id decodes — and it is the subtitle's `ms`")
+checkEqual(decodedInfo.container, "mkv", "the container decides whether a remux is needed")
+checkEqual(decodedInfo.video?.bitDepth, 10, "bit_depth decodes from its snake_case key")
+checkEqual(decodedInfo.audio.count, 2, "every audio track arrives with its index")
+checkEqual(decodedInfo.subtitles.map(\.index), [4], "only TEXT subtitle tracks are on the wire")
+checkEqual(decodedInfo.preferredSubtitle?.displayTitle, "English (SDH)",
+           "the stored choice's display_title is what the matcher resolves against")
+
+// ⚠ And the same facts through the route decision, because a decode that cannot drive the decision is
+// a decode this app did not need.
+checkEqual(PlaybackRules.pickStreamMode(quality: "Original", container: decodedInfo.container,
+                                        videoCodec: decodedInfo.video?.codec,
+                                        videoProfile: decodedInfo.video?.profile,
+                                        videoBitDepth: decodedInfo.video?.bitDepth,
+                                        activeAudioCodec: PlaybackRules.audioCodecFor(
+                                            index: nil, tracks: decodedInfo.audio),
+                                        codecs: .tvOS), .remux,
+           "the decoded facts say: remux this MKV")
+checkEqual(PlaybackRules.resolveActiveSubtitle(tracks: decodedInfo.subtitles,
+                                               preferredDisplayTitle: decodedInfo.preferredSubtitle?.displayTitle,
+                                               preferredLanguage: decodedInfo.preferredSubtitle?.language), 4,
+           "and the stored choice lands on the track that exists TODAY")
+
+// ⚠⚠ THE REQUEST'S KEY SET IS CHECKED BY ENCODING IT, not by reading the source: `item_id` vs `id` is
+// exactly the class of mistake (`item_id` on library rows, `id` on search rows) this repo has paid for.
+let progressBody = JellyfinProgressRequest(itemID: movieID, positionTicks: 96_020_000_000,
+                                           isPaused: false, event: "timeupdate",
+                                           playMethod: "DirectStream", runtimeTicks: 236_610_000_000)
+let progressKeys = Set((try! JSONSerialization.jsonObject(
+    with: try! JSONEncoder().encode(progressBody)) as! [String: Any]).keys)
+checkEqual(progressKeys, ["item_id", "position_ticks", "is_paused", "event", "play_method", "runtime_ticks"],
+           "the progress body carries the contract's six keys and nothing else")
+checkEqual(PlaybackRules.playMethod(.remux), "DirectStream",
+           "and its play_method comes from the mode, not from a constant")
+
 // MARK: - Report
 
 print("")

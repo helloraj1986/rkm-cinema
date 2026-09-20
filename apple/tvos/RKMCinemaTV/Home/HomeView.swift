@@ -31,6 +31,14 @@ struct HomeView: View {
     @ObservedObject var store: HomeStore
     let base: URL
 
+    /// ⚠⚠ **THE SCREEN'S DEFAULT FOCUS — HIS DECISION, 2026-09-20: *"Home → first card in the first rail"*.**
+    /// Bound on every rail card (`RailView`), and claimed by `.defaultFocus` at the bottom of `body`, so the
+    /// screen opens on a title rather than on the top bar's first tab (which is where the platform's own
+    /// *top-most, leading-most* rule put it). ⚠ WHICH card is a rule, not a view decision —
+    /// `HomeSnapshot.defaultFocusCardID`, pure and pinned, because it has to skip rails `RailView` draws
+    /// nothing for.
+    @FocusState private var focusedCard: String?
+
     /// ⚠ The Playback placeholder, exactly as B4's detail screen shows it: the primary button cannot start a
     /// film (Phase C is parked), so it says where playback comes from instead of doing nothing.
 
@@ -51,6 +59,12 @@ struct HomeView: View {
 
             footer
         }
+        // ⚠⚠ **WHERE THE SCREEN OPENS — HIS DECISION, 2026-09-20.** `.defaultFocus` is the PLATFORM's way to
+        // say it (the focus engine still owns every move from there); the CARD is `HomeSnapshot
+        // .defaultFocusCardID`, a pure rule with a harness pin. ⚠ Applied at the SCREEN ROOT, not on the
+        // rail's `ScrollView`: the root is the focus scope the screen enters, and a `defaultFocus` one level
+        // down is a preference inside a scope that has already chosen.
+        .defaultFocus($focusedCard, store.snapshot.defaultFocusCardID)
         // ⚠ `.task` and not `.onAppear`: the load is async and the screen must not be re-fetched by a
         // re-render — `HomeStore.load()` is idempotent in effect but each call is five requests.
         .task {
@@ -168,7 +182,7 @@ struct HomeView: View {
                 }
 
                 ForEach(store.snapshot.rails) { rail in
-                    RailView(rail: rail, base: base, onSelect: open)
+                    RailView(rail: rail, base: base, focus: $focusedCard, onSelect: open)
                 }
             }
             // ⚠ The hero is edge-to-edge and the shelves keep the screen margin: the band's artwork is meant

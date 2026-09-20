@@ -523,6 +523,28 @@ struct HomeSnapshot: Equatable {
         return out
     }
 
+    /// ⚠⚠ **THE CARD THE HOME OPENS ON — HIS DECISION, 2026-09-20: *"Home → first card in the first rail"*.**
+    ///
+    /// The screen's default focus used to be whatever the platform picks, and the platform's rule is
+    /// *top-most, leading-most focusable* — which on this screen is **the top bar's first tab**, not the
+    /// content. His instruction puts the ring on the first title instead, so the first press of the remote is
+    /// `Select` on something to watch.
+    ///
+    /// ⚠⚠ **IT IS A PURE RULE ON THE SNAPSHOT, NOT A LINE IN THE VIEW, and that matters for the reason this
+    /// repo keeps repeating: a SwiftUI view cannot be run here.** The rule has to skip a rail whose every row
+    /// has an empty `itemID` — `RailView` renders NOTHING for such a rail (`cards.isEmpty` → `EmptyView`) — so a
+    /// "first card" chosen without that filter is a card that is never drawn, and focus would fall back to the
+    /// bar with nothing to explain why. ⇒ This walks the rails exactly as `RailView` does, and the harness pins
+    /// it.
+    var defaultFocusCardID: String? {
+        for rail in rails {
+            if let id = rail.items.first(where: { !$0.itemID.isEmpty })?.itemID {
+                return id
+            }
+        }
+        return nil
+    }
+
     /// The title the hero band features, or nil — `HomeRules.homeHero`, fed from all three lists the way
     /// `useHomeRows` feeds it (`pickHomeHero(cwAll, recentlyAddedAll, all)`).
     var hero: MediaItem? {

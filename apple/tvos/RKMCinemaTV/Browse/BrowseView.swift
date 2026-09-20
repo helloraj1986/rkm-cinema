@@ -39,6 +39,13 @@ struct BrowseView: View {
     @State private var genre = ""
     @State private var sort: LibrarySortKey = LibraryRules.defaultSort
 
+    /// ⚠⚠ **THE WALL'S DEFAULT FOCUS — HIS DECISION, 2026-09-20, AND IT IS HIS OWN SPEC'S RULE:**
+    /// `tvos-ux-principles.md` §6 — *"**Library grid** → first poster (browsing is the point of the screen)"*.
+    /// ⚠ Before this the ring landed on the **top bar's first tab**, because the platform's own rule is
+    /// *top-most, leading-most focusable* and the bar is above the wall — i.e. the screen opened on the
+    /// navigation rather than on the thing you came to browse.
+    @FocusState private var focusedPoster: String?
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             topBar
@@ -52,6 +59,14 @@ struct BrowseView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
+        // ⚠⚠ **WHERE THE WALL OPENS — HIS DECISION, 2026-09-20, and his own principles file §6 states it:**
+        // *"**Library grid** → first poster (browsing is the point of the screen)".* `.defaultFocus` is the
+        // PLATFORM's tool; the ENGINE still owns every move from there, and no frame is measured.
+        // ⚠ It is applied at the SCREEN ROOT rather than on the wall's `ScrollView` because the root is the
+        // focus scope the screen enters — a preference set one level down is a preference inside a scope that
+        // has already chosen. ⚠ The value is `nil` in the library-LIST mode (no wall), which is correct: that
+        // screen has no poster to open on and the platform's own choice stands.
+        .defaultFocus($focusedPoster, firstShownPosterID)
         .task {
             // ⚠ Only once per question, the same rule as the Home: `.task` re-runs on re-appearance, and
             // neither list changes while the app is on screen.
@@ -278,6 +293,9 @@ struct BrowseView: View {
                 // (a folder tab and an item), and passing an overloaded function as a value makes the
                 // compiler infer a type it does not need to. This is the one place a round would find it.
                 LibraryGridCard(item: item, base: base, width: cardWidth, onSelect: { open($0) })
+                    // ⚠⚠ The screen's default focus is claimed on the FIRST of these, so the binding has to
+                    // sit on the card — the focusable view — and not on the grid.
+                    .focused($focusedPoster, equals: item.itemID)
             }
         }
     }
@@ -285,6 +303,19 @@ struct BrowseView: View {
     private func gridColumns(_ cardWidth: CGFloat) -> [GridItem] {
         Array(repeating: GridItem(.fixed(cardWidth), spacing: TVTokens.Grid.columnGap),
               count: TVTokens.Grid.columns)
+    }
+
+    /// ⚠⚠ **THE POSTER THE WALL OPENS ON — the FIRST one the CURRENT filter and sort actually show**, which is
+    /// what his principles file means by *"Library grid → first poster"*: a genre chip re-filters the wall, so
+    /// "first" is a different title afterwards, and the ring has to be on a poster that is really on screen.
+    ///
+    /// ⚠ It calls `LibraryRules.filter` a second time — the wall calls it too — and that is a DELIBERATE trade
+    /// rather than an oversight: the alternative is holding the filtered list in `@State`, which is a second
+    /// copy of a derived value (this repo's most-repeated defect). It is one filter plus one sort over a single
+    /// folder's rows, once per body pass. ⚠ If a folder ever grows enough for that to matter, the fix is a
+    /// `@State` refreshed on change — never a cache inside `LibraryRules`.
+    private var firstShownPosterID: String? {
+        LibraryRules.filter(store.wall.items, genre: genre, sort: sort).first?.itemID
     }
 
     /// ⚠ `.grid-title { font-size:15px }` reads `Recently added` at rest and then **the genre's name** —

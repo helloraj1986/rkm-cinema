@@ -1478,6 +1478,23 @@ checkEqual(threeRails.rails.last?.title, "Recently Added",
 checkEqual(threeRails.rails.last?.items.count, 16, "the third rail is capped at 16, like the web's")
 checkEqual(threeRails.rails.last?.items.first?.itemID, "ra1", "the third rail keeps the server's order")
 
+// ⚠⚠ THE HOME'S DEFAULT FOCUS — his decision, 2026-09-20: "Home → first card in the first rail". ⚠ It is a
+// RULE and not a line in the view because it has to agree with what `RailView` actually DRAWS: a rail whose
+// every row has an empty `itemID` renders nothing at all, so a "first card" taken without that filter would be
+// a card that is never on screen and the ring would silently fall back to the top bar.
+// ⚠⚠ AND THE EXPECTED ID IS `cw2`, NOT `cw` — the harness went RED on the first draft of this pin, which is the
+// pin doing its job: the HERO is the first Continue Watching title and `withoutHero` removes it from that rail,
+// so the first card on screen really is the SECOND row. ⚠ A default focus written as "the first CW item" would
+// have named the hero's own id — a card that is not in the rail at all.
+checkEqual(threeRails.defaultFocusCardID, cwRow2.itemID,
+           "the Home opens on the FIRST card of the FIRST rail — the hero is excluded from it, so that is cw2")
+checkEqual(snapshot(continueWatching: .loaded([]), recentlyPlayed: .loaded([]),
+                    libraryRecent: .loaded([])).defaultFocusCardID, nil,
+           "an empty Home has no card to open on — the platform's own choice stands")
+checkEqual(snapshot(continueWatching: .loaded([item("")!]), recentlyPlayed: .loaded([playedRow]),
+                    libraryRecent: .loaded([])).defaultFocusCardID, playedRow.itemID,
+           "a rail RailView renders NOTHING for is skipped — focus must not be claimed by a card that is not drawn")
+
 checkEqual(snapshot(continueWatching: .loaded([]), recentlyPlayed: .loaded([]),
                     libraryRecent: .loaded([item("ra1")!, item("")!])).rails.last?.items.count, 1,
            "a Recently Added row with no id is dropped from the rail")

@@ -1,4 +1,4 @@
-## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-20) · ✅✅ **`KNOWN_ISSUES` #15 IS CLOSED — HE CONFIRMED IT ON HIS SIMULATOR: *"yes it works now....i can switch between play button and back to browse"*** — **a tvOS press only moves focus to a target DIRECTLY BENEATH the pressed item**, and `Play`'s narrow frame did not overlap the bar's tab where `Resume (9%)`'s longer label did (which is why the defect looked data-dependent and survived four structural changes); the action row now carries a full-width `.focusSection()` and the content group's section sits OUTSIDE its `.frame(…)` · ✅ **`KNOWN_ISSUES` #17 (the profile password card) is fixed, still awaiting his round** ·⚠ branch `feat/tvos-player` carries it; `dev` does NOT · **nothing needs `apply`**: no file under `backend/`, `frontend/` or `nginx/` changed · ✅ **AND `KNOWN_ISSUES` #17 IS FIXED, AWAITING HIS ROUND** — the profile-switch password card lost focus out of the `SecureField` and stranded him, because **an `.overlay` is VISUAL ONLY** and left the screen behind in the focus chain (`Auth/ProfilesView.swift`: `.disabled` while a panel is up · `.focusSection()` on each card · `.onExitCommand` on each card · both cards claim focus)
+## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-20) · ✅✅ **`KNOWN_ISSUES` #15 IS CLOSED — HE CONFIRMED IT ON HIS SIMULATOR: *"yes it works now....i can switch between play button and back to browse"*** — **a tvOS press only moves focus to a target DIRECTLY BENEATH the pressed item**, and `Play`'s narrow frame did not overlap the bar's tab where `Resume (9%)`'s longer label did (which is why the defect looked data-dependent and survived four structural changes); the action row now carries a full-width `.focusSection()` and the content group's section sits OUTSIDE its `.frame(…)` · ✅ **`KNOWN_ISSUES` #17 (the profile password card) is fixed, still awaiting his round** · ⚠ branch `feat/tvos-player` carries it; `dev` does NOT · **nothing needs `apply`**: no file under `backend/`, `frontend/` or `nginx/` changed · ✅ **AND `KNOWN_ISSUES` #17 IS FIXED, AWAITING HIS ROUND** — the profile-switch password card lost focus out of the `SecureField` and stranded him, because **an `.overlay` is VISUAL ONLY** and left the screen behind in the focus chain (`Auth/ProfilesView.swift`: `.disabled` while a panel is up · `.focusSection()` on each card · `.onExitCommand` on each card · both cards claim focus) · 🎯 **AND DEFAULT FOCUS IS NOW A PER-SCREEN DECISION, ON HIS CHOICE** (2026-09-20): **Home → first card of the first rail** (`HomeSnapshot.defaultFocusCardID`, pure + 3 pins) and **Browse → the first poster the current filter shows** (his own `tvos-ux-principles.md` §6); detail (`Play`) and player (play/pause) already had it, and the profile picker stays on its first tile by his call. ⚠ `RailView` now takes the screen's `FocusState` binding because `.focused` must sit on the focusable view
 
 ### 🔁 ROUND 10 — the fix was reverted on arithmetic, and the falsifier finally exists (2026-09-20)
 
@@ -102,6 +102,39 @@ observation, and four structural guesses were made before either was consulted. 
 appears, the first question is "what is directly beneath the pressed item?" — the focus engine's search is
 geometric and local, and it is not helped by moving containers around.** ⚠ The `focusSection()` modifier's ORDER
 relative to `.frame()` is part of the API, not a style preference.
+
+### 🎯 ROUND 12, third item — DEFAULT FOCUS IS NOW A DECISION PER SCREEN (2026-09-20)
+
+His ask: *"can we change the default focus ...i think its not in the users avatar tab ...is there something in swyft
+where we can set the default focus for each page"*. **Yes — `.defaultFocus(_:_:)` (tvOS 17+; the app targets 26) and
+`.prefersDefaultFocus(_:in:)` with `.focusScope()` (tvOS 14+) — and the app already used it on TWO screens**
+(`DetailView` → `Play`, `PlayerView` → play/pause). Every other screen was taking the PLATFORM's pick, which is
+*top-most, leading-most focusable*: on Home and Browse that is **the top bar's first tab**, so those screens opened
+on the navigation rather than on the content.
+
+⚠ **His decision, and it is his own spec for one of them:** *"Browse → first poster (as your own spec says), Home →
+first card in the first rail, and leave the profile picker on its first tile"* — with `tvos-ux-principles.md` §6
+supplying the Browse half verbatim (*"Library grid → first poster (browsing is the point of the screen)"*).
+
+| screen | before | now |
+|---|---|---|
+| Home | platform → the bar's first tab | **the first card of the first rail** |
+| Browse (wall) | platform → the bar's first tab | **the first poster the current filter/sort shows** |
+| Browse (library list) | platform → the bar's first tab | unchanged — no poster to open on |
+| Profile picker | platform → the first tile | unchanged — **his call**, and what his concept HTML does (`first.focus()`) |
+| Title detail | `Play` | unchanged |
+| Player | play/pause | unchanged |
+
+⚠⚠ **THE HOME'S RULE IS PURE AND PINNED, AND THE PIN CAUGHT A BUG IN THE FIRST DRAFT OF MY OWN ASSERTION.** The card
+must be one `RailView` actually DRAWS: the rule skips a rail whose every row has an empty `itemID` (that rail
+renders `EmptyView`) — **and the hero is excluded from the Continue Watching rail, so the first card really is the
+SECOND CW row.** Written as "the first CW item" it would have named the hero's own id, a card that is not in the rail
+at all. `HomeSnapshot.defaultFocusCardID` + three harness pins (`643 checks` now).
+
+⚠ **Where the binding lives, because it is not free:** `.focused(…)` must be attached to the FOCUSABLE view, so
+`RailView` now takes the screen's `FocusState` binding as a parameter (members gate **rule 6**: a passed binding is
+used as `focus`, never `$focus`), and `.defaultFocus` goes at each **screen root** — the root is the focus scope the
+screen enters, while a preference set one level down sits inside a scope that has already chosen.
 
 ### 🎬 PHASE W — THE SCREENS WERE DRAWN IN THE WRONG BOX, AND THE TITLE SCREEN IS NOW HIS FILE'S STRUCTURE (2026-09-20)
 

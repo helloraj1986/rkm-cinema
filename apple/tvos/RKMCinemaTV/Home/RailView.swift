@@ -28,6 +28,12 @@ struct RailView: View {
 
     let rail: HomeRail
     let base: URL
+    /// ⚠⚠ **THE SCREEN'S CARD FOCUS, PASSED IN RATHER THAN DECLARED HERE** — `.focused` has to be attached to
+    /// the focusable view itself, so the binding belongs to the screen that claims a default
+    /// (`HomeView.defaultFocusCardID`). ⚠⚠ **It is a PASSED `FocusState` BINDING: use it as `focus`, never as
+    /// `$focus`.** There is no wrapper to project through — a binding is a `let`, and `$focus` on one does not
+    /// compile. That is the members gate's rule 6, bought by a Mac round.
+    let focus: FocusState<String?>.Binding
     let onSelect: (MediaItem) -> Void
 
     /// ⚠ A row with no id cannot be opened and has no poster, so it is dropped here rather than rendered as
@@ -53,6 +59,9 @@ struct RailView: View {
                     LazyHStack(spacing: TVTokens.Shelf.gap) {
                         ForEach(cards) { item in
                             PosterCard(item: item, base: base, onSelect: onSelect)
+                                // ⚠⚠ The binding is attached to the FOCUSABLE view, which is why it is passed
+                                // in: the screen that claims a default focus cannot do it from a distance.
+                                .focused(focus, equals: item.itemID)
                         }
                     }
                     .padding(.horizontal, TVTokens.Metric.safeMargin)

@@ -71,48 +71,73 @@ struct DetailView: View {
     @FocusState private var playFocused: Bool
 
     var body: some View {
-        // ⚠⚠ **ONE SCROLLER, AND THE BAR IS ITS FIRST CHILD (fixed 2026-09-20 after his report, and it is the
-        // app's OWN proven shape).** His words: *"in the library view (Movies Kids) i come down to tile and press
-        // enter, i am on back to browse button but i cant come down to play button through navigation"*. That is
-        // the **focus island** defect this repo has already paid for once: in a browser a bar above a scrolling
-        // page costs nothing; on tvOS a focusable row that is a SIBLING of the scroller is a container the
-        // direction search cannot reliably cross — which is why `BrowseView` moved its filter row INTO the wall's
-        // scroller and he accepted that screen.
+        // ⚠⚠ **THE BAR IS AN OVERLAY AGAIN, AND THE REASON IS ARITHMETIC RATHER THAN TASTE.** W3 moved the bar
+        // INSIDE the scroller to answer his round-9 report (*"i am on back to browse button but i cant come down
+        // to play button through navigation"*), and his round-10 reply is that the dead end is STILL there:
+        // *"still stuck on back to browse cannot come down using keyboard"*. What that structural change cost,
+        // provably, on the way:
         //
-        // ⚠⚠ **AND W2 MAKES THIS FREE.** Round 8 gave `Play` the default focus because that was the only way to
-        // reach it from a sibling bar; the bar is now a band ABOVE the hero, which is a visible divergence from
-        // his `.topbar { position: fixed }` — and with the page now fitting one screen (nothing scrolls) a
-        // floating bar buys exactly nothing. ⇒ Reachability wins, and the divergence is recorded rather than
-        // kept for looks. ⚠ The MECHANISM is a hypothesis stated as one — no engine runs on this machine — and
-        // **the falsifier is his own: on entry, is the ring on `Play`; can `Up` reach the bar; can `Down` come
-        // back to `Play`?**
-        measured("screen", ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 0) {
-                measured("bar", topBar)
-
-                Group {
-                    switch store.state {
-                    case .loading:
-                        loading
-                    case .content(let snapshot):
-                        content(snapshot)
-                    case .notFound:
-                        notFound
-                    case .failed(let message):
-                        failure(message)
+        //   `DetailRules.titlePageHeight` is the PAGE — hero + action row + resume bar + synopsis + credits +
+        //   cast row — and it sums to **1058.5 pt of a 1080 pt screen** (21.5 pt of air) **with the bar counted
+        //   as ZERO**, because in his file the bar is `.topbar { position: fixed }`. As a BAND the bar adds its
+        //   own `Bar.clearance` (115.2 pt), so the scroller's content became **1173.7 pt — 93.7 pt over a screen
+        //   that cannot scroll**, since nothing below `Play` takes focus (every band there is information, and
+        //   `ARCHITECTURE.md` §11 forbids a control whose only outcome is an apology). That is precisely the
+        //   class of defect W2 existed to remove.
+        //   ⇒ The overlay restores the fit AND his file's own structure, and the dead end is attacked with the
+        //   tool the platform documents for it — see below.
+        //
+        // ⚠⚠ **`.focusSection()` ON THE BAR AND ON THE CONTENT — A HYPOTHESIS, STATED AS ONE.** The focus
+        // engine's direction search prefers to move between SECTIONS, and a group of one focusable control above
+        // a group of one focusable control is what `View.focusSection()` exists for (tvOS 15+). ⚠ It adds no
+        // control and removes none: it only tells the engine how the screen is divided. **No focus engine runs
+        // on this machine, so none of this is proved** — which is why the evidence is LOGGED rather than argued.
+        // `TopBar` publishes every change of its own focus (`bar-focus: <id>`) and this screen publishes
+        // `Play`'s (`detail-focus: play=…`), so pressing `Down` with the ring on `Back` prints one of exactly
+        // two stories: **`bar-focus: nil` then `detail-focus: play=true`** (it moved — any remaining complaint
+        // is about something else), or **`bar-focus: back` staying put with no `play=true`** (the engine found
+        // no candidate at all, and the geometry is what changes next).
+        //
+        // ⚠ `measured("screen", …)` wraps the SCROLLER, and every `measured(…)` call inside `content` is a
+        // `.background` reader — handed the view's size AFTER layout, so it cannot change it. ⚠ The reader this
+        // screen DELETED in round 3 was the other kind: wrapped AROUND the focusable content, which is what the
+        // focus engine then navigated on. KNOWN_ISSUES #11 — *"i cant come to the titles by pressing down
+        // arrow"* — was fixed in `BrowseView` by deleting exactly that shape, and it is not coming back.
+        ZStack(alignment: .topLeading) {
+            measured("screen", ScrollView(.vertical, showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 0) {
+                    Group {
+                        switch store.state {
+                        case .loading:
+                            loading
+                        case .content(let snapshot):
+                            content(snapshot)
+                        case .notFound:
+                            notFound
+                        case .failed(let message):
+                            failure(message)
+                        }
                     }
+                    .focusSection()
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
                 }
-                .frame(maxWidth: .infinity, alignment: .topLeading)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        })
+                .frame(maxWidth: .infinity, alignment: .leading)
+            })
+
+            topBar
+                .focusSection()
+        }
         // ⚠⚠ The screen's default focus — see `playFocused`. `.defaultFocus` is the PLATFORM's way to say
         // this (the focus engine owns every move from there); nothing here computes a neighbour.
         .defaultFocus($playFocused, true)
         // ⚠⚠ **AND THE SCREEN GETS ITS OWN WAY OUT.** The tvOS MENU button is the canonical Back and it does
-        // not depend on the bar being on screen or reachable — which matters more now that the bar is inside
-        // the scroller. `ARCHITECTURE.md` ranks a dead end above any cosmetic rule.
+        // not depend on the bar being on screen or reachable. `ARCHITECTURE.md` ranks a dead end above any
+        // cosmetic rule.
         .onExitCommand { app.closeDetail() }
+        // ⚠ The falsifier for the hypothesis above, one line per CHANGE of focus — see this body's own note.
+        .onChange(of: playFocused) { _, focused in
+            RKMLog.info("detail-focus: play=\(focused)", category: .app)
+        }
         // ⚠ `.task`, not `.onAppear`: the load is async, and the store is built per item (`AppModel`), so
         // this runs once for the item that is open.
         .task {
@@ -150,10 +175,13 @@ struct DetailView: View {
                 .font(.system(size: TVTokens.Title.metaSize))
                 .foregroundStyle(RKMColour.secondary)
         }
-        // ⚠ The bar is a BAND above this state now (the screen is ONE scroller), so it no longer needs
-        // `Bar.clearance` — that padding existed only while the bar floated over the content.
+        // ⚠⚠ **`Bar.clearance` IS BACK, AND IT IS BACK FOR THE SAME REASON THE BAR IS AN OVERLAY AGAIN.** The
+        // bar floats over the content (his `.topbar { position: fixed }`), so a state whose first line is a
+        // WORD has to start below it — artwork may bleed under the bar, a sentence may not. ⚠ The content state
+        // needs no equivalent: its first band is the full-bleed hero, which is SUPPOSED to run under the bar.
         .padding(.leading, LibraryRules.marginFromPrototype)
-        .padding(.vertical, TVTokens.Grid.emptyPaddingV)
+        .padding(.top, TVTokens.Bar.clearance)
+        .padding(.bottom, TVTokens.Grid.emptyPaddingV)
     }
 
     // MARK: - The two failure states
@@ -188,6 +216,8 @@ struct DetailView: View {
             .padding(.top, TVTokens.Grid.gridTopPad)
         }
         .padding(.horizontal, LibraryRules.marginFromPrototype)
+        // ⚠ Same reason as `loading`: the bar floats over this screen, so a sentence starts below it.
+        .padding(.top, TVTokens.Bar.clearance)
         .padding(.bottom, TVTokens.Grid.emptyPaddingV)
         .buttonStyle(.bordered)
     }

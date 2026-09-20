@@ -251,22 +251,54 @@ browser draws it full screen, and the knob is **`Metric.safeMargin` — one numb
 
 ---
 
-## 15 · ✅ FIXED, AWAITING HIS ROUND — *"i cant come down to play button through navigation"*
+## 15 · ⚠⚠ REOPENED 2026-09-20 (his round 10) — *"still stuck on back to browse cannot come down using keyboard"*
 
-His words, 2026-09-20, on the title screen reached from the Library: *"in the librray view (Movies Kids) i come
-down to tile and press enter, i am on back to browse button but i cant come down to play button through
-navigation"*.
+⚠ **THIS ENTRY WAS MARKED FIXED AND HIS ROUND SAYS IT IS NOT. It is open again, with the third occurrence.**
 
-**That is the FOCUS ISLAND defect, and this repo has paid for it once already.** In a browser a bar above a
-scrolling page costs nothing; on tvOS a focusable row that is a **sibling of the scroller** is a container the
-direction search cannot reliably cross — which is why `BrowseView` moved its filter row *into* the wall's
-scroller and he accepted that screen. Round 8's fix (default focus on `Play`) made the primary verb reachable
-**on entry**, but never fixed *up to the bar and back down*.
+| round | his words | what shipped |
+|---|---|---|
+| 8 | *"I CAN SE ETHE PLAY BUTTON BUT CANT NAVIGATE FROM TOP TO THE PLAY BUTTON"* | `.defaultFocus($playFocused, true)` + `.onExitCommand` — `Play` reachable **on entry**, never reachable-*and*-leaveable |
+| W3 | *"in the librray view (Movies Kids) i come down to tile and press enter, i am on back to browse button but i cant come down to play button through navigation"* | the bar moved **into** the screen's one scroller |
+| **10** | *"On entering a title, the ring is on Play; Up reaches Back to Browse; Down comes back to Play → **still stuck on back to browse cannot come down using keyboard**"* | this entry |
 
-**⇒ The bar is now the FIRST CHILD of the screen's one scroller** — the app's own proven shape — and W2 made that
-free: with the page fitting one screen, nothing scrolls, so a `position: fixed` bar buys nothing but the dead
-end. ⚠ **The mechanism is a hypothesis stated as one** (no focus engine runs on this machine); **the falsifier
-is his own: on entry, is the ring on `Play`; can `Up` reach the bar; can `Down` come back to `Play`?**
+⚠⚠ **THE ASYMMETRY IS THE EVIDENCE: `Up` works, `Down` does not.** And round 10 **disproves W3's answer** — the
+bar-inside-the-scroller shape fails exactly as the bar-as-a-sibling shape did.
+
+⚠⚠ **AND W3 COST SOMETHING MEASURABLE, WHICH IS WHY IT HAS BEEN REVERTED.** `DetailRules.titlePageHeight` is the
+page **with the bar counted as ZERO** — that is his `.topbar { position: fixed }` — and it sums to **1058.5 of
+1080 pt** (21.5 pt of air, pinned by the harness). As a BAND the bar added its own `Bar.clearance` (115.2 pt), so
+the scroller's content became **1173.7 pt: 93.7 pt over a screen that cannot scroll**, because nothing below
+`Play` takes focus — every band there is information, and `ARCHITECTURE.md` §11 forbids a control whose only
+outcome is an apology. ⇒ **The bar is an overlay again** (his structure, and the fit is arithmetic-true again),
+`Bar.clearance` is back on the three message states, and the dead end is attacked with the platform's own tool.
+
+**What the current attempt is — and it is a HYPOTHESIS, stated as one:** `.focusSection()` on the bar and on the
+content group (`View.focusSection()`, tvOS 15+). The engine's direction search prefers to move between SECTIONS,
+and a group of one focusable control above a group of one focusable control is what the modifier exists for. ⚠ It
+adds no control and removes none. ⚠⚠ **No focus engine runs on this machine, so it is NOT proved.**
+
+**⚠⚠ THE FALSIFIER IS ONE LINE OF THE FILE LOG, AND THIS ROUND HAS TO PRODUCE IT.** `TopBar` now publishes every
+change of its own focus, and the screen publishes `Play`'s — so this is no longer a guess about a guess:
+
+```
+bar-focus: <id|nil>          every time the bar's focus moves (nil = focus LEFT the bar)
+detail-focus: play=<bool>    every time Play's focus moves
+```
+
+Press `Down` with the ring on `Back to Browse` and read which of exactly two stories comes back:
+
+| the log | what it means | what changes next |
+|---|---|---|
+| `bar-focus: nil` then `detail-focus: play=true` | **it moved.** Whatever remains is a different fault | nothing — say what you saw instead |
+| `bar-focus: back` and no `play=true` | the engine found **no candidate at all** below the bar | the geometry: the one structural lever left is his own Option A — art behind the whole page and the 313 pt hero band deleted, which removes the non-focusable wall between the bar and `Play` |
+
+⚠ Read it from the FILE log (the HUD cannot be scrolled) — `simctl` facts in
+`references/screen-geometry-and-focus.md` §4:
+
+```bash
+find "$(xcrun simctl get_app_container booted com.helloraj1986.RKMCinemaTV data)" -name rkm-tvos.log \
+  -exec grep -hE "bar-focus|detail-focus|detail-size" {} \;
+```
 
 ---
 

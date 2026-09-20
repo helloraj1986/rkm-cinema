@@ -1,4 +1,8 @@
 import SwiftUI
+// ⚠ `RKMServerKit` for `RKMLog` — this app's own module, and on the 26 SDK `import SwiftUI` does not
+// re-export it. `apple/scripts/check-imports.py` has a name-exact rule for exactly this, because
+// `HomeView` lost a whole Mac round to `RKMLog` with no import and no gate able to see it.
+import RKMServerKit
 
 /// One tab in the Home's top bar.
 ///
@@ -123,6 +127,16 @@ struct TopBar: View {
             Rectangle()
                 .fill(RKMColour.border)
                 .frame(height: 1)
+        }
+        // ⚠⚠ **THE BAR PUBLISHES ITS OWN FOCUS, AND IT IS A FALSIFIER RATHER THAN A DIAGNOSTIC.** The title
+        // screen's dead end (`KNOWN_ISSUES` #15) has exactly one line of evidence to give: **whether focus LEFT
+        // the bar when Down was pressed.** `bar-focus: nil` followed by `detail-focus: play=true` means it did
+        // (and any remaining complaint is about something else); `bar-focus: back` staying put with no
+        // `play=true` means the engine found no candidate below at all, and the geometry is what changes next.
+        // ⚠ One line per CHANGE of focus, never per frame — and `nil` is a real answer here, so it is printed
+        // as the word rather than as an empty string.
+        .onChange(of: focus) { _, value in
+            RKMLog.info("bar-focus: \(value ?? "nil")", category: .app)
         }
     }
 

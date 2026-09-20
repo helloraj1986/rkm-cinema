@@ -39,6 +39,17 @@ synopsis' line height was **1.8 em where his CSS says 1.6** — the single large
 ⚠ **BOTH OF THOSE ARE UNBUILT-UNTIL-HIS-MAC: not one SwiftUI view compiles on Linux**, and this phase changed
 `AppRootView`, `DetailView`, `HeroBand` and `PosterCard`.
 
+⚠⚠ **AND ROUND 10 REVERTED W3's STRUCTURAL GUESS, ON ARITHMETIC.** His report after W3 shipped: *"still stuck on
+back to browse cannot come down using keyboard"* — so the bar-inside-the-scroller shape fails exactly as the
+bar-as-a-sibling shape did, and `KNOWN_ISSUES` **#15 is open again**. What W3 cost, measurably: the bar became a
+BAND, adding its own `Bar.clearance` (115.2 pt) on top of `DetailRules.titlePageHeight`'s **1058.5 pt of 1080 —
+a budget that counts the bar as ZERO**, because in his file it is `.topbar { position: fixed }`. The scroller's
+content was therefore **1173.7 pt: 93.7 pt over a screen that cannot scroll**. ⇒ **the bar is an OVERLAY again,
+`Bar.clearance` is back on the three message states, and the dead end is attacked with `.focusSection()` on the
+bar and on the content group — a HYPOTHESIS, not a proof (no focus engine runs on Linux).** ⚠ What is NEW is the
+evidence path: **`TopBar` now publishes its own focus** (`bar-focus: <id|nil>`) beside the screen's
+`detail-focus: play=…`, so his round reads one line of the file log instead of trying a third structure blind.
+
 **Status before that: PHASE C (THE PLAYER) IS BUILT on the same branch — C1 + C2 + C3 — AND IT PLAYS.**
 His round 6 built and the film **resumed at its saved position**, which is **F2 answered GREEN by behaviour**
 (an unauthenticated HLS route `401`s and draws a black screen, so a playing film IS the segment test) — so

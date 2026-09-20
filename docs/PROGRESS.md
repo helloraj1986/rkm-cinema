@@ -1,3 +1,51 @@
+## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-20, session 2) · 🔧 **PHASE P IS BUILT ON `feat/tvos-player` — THE PLAYER AUDIT, AND EVERY DEFECT IT FOUND FIXED**: his instruction *"work on the media player now on every aspect of it make it perfect for a tv os app… go through the code and find out what else can be done on this"* ⇒ **eight defects with a file:line, six tvOS gaps closed, and Up Next** — plan, findings and the round's falsifiers in **`docs/TVOS_PLAYER_POLISH_PLAN.md`** · ⚠⚠ **NOTHING IS DEPLOYED AND NOTHING NEEDS `apply`: no file under `backend/`, `frontend/` or `nginx/` changed.** · ⚠ **NOT ONE SWIFTUI VIEW IS COMPILED ON THIS MACHINE** — the gates below are arithmetic and rules, and his Mac round is what decides the screen.
+
+### 🔧 PHASE P — THE PLAYER, AUDITED: EIGHT DEFECTS, SIX GAPS, AND UP NEXT (2026-09-20)
+
+**The audit is the deliverable's first half, and it found defects that were live on `feat/tvos-player` — not
+style, contradictions between the code and itself.** Every row's evidence is a line number.
+
+| | Was | Where |
+|---|---|---|
+| **D1** | the scrub tooltip drew **`PlaybackRules.fmtTime(0)`** — a literal zero, on every film, for every seek. His prototype writes the CURRENT time into it (`…html:518`) | `PlayerChrome.swift:205` |
+| **D2** | the scrub row's **±30 s jog did not exist**. `jogSeconds` was read by NO FILE in the project, the track's `Button` had an empty action, and the comment claimed the screen wired it up | `PlaybackChrome.swift:140-147` |
+| **D3** | **the mode-escalation ladder was unreachable** — `escalateMode()`, `hlsLadder` and `nextHLSMode` were built and pinned and **called by nothing**, so a failed stream reported a sentence and stopped | `PlaybackStore.swift:451` |
+| **D4** | **a stream that never STARTED was never noticed**: only `AVPlayerItemFailedToPlayToEndTime` was observed — that is a stream that died MID-FILM, not the black screen | `PlayerView.swift:105` |
+| **D5** | `start()` attached a **bare `AVPlayerItem(url:)` with no credential** — round 4's defect class kept as a second attach path | `PlayerView.swift:296` |
+| **D6** | one press of `Back` fired **two `stopped` writes** and two verification reads (`leave()` and `onDisappear`) | `PlayerView.swift:101, :374` |
+| **D7** | `onDisappear` never paused or detached the item — audio played on behind the next screen | `PlayerView.swift:95-102` |
+| **D8** | `saveHintDelay` was declared and read by nothing | `PlaybackRules.swift:359` |
+
+**And the gaps:** the failure notice had **nothing focusable** (a dead end, and the one state a viewer reaches
+when something has already gone wrong) · no **buffering indicator** · no **reduced-motion** path, which his own
+prototype's spec names · no **`scenePhase` pause** (HOME left the film playing behind the tvOS Home screen) · no
+**Now Playing** publish · no **`focusSection()`** on any of the player's three rows · **no Up Next**.
+
+|| |
+|---|---|
+| **Rules added (RUN here)** | `jogTarget` (the jog, composing the pinned `skipTarget`) · `ladderStep` / `ladderLength` / `attemptSentence` · `failedToStartSentence` · `nextEpisode(after:in:)` — ⚠⚠ **POSITIONAL, never `episode + 1`**: a season boundary, a mid-season special or a gap in Jellyfin's numbering all break arithmetic, and the server's list is already in hand · `upNextSeconds` / `upNextRemaining` / `upNextLabel` (⚠ which calls `DetailRules.episodeCode` — it does NOT spell `S\(season)E\(episode)` a second time) |
+| **The store** | the escalation is now a **single funnel**: `reportPlaybackFailure` CLIMBS before it reports, and only says so at the end of the ladder (it terminates — `nextHLSMode` is `nil` at the last rung) · `reportItemFailed()` for the polled `.failed` status · `retryPlayback()` + a `reloadToken` (⚠ `url` is `Equatable`, so a retry of the same URL fires no `onChange` — without the token, *Try again* would have looked like a broken button) · `finish()` is **idempotent** · the Up Next state machine in `tickUpNext()`, driven by the **0.5 s Timer and not the time observer**, because `AVPlayer`'s observer stops firing when playback ENDS — which is exactly when the countdown must run |
+| **The screen** | the tooltip's real time, centred on the playhead (his `translate(-50%,-14px)`) · `.onMoveCommand` claims **only left/right** on the track · a focusable failure notice with `Try again` (and the chrome `.disabled` behind it — the `ProfilesView` #17 lesson, applied before it happened here) · a `.controlSize(.large)` spinner while switching · `accessibilityReduceMotion` on the pulse and the three focus lifts · `scenePhase` → pause · `MPNowPlayingInfoCenter` · `.focusSection()` on the bar and the transport row (⚠ `frame` THEN `focusSection` — his round-12 order) · the series eyebrow above an episode's title · and **Up Next**: a right-edge card with *Play now* / *Cancel*, focus landing on *Play now* |
+| **Also** | `AppRootView` identifies the player by `.id(playback.itemID)` — ⚠ **without it Up Next hands a new `PlaybackStore` to a view SwiftUI REUSES, `onAppear` never runs again and the next episode opens on a frozen "Preparing…"** · `check-imports.py` gains a **`MediaPlayer` rule** (the `RKMServerKit` lesson, third time) with both of its edges in the selftest · `check-tvos-members.py` gains the card's `(next, EpisodeItem)` pair |
+| **Gates, live on this commit** | `check-tvos-core.py` **687 checks / 0 failures** (was 655) · `check-tvos-members.py` **PASS — 36 pairs, 36 types, 9 rules** · `check-tvos-models.py` **PASS — 180 keys, 25 endpoints** · `check-imports.py apple/tvos/RKMCinemaTV` **PASS — 51 files** · `check-imports.py --selftest` **12/12** · `check-design-tokens.py` **PASS (R1/R2/R3)** · `check-apple-typecheck.sh` **PASS** · `check_md_links.py` **79 files, all resolve** |
+| **⚠⚠ THE MUTATIONS** | **eleven new reversions were written, and unlike every previous phase ALL ELEVEN WERE EXERCISED** — each applied to the real sources, compiled, and required to go RED on the line it claims to protect (9 on `PlaybackRules`, 2 on `TVTokens`). ⚠ That is NOT `--falsify` (his standing rule stands: dev + unit tests, then his round) — it is the narrower question a NEW mutation must answer before it can be trusted, and a mutation whose anchor text has drifted pins nothing |
+| **⚠ NOT verified** | **not one SwiftUI view is compiled or run on this machine.** `PlayerView`, `PlayerChrome`, `PlaybackStore` and `AppRootView` are all Mac-only. What IS executed here is the arithmetic and the rules — including the two new surfaces' placement (the Up Next card covers **≤ half** the screen; the notice's sentence wraps inside it) |
+
+⚠⚠ **HIS ROUND — P-F1…P-F10, written before the build, in `TVOS_PLAYER_POLISH_PLAN.md` §4.** Two of them are the
+ones a screenshot cannot settle: **P-F3** (a failing stream must climb the ladder and SAY so — `Trying Remux
+(1 of 3)…`) and **P-F8/P-F9** (an episode that finishes shows the card and the next episode really opens;
+the LAST episode of a series shows **nothing**). ⚠ **And the standing rule: a `BUILD FAILED` proves nothing
+about any of them** — it is a build round.
+
+⚠ **NOT built, deliberately, with reasons in the plan's §1.3:** chapter ticks and the scrub thumbnail (nothing
+on the wire — re-measured today), `AVAudioSession` configuration (tvOS manages it for a video app; added build
+risk for no namable behaviour), `MPRemoteCommandCenter` handlers (`.onPlayPauseCommand` already owns that key),
+skip-intro (Jellyfin's markers are not proxied), and Up Next for a MOVIE's sequel (`/jellyfin/similar` carries a
+TMDB id and no Jellyfin item id).
+
+⚠ **NOTE:** the `## ⚡ NEXT SESSION` block below this one is **W13 + W14's resume block**, kept unchanged —
+its rounds are still awaiting his simulator check.
+
 ## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-20) · 🖼️ **W13 + W14 ARE BUILT, AND HIS ROUND ON THEM IS NEXT — the title screen's ARTWORK IS THE PAGE and the HOME'S HERO BAND carries the same tinted scrim**: (his ask, 2nd time: *"make it a background of the details page with using gradients color depening on the poster so that the text … can be seen clearly"*) — the hero band is GONE, the page is **1059.1 pt of 1080** (20.9 pt of air, pinned), `Core/ArtworkTint.swift` is the NEW pure rule (tint + the legibility wash, run on Linux), and **the ONE falsifier a screenshot cannot settle is A5: the scrim must CHANGE between a dark title and a bright one** · ⚠ no `apply` needed — no file under `backend/`, `frontend/` or `nginx/` changed · ✅ **`KNOWN_ISSUES` #15 IS CLOSED — HE CONFIRMED IT ON HIS SIMULATOR: *"yes it works now....i can switch between play button and back to browse"*** — **a tvOS press only moves focus to a target DIRECTLY BENEATH the pressed item**, and `Play`'s narrow frame did not overlap the bar's tab where `Resume (9%)`'s longer label did (which is why the defect looked data-dependent and survived four structural changes); the action row now carries a full-width `.focusSection()` and the content group's section sits OUTSIDE its `.frame(…)` · ✅ **`KNOWN_ISSUES` #17 IS CLOSED — HE CONFIRMED IT: *"the profile card is also working"*** · ⚠ branch `feat/tvos-player` carries it; `dev` does NOT · **nothing needs `apply`**: no file under `backend/`, `frontend/` or `nginx/` changed · ✅ **AND `KNOWN_ISSUES` #17 IS FIXED, AWAITING HIS ROUND** — the profile-switch password card lost focus out of the `SecureField` and stranded him, because **an `.overlay` is VISUAL ONLY** and left the screen behind in the focus chain (`Auth/ProfilesView.swift`: `.disabled` while a panel is up · `.focusSection()` on each card · `.onExitCommand` on each card · both cards claim focus) · 🎯 **AND DEFAULT FOCUS IS NOW A PER-SCREEN DECISION, ON HIS CHOICE** (2026-09-20): **Home → first card of the first rail** (`HomeSnapshot.defaultFocusCardID`, pure + 3 pins) and **Browse → the first poster the current filter shows** (his own `tvos-ux-principles.md` §6); detail (`Play`) and player (play/pause) already had it, and the profile picker stays on its first tile by his call. ⚠ `RailView` now takes the screen's `FocusState` binding because `.focused` must sit on the focusable view
 
 ### 🔁 ROUND 10 — the fix was reverted on arithmetic, and the falsifier finally exists (2026-09-20)

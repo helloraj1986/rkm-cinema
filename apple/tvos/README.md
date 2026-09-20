@@ -39,6 +39,25 @@ synopsis' line height was **1.8 em where his CSS says 1.6** — the single large
 ⚠ **BOTH OF THOSE ARE UNBUILT-UNTIL-HIS-MAC: not one SwiftUI view compiles on Linux**, and this phase changed
 `AppRootView`, `DetailView`, `HeroBand` and `PosterCard`.
 
+⚠⚠ **AND PHASE P — THE PLAYER AUDIT — IS BUILT ON THE SAME BRANCH (2026-09-20, session 2).** His instruction:
+*"work on the media player now on every aspect of it make it perfect for a tv os app… go through the code and
+find out what else can be done on this"*. **The audit found eight defects that were LIVE, each with a line
+number** (`docs/TVOS_PLAYER_POLISH_PLAN.md` §1): the scrub tooltip was hardcoded to `0:00`; the scrub row's ±30 s
+jog **did not exist** (`jogSeconds` was read by no file, and a comment claimed otherwise); the mode-escalation
+ladder was **unreachable** (built, pinned, called by nothing); a stream that never *started* was never noticed
+(only the mid-film failure notification was observed); `start()` held a second, credential-less attach path; one
+`Back` fired two `stopped` writes; the player was never paused on the way out; and `saveHintDelay` was read by
+nothing. **Six tvOS gaps closed**: a focusable failure notice with *Try again* (before it, a failed stream left
+**nothing** focusable), a buffering indicator, reduced motion, a `scenePhase` pause, Now Playing, and
+`.focusSection()` on the bar and the transport row. **And Up Next** — the next episode, chosen **by position in
+the server's own list** (never `episode + 1`: a season boundary breaks arithmetic), with a countdown card and the
+hand-off through `AppModel`. ⚠⚠ `AppRootView` now identifies the player by `.id(playback.itemID)` — without it
+SwiftUI reuses the view, `onAppear` never re-runs, and the next episode opens on a frozen "Preparing…".
+⚠ **Gates: `check-tvos-core.py` 687 checks / 0 failures · members 36 pairs · models PASS · imports 51 files ·
+tokens PASS · typecheck PASS**, and **all eleven new mutations were exercised** (applied, compiled, required to go
+RED) — which is NOT `--falsify`, the full gate his standing rule keeps for his own call.
+⚠⚠ **None of it is verified on a screen:** not one SwiftUI view compiles on Linux.
+
 ⚠⚠ **AND ROUND 10 REVERTED W3's STRUCTURAL GUESS, ON ARITHMETIC.** His report after W3 shipped: *"still stuck on
 back to browse cannot come down using keyboard"* — so the bar-inside-the-scroller shape fails exactly as the
 bar-as-a-sibling shape did, and `KNOWN_ISSUES` **#15 is open again**. What W3 cost, measurably: the bar became a
@@ -85,8 +104,9 @@ at the cost of not installing on tvOS 17–25). See §1's build-settings table.
 one line: a member that did not exist, then a nested `struct Body`) — **⚠ but the player's own views have NOT
 yet: rounds 1, 2 and 5 on Phase C all failed to build, each on one line, and no round has type-checked
 `PlayerView.swift` at all.** ⚠ **What is true throughout: nothing on the Linux side can compile a view.** The
-pure rules are compiled and RUN there — **607 checks** (⚠ read that count live: it moves with every pinned rule,
-and this file said 467 until 2026-09-20) and **151/151 falsified mutations as recorded at `46443ff`** — and that
+pure rules are compiled and RUN there — **687 checks** (⚠ read that count live: it moves with every pinned rule,
+and this file said 467 until 2026-09-20, then 607) and **151/151 falsified mutations as recorded at `46443ff`,
+plus Phase P's eleven, each exercised individually in that phase** — and that
 is type-and-rule evidence only, never evidence that a screen works.
 
 The round, on the **MacBook Pro** — against `feat/tvos-player`, which is where the player is. ⚠ **Pick the HUD flag
@@ -246,7 +266,7 @@ bent to look like the other.
 | 3 | Home | `GET /api/library/continue-watching` · `/recently-watched` | **B ✅ built (B2)** |
 | 4 | Browse | `GET /api/library/folders` → `/items` | **B ✅ built (B3)** |
 | 5 | Item detail (read-only) | `GET /api/jellyfin/detail?id=` · `/api/library/series/{id}/episodes` | **B ✅ built (B4)** |
-| 6 | Player | `GET /api/jellyfin/hls/{id}/master.m3u8` · `POST /api/jellyfin/progress` | C |
+| 6 | Player | `GET /api/jellyfin/hls/{id}/master.m3u8` · `POST /api/jellyfin/progress` · ⚠ `GET /api/library/series/{id}/episodes` (Up Next, Phase P) | **C ✅ built · P ✅ audited + polished** |
 
 ⚠ **Screen #5 has NO Play control, deliberately.** The player is Phase C and the api has no route this app
 may play from, so a Play button would be a promise the app cannot keep (`docs/ARCHITECTURE.md` §11 — never
@@ -304,11 +324,14 @@ makes the next fix possible.
 python3 apple/scripts/check-tvos-models.py            # models + endpoints vs the frozen contract
 python3 apple/scripts/check-tvos-models.py --falsify  # 14 mutations, each must go red
 python3 apple/scripts/check-tvos-core.py              # RUNS the URLs, the models + every screen's rules
-python3 apple/scripts/check-tvos-core.py --falsify    # 45 rules reverted, each must go red
+python3 apple/scripts/check-tvos-core.py --falsify    # every rule reverted, one at a time (169; ~15 min)
 TMPDIR=/root/tmp bash apple/scripts/check-apple-typecheck.sh   # compiles the 19 portable files
 python3 apple/scripts/check-imports.py apple/tvos/RKMCinemaTV  # missing imports — INCLUDING the views
-python3 apple/scripts/check-imports.py --selftest     # 6 snippets, incl. the RKMServerKit rule's edges
+python3 apple/scripts/check-imports.py --selftest     # 12 snippets, incl. the RKMServerKit and MediaPlayer rules' edges
 bash apple/scripts/test-mac-round.sh                  # the round script, stubbed, 10 cases
+python3 apple/scripts/check-design-tokens.py          # R1 drift · R2 the tvOS muted · R3 no colour scatter
+python3 apple/scripts/check-tvos-members.py           # nine rules over the app's view/type pairs
+python3 tools/check_md_links.py                       # every relative link in every doc
 ```
 
 ⚠⚠ **`check-imports.py` IS THE ONLY GATE THAT SEES THE SWIFTUI VIEWS, and it earned that role on
@@ -383,6 +406,11 @@ repo — and *assuming it fails* is exactly as unproven as *assuming it works*. 
 - **Phase C — the player. C1, C2 and C3 are BUILT on `feat/tvos-player`; C4 is HIS ROUND and C5 is still NOT
   built.** The four playback endpoints already existed server-side (`docs/TVOS_PLAYER_PLAN.md` §1), and the phases
   are ordered so the round MEASURES the cookie question (F2) rather than the build betting on it: C5 — the backend
-  carrier — is built only on a red F2.
+  carrier — is built only on a red F2. ⚠ **His round 6 built and the film resumed at its saved position, so F2 is
+  GREEN by behaviour and C5 is NOT needed.**
+- **Phase P — the player AUDITED AND POLISHED — BUILT on `feat/tvos-player` (2026-09-20, session 2).** Eight live
+  defects fixed (each with a line number in `docs/TVOS_PLAYER_POLISH_PLAN.md` §1), six tvOS gaps closed, and Up
+  Next added. ⚠ **His round is next**: P-F1…P-F10 in that plan's §4, and two of them (the escalation being
+  VISIBLE, and the last episode of a series showing no card) are the ones a screenshot cannot settle.
 - **Phase D** — focus/distance polish at 1080p from three metres (partly absorbed by U6, which moved every metric
-  onto the prototype's own `u` scale).
+  onto the prototype's own `u` scale; and partly by Phase P, which gave the player's three rows their sections).

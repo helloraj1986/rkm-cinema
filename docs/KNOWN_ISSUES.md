@@ -25,47 +25,6 @@ Opened 2026-09-17 from his iPhone/iPad round on `feat/mobile-m3-library` (now me
 
 ---
 
-## 17 · ✅ FIXED, AWAITING HIS ROUND — the password card loses focus and strands the viewer
-
-> *"while changing profile when you enter password and press down button to actual switching...it looses focus
-> and the cursor goes to back while the user stuck on the password overlay"*
-
-**tvOS, reported 2026-09-20. The fix is `Auth/ProfilesView.swift`; nothing server-side moved.**
-
-⚠⚠ **THE CAUSE IS THAT THE PANEL IS AN `.overlay`, AND AN OVERLAY IS VISUAL ONLY.** `ProfilesView.body` is
-`ZStack { background; ScrollView { tiles · notices · exits } }` with the card as `.overlay { … }` — so while the
-card was drawn over the screen, **every control underneath it was still in the focus chain**: the profile tiles,
-`Manage profiles`, `Sign out`, `Reload profiles`, `Change server`. Pressing `Down` out of the `SecureField` found a
-candidate *behind* the dimmed card and moved the ring onto it. The card stayed on screen, the field had lost
-focus, and the only control that could dismiss the card was **inside** the card — so his word *"stuck"* is exact.
-
-⚠⚠ **AND THIS FILE'S OWN COMMENT JUSTIFIED EXACTLY THE THING THAT BROKE:** *"a modal has to own focus to be
-dismissible with the remote's Back, and a plain overlay keeps the row's focus model visible behind it."* It does.
-On a television that is not a feature — a focusable control the viewer cannot see is a dead end, and
-`ARCHITECTURE.md` ranks a dead end above any cosmetic rule.
-
-**⇒ Three parts, and none of them is focus arithmetic:**
-
-| # | change | why |
-|---|---|---|
-| 1 | **`.disabled(asking != nil \|\| showingAdminNotice)` on the `ScrollView`** | the app's own precedent for "out of the focus chain" (`BrowseView.libraryRow`'s unresolved library, the top bar's unresolved tabs): on tvOS a disabled control is not a focus candidate, so while a panel is up the card's controls are the only ones reachable |
-| 2 | **`.focusSection()` on each card** | the field and its two pills are ONE group (`View.focusSection()`, tvOS 15+) — so `Down` stays inside |
-| 3 | **`.onExitCommand` on each card; `Close` and the field claim focus on `onAppear`** | MENU must CLOSE the panel while it is up (on the card, not the screen, so MENU keeps its normal meaning otherwise). ⚠ Claiming focus is now load-bearing: the moment a card appears, whatever had focus is `.disabled`, so something must say where focus goes |
-
-⚠ **The `adminNotice` had the identical shape and is fixed with it** — one control, opened by a pill that is
-disabled underneath, so without #3 it could come up with focus nowhere. Fixing one and not the other would leave
-the same trap one press away.
-
-**His round — positive and negative:**
-
-| ✅ should | ❌ still broken |
-|---|---|
-| Pick a profile with a lock → the field is focused → type → `Down` lands on **`Watch as …`**, `Down`/`Up` move between it and `Cancel`, never leaving the card | the ring appears anywhere behind the card |
-| `MENU` while the card is up closes the card and returns to the tiles | `MENU` signs out / does nothing |
-| `Manage profiles` → notice → `Close` is focused; `MENU` closes the notice | focus nowhere, or a tile behind takes the ring |
-
----
-
 ## 1 · The details page's **More** (⋯) and **Watched** buttons do nothing
 
 > *"there are few bugs in details page like more button is not working neither watched button"*

@@ -24,7 +24,12 @@ struct PlayerSettingsPanel: View {
     /// `FocusState<Value?>.Binding`, and a plain `Binding<DrawerFocus?>` compiles right up until that call.
     /// The screen owns the state (`@FocusState private var drawerFocus`) and passes `$drawerFocus`.
     let focus: FocusState<DrawerFocus?>.Binding
-    let onClose: () -> Void
+    // ⚠⚠ **THERE IS NO `onClose` HERE ANY MORE, AND IT WAS THE DEFECT.** The panel declared one, the screen
+    // passed `closePanel()` to it, and **nothing in the panel ever called it** — so the drawer had NO exit of
+    // its own, and the root `.onExitCommand` went straight to `leave()`: MENU with the drawer open left the
+    // film. His report: *"how does the user comes out of it, the back button should close it automatically"*.
+    // ⚠ The way out is MENU, the ladder is `PlaybackRules.menuTarget`, and it is executed by the SCREEN — so
+    // the parameter that promised a close the panel never performed is gone rather than left named.
 
     var body: some View {
         // ⚠⚠ **THE DRAWER IS A COLUMN WITH A HEADER — AND THE HEADER WAS THE MOST VISIBLE THING MISSING.**
@@ -36,13 +41,28 @@ struct PlayerSettingsPanel: View {
         // ⚠ His `position:absolute` means the header does NOT push the nav down, which is why it is a `VStack`
         // header rather than an overlay: the nav's own inset (`settingsHeaderTop`) is what sits under it.
         VStack(alignment: .leading, spacing: 0) {
-            Text("Player Settings")
-                .font(.system(size: TVTokens.Player.settingsHeaderSize, weight: .bold))
-                .tracking(TVTokens.Player.settingsHeaderTracking)
-                .textCase(.uppercase)
-                .foregroundStyle(RKMColour.muted)
-                .padding(.horizontal, TVTokens.Player.settingsHeaderInset)
-                .padding(.top, TVTokens.Player.settingsHeaderTop)
+            HStack(alignment: .firstTextBaseline, spacing: TVTokens.Player.contentGap) {
+                Text("Player Settings")
+                    .font(.system(size: TVTokens.Player.settingsHeaderSize, weight: .bold))
+                    .tracking(TVTokens.Player.settingsHeaderTracking)
+                    .textCase(.uppercase)
+                    .foregroundStyle(RKMColour.muted)
+                Spacer(minLength: 0)
+                // ⚠⚠ **THE WAY OUT, WRITTEN DOWN — his report: *"once the headphone icon is clicked and overlay
+                // opens how does the user comes out of it, the back button should close it automatically"*.**
+                // It DOES now (`PlaybackRules.menuTarget`: MENU closes the drawer before it ever closes the
+                // film, and `PlayerView.closePanel()` puts the ring back on the headphone button) — but a control
+                // nobody is told about is a control that does not exist, and the panel had no line saying so.
+                // ⚠ Muted and un-focusable on purpose: it is furniture, not a row, and a viewer must never be
+                // able to land the ring on a hint.
+                Text("MENU closes")
+                    .font(.system(size: TVTokens.Player.sectionHeaderSize, weight: .semibold))
+                    .tracking(TVTokens.Player.settingsHeaderTracking)
+                    .textCase(.uppercase)
+                    .foregroundStyle(RKMColour.muted.opacity(0.7))
+            }
+            .padding(.horizontal, TVTokens.Player.settingsHeaderInset)
+            .padding(.top, TVTokens.Player.settingsHeaderTop)
 
             HStack(alignment: .top, spacing: 0) {
                 rail
@@ -169,52 +189,87 @@ struct PlayerSettingsPanel: View {
         ScrollView {
             VStack(alignment: .leading, spacing: TVTokens.Player.listGap) {
                 ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
-                    Button {
-                        row.apply()
-                    } label: {
-                        HStack(alignment: .center, spacing: TVTokens.Player.contentGap) {
-                            VStack(alignment: .leading, spacing: TVTokens.Player.subtitleRowGap) {
-                                Text(row.title)
-                                    .lineLimit(1)
-                                    // ⚠ Truncating from the MIDDLE: a subtitle release name's tail
-                                    // (`.1080p.BluRay.x264-AC3`) is what tells two results apart, and the head is
-                                    // the film's own title, which is on every row.
-                                    .truncationMode(.middle)
-                                // ⚠ The second line only exists for a row that HAS a second fact — `Off`, a
-                                // local track and the search action are one-liners, so they stay one line.
-                                if let detail = row.detail {
-                                    Text(detail)
-                                        .font(.system(size: TVTokens.Player.subtitleDetailSize))
-                                        .foregroundStyle(RKMColour.muted)
+                    // ⚠⚠ **A SECTION LABEL IS NOT A ROW.** It is drawn as text and carries NO `.focused`, so the
+                    // focus engine steps over it — a header a viewer could land on would be a press that does
+                    // nothing, which is the defect this repo keeps finding in overlays.
+                    if row.isSection {
+                        Text(row.title.uppercased())
+                            .font(.system(size: TVTokens.Player.sectionHeaderSize, weight: .semibold))
+                            .kerning(TVTokens.Player.sectionHeaderSize * 0.09)
+                            .foregroundStyle(RKMColour.muted)
+                            .padding(.top, index == 0 ? 0 : TVTokens.Player.sectionHeaderTopPad)
+                    } else {
+                        Button {
+                            row.apply()
+                        } label: {
+                            HStack(alignment: .center, spacing: TVTokens.Player.contentGap) {
+                                // ⚠ WHAT CAN BE DONE — a leading glyph on an action row, in the accent the
+                                // style already gives its text.
+                                if let glyph = row.glyph {
+                                    Image(systemName: glyph)
+                                        .font(.system(size: TVTokens.Player.actionGlyphSize,
+                                                      weight: .semibold))
+                                        .frame(width: TVTokens.Player.actionGlyphSize)
+                                }
+                                VStack(alignment: .leading, spacing: TVTokens.Player.subtitleRowGap) {
+                                    Text(row.title)
                                         .lineLimit(1)
+                                        // ⚠ Truncating from the MIDDLE: a subtitle release name's tail
+                                        // (`.1080p.BluRay.x264-AC3`) is what tells two results apart, and the head is
+                                        // the film's own title, which is on every row.
+                                        .truncationMode(.middle)
+                                    // ⚠ The second line only exists for a row that HAS a second fact — `Off`, a
+                                    // local track and the search action are one-liners, so they stay one line.
+                                    if let detail = row.detail {
+                                        Text(detail)
+                                            .font(.system(size: TVTokens.Player.subtitleDetailSize))
+                                            .foregroundStyle(RKMColour.muted)
+                                            .lineLimit(1)
+                                    }
+                                }
+                                Spacer(minLength: 0)
+                                // ⚠⚠ **THE SETTING'S VALUE — accent FILLED**, the third of the accent's three
+                                // jobs. A control that is doing something is a filled pill; a control that is not
+                                // (or a value that excludes nothing) is plain muted text.
+                                if let value = row.value {
+                                    Text(value)
+                                        .font(.system(size: TVTokens.Player.subtitleDetailSize,
+                                                      weight: .semibold))
+                                        .foregroundStyle(row.role == .applied
+                                                         ? RKMColour.background : RKMColour.muted)
+                                        .padding(.horizontal, TVTokens.Player.badgePaddingH)
+                                        .padding(.vertical, TVTokens.Player.badgePaddingV)
+                                        .background(
+                                            Capsule().fill(row.role == .applied
+                                                           ? RKMColour.accent : Color.white.opacity(0.08))
+                                        )
+                                }
+                                // ⚠⚠ **THE BADGE — accent OUTLINED**: the row the auto-pick would take. A
+                                // different SHAPE from the applied row's filled bar, so "what will be picked" and
+                                // "what is on" can never be confused at three metres.
+                                if let badge = row.badge {
+                                    Text(badge)
+                                        .font(.system(size: TVTokens.Player.subtitleDetailSize,
+                                                      weight: .semibold))
+                                        .foregroundStyle(RKMColour.accent)
+                                        .padding(.horizontal, TVTokens.Player.badgePaddingH)
+                                        .padding(.vertical, TVTokens.Player.badgePaddingV)
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: TVTokens.Player.badgeRadius,
+                                                             style: .continuous)
+                                                .stroke(RKMColour.accent, lineWidth: TVTokens.Player.pillStrokeWidth)
+                                        )
+                                }
+                                if row.role == .applied {
+                                    Image(systemName: "checkmark")
+                                        .font(.system(size: TVTokens.Player.checkSize, weight: .bold))
+                                        .foregroundStyle(RKMColour.accent)
                                 }
                             }
-                            Spacer(minLength: 0)
-                            // ⚠⚠ **THE BADGE — WHICH ROW THE RULE PICKED, AND WHY.** It sits on the row itself
-                            // rather than in a line above the list, because the question it answers is *"which of
-                            // these nineteen release names will the app take?"* and an answer that is not ON the
-                            // row is an answer the viewer has to hold in his head while he scrolls.
-                            if let badge = row.badge {
-                                Text(badge)
-                                    .font(.system(size: TVTokens.Player.subtitleDetailSize,
-                                                  weight: .semibold))
-                                    .foregroundStyle(RKMColour.primary)
-                                    .padding(.horizontal, TVTokens.Player.badgePaddingH)
-                                    .padding(.vertical, TVTokens.Player.badgePaddingV)
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: TVTokens.Player.badgeRadius,
-                                                         style: .continuous)
-                                            .stroke(Color.white.opacity(0.28), lineWidth: 1)
-                                    )
-                            }
-                            if row.isSelected {
-                                Image(systemName: "checkmark")
-                                    .font(.system(size: TVTokens.Player.checkSize, weight: .bold))
-                            }
                         }
+                        .buttonStyle(DrawerListStyle(role: row.role, isAction: row.isAction))
+                        .focused(focus, equals: .row(index))
                     }
-                    .buttonStyle(DrawerListStyle(isSelected: row.isSelected, isAction: row.isAction))
-                    .focused(focus, equals: .row(index))
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -339,10 +394,21 @@ struct PlayerSettingsPanel: View {
         /// so the line cannot invent a fact.
         var detail: String? = nil
         /// **The trailing badge** — `Most downloaded` / `Your pick before` / `Auto-applied` on the row the
-        /// auto-pick is about, and `nil` on every other row (and on the settings rows below).
+        /// auto-pick is about, and `nil` on every other row. ⚠ Accent-OUTLINED, which is what makes it a
+        /// different object from an applied row's accent FILLED bar.
         var badge: String? = nil
-        let isSelected: Bool
-        let isAction: Bool
+        /// **A SETTING's current value** (`Most downloaded (en)`, `None`) — the accent-filled pill, so a
+        /// control that is doing something looks different from one that is not.
+        var value: String? = nil
+        /// **A leading glyph — the mark of an ACTION row** (`magnifyingglass`, `wand.and.stars`, `speaker.slash`).
+        /// ⚠ What can be DONE reads as an affordance, not as a state.
+        var glyph: String? = nil
+        /// **A section label.** ⚠ Drawn as muted, NON-FOCUSABLE text: the pane's structure is the other half of
+        /// *"hard to understand"*, and a header a viewer could focus would be a row that does nothing.
+        var isSection: Bool = false
+        /// **Which of the accent's three jobs this row has** (see `PlaybackRules.rowRole`).
+        var role: PlaybackRules.RowRole = .plain
+        var isAction: Bool = false
         let apply: () -> Void
     }
 
@@ -350,33 +416,49 @@ struct PlayerSettingsPanel: View {
         switch store.category {
         case .audio:
             return store.audioRows.map { track in
-                Row(title: track.name, isSelected: store.isSelectedAudio(track), isAction: false) {
+                Row(title: track.name,
+                    role: PlaybackRules.rowRole(isApplied: store.isSelectedAudio(track),
+                                                isCandidate: false)) {
                     store.setAudioIndex(track.index)
                 }
             }
         case .subtitles:
-            var rows: [Row] = [
-                // ⚠⚠ **"Off" IS A WRITE, NOT A LOCAL TOGGLE.** The api's own description of
-                // `POST /jellyfin/subtitle-disable`: *"Turn subtitles off for an item without forgetting which
-                // one was chosen."* A client-side "off" would be undone by the next load, and the viewer would
-                // watch the app re-apply a subtitle they had turned off — which is why this goes through the
-                // store's `disableSubtitles()` (and why that call re-reads `playback-info` afterwards).
-                Row(title: "Off", isSelected: store.subtitleIndex == nil, isAction: false) {
-                    Task { await store.disableSubtitles() }
-                },
-            ]
+            var rows: [Row] = []
+            // ⚠⚠ **THE PANE'S STRUCTURE, AND IT IS NOT DECORATION.** Twelve rows of five different KINDS used
+            // to sit in one column — the film's own tracks, an api action, a provider's catalogue and two
+            // settings — and his words were *"the subtitle ux is a bit hard to understand"*. A label per group
+            // is the cheapest half of the answer (the accent language is the other): it says where "things I can
+            // choose" ends and "things I can do" begins.
+            rows.append(section("Your choice"))
+            // ⚠⚠ **"Off" IS A WRITE, NOT A LOCAL TOGGLE.** The api's own description of
+            // `POST /jellyfin/subtitle-disable`: *"Turn subtitles off for an item without forgetting which
+            // one was chosen."* A client-side "off" would be undone by the next load, and the viewer would
+            // watch the app re-apply a subtitle they had turned off — which is why this goes through the
+            // store's `disableSubtitles()` (and why that call re-reads `playback-info` afterwards).
+            rows.append(Row(title: "Off",
+                            role: PlaybackRules.rowRole(isApplied: store.subtitleIndex == nil,
+                                                        isCandidate: false)) {
+                Task { await store.disableSubtitles() }
+            })
             rows += store.localSubtitleRows.map { track in
-                Row(title: track.name, isSelected: store.subtitleIndex == track.index, isAction: false) {
+                Row(title: track.name,
+                    detail: "on disk",
+                    role: PlaybackRules.rowRole(isApplied: store.subtitleIndex == track.index,
+                                                isCandidate: false)) {
                     Task { await store.chooseLocalSubtitle(index: track.index) }
                 }
             }
+            if store.subtitleSearchEnabled || !store.remoteSubtitleRows.isEmpty {
+                rows.append(section("From OpenSubtitles"))
+            }
             if store.subtitleSearchEnabled {
-                rows.append(Row(title: "Search OpenSubtitles…", isSelected: false, isAction: true) {
+                rows.append(Row(title: "Search OpenSubtitles…", glyph: "magnifyingglass",
+                                isAction: true) {
                     Task { await store.searchSubtitles() }
                 })
             }
             // ⚠⚠ **ONE ROW PER RESULT, TWO LINES EACH, AND ONLY AFTER HE ASKED.** `store.remoteSubtitleRows`
-            // is empty until `searchSubtitles()` — so this list starts as the two rows that matter (`Off`, the
+            // is empty until `searchSubtitles()` — so this list starts as the rows that matter (`Off`, the
             // film's own tracks) and grows only on the viewer's own action.
             rows += store.remoteSubtitleRows.map { row in
                 Row(title: row.displayTitle,
@@ -384,32 +466,44 @@ struct PlayerSettingsPanel: View {
                     // downloads, our own usage, SDH.
                     detail: PlaybackRules.subtitleRowDetail(row),
                     badge: autoBadge(for: row),
-                    isSelected: false, isAction: false) {
+                    // ⚠ The badge says what the rule WOULD take; the BAR says what is ON. ⚠ `row.active` is the
+                    // SERVER's answer to "is this the chosen one" (`merge_subtitle_rows` writes it from the
+                    // stored identity), so the bar and the playing subtitle cannot disagree — and `rowRole`'s
+                    // precedence (applied first) is what keeps one row from claiming both.
+                    role: PlaybackRules.rowRole(isApplied: row.active,
+                                                isCandidate: row.subtitleID == (store.autoFacts?.subtitleID ?? ""))) {
                     Task { await store.chooseRemoteSubtitle(row) }
                 }
             }
             // ⚠⚠ **THE TWO CONTROLS HIS DECISION NAMED** — the global switch and the per-AUDIO-language
             // exclusion — and they live HERE, at the foot of the pane the rule acts on, rather than in a
             // settings screen three screens away from the moment he wants to turn it off.
-            // ⚠ Each row states its CURRENT state (not the action): a control that reports what it will do
-            // rather than what is true is the thing this repo keeps having to fix elsewhere.
+            // ⚠ Each row states its CURRENT state in its VALUE PILL (accent-filled when the setting is doing
+            // something, muted when it is not): a control that reports what it will do rather than what is true
+            // is the thing this repo keeps having to fix elsewhere.
             // ⚠ Both are WRITES to the api — one state, two clients — so the web panel shows the same value.
-            rows.append(Row(
-                title: "Auto-subtitles · " + PlaybackRules.autoPickSettingLabel(
-                    settings: store.subtitleSettings, language: store.autoLanguage),
-                detail: "Applies the best result when a title has none of its own",
-                isSelected: false, isAction: false) {
+            rows.append(section("Automatic"))
+            rows.append(Row(title: "Auto-subtitles",
+                            detail: "Applies the best result when a title has none of its own",
+                            value: PlaybackRules.autoPickSettingLabel(
+                                settings: store.subtitleSettings, language: store.autoLanguage),
+                            glyph: "wand.and.stars",
+                            role: store.subtitleSettings.autoPick ? .applied : .plain,
+                            isAction: true) {
                 Task { await store.setAutoPick(!store.subtitleSettings.autoPick) }
             })
             if !store.autoLanguage.isEmpty {
                 let excluded = store.subtitleSettings.autoPickSkipAudio.contains(store.autoLanguage)
                 rows.append(Row(
-                    title: "Skip audio language · " + PlaybackRules.autoPickSkipLabel(
-                        codes: store.subtitleSettings.autoPickSkipAudio),
+                    title: "Skip audio language",
                     detail: excluded
                         ? "Titles whose audio is \(PlaybackRules.languageName(store.autoLanguage)) are never auto-picked"
                         : "Auto-subtitles applies to every language",
-                    isSelected: false, isAction: false) {
+                    value: PlaybackRules.autoPickSkipLabel(
+                        codes: store.subtitleSettings.autoPickSkipAudio),
+                    glyph: "globe",
+                    role: excluded ? .applied : .plain,
+                    isAction: true) {
                     Task { await store.setAutoSkipAudio(store.autoLanguage, included: !excluded) }
                 })
             }
@@ -417,6 +511,12 @@ struct PlayerSettingsPanel: View {
         case .picture, .speed, .quality:
             return []
         }
+    }
+
+    /// ⚠ A section label is a `Row` with no action, so the pane keeps ONE ordered list — its labels cannot
+    /// drift out of step with the rows they describe.
+    private func section(_ title: String) -> Row {
+        Row(title: title, isSection: true) {}
     }
 
     /// Which badge a row earns — ⚠ **and it is the SERVER's answer, never a local guess.**
@@ -453,14 +553,21 @@ struct DrawerNavStyle: ButtonStyle {
 
         var body: some View {
             configuration.label
-                .foregroundStyle(isFocused || isCurrent ? RKMColour.primary : RKMColour.secondary)
+                // ⚠⚠ **THE RAIL ANSWERS THE SAME QUESTION AS THE LIST: *what am I looking at?*** — so the
+                // current category is ACCENT, like a selected segment and an applied row. ⚠ Before this it was
+                // `primary` at 6 % white, which is the same colour the focused row's text uses: on a near-black
+                // panel at three metres, "which pane is open" and "where the ring is" were the same picture.
+                // ⚠ `DrawerSegmentStyle` had already settled this for the segmented panes (his own drawer's
+                // `seg-btn.is-selected` is filled with the accent) — this is the list/rail half of the same rule.
+                .foregroundStyle(isFocused ? RKMColour.primary
+                                           : (isCurrent ? RKMColour.accent : RKMColour.secondary))
                 .padding(.horizontal, TVTokens.Player.navItemPaddingH)
                 .padding(.vertical, TVTokens.Player.navItemPaddingV)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(
                     RoundedRectangle(cornerRadius: TVTokens.Player.navItemRadius, style: .continuous)
                         .fill(isFocused ? Color.white.opacity(0.1)
-                                        : (isCurrent ? Color.white.opacity(0.06) : .clear))
+                                        : (isCurrent ? RKMColour.accent.opacity(0.12) : .clear))
                 )
                 // ⚠⚠ **THE RAIL'S FOCUS LIFT, WHICH NO VIEW EVER DREW** — his `.settings-nav-item.is-focused
                 // { transform:scale(1.06) }` (`…player.html:246`). `TVTokens.Player.navFocusScale` had **zero
@@ -512,17 +619,17 @@ struct DrawerSegmentStyle: ButtonStyle {
 /// `.settings-item` / `.selected` / `.action` / `.is-focused`.
 struct DrawerListStyle: ButtonStyle {
 
-    let isSelected: Bool
+    let role: PlaybackRules.RowRole
     let isAction: Bool
 
     func makeBody(configuration: Configuration) -> some View {
-        ListChrome(configuration: configuration, isSelected: isSelected, isAction: isAction)
+        ListChrome(configuration: configuration, role: role, isAction: isAction)
     }
 
     private struct ListChrome: View {
 
         let configuration: ButtonStyle.Configuration
-        let isSelected: Bool
+        let role: PlaybackRules.RowRole
         let isAction: Bool
         @Environment(\.isFocused) private var isFocused
         @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -538,6 +645,20 @@ struct DrawerListStyle: ButtonStyle {
                     RoundedRectangle(cornerRadius: TVTokens.Player.listItemRadius, style: .continuous)
                         .fill(isFocused ? Color.white.opacity(0.1) : .clear)
                 )
+                // ⚠⚠ **THE ACCENT BAR IS *WHAT IS APPLIED* — and it is a SHAPE, not a colour, on purpose.**
+                // The focus ring is accent-coloured too, so a row that was merely FOCUSED and a row that was
+                // SELECTED would be the same picture if the distinction were colour alone. The bar cannot be
+                // confused with anything: it is on the row's leading edge, it is there when the ring is
+                // elsewhere, and it survives a scroll. His report: *"use the accent color on what is selected
+                // what is applied"*.
+                .overlay(alignment: .leading) {
+                    if role == .applied {
+                        Capsule()
+                            .fill(RKMColour.accent)
+                            .frame(width: TVTokens.Player.rowAccentBarWidth)
+                            .padding(.vertical, TVTokens.Player.listItemPaddingV * 0.5)
+                    }
+                }
                 // ⚠⚠ **AND THE LIST ROWS' OWN LIFT** — his `.settings-item.is-focused { transform:scale(1.04) }`
                 // (`…player.html:273`). `TVTokens.Player.listFocusScale` was the second of the drawer's two
                 // dead focus tokens, and it is the one that matters most: Audio Track and Subtitles are LISTS
@@ -548,13 +669,19 @@ struct DrawerListStyle: ButtonStyle {
                            value: isFocused)
         }
 
-        /// ⚠ `.settings-item.action { color: var(--gold-bright) }` — an ACTION reads as a different kind of
-        /// row from a choice, which is what stops "Search OpenSubtitles…" from looking like a track you can
-        /// select.
+        /// ⚠⚠ **THREE QUESTIONS, THREE COLOURS — and the ORDER is the meaning.**
+        ///
+        /// * **action** → `accentHover`: his own file's rule (`.settings-item.action { color:
+        ///   var(--gold-bright) }`), and the answer to *"what can be done?"* — a row that DOES something is not
+        ///   a row that sets a value.
+        /// * **applied** → `accent`: the answer to *"what is on now?"*. ⚠ It outranks focus, because a viewer
+        ///   scrolling past the current subtitle should still see which one it is.
+        /// * **everything else** → primary (focused) / secondary: no accent at all.
         private var colour: Color {
             if isAction { return RKMColour.accentHover }
+            if role == .applied { return RKMColour.accent }
             if isFocused { return RKMColour.primary }
-            return isSelected ? RKMColour.primary : RKMColour.secondary
+            return RKMColour.secondary
         }
     }
 }

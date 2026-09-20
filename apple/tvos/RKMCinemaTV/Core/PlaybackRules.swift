@@ -681,6 +681,13 @@ enum PlaybackRules {
 
     /// How many result rows the bounded region can show — ⚠ derived from the tokens, so the ceiling and the
     /// drawn width cannot drift apart.
+    ///
+    /// ⚠⚠ **IT IS A HEIGHT BUDGET, AND THE SUBTITLES PANE'S SECTION LABELS ARE DRAWN INSIDE IT TOO** (his
+    /// round, 2026-09-21 — the pane gained `YOUR CHOICE` / `FROM OPENSUBTITLES` / `AUTOMATIC`). So on that pane
+    /// the same ceiling shows **about six result rows and three labels** rather than eight rows: the labels cost
+    /// height, they scroll with the list, and ⚠ **the frame stays capped either way — which is the property that
+    /// matters, because it is what stops a long list from growing the PANEL.** A count that assumed otherwise
+    /// would be a count about a screen this function cannot see.
     static func paneRowsThatFit() -> Int {
         let step = subtitleRowHeight() + TVTokens.Player.listGap
         guard step > 0 else { return 1 }
@@ -737,6 +744,91 @@ enum PlaybackRules {
             + 3 * TVTokens.Player.footerSize * TVTokens.Metric.lineHeightRatio
             + TVTokens.Player.contentGap
         return padding + header + paneTitle + footer
+    }
+
+    // MARK: - Getting OUT: the MENU ladder, and what the accent is doing
+
+    /// **What MENU dismisses first — and the ORDER is the whole rule.**
+    ///
+    /// ⚠⚠ **HIS REPORT: *"once the headphone icon is clicked and overlay opens how does the user comes out of
+    /// it, the back button should close it automatically"* — AND BEFORE THIS RULE THERE WAS NO ANSWER AT ALL.**
+    /// `PlayerSettingsPanel` DECLARED an `onClose` closure and the screen passed it, but **nothing in the panel
+    /// ever called it**, and the root `.onExitCommand` went straight to `leave()`. So with the drawer open,
+    /// MENU did not close the drawer — **it left the film**, and every control the drawer holds was one press
+    /// away from being unreachable. A screen whose only exit is "leave everything" is the dead end
+    /// `ARCHITECTURE.md` ranks above any cosmetic rule.
+    ///
+    /// ⚠⚠ **THE LADDER, topmost layer first:** the drawer (or the info panel) → the Up Next card → the player
+    /// itself. What is on top is what MENU closes, so the film is never left by the press that was meant for an
+    /// overlay — and the player is still reachable in ONE press from its own screen, which is what the dead-end
+    /// rule actually requires.
+    ///
+    /// ⚠ **AMENDMENT TO FALSIFIER P-F10** (*"MENU still leaves the player from every state"*), recorded rather
+    /// than quietly dropped: it now takes **two presses from an open drawer**, and that is his instruction.
+    /// From every OTHER state — playing, paused, notice up, Up Next up — one press still leaves.
+    static func menuTarget(panelOpen: Bool, upNextCardVisible: Bool) -> PlaybackMenuTarget {
+        if panelOpen { return .panel }
+        if upNextCardVisible { return .upNextCard }
+        return .leave
+    }
+
+    /// What MENU acts on, in the ladder's order.
+    enum PlaybackMenuTarget: Equatable {
+        /// The settings drawer or the info panel — whatever `PlaybackStore.panel` opened.
+        case panel
+        /// The Up Next countdown card (cancelled, not left).
+        case upNextCard
+        /// Nothing of this screen's is open: the player itself goes.
+        case leave
+    }
+
+    /// **The visual role a row plays — which is what the ACCENT is doing on it.**
+    ///
+    /// ⚠⚠ **HIS REPORT: *"the subtitle ux is a bit hard to understand, use the accent color on what is
+    /// selected what is applied and what can be done"*.** Three questions, and before this the pane answered
+    /// them with ONE white checkmark and nothing else:
+    ///
+    /// * **`.applied`** — *what is on now* (the current subtitle, the current speed, the pane's current value):
+    ///   an accent BAR on the row's leading edge + an accent `✓`.
+    /// * **`.recommended`** — *what the auto-pick would take*: the accent-outlined badge (never the bar: a row
+    ///   that is merely the best candidate is not what is playing).
+    /// * **`.plain`** — everything else: **no accent at all**, because accent spent on every row says nothing.
+    /// * (The third question — *what can be done* — is not decided here: the screen KNOWS which rows act rather
+    ///   than set a value, and `DrawerListStyle` has coloured those `accentHover` since his file
+    ///   (`.settings-item.action { color: var(--gold-bright) }`). That keeps his own convention.)
+    ///
+    /// ⚠⚠ **THE PRECEDENCE IS THE CLAIM: `.applied` WINS OVER `.recommended`.** A subtitle that is on right now
+    /// is also, by definition, the row the rule most recently took — and drawing it as a recommendation would
+    /// hide the one fact the viewer needs ("this is the one playing") behind a "would pick" badge.
+    ///
+    /// ⚠ It is named for a ROW and not for subtitles because every list pane in the drawer uses it: a Speed
+    /// row that is applied gets the same bar, and the accent means one thing in all five panes.
+    static func rowRole(isApplied: Bool, isCandidate: Bool) -> RowRole {
+        if isApplied { return .applied }
+        if isCandidate { return .recommended }
+        return .plain
+    }
+
+    /// The role a row plays in the drawer's accent language.
+    enum RowRole: Equatable {
+        case applied
+        case recommended
+        case plain
+    }
+
+    /// **The drawer's own section labels** — the OTHER half of *"hard to understand"*, and not a colour at all.
+    ///
+    /// ⚠⚠ The pane drew twelve rows in one undifferentiated column: the film's own tracks, an api action, a
+    /// provider's catalogue and two settings, all the same shape. A viewer could not tell where "things I can
+    /// choose" ended and "things I can do" began. ⚠ Each label is a STATEMENT about the rows under it and is
+    /// derived from the same state the rows are (`subtitleSectionTitles(hasChoices:showsSearch:)`), so a label
+    /// can never announce a group that is not there.
+    static func subtitleSectionTitles(hasChoices: Bool, showsSearch: Bool) -> [String] {
+        var titles: [String] = []
+        titles.append("Your choice")
+        if hasChoices || showsSearch { titles.append("From OpenSubtitles") }
+        titles.append("Automatic")
+        return titles
     }
 
     // MARK: - Tracks and subtitles (ported from the web's matcher)

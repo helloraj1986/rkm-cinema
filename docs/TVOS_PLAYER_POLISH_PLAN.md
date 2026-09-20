@@ -351,3 +351,97 @@ subtitles off** met a provider's catalogue instead of the row he wanted.
 P3-F1…P3-F5; and **a nineteen-row list is not something this machine can produce** — P3-F3/P3-F4 need the
 sandbox's own arithmetic to hold on the device, which is what §8.2's gates measure.
 
+---
+
+## §9 — PHASE P5: GETTING OUT OF THE DRAWER, AND THE ACCENT'S THREE JOBS (2026-09-21)
+
+His third report of the day, and **two defects, one of which was a trap:**
+
+> *"once the headphone icon is clicked and overlay opens how does the user comes out of it, the back button
+> should close it automatically, also the subtitle ux is a bit hard to understand, use the accent color on what
+> is selected what is applied and what can be done, think from the ux perspective and design it"*
+
+### 9.1 · ⚠⚠ THE DRAWER HAD NO EXIT — AND MENU DID THE MOST DESTRUCTIVE THING AVAILABLE
+
+`PlayerSettingsPanel` **declared an `onClose` closure**, `PlayerView` passed `closePanel()` to it — and
+**nothing in the panel ever called it**. The root `.onExitCommand` went straight to `leave()`. So with the
+drawer open, MENU did not close the drawer: **it left the film**, and every control the drawer holds — the
+whole point of opening it — was one press away from unreachable. That is the dead end `ARCHITECTURE.md` ranks
+above any cosmetic rule, arriving through the one press a viewer is most likely to try.
+
+**The fix is a ladder, and the ORDER is the rule** (`PlaybackRules.menuTarget(panelOpen:upNextCardVisible:)`,
+pinned): the drawer (or the info panel) → the Up Next card (a **cancel**, not a leave) → the player itself.
+⚠ **One consequence recorded rather than hidden: falsifier P-F10 is AMENDED** — *"MENU still leaves the player
+from every state"* now takes **two presses from an open drawer** (close it, then leave). From every other state
+one press still leaves, so the rule's purpose is intact. ⚠ And `closePanel()` now returns the ring to
+**`.audio` — the headphone button that opened it** — instead of `.play`: a control that sends focus to the far
+end of the transport after every visit makes re-opening the drawer a journey.
+
+⚠ The panel also says so: the header carries a muted, **non-focusable** `MENU CLOSES` — a control nobody is told
+about is a control that does not exist. ⚠ And the dead parameter is **gone**, not left named.
+
+### 9.2 · THE ACCENT LANGUAGE: THREE QUESTIONS, THREE SHAPES
+
+> *"use the accent color on what is selected what is applied and what can be done"*
+
+**The pane answered none of them.** One white `✓` was the entire vocabulary, and twelve rows of five different
+KINDS sat in one column — the film's own tracks, an api action, a provider's catalogue of release names, and two
+settings. His words: *"a bit hard to understand"*.
+
+**Two halves, and only one of them is colour:**
+
+| | Question | Treatment |
+|---|---|---|
+| **`.applied`** | *what is ON now?* | **an accent BAR on the row's leading edge** + the `✓` in accent, and the row's text in `accent` |
+| **`.recommended`** | *what would the auto-pick take?* | **an accent-OUTLINED badge** (`Most downloaded` / `Your pick before` / `Auto-applied`) |
+| **action** | *what can be DONE?* | `accentHover` text (⚠ **his own file's rule** — `.settings-item.action { color: var(--gold-bright) }`) + a leading glyph (`magnifyingglass`, `wand.and.stars`, `globe`) |
+| **setting value** | *what is this control set to?* | an **accent-FILLED pill** (`Most downloaded (en)`) when it is doing something, muted when it is not |
+| **everything else** | — | **no accent at all**, because an accent spent on every row says nothing |
+
+⚠⚠ **WHY A BAR AND NOT JUST A COLOUR: THE FOCUS RING IS ACCENT-COLOURED TOO.** A row that was merely *focused*
+and a row that was *selected* would be the same picture if the distinction were colour alone — so the accent's
+three jobs are three different **shapes**, and the bar is on the leading edge, present when the ring is
+elsewhere, and survives a scroll. ⚠ **The precedence is the other claim: `.applied` beats `.recommended`**
+(`PlaybackRules.rowRole`), because a subtitle that is playing is *also* the row the rule most recently took, and
+drawing it as a recommendation would hide "this is the one playing" behind a "would pick" badge.
+
+⚠ **AND THE STRUCTURE, WHICH IS NOT COLOUR AT ALL:** the Subtitles pane now carries three labels —
+`YOUR CHOICE` · `FROM OPENSUBTITLES` · `AUTOMATIC` — derived from the rows under them
+(`PlaybackRules.subtitleSectionTitles`), so a label can never announce a group that is not there. They are
+**non-focusable** (a header a viewer could land on would be a press that does nothing).
+
+⚠ **Precedent, so this is not an invention:** `DrawerSegmentStyle` already fills the selected segment with
+`RKMColour.accent` (his file's `seg-btn.is-selected`), and the rail's current category was `primary` at 6 %
+white — the SAME colour as a focused row's text. The accent language is that existing rule, applied to the two
+places that never had it. ⚠ Five new tokens (`rowAccentBarWidth`, `pillStrokeWidth`, `sectionHeaderSize`,
+`sectionHeaderTopPad`, `actionGlyphSize`) are declared **as the app's own**, like `jogSteps`.
+
+### 9.3 · As built
+
+| | |
+|---|---|
+| **Rules** (RUN here) | `menuTarget(panelOpen:upNextCardVisible:)` + `PlaybackMenuTarget` — the ladder · `rowRole(isApplied:isCandidate:)` + `RowRole` — the accent's precedence · `subtitleSectionTitles(hasChoices:showsSearch:)` — the labels, derived from the rows |
+| **Tokens** | `rowAccentBarWidth` (3 pt) · `pillStrokeWidth` · `sectionHeaderSize` · `sectionHeaderTopPad` · `actionGlyphSize` — ⚠ **the app's own five**, declared as such |
+| **The screen** | `handleExit()` (the ladder's carrying out) · `closePanel()` returns the ring to `.audio` and clears `drawerFocus` · the panel's **dead `onClose` removed** · the header's `MENU CLOSES` hint |
+| **The pane** | the accent bar + accent `✓` on the applied row · the accent-outlined badge on the pick · the accent-filled value pill on a setting that is ON · accent `accentHover` text + a leading glyph on every action row · **three non-focusable section labels** · `DrawerNavStyle`'s current category in accent (with an accent-tinted background) |
+| **⚠ The budget** | ⚠⚠ **the section labels are drawn INSIDE `paneListHeight`'s capped frame, so the pane's height is unchanged and `settingsPanelFits` still holds — but the same ceiling now shows about SIX result rows plus three labels rather than eight rows.** The frame staying capped is the property that matters (it is what stops a long list growing the PANEL); the count is a height equivalence, and `paneRowsThatFit`'s doc now says so |
+| **Gates** | core **771 checks / 0 failures** (was 761) · members **36 pairs** · models PASS (213 keys) · imports 51 files · selftest 12/12 · tokens PASS · typecheck PASS · mac-round stub 10/10 · md links 80 files |
+| **Mutations** | **5 new — ALL 5 EXERCISED**: the ladder's order · its last rung · the accent's precedence · the accent's fallback · the sections a label may announce. ⚠ Every one is an ORDER or a PRECEDENCE — the class that compiles, reads plausibly, and silently changes what the screen means |
+| **⚠ NOT verified** | **no SwiftUI view compiles here.** The bar, the pills, the glyphs and the labels are **hypotheses** with falsifiers below; §9.1's ladder is pinned as a rule but the SCREEN's wiring to it is a Mac-only fact |
+
+### 9.4 · His round, on P5
+
+| # | Falsifier | What disproves it |
+|---|---|---|
+| **P5-F1** | **MENU closes the drawer** (the film keeps playing), and **a second MENU press leaves the player** | the film leaves on the first press, or MENU does nothing at all |
+| **P5-F2** | **the ring comes back to the headphone button** when the drawer closes — one press re-opens it | the ring vanishes, or lands somewhere unrelated |
+| **P5-F3** | **the header reads `MENU CLOSES`** and nothing can focus it | no hint (the exit is invisible again), or the ring lands on the hint |
+| **P5-F4** | **the subtitle in force carries an accent bar and an accent `✓`**, and the row the auto-pick would take carries a **different** marker (the accent-outlined badge) | one marker for both, or only the colour of the text distinguishing focused from applied |
+| **P5-F5** | **every row that DOES something reads in accent with a glyph** (Search, Auto-subtitles, Skip audio language) and setting values sit in a **filled pill** when ON | an action indistinguishable from a choice |
+| **P5-F6** | **the pane has `YOUR CHOICE` / `FROM OPENSUBTITLES` / `AUTOMATIC`**, and the labels are not focusable | no structure; a label the ring lands on; a label announcing a group with no rows |
+
+⚠ **What this round cannot prove:** nothing about real Apple TV hardware, and a `BUILD FAILED` proves nothing
+about P5-F1…P5-F6. ⚠ **The accent's exact legibility at three metres is a judgement only his screen can make** —
+`check-design-tokens.py` proves the colours come from the token table, never that they read well.
+
+

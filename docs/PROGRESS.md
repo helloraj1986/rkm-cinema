@@ -1,3 +1,36 @@
+## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-21, session 5) · 🔧🔧 **PHASE P5 IS BUILT — *"once the headphone icon is clicked and overlay opens how does the user comes out of it, the back button should close it automatically"* + *"the subtitle ux is a bit hard to understand, use the accent color on what is selected what is applied and what can be done, think from the ux perspective and design it"*** ⇒ **TWO DEFECTS, AND ONE WAS A TRAP**: **(1)** `PlayerSettingsPanel` **declared an `onClose` NOTHING EVER CALLED** and the root `.onExitCommand` went straight to `leave()` — so **MENU with the drawer open LEFT THE FILM**, the one press a viewer is most likely to try doing the most destructive thing available; **(2)** the pane answered *what is selected / what is applied / what can be done* with **ONE white `✓`**, across twelve rows of five different KINDS in one column. Full record: **`docs/TVOS_PLAYER_POLISH_PLAN.md` §9** · ⚠⚠ **NO deploy: nothing under `backend/`, `frontend/` or `nginx/` changed** · ⚠ **not one SwiftUI view compiles here** — the bar, the pills, the labels and the MENU ladder's WIRING are hypotheses (P5-F1…P5-F6).
+
+### 🔧 PHASE P5 — THE DRAWER'S EXIT, AND THE ACCENT'S THREE JOBS (2026-09-21)
+
+⚠⚠ **THE EXIT IS A LADDER, AND THE ORDER IS THE RULE.** `PlaybackRules.menuTarget(panelOpen:upNextCardVisible:)`:
+**the drawer (or the info panel) → the Up Next card (a CANCEL, not a leave) → the player itself.** ⚠ **Falsifier
+P-F10 is AMENDED, not quietly dropped**: *"MENU still leaves the player from every state"* now takes **two
+presses from an open drawer** (his instruction). From every other state one press still leaves, so the dead end
+the rule exists to close is still closed. ⚠ `closePanel()` now returns the ring to **`.audio` — the headphone
+button that opened the drawer** — instead of `.play`, and the panel header carries a muted **non-focusable
+`MENU CLOSES`**, because an exit nobody is told about is not an exit. ⚠ The dead `onClose` parameter is **gone**,
+not left named.
+
+⚠⚠ **THE ACCENT ANSWERS THREE QUESTIONS WITH THREE SHAPES — AND THE SHAPES ARE THE POINT.** The focus ring is
+accent-coloured, so *focused* and *selected* would be the same picture if this were colour alone:
+**`.applied` (what is ON)** = an accent **BAR** on the row's leading edge + an accent `✓` · **`.recommended`
+(what the auto-pick would take)** = an accent-**OUTLINED** badge · **action (what can be DONE)** =
+`accentHover` text (⚠ **his own file's rule**, `.settings-item.action`) + a leading glyph · **a setting's
+value** = an accent-**FILLED** pill when it is doing something · **everything else** = **no accent at all**.
+⚠ `rowRole(isApplied:isCandidate:)`'s **precedence** is the other claim: **applied beats recommended**, because
+what is playing is also what the rule most recently took and a badge would hide the fact that matters.
+⚠ **And the structure, which is not colour:** the Subtitles pane gained `YOUR CHOICE` / `FROM OPENSUBTITLES` /
+`AUTOMATIC` — derived from the rows under them, **non-focusable**, because a label the ring could land on is a
+press that does nothing. ⚠ Precedent: `DrawerSegmentStyle` already filled a selected segment with accent; the
+rail's current category was `primary` at 6 % white — the same colour as a focused row's text.
+
+| | |
+|---|---|
+| **Files** | `Core/PlaybackRules.swift` (`menuTarget` + `PlaybackMenuTarget`, `rowRole` + `RowRole`, `subtitleSectionTitles`, and `paneRowsThatFit`'s doc) · `Design/TVTokens.swift` (**five new tokens, the app's own**) · `Player/PlayerSettingsPanel.swift` (the accent bar/pills/glyphs/labels, the `MENU CLOSES` header, **`onClose` DELETED**) · `Player/PlayerView.swift` (`handleExit()`, `closePanel()` → `.audio`, `drawerFocus` cleared) · `apple/scripts/tvos-core-tests/main.swift` (+10 pins) · `apple/scripts/check-tvos-core.py` (+5 mutations) |
+| **Gates** | core **771 checks / 0 failures** (was 761) · members **36 pairs** · models PASS (213 keys) · imports **51 files** · selftest **12/12** · tokens PASS · typecheck PASS · mac-round stub **10/10** · md links **80 files** |
+| **Mutations** | **5 new — ALL 5 EXERCISED**: the ladder's order · its last rung · the accent's precedence · the accent's fallback · the sections a label may announce. ⚠ All five are ORDER or PRECEDENCE — the class that compiles, reads plausibly, and silently changes what the screen means |
+| **⚠ NOT verified** | **no SwiftUI view compiles on this machine** — and the tokens gate proves the colours come from the TABLE, never that they read well at three metres. His round decides: **P5-F1…P5-F6** in the plan's §9.4 |
+
 ## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-21, session 4) · ⚙️🔧 **THE SUBTITLE AUTO-PICK: PHASES A (THE SERVER) AND B (tvOS) ARE BUILT — HE ASKED FOR THE POPULARITY NUMBER AND A DEFAULT THAT PICKS ITSELF**: *"add the no of times a subtitle is being downloaded from the opensubtitles api to better inform me the user and apply the most downloaded subtitle automatically by default.. user can choose to off it later"* ⇒ his four decisions (first play / global switch + per-title Off + per-language exclusion / the configured list's first entry / **never SDH**) are executed in **`docs/SUBTITLE_AUTOPICK_PLAN.md`**, and **A and B are committed**. ⚠⚠ **A NEEDS A DEPLOY TO BE VISIBLE**: `backend/` changed, so RKM-HP needs **`.\rkm-cinema.ps1 apply`** (⚠ **NOT `setup-watchlist.ps1`** — that file no longer exists; `apply` is the ONE script, and it is what re-renders `.env` → `.rkm.env` and rebuilds `api`). ⚠ **Phase C (the web player's parity) is NOT built** — the counts, the badge and the two controls are tvOS-only until it is.
 
 ### ⚙️ PHASE B — THE tvOS CLIENT: THE COUNT, THE BADGE, AND THE TWO CONTROLS (2026-09-21)

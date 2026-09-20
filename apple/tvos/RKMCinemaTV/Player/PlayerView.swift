@@ -167,9 +167,13 @@ struct PlayerView: View {
         .onReceive(NotificationCenter.default.publisher(for: .AVPlayerItemFailedToPlayToEndTime)) { _ in
             store.reportPlaybackFailure("This stream stopped unexpectedly.")
         }
-        // ⚠ `Back` on the remote leaves the player. It is the ONE way out that must never be missing: a
-        // screen you cannot leave is a dead end, which `ARCHITECTURE.md` ranks above any cosmetic rule.
-        .onExitCommand { leave() }
+        // ⚠⚠ **MENU CLOSES THE TOPMOST THING — NOT THE FILM.** It is the ONE way out that must never be
+        // missing, **and the one that must not overshoot**: his report, 2026-09-21 — *"once the headphone icon is
+        // clicked and overlay opens how does the user comes out of it, the back button should close it
+        // automatically"*. Before this it went straight to `leave()`, so MENU with the drawer open left the
+        // film and every control the drawer holds was a press away from unreachable. The ladder itself is
+        // `PlaybackRules.menuTarget` (pinned); this only carries it out.
+        .onExitCommand { handleExit() }
         .onPlayPauseCommand { togglePlay() }
         // ⚠ The 0.5 s tick exists for the CHROME's idle clock (`PlaybackRules.shouldHideChrome` reads it) and
         // to force a re-render so the top bar's clock and the save line update. The PLAYHEAD is the time
@@ -362,7 +366,7 @@ struct PlayerView: View {
             // navigation when its content grows is the defect, not the symptom.
             HStack(alignment: .top, spacing: 0) {
                 Spacer(minLength: 0)
-                PlayerSettingsPanel(store: store, focus: $drawerFocus) { closePanel() }
+                PlayerSettingsPanel(store: store, focus: $drawerFocus)
                     // ⚠ …and the panel is pinned inside its own slot for the same reason.
                     .frame(maxHeight: .infinity, alignment: .top)
             }
@@ -546,9 +550,43 @@ struct PlayerView: View {
         lastInteraction = Date()
     }
 
+    /// Close the drawer and **put the ring back where the hand was**.
+    ///
+    /// ⚠⚠ It is `.audio` — the headphone button that OPENED the drawer — and not `.play`: a control that
+    /// returns focus to the far end of the transport after every visit makes re-opening the drawer a journey,
+    /// and the platform's own sheets return focus to the control that presented them. ⚠ `drawerFocus` is
+    /// cleared first, so the drawer's stale row index cannot be restored into a pane that has closed.
     private func closePanel() {
         store.closePanel()
-        focus = .play
+        drawerFocus = nil
+        focus = .audio
+    }
+
+    /// **What MENU does, in the ladder's order** — the rule is `PlaybackRules.menuTarget`, pinned in the
+    /// harness; this is only the carrying out.
+    ///
+    /// ⚠⚠ **HIS REPORT, 2026-09-21: *"once the headphone icon is clicked and overlay opens how does the user
+    /// comes out of it, the back button should close it automatically"*.** ⚠ The panel's own `onClose` closure
+    /// was **never called by anything**, so the drawer had no exit of its own and MENU skipped straight to
+    /// leaving the film — the one press a viewer is most likely to try, doing the most destructive thing
+    /// available.
+    ///
+    /// ⚠ **AMENDMENT TO FALSIFIER P-F10** (*"MENU still leaves the player from every state"*): from an open
+    /// drawer it now takes **two presses** — the first closes the drawer, the second leaves. From every other
+    /// state one press still leaves, so the dead end that rule exists to close is still closed.
+    private func handleExit() {
+        switch PlaybackRules.menuTarget(panelOpen: store.panel != .none,
+                                        upNextCardVisible: store.upNextSecondsLeft != nil) {
+        case .panel:
+            closePanel()
+        case .upNextCard:
+            // ⚠ A CANCEL, not a leave: the card is a countdown, and MENU is how a viewer says "not this one".
+            // The ring goes back to the transport, which is where it was before the card appeared.
+            store.cancelUpNext()
+            focus = .play
+        case .leave:
+            leave()
+        }
     }
 
     /// ⚠⚠ **P7 — UP NEXT'S HAND-OFF, AND THE ORDER IS THE WHOLE OF IT.** The current episode's position write

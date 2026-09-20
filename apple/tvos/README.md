@@ -105,6 +105,23 @@ will show the same state (⚠ **Phase C, its parity, is not built**). ⚠ The su
 auto-pick NEEDS A DEPLOY** (`backend/` changed), and with an API key and no OpenSubtitles login its answer is
 `quota_unknown` (no attempt, by his decision) until `OPENSUBTITLES_USERNAME`/`PASSWORD` are in `.env`.
 
+⚠⚠ **AND PHASE P5 — HIS THIRD REPORT OF 2026-09-21 — IS BUILT: THE DRAWER'S EXIT, AND THE ACCENT'S THREE
+JOBS.** *"once the headphone icon is clicked and overlay opens how does the user comes out of it, the back
+button should close it automatically, also the subtitle ux is a bit hard to understand, use the accent color on
+what is selected what is applied and what can be done, think from the ux perspective and design it"*.
+⚠⚠ **THE DRAWER HAD NO EXIT AT ALL:** `PlayerSettingsPanel` declared an `onClose` **nothing ever called**, and
+the root `.onExitCommand` went straight to `leave()` — so MENU with the drawer open **left the film**, the one
+press a viewer is most likely to try doing the most destructive thing available. ⇒ MENU is now a **ladder**
+(`PlaybackRules.menuTarget`): **the drawer → the Up Next card (a cancel) → the player**. ⚠ **Falsifier P-F10 is
+amended, not dropped** — two presses from an open drawer, one from everywhere else. The ring returns to the
+**headphone button that opened it**, and the header says `MENU CLOSES` (muted, unfocusable). ⚠ And the pane now
+speaks an **accent language of three SHAPES, not one colour**: an accent **bar + `✓`** = *what is applied*, an
+accent-**outlined badge** = *what the auto-pick would take*, accent `accentHover` text + a **leading glyph** =
+*what can be done*, an accent-**filled pill** = *a setting that is ON*, and **no accent** on everything else.
+⚠ The structure is not colour either: `YOUR CHOICE` / `FROM OPENSUBTITLES` / `AUTOMATIC`, non-focusable, derived
+from the rows under them. Full record: `docs/TVOS_PLAYER_POLISH_PLAN.md` §9. ⚠ **Gates: core 771 checks / 0
+failures · 5 new mutations, all exercised. None of it verified on a screen.**
+
 ⚠⚠ **AND ROUND 10 REVERTED W3's STRUCTURAL GUESS, ON ARITHMETIC.** His report after W3 shipped: *"still stuck on
 back to browse cannot come down using keyboard"* — so the bar-inside-the-scroller shape fails exactly as the
 bar-as-a-sibling shape did, and `KNOWN_ISSUES` **#15 is open again**. What W3 cost, measurably: the bar became a
@@ -151,11 +168,11 @@ at the cost of not installing on tvOS 17–25). See §1's build-settings table.
 one line: a member that did not exist, then a nested `struct Body`) — **⚠ but the player's own views have NOT
 yet: rounds 1, 2 and 5 on Phase C all failed to build, each on one line, and no round has type-checked
 `PlayerView.swift` at all.** ⚠ **What is true throughout: nothing on the Linux side can compile a view.** The
-pure rules are compiled and RUN there — **761 checks** (⚠ read that count live: it moves with every pinned rule,
-and this file said 467 until 2026-09-20, then 607, then 687, then 712, then 730) and **151/151 falsified
-mutations as recorded at `46443ff`, plus Phase P's eleven, Phase P2's six, Phase P3's eight and the subtitle
-auto-pick's seven, each exercised individually in its own phase** — and that is type-and-rule evidence only,
-never evidence that a screen works.
+pure rules are compiled and RUN there — **771 checks** (⚠ read that count live: it moves with every pinned rule,
+and this file said 467 until 2026-09-20, then 607, then 687, then 712, then 730, then 761) and **151/151
+falsified mutations as recorded at `46443ff`, plus Phase P's eleven, Phase P2's six, Phase P3's eight, the
+subtitle auto-pick's seven and Phase P5's five, each exercised individually in its own phase** — and that is
+type-and-rule evidence only, never evidence that a screen works.
 
 The round, on the **MacBook Pro** — against `feat/tvos-player`, which is where the player is. ⚠ **Pick the HUD flag
 by the round's QUESTION**: a SCREEN round (does it look like his file, does the film play) runs **without**

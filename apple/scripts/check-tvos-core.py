@@ -960,6 +960,30 @@ MUTATIONS = [
      '        let actionable: Set<String> = ["quota_exhausted", "no_candidate",\n'
      '                                       "unavailable", "not_configured", "no_search_terms"]',
      "THE ONE HE WILL ACTUALLY MEET"),
+
+    # ⚠⚠ ---- HIS SECOND REPORT OF 2026-09-21: THE WAY OUT OF THE DRAWER, AND THE ACCENT'S THREE JOBS.
+    # ⚠ Both rules are ORDER/PRECEDENCE, and that is the class a later edit breaks silently: swapping two
+    # guards or two `if`s compiles, reads plausibly, and changes what the screen means.
+    ("the ladder's order (the drawer before the card)", "PlaybackRules.swift",
+     "        if panelOpen { return .panel }\n        if upNextCardVisible { return .upNextCard }",
+     "        if upNextCardVisible { return .upNextCard }\n        if panelOpen { return .panel }",
+     "MENU CLOSES THE DRAWER FIRST"),
+    ("the ladder's last rung (one press still leaves)", "PlaybackRules.swift",
+     "        return .leave\n    }",
+     "        return .upNextCard\n    }",
+     "AND WITH NOTHING OF OURS OPEN, ONE PRESS STILL LEAVES"),
+    ("the accent's precedence (applied over recommended)", "PlaybackRules.swift",
+     "        if isApplied { return .applied }\n        if isCandidate { return .recommended }",
+     "        if isCandidate { return .recommended }\n        if isApplied { return .applied }",
+     "A ROW THAT IS ON *AND* THE RULE'S PICK IS DRAWN AS APPLIED"),
+    ("the accent's fallback (no accent on a plain row)", "PlaybackRules.swift",
+     "        return .plain\n    }",
+     "        return .recommended\n    }",
+     "every other row carries NO accent at all"),
+    ("the sections a label may announce", "PlaybackRules.swift",
+     '        if hasChoices || showsSearch { titles.append("From OpenSubtitles") }',
+     '        titles.append("From OpenSubtitles")',
+     "A GROUP THAT IS NOT THERE GETS NO LABEL"),
 ]
 
 

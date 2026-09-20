@@ -2645,6 +2645,43 @@ check(PlaybackRules.autoPickNotice(decision: "disabled", reason: "Auto-subtitles
 check(PlaybackRules.autoPickNotice(decision: "quota_unknown", reason: "   ") == nil,
       "…and an empty sentence prints nothing rather than a blank line")
 
+// ⚠⚠ ---- HIS ROUND, 2026-09-21 (the SECOND report of the day): *"once the headphone icon is clicked and
+// overlay opens how does the user comes out of it, the back button should close it automatically"* and *"the
+// subtitle ux is a bit hard to understand, use the accent color on what is selected what is applied and what
+// can be done"*. Two rules came out of them, and both are about a SCREEN the harness cannot see — so what is
+// pinned here is the ORDER and the PRECEDENCE, which are the parts a later edit can silently break.
+
+section("MENU's ladder — what it closes before it ever leaves")
+
+checkEqual(PlaybackRules.menuTarget(panelOpen: true, upNextCardVisible: true), .panel,
+           "⚠⚠ MENU CLOSES THE DRAWER FIRST, even with the Up Next card on screen — the topmost thing is what a viewer means by 'back', and ⚠ BEFORE THIS RULE THERE WAS NO EXIT AT ALL: the panel declared an `onClose` nothing called, and MENU with the drawer open LEFT THE FILM")
+checkEqual(PlaybackRules.menuTarget(panelOpen: true, upNextCardVisible: false), .panel,
+           "…and with nothing else open, the drawer is still the thing that goes")
+checkEqual(PlaybackRules.menuTarget(panelOpen: false, upNextCardVisible: true), .upNextCard,
+           "…then the card — a CANCEL, not a leave: MENU is how a viewer says 'not this episode'")
+checkEqual(PlaybackRules.menuTarget(panelOpen: false, upNextCardVisible: false), .leave,
+           "⚠ AND WITH NOTHING OF OURS OPEN, ONE PRESS STILL LEAVES — the dead-end rule is WHY this ladder exists, and a ladder that never reached `leave` would be the same defect from the other side")
+
+section("the accent's three jobs — and which one wins when they collide")
+
+checkEqual(PlaybackRules.rowRole(isApplied: true, isCandidate: true), .applied,
+           "⚠⚠ A ROW THAT IS ON *AND* THE RULE'S PICK IS DRAWN AS APPLIED — *what is playing* outranks *what would be picked*, and drawing it as a recommendation would hide the one fact a viewer needs behind a 'would pick' badge")
+checkEqual(PlaybackRules.rowRole(isApplied: false, isCandidate: true), .recommended,
+           "…a candidate on its own is the accent-outlined badge")
+checkEqual(PlaybackRules.rowRole(isApplied: true, isCandidate: false), .applied,
+           "…and an applied row that is NOT the candidate is still applied — that is a hand pick, and it is what is on")
+checkEqual(PlaybackRules.rowRole(isApplied: false, isCandidate: false), .plain,
+           "…and every other row carries NO accent at all, because an accent spent on every row says nothing")
+
+section("the pane's sections, derived from the rows they describe")
+
+checkEqual(PlaybackRules.subtitleSectionTitles(hasChoices: true, showsSearch: true),
+           ["Your choice", "From OpenSubtitles", "Automatic"],
+           "the Subtitles pane says where 'things I can choose' ends and 'things I do' begins — his words were `the subtitle ux is a bit hard to understand`")
+checkEqual(PlaybackRules.subtitleSectionTitles(hasChoices: false, showsSearch: false),
+           ["Your choice", "Automatic"],
+           "⚠ A GROUP THAT IS NOT THERE GETS NO LABEL — with no OpenSubtitles results and no search action, a middle section would announce rows that do not exist")
+
 // MARK: - Report
 print("")
 if failures.isEmpty {

@@ -737,6 +737,27 @@ enum TVTokens {
         /// The gap between a row's title and its detail line — `gap:.15em` at the row's own `1rem`.
         static let subtitleRowGap = playerPx * 2.4
 
+        // ---- PHASE P5 (his round, 2026-09-21): **THE ACCENT LANGUAGE**, and the section labels.
+        //
+        // ⚠⚠ **HIS REPORT: *"the subtitle ux is a bit hard to understand, use the accent color on what is
+        // selected what is applied and what can be done"*.** ⚠ **These five tokens are the APP'S OWN — his file
+        // does not have them** (it answers two of the three questions: `.settings-item.selected` gets a `✓`, and
+        // `.settings-item.action` is gold). The third — *what is APPLIED* — had no treatment at all, and neither
+        // did the pane's structure. Declared as an addition, like `jogSteps`: the numbers are derived from the
+        // same `playerPx`/`u` scale as everything else, and `PlaybackRules.subtitleRole` decides which row gets
+        // which.
+
+        /// The accent BAR on the row that is APPLIED — 3 pt, tall as the row's own text block.
+        static let rowAccentBarWidth = playerPx * 2.5
+        /// The accent outline on a badge or a value pill (`Most downloaded`, `On`).
+        static let pillStrokeWidth = playerPx * 1.4
+        /// A section label's type size (`.68rem` — smaller than a row's detail line, so it reads as furniture).
+        static let sectionHeaderSize = playerPx * 10.8
+        /// The air above a section label. ⚠ Bigger than a row gap, because the label's job is to be a BREAK.
+        static let sectionHeaderTopPad = playerPx * 14
+        /// The leading glyph on an ACTION row (`Search OpenSubtitles…`, the two settings).
+        static let actionGlyphSize = playerPx * 13
+
         // ---- the toast (`.toast`)
         static let toastBottom = u * 6
         static let toastRadius = playerPx * 24

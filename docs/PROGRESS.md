@@ -1,5 +1,68 @@
-## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-20, SECOND UPDATE — his UI confirmation) · ✅ **PHASES U (U1–U7b) AND V ARE BUILT ON `feat/tvos-ux`, HIS ROUND HAS RUN, AND BOTH DEFECTS IT FOUND ARE CLOSED — he verified them ON THE UI on 2026-09-20 (#10 the focused card's ring and its black bottom corners · #11 Down into a FILTERED grid)** · ✅ **MERGED TO `dev` ON HIS WORD (`b78c210`, 2026-09-20) — the working tree is back on `dev`, and `feat/tvos-ux` is left in place, not deleted** · ⚠ **what is left is PHASE C, THE PLAYER: C1 is built and parked on `feat/tvos-player`, C2–C5 are not started** · **the Profile Switcher + Home redesign (U), then the Library and Title screens (V) of the tvOS app** · **V was asked for and built on 2026-09-20: the two screens of his SECOND design input, the Library grid and the Title detail** · **the working tree is on `dev` NOW** — ⚠ **this tree IS his Windows checkout, so the branch left checked out is the branch HE builds, and the merge moved it from `feat/tvos-ux` to `dev`** · **`dev` now carries Phases A, B, U and V** and **`feat/tvos-player` is still parked** (C1 built and pushed, C2–C5 not started) · **nothing needs `apply`**: no file under `backend/`, `frontend/` or `nginx/` changed, so there is no generated artefact and nothing to deploy
+## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-20) · ✅ **PHASE C — THE PLAYER — IS BUILT ON `feat/tvos-player`: C1 + C2 + C3, and C4 IS HIS ROUND** · ⚠ **the branch carries ONE MERGE COMMIT from `dev` (`e0eadef`, bringing Phases U and V in) and the working tree IS on it** · ⚠ **`dev` does NOT have this branch** · **nothing needs `apply`**: no file under `backend/`, `frontend/` or `nginx/` changed
 
+### ▶ PHASE C, AS IT ACTUALLY STANDS (2026-09-20) — read this before anything below
+
+`docs/TVOS_PLAYER_PLAN.md` is the plan, and **§7–§9 are new this session**: §7 measures his THIRD design input
+(`tvos_ux/3. MediaPlayerUx/rkm-cinema-tvos-player.html`) against this repo, §8 is the transcription table, §9 is
+the phase state. ⚠ That plan file exists on THIS branch only — it is not on `dev`.
+
+| Phase | State |
+|---|---|
+| **C1** | **BUILT** (`6919626`) — `Core/PlaybackAuth.swift`, the cookie carrier. Merged with `dev` here. |
+| **C2** | **BUILT** (`e5a1d89`) — `Core/PlaybackRules.swift` (**the decisions**), `Core/PlaybackURLs.swift` (**the URLs `AVPlayer` fetches itself**), `Core/Models/PlaybackModels.swift`, `Core/PlaybackAPI.swift`, `Core/PlaybackStore.swift`. **All four pure/wire files are COMPILED AND RUN by the sandbox gate**; the write is re-read rather than trusted. |
+| **C3** | **BUILT** (`f12374d`) — `Player/{PlayerView,PlayerChrome,PlayerSettingsPanel}.swift`, the `TVTokens.Player` table (1.2 pt per CSS px), `AppModel`'s `.player` phase, and the detail screen's Play / Resume control, which B4 refused to draw until the player existed. ⚠⚠ **SwiftUI: compiled ONLY on his Mac.** |
+| **C4** | **NEXT — HIS ROUND.** F1–F4 (`docs/TVOS_PLAYER_PLAN.md` §3) plus this screen's own F5–F10 (§9.1). F2 — *do the SEGMENTS authenticate* — is the phase's real question and the one C5 exists for. |
+| **C5** | **NOT BUILT, and deliberately so** — the backend carrier is built **only if F2 comes back red** (§2's option (b)). |
+
+### ✅ PHASE C RECORD — the player is built, and the round is his (2026-09-20, `feat/tvos-player`)
+
+**Three commits on the branch, and the merge that made it current:**
+
+| Commit | What |
+|---|---|
+| `e0eadef` | **merge:** `dev`'s Phases U and V into this branch. ⚠ The branch was cut before Phase U, and U and V moved exactly the gate files C1 also touches (`tvos-core-tests/main.swift`, `check-tvos-core.py`, `check-apple-typecheck.sh`) plus `PROGRESS.md` — merged rather than rebased, because a rebase would rewrite C1's already-pushed commits. Conflicts were resolved by UNION (both sides' rules run: 490 checks after the merge = 467 + C1's 23). |
+| `cfe2d34` | **docs:** the plan (`docs/TVOS_PLAYER_PLAN.md` §7–§9) measures his third design input BEFORE anything was built — and that measurement is what removed two controls from the phase (chapters, trickplay thumbnails: not on the wire) and corrected a third (his invented "4.2 Mbps" for 1080p). |
+| `e5a1d89` | **C2** — the rules, the URLs and the wire shapes. |
+| `f12374d` | **C3** — the screen, the drawer, the Play control, and the members gate's THIRD-SEGMENT rule. |
+| `63bf370` | **fix** — the audit's two rotten entries and the copy Phase C made false. |
+
+⚠⚠ **THE ONE THING THAT MUST NOT BE OVERSTATED:** the four sandbox-runnable files are compiled and RUN, and the
+member/token names the SwiftUI uses are checked by a text gate — **but no SwiftUI view here has ever been
+compiled.** A Mac round is the only thing that can change that, and a `BUILD FAILED` means F5–F10 were never
+attempted.
+
+⚠ **What the round is worth on the budget question:** this phase cost the sandbox's compiler and the gate
+audit, and almost nothing else — no Docker, no deploy, and `backend/` is untouched. If F2 passes, the whole
+player arrives with no server change at all; if it fails, C5 is a small, already-designed change to ONE function
+plus the HLS proxy's URI rewrite.
+
+### ▶ WHAT HIS THIRD DESIGN INPUT CANNOT GIVE THIS APP (measured, not a preference)
+
+⚠⚠ **Two things in his file are drawn from data that does not exist on the wire**, and both are recorded in the
+plan rather than approximated: the scrubber's **chapter ticks** and its **"Chapter" flag** (the api proxies no
+chapter data at all — `grep -rn "Chapters\|chapter" backend/api backend/services` finds none), and the tooltip's
+**150 × 84 thumbnail preview** (there is no trickplay endpoint). The app ships the scrubber without them and shows
+the seek TIME, which is real. **The fix is a backend phase — chapters + trickplay — not a cosmetic one.**
+
+### ▶ VERIFIED ON THIS BRANCH, AND WITH WHAT (2026-09-20, `feat/tvos-player`)
+
+| Gate | Result |
+|---|---|
+| `python3 apple/scripts/check-tvos-core.py` | **609 checks, 0 failures** — the pure rules of every phase, COMPILED AND RUN, including the player's 119 new ones |
+| … `--falsify` | **151 mutations. Run 1 came back `FAIL — 2 rules are not actually pinned`, and BOTH were new entries of this phase's** — one did not COMPILE (`{ false }` in `first(where:)` is inferred as a one-argument closure, and an uncompilable mutation is an ERROR, never a red) and one stayed GREEN (it only bites when a media source is empty, and the check used a non-empty one). Both repaired, both re-proved individually (`PASS — 2/2`), and the harness gained the check the second one needed (the api's own `ms` fallback). ⚠⚠ **This is the gate's third documented catch of its own test suite, and the reason the audit runs at all.** A clean full re-run was started on the repaired tree; its verdict is in this branch's own record rather than assumed here |
+| `python3 apple/scripts/check-tvos-models.py` | **180 keys, 25 endpoint literals**, 0 unchecked wire types (was 113/17) |
+| `python3 apple/scripts/check-tvos-members.py` | **PASS — 35 view/type pairs, 36 view/type names**, all five rules (+ a NEW third-segment rule: `TVTokens.Player.<metric>`) |
+| `bash apple/scripts/check-apple-typecheck.sh` | PASS — every portable file, including the player's store, API and models |
+| `python3 apple/scripts/check-imports.py apple/tvos/RKMCinemaTV` | 49 files, no missing framework imports |
+| `python3 apple/scripts/check-design-tokens.py` | PASS — R1/R2/R3 |
+| `python3 tools/check_md_links.py` | all links resolve |
+
+⚠⚠ **NOT ONE SWIFTUI VIEW HERE HAS BEEN COMPILED BY THIS MACHINE** — `Player/PlayerView.swift` imports SwiftUI +
+AVFoundation + UIKit and `PlayerSettingsPanel.swift`/`PlayerChrome.swift` import SwiftUI, so the gates above can
+only see their IMPORTS, their MEMBER NAMES and their TOKEN NAMES. **That is exactly what C4's round is for**, and a
+`BUILD FAILED` means F5–F10 were never attempted.
+
+### [HISTORY — the tvOS UX merge's record, 2026-09-20]
 ### ▶ THE PHASES, AND WHERE THEY ACTUALLY ARE
 
 `docs/TVOS_UX_PLAN.md` is the plan for U and holds its detail; its §U1 carries the "BUILT 2026-09-20" notes where

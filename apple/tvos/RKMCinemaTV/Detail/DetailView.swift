@@ -98,31 +98,51 @@ struct DetailView: View {
         // is about something else), or **`bar-focus: back` staying put with no `play=true`** (the engine found
         // no candidate at all, and the geometry is what changes next).
         //
-        // ⚠ `measured("screen", …)` wraps the SCROLLER, and every `measured(…)` call inside `content` is a
-        // `.background` reader — handed the view's size AFTER layout, so it cannot change it. ⚠ The reader this
-        // screen DELETED in round 3 was the other kind: wrapped AROUND the focusable content, which is what the
-        // focus engine then navigated on. KNOWN_ISSUES #11 — *"i cant come to the titles by pressing down
-        // arrow"* — was fixed in `BrowseView` by deleting exactly that shape, and it is not coming back.
+        // ⚠ Every `measured(…)` call on this screen is a `.background` reader — handed the view's size AFTER
+        // layout, so it cannot change it. ⚠ The reader this screen DELETED in round 3 was the other kind:
+        // wrapped AROUND the focusable content, which is what the focus engine then navigated on. KNOWN_ISSUES
+        // #11 — *"i cant come to the titles by pressing down arrow"* — was fixed in `BrowseView` by deleting
+        // exactly that shape, and it is not coming back. ⚠⚠ **ROUND 11 WENT ONE STEP FURTHER AND DELETED THE
+        // `ScrollView` ITSELF** — the device fact that decided it is in the note inside the `ZStack`.
         ZStack(alignment: .topLeading) {
-            measured("screen", ScrollView(.vertical, showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 0) {
-                    Group {
-                        switch store.state {
-                        case .loading:
-                            loading
-                        case .content(let snapshot):
-                            content(snapshot)
-                        case .notFound:
-                            notFound
-                        case .failed(let message):
-                            failure(message)
-                        }
-                    }
-                    .focusSection()
-                    .frame(maxWidth: .infinity, alignment: .topLeading)
+            // ⚠⚠ **AND THERE IS NO `ScrollView` HERE ANY MORE — HIS ROUND-11 OBSERVATION IS WHAT SETTLED IT:**
+            // *"the navigation for individual title works when there is resume button but it dont comes down
+            // when there is play button so i think its unable to find the play button on the individual titles
+            // details page"*. ⚠⚠ **Read that twice, because it is the first fact in this whole defect that came
+            // from the device rather than from a theory:** the SAME screen, the SAME button, the SAME code — and
+            // it works on a title whose page is LONGER (an in-progress title draws `Resume (n%)` plus a progress
+            // bar beneath the button) and fails on one whose page is SHORTER. The BUTTON's geometry does not
+            // change between those two cases. **What changes is the page's relationship to the container it sits
+            // in** — and that is the container's business, which is why the container is gone.
+            //
+            // ⚠⚠ **A scroller that can NEVER scroll is a boundary the focus engine must cross for nothing.**
+            // The page FITS by construction — `DetailRules.titlePageHeight` is 1058.5 pt of a 1080 pt screen and
+            // the harness pins it — and W2 established WHY it has to fit: *a tvOS `ScrollView` scrolls only
+            // when focus moves onto something inside it*, and every band below `Play` is information
+            // (`ARCHITECTURE.md` §11 forbids a control whose only outcome is an apology). ⇒ This `ScrollView`
+            // could never have scrolled, for any data: it contributed no behaviour and one extra container. ⚠
+            // Deleting a container is this repo's own precedent, twice — `KNOWN_ISSUES` #11 was fixed in
+            // `BrowseView` by deleting one, and the three shapes that came before this one all KEPT this one.
+            //
+            // ⚠ `measured("screen", …)` stays, on the GROUP, so `detail-size: screen` still reports the box
+            // (`1920x1080 pt at x=0 y=0`) — that readout is `KNOWN_ISSUES` #13's falsifier and it does not get
+            // to disappear along with the scroller.
+            measured("screen", Group {
+                switch store.state {
+                case .loading:
+                    loading
+                case .content(let snapshot):
+                    content(snapshot)
+                case .notFound:
+                    notFound
+                case .failed(let message):
+                    failure(message)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            })
+            }
+            .focusSection()
+            // ⚠ `maxHeight: .infinity` because the scroller used to fill the screen: every state must keep
+            // starting at the TOP edge rather than floating to the middle of a content-hugging stack.
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading))
 
             topBar
                 .focusSection()

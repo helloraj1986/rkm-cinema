@@ -1,4 +1,4 @@
-## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-20, ROUND 10) · ⚠⚠ **THE TITLE SCREEN'S DEAD END IS OPEN AGAIN — W3's ANSWER IS DISPROVED AND HAS BEEN REVERTED, AND THE ROUND NOW READS ONE LINE OF THE LOG INSTEAD OF GUESSING** · **`KNOWN_ISSUES` #15 is the open item**: his round-10 words are *"still stuck on back to browse cannot come down using keyboard"*, i.e. the bar-inside-the-scroller shape fails exactly as the bar-as-a-sibling shape did · **⇒ the bar is an OVERLAY again (his `.topbar { position: fixed }`) and `Bar.clearance` is back on the three message states** — ⚠ because as a BAND the bar added its own 115.2 pt to a page `DetailRules.titlePageHeight` budgets as **1058.5 of 1080 with the bar counted as ZERO**, i.e. the scroller's content was **1173.7 pt: 93.7 pt over a screen nothing can scroll** · **the dead end is attacked with `.focusSection()` on the bar and on the content group — A HYPOTHESIS, NOT PROVED** (no focus engine runs on this machine) · ✅ **`TopBar` NOW PUBLISHES ITS OWN FOCUS** (`bar-focus: <id|nil>`) beside the screen's `detail-focus: play=…`, so **his round produces EVIDENCE rather than another guess**: `bar-focus: nil` + `play=true` = it moved; `bar-focus: back` with no `play=true` = the engine found no candidate, and the next lever is his own Option A (art behind the whole page, the 313 pt hero band deleted) · ⚠ branch `feat/tvos-player` carries it; `dev` does NOT · **nothing needs `apply`**: no file under `backend/`, `frontend/` or `nginx/` changed · ✅ **AND `KNOWN_ISSUES` #17 IS FIXED, AWAITING HIS ROUND** — the profile-switch password card lost focus out of the `SecureField` and stranded him, because **an `.overlay` is VISUAL ONLY** and left the screen behind in the focus chain (`Auth/ProfilesView.swift`: `.disabled` while a panel is up · `.focusSection()` on each card · `.onExitCommand` on each card · both cards claim focus)
+## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-20, ROUND 10) · ⚠⚠ **THE TITLE SCREEN'S DEAD END IS OPEN AGAIN — W3's ANSWER IS DISPROVED AND HAS BEEN REVERTED, AND THE ROUND NOW READS ONE LINE OF THE LOG INSTEAD OF GUESSING** · **`KNOWN_ISSUES` #15 is the open item**: his round-10 words are *"still stuck on back to browse cannot come down using keyboard"*, i.e. the bar-inside-the-scroller shape fails exactly as the bar-as-a-sibling shape did · **⇒ the bar is an OVERLAY again (his `.topbar { position: fixed }`) and `Bar.clearance` is back on the three message states** — ⚠ because as a BAND the bar added its own 115.2 pt to a page `DetailRules.titlePageHeight` budgets as **1058.5 of 1080 with the bar counted as ZERO**, i.e. the scroller's content was **1173.7 pt: 93.7 pt over a screen nothing can scroll** · **the dead end is attacked with `.focusSection()` on the bar and on the content group — A HYPOTHESIS, NOT PROVED** (no focus engine runs on this machine) · ✅ **`TopBar` NOW PUBLISHES ITS OWN FOCUS** (`bar-focus: <id|nil>`) beside the screen's `detail-focus: play=…`, so **his round produces EVIDENCE rather than another guess** · ✅✅ **ROUND 11 SETTLED THE STRUCTURE: HIS DEVICE FACT IS THAT IT WORKS ON A TITLE WITH A `Resume` BUTTON AND FAILS ON ONE WITH `Play`** — same screen, same code, only the PAGE's length differs — **⇒ the `ScrollView` IS GONE** (page = 1058.5 of 1080, pinned; W2 proved it can never scroll, because a tvOS scroller scrolls only onto something focusable and nothing below `Play` is; it was the one thing all three failed shapes shared) · **his round must test BOTH kinds of title**: `bar-focus: nil` + `play=true` = it moved; `bar-focus: back` with no `play=true` = the engine found no candidate, and the next lever is his own Option A (art behind the whole page, the 313 pt hero band deleted) · ⚠ branch `feat/tvos-player` carries it; `dev` does NOT · **nothing needs `apply`**: no file under `backend/`, `frontend/` or `nginx/` changed · ✅ **AND `KNOWN_ISSUES` #17 IS FIXED, AWAITING HIS ROUND** — the profile-switch password card lost focus out of the `SecureField` and stranded him, because **an `.overlay` is VISUAL ONLY** and left the screen behind in the focus chain (`Auth/ProfilesView.swift`: `.disabled` while a panel is up · `.focusSection()` on each card · `.onExitCommand` on each card · both cards claim focus)
 
 ### 🔁 ROUND 10 — the fix was reverted on arithmetic, and the falsifier finally exists (2026-09-20)
 
@@ -45,6 +45,28 @@ and went with it: fixing one and not the other leaves the same trap one press aw
 ⚠ **The generalisable rule: an overlay does not remove anything from the focus graph.** Any panel drawn over
 focusable content needs the content disabled (or the panel needs to be a real modal) — and a `MENU` handler on
 the panel, because MENU is the only Back a television has.
+
+### 🔁 ROUND 11 — HIS DEVICE FACT KILLED THE LAST THREE THEORIES AT ONCE (2026-09-20)
+
+> *"the navigation for individual title works when there is resume button but it dont comes down when there is
+> play button so i think its unable to find the play button on the individual titles details page"*
+
+**This is the first evidence in the whole defect that came from the device rather than from a theory, and it is
+worth more than the three structural guesses that preceded it.** Same screen, same button, same code — and it
+works on a title whose page is **longer** (in progress: `Resume (n%)` plus a progress bar under the button) and
+fails on one whose page is **shorter**. The button's geometry does not change; **the page's relationship to its
+container does.**
+
+⇒ **The `ScrollView` is gone from the title screen.** It could never have scrolled — `DetailRules.titlePageHeight`
+is 1058.5 pt of 1080 and W2 established the rule this rests on: *a tvOS `ScrollView` scrolls only when focus moves
+onto something inside it*, and everything below `Play` is information. ⚠ It was also **the one thing all three
+failed shapes had in common**, and deleting a container is the repo's own precedent (`BrowseView`; #11).
+
+⚠⚠ **THE METHOD LESSON, AND IT IS THE WHOLE SESSION: THREE STRUCTURAL GUESSES COST THREE ROUNDS; ONE SENTENCE FROM
+HIM ENDED IT.** The moment a defect is reported a second time, the next thing to ask for is **an observation that
+DISCRIMINATES** — *"what is different about the case where it works?"* — not another shape. ⚠ A falsifier he can
+read (a log line, a two-case test) is worth more than a mechanism I cannot execute, and `bar-focus`/`detail-focus`
+were the right instrument pointed at the wrong question.
 
 ### 🎬 PHASE W — THE SCREENS WERE DRAWN IN THE WRONG BOX, AND THE TITLE SCREEN IS NOW HIS FILE'S STRUCTURE (2026-09-20)
 

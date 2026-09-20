@@ -318,6 +318,32 @@ content group (`View.focusSection()`, tvOS 15+). The engine's direction search p
 and a group of one focusable control above a group of one focusable control is what the modifier exists for. ⚠ It
 adds no control and removes none. ⚠⚠ **No focus engine runs on this machine, so it is NOT proved.**
 
+### ⚠⚠ ROUND 11 — THE FIRST DEVICE FACT IN THIS ENTRY, AND IT DECIDED THE FIX
+
+> *"the navigation for individual title works when there is resume button but it dont comes down when there is
+> play button so i think its unable to find the play button on the individual titles details page"*
+
+**The same screen, the same button, the same code — and it works on a title whose page is LONGER** (an in-progress
+title draws `Resume (n%)` plus a progress bar beneath the button) **and fails on one whose page is SHORTER.** The
+button's own geometry is identical in the two cases. What differs is **the page's relationship to the container it
+sits in**.
+
+⇒ **The `ScrollView` is gone.** The page FITS by construction — `DetailRules.titlePageHeight` is 1058.5 pt of a
+1080 pt screen, pinned by the harness — and W2 established why it must: *a tvOS `ScrollView` scrolls only when
+focus moves onto something inside it*, and every band below `Play` is information. **So this scroller could never
+have scrolled, for any data: it contributed no behaviour and one boundary for the focus engine to cross.** ⚠ It is
+also the ONE thing all three failed shapes had in common — and deleting a container is this repo's own precedent
+(`BrowseView`, `KNOWN_ISSUES` #11).
+
+⚠ `measured("screen", …)` moved onto the content `Group`, so `detail-size: screen` still reports the box.
+
+**His round — and it must be run on BOTH kinds of title, because the bug only ever showed on one:**
+
+| | a title with **no** progress (button reads `Play`) | a title **in progress** (button reads `Resume (n%)`) |
+|---|---|---|
+| ✅ should | `Down` from `Back to Browse` reaches the button | unchanged — this one already worked |
+| ❌ broken | still stuck on the bar | ⚠ **regressed the other way** — say so and the scroller goes back |
+
 **⚠⚠ THE FALSIFIER IS ONE LINE OF THE FILE LOG, AND THIS ROUND HAS TO PRODUCE IT.** `TopBar` now publishes every
 change of its own focus, and the screen publishes `Play`'s — so this is no longer a guess about a guess:
 

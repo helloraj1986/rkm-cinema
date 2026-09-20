@@ -318,16 +318,37 @@ enum DetailRules {
     /// and his own report is the brief: *"why cant we fit everything to one screen … most of them should fit
     /// the screen"*.
     ///
-    /// ⚠⚠ **The sum, every term a token** — and the worst honest case, so the caps are the ones the screen
-    /// actually draws: the hero, the action row, the resume bar **when the title is in progress**, a synopsis
-    /// at `Title.synopsisLineLimit` lines, the credits at their three possible lines, and the cast row.
-    /// ⚠ `hasResumeBar` defaults to `true` because a Continue-Watching title is exactly the case his round
-    /// opened on.
-    static func titlePageHeight(heroFraction: CGFloat = TVTokens.Title.heroHeightFraction,
-                                synopsisLines: Int = TVTokens.Title.synopsisLineLimit,
+    /// ⚠⚠ **THIS IS THE W13 SHAPE: THE HERO BAND IS GONE AND THE TITLE BLOCK IS A TERM (his decision,
+    /// 2026-09-20 — the artwork is the PAGE now, not a band).** Two consequences, and both are the reason this
+    /// function's first argument disappeared:
+    ///
+    ///   * **no hero fraction** — there is no band to size;
+    ///   * ⚠⚠ **and no `Bar.clearance` TERM EITHER, which is the trap.** The bar floats over artwork in BOTH
+    ///     layouts, so that 115.2 pt is spent on art either way; adding it here would charge the page for space
+    ///     nothing occupies and would talk the next reader out of a change that fits (the plan's §2 says so in
+    ///     as many words).
+    ///
+    /// ⚠ **The sum, every term a token** — and the worst honest case, so the caps are the ones the screen
+    /// actually draws: the title block at its own line height, the action row, the resume bar **when the title
+    /// is in progress**, a synopsis at `Title.synopsisLineLimit` lines, the credits at their three possible
+    /// lines, and the cast row. ⚠ `hasResumeBar` defaults to `true` because a Continue-Watching title is
+    /// exactly the case his round opened on.
+    ///
+    /// ⚠⚠ **THE ONE NUMBER TO MOVE IF HIS ROUND SAYS THE PAGE IS TOO TALL OR HAS TOO MUCH SPACE IS THIS TOTAL
+    /// — never a per-band re-derivation.** Plan and the trade: `docs/TVOS_TITLE_ARTWORK_PLAN.md` §2.
+    static func titlePageHeight(synopsisLines: Int = TVTokens.Title.synopsisLineLimit,
                                 creditLines: Int = 3,
-                                hasResumeBar: Bool = true) -> CGFloat {
-        let hero = TVTokens.Metric.screenHeight * heroFraction
+                                hasResumeBar: Bool = true,
+                                titleLines: Int = 2) -> CGFloat {
+        // `.title-block { padding: 0 64px 40px }`: the h1 at HIS line height (1.02, `titleLineHeightRatio` —
+        // not the shared 1.2, which is what makes this fit), its margin, the meta line, the genre pills'
+        // top margin, the pills themselves, and the block's own bottom padding.
+        let titleBlock = CGFloat(titleLines) * TVTokens.Title.titleSize * TVTokens.Title.titleLineHeightRatio
+            + TVTokens.Title.titleGapBottom
+            + bodyLineHeight(TVTokens.Title.metaSize)
+            + TVTokens.Title.metaGapBottom
+            + bodyLineHeight(TVTokens.Title.pillFontSize) + 2 * TVTokens.Title.pillPaddingV
+            + TVTokens.Title.blockPaddingBottom
 
         // `.actions { padding: 36px 64px 0 }` + the `.btn`'s own box (`btnFontSize` line + its vertical pad).
         let button = bodyLineHeight(TVTokens.Title.btnFontSize) + 2 * TVTokens.Title.btnPaddingV
@@ -342,10 +363,13 @@ enum DetailRules {
 
         let synopsis = TVTokens.Title.synopsisTopPad + CGFloat(synopsisLines) * synopsisLineHeight
 
-        // `credits()` is a VStack with a 6 pt gap, and its three `if`s can each render one line.
+        // `credits()` is a VStack with `Title.creditLineGap` between its lines — ⚠ ONE TOKEN, shared with the view
+        // (W13): this used to be a bare `6` here and another bare `6` in `DetailView.credits`, which is two
+        // copies of a value nobody had measured.
         let creditLine = bodyLineHeight(TVTokens.Title.castRoleSize)
         let credits = TVTokens.Title.sectionTitleGap
-            + CGFloat(creditLines) * creditLine + CGFloat(max(0, creditLines - 1)) * 6
+            + CGFloat(creditLines) * creditLine
+            + CGFloat(max(0, creditLines - 1)) * TVTokens.Title.creditLineGap
 
         // `cast()`: the shelf's top pad, then its own VStack gap before the heading, then the heading, the
         // avatar, its bottom gap, the name and the role.
@@ -354,7 +378,7 @@ enum DetailRules {
             + TVTokens.Title.avatarSize + TVTokens.Title.avatarGapBottom
             + bodyLineHeight(TVTokens.Title.castNameSize) + bodyLineHeight(TVTokens.Title.castRoleSize)
 
-        return hero + actionRow + resumeBar + synopsis + credits + cast
+        return titleBlock + actionRow + resumeBar + synopsis + credits + cast
     }
 
     /// ⚠ The slack the page has left on a 1080 pt screen — **and it is asserted, not eyeballed**: the harness

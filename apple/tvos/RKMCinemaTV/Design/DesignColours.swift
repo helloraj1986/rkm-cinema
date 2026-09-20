@@ -73,4 +73,19 @@ enum RKMColour {
               saturation: TVTokens.Title.avatarSaturation,
               brightness: TVTokens.Title.avatarBrightness)
     }
+
+    /// ⚠⚠ **A COLOUR THAT CAME FROM THE ARTWORK RATHER THAN FROM THE TOKEN TABLE — the page's scrim, tinted with
+    /// the artwork's own colour** (his ask, 2026-09-20: *"gradients color depening on the poster"*).
+    ///
+    /// ⚠ It lives HERE and not in the view because `check-design-tokens.py` **R3** forbids a `Color(red:…)` or a
+    /// hex literal anywhere outside `Design/` — the rule that keeps the palette in two token files. A sampled
+    /// artwork colour is the one legitimate exception, and putting it in the file that is *allowed* to build
+    /// colours is what keeps the exception from becoming a habit.
+    ///
+    /// ⚠ **There is no decision in this function** — `ArtworkTint` owns which colour and how strong; this is the
+    /// mechanical conversion, exactly like `castAvatar` above. ⚠ `.sRGB` is stated for the same reason the
+    /// `RGBAColor` bridge states it.
+    static func artwork(_ rgb: ArtworkRGB, opacity: Double) -> Color {
+        Color(.sRGB, red: rgb.red, green: rgb.green, blue: rgb.blue, opacity: opacity)
+    }
 }

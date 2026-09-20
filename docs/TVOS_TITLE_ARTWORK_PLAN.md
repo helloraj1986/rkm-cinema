@@ -54,6 +54,14 @@ spent on art either way. Counting it twice is the easy way to talk yourself out 
 
 ⇒ after both: **1067.1 pt — 12.9 pt of air**, and the budget and the page finally describe the same screen.
 
+⚠⚠ **AND THE BUILD FOUND A THIRD LEVER, WHICH THE GATE CAUGHT RATHER THAN THIS PLAN DID: 12.9 pt is UNDER the 20 pt
+floor `DetailRules.minimumTitlePageSlack` keeps** (it exists so the line-height assumption can be wrong by 2 % and
+the page still fits). The cheapest honest 8 pt on the page is the credits block's own line gap — a bare `6` in the
+VIEW and another bare `6` in the RULE, for a block **his `title-view.html` does not have at all**. ⇒ It became one
+token, `Title.creditLineGap = 2`, the two copies collapsed into one, and the built page is **1059.1 pt with
+20.9 pt of air**. ⚠ That is the ONLY visible change the page-as-artwork cost: four points between 14 pt credit
+lines. Recorded rather than slipped in.
+
 ## 3. The colour — where it comes from, and why half of it is a pure rule
 
 **The scrim is built from the artwork's own colour**, so a warm poster gets a warm wash and a cold one a cold one,

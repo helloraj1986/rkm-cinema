@@ -70,6 +70,14 @@ struct DetailView: View {
     /// bar from there?
     @FocusState private var playFocused: Bool
 
+    /// ⚠⚠ **THE ARTWORK'S OWN COLOUR, AS SAMPLES THE PURE RULE CAN READ (W13).** Filled once by the page's
+    /// `PosterImageView` (`onImage`), and consumed by `artworkScrim` through `ArtworkTint.scrim(for:)`.
+    ///
+    /// ⚠ `nil` is a REAL state and the FIRST one: it is what the page has before the artwork arrives, and what it
+    /// keeps if the artwork fails. `ArtworkTint.scrim(for: nil)` answers it with the neutral scrim, so the page is
+    /// never drawn on raw art waiting for a colour that may not come.
+    @State private var artworkTint: ArtworkRGB?
+
     var body: some View {
         // ⚠⚠ **THE BAR IS AN OVERLAY AGAIN, AND THE REASON IS ARITHMETIC RATHER THAN TASTE.** W3 moved the bar
         // INSIDE the scroller to answer his round-9 report (*"i am on back to browse button but i cant come down
@@ -105,6 +113,16 @@ struct DetailView: View {
         // exactly that shape, and it is not coming back. ⚠⚠ **ROUND 11 WENT ONE STEP FURTHER AND DELETED THE
         // `ScrollView` ITSELF** — the device fact that decided it is in the note inside the `ZStack`.
         ZStack(alignment: .topLeading) {
+            // ⚠⚠ **THE ARTWORK IS THE PAGE — HIS DECISION, 2026-09-20: *"can we make it a background of the
+            // details page with using gradients color depening on the poster so that the text on the details page
+            // can be seen clearly"*.** It used to be a 313.2 pt BAND with the title block over its lower part; it
+            // is now the whole screen, and the title block is a term in the page's flow
+            // (`DetailRules.titlePageHeight`). ⚠ Plan, the +37.6 pt it costs and the six falsifiers:
+            // `docs/TVOS_TITLE_ARTWORK_PLAN.md`.
+            // ⚠ It is drawn ONLY when there is a title: the three message states have no artwork to show behind
+            // them and keep the app's own background.
+            artworkPage
+
             // ⚠⚠ **AND THERE IS NO `ScrollView` HERE ANY MORE — HIS ROUND-11 OBSERVATION IS WHAT SETTLED IT:**
             // *"the navigation for individual title works when there is resume button but it dont comes down
             // when there is play button so i think its unable to find the play button on the individual titles
@@ -267,7 +285,16 @@ struct DetailView: View {
         // line logs MORE than 1080, the cast row is below the fold on a screen that cannot scroll and one
         // number (the hero's fraction, or `Metric.lineHeightRatio`) is what moves.
         measured("page", VStack(alignment: .leading, spacing: 0) {
-            measured("hero", hero(snapshot))
+            // ⚠⚠ **THE PAGE STARTS UNDER THE BAR, AND THE BAR IS AN OVERLAY OVER THE ARTWORK.** The bar floats
+            // (his `.topbar { position: fixed }`), so its own height is the first thing the flow has to clear —
+            // ⚠ ART may sit under the bar, a WORD may not. ⚠⚠ **It is deliberately NOT a term in
+            // `DetailRules.titlePageHeight`**: the bar covers artwork in every layout, so that 115.2 pt is spent
+            // either way, and counting it twice is the one arithmetic error that makes this change look
+            // impossible (that function's note says so).
+            Color.clear
+                .frame(height: TVTokens.Bar.clearance)
+
+            measured("title-block", titleBlock(snapshot))
 
             below(snapshot)
 
@@ -275,68 +302,80 @@ struct DetailView: View {
                 episodes(snapshot)
             }
 
-            // `.spacer-bottom { height:100px }` — the tail, so the last shelf is not flush with the
-            // screen's bottom edge. ⚠ A fixed-height `Color.clear` and NOT a `Spacer()`: a `Spacer`
-            // inside a `ScrollView`'s stack has no space to claim, so it collapses to nothing.
-            Color.clear
-                .frame(height: TVTokens.Title.bottomSpacer)
+            // ⚠⚠ **THE TAIL IS GONE (W13), AND IT WAS A REAL OVERFLOW.** `.spacer-bottom { height:100px }` was
+            // DRAWN here but never counted in `DetailRules.titlePageHeight` — 126 pt of page no gate could see —
+            // and its whole job was to keep the last shelf off the edge of a scroller, which this screen has not
+            // had since round 11. ⇒ Deleted rather than budgeted for, so the budget and the screen finally
+            // describe the same page.
         }
         .frame(maxWidth: .infinity, alignment: .leading))
     }
 
-    /// `.hero` — the full-bleed backdrop with the title block over its lower part.
+    /// ⚠⚠ **THE PAGE'S ARTWORK — THE WHOLE SCREEN, WITH THE SCRIM BUILT FROM ITS OWN COLOUR (W13).**
     ///
-    /// ⚠⚠ **FULL-BLEED IS THE POINT OF W1.** His `.hero` is the full width of the page and starts at `y = 0`,
-    /// and the app's screens now fill the canvas, so `maxWidth: .infinity` here really is the screen's two
-    /// edges — not the 1760 pt safe-area box that used to leave an 80 pt gutter of near-black down each side.
-    private func hero(_ snapshot: DetailSnapshot) -> some View {
-        ZStack(alignment: .bottomLeading) {
-            artwork(snapshot)
-            scrim
-            titleBlock(snapshot)
+    /// ⚠ **The shape treatment is NOT re-decided here.** `PosterRules.treatment` already answers it, and its own
+    /// comment names *"a hero band, a 16:9 card, **the whole page**"*: a 16:9 backdrop fills, and **a 2:3 poster —
+    /// the fallback for a title with no keyart — is shown WHOLE over a blurred, dimmed copy of itself**, which is
+    /// the fix `KNOWN_ISSUES` #16 bought (*"i can only see 1/3rd of the poster"*). ⚠ The blurred copy is exactly
+    /// what lets a portrait poster cover a whole page without cropping it, so this layout INHERITS that fix
+    /// instead of re-testing it.
+    ///
+    /// ⚠ **It asks for the pixels the PAGE needs** (`PosterURL.width(points:scale:route:)`, W3): 3840 px on a 4K
+    /// panel, 1920 px on a 1080p one — the route's own 1600 default is the WEB app's number and is 2.4× short.
+    @ViewBuilder
+    private var artworkPage: some View {
+        if case .content(let snapshot) = store.state {
+            ZStack {
+                PosterImageView(base: base,
+                                itemID: snapshot.detail.itemID,
+                                route: .backdrop,
+                                width: PosterURL.width(points: TVTokens.Metric.screenWidth,
+                                                       scale: displayScale,
+                                                       route: .backdrop),
+                                // ⚠⚠ The samples arrive HERE, once, off bytes this page was decoding anyway —
+                                // and what they MEAN is `ArtworkTint`'s decision, not this view's.
+                                onImage: { artworkTint = ArtworkTint.tint(samples: $0.rkmSampleGrid()) })
+
+                artworkScrim
+            }
+            .frame(width: TVTokens.Metric.screenWidth, height: TVTokens.Metric.screenHeight)
+            .clipped()
+            // ⚠ Decorative: the title block already carries the name, and a screen reader should not hear the art.
+            .accessibilityHidden(true)
+        } else {
+            RKMColour.background
         }
-        .frame(maxWidth: .infinity)
-        .frame(height: TVTokens.Title.heroHeight)
-        .clipped()
     }
 
-    /// ⚠ **The 16:9 BACKDROP, through `PosterImageView` — one artwork path for the whole app**, the same one
-    /// the Home's hero band uses (same loader, same cookie handling, same log line, same poster fallback), so
-    /// a hero whose artwork failed says why rather than showing a black band.
+    /// ⚠⚠ **THE SCRIM, AND EVERY NUMBER IN IT COMES FROM `ArtworkTint.scrim(for:)` — A PURE RULE, RUN ON LINUX.**
+    /// This view draws what that rule returns and decides nothing: which colour the artwork is, how deep the wash
+    /// must be for that colour's luminance, and where the tint fades out are all arithmetic that would otherwise
+    /// be verified only by his eyes on a television.
     ///
-    /// ⚠⚠ **AND IT ASKS FOR THE PIXELS THIS BAND ACTUALLY NEEDS** (`PosterURL.width(points:scale:route:)`,
-    /// W3): a full-width hero on a 4K panel is 3840 px, and the route's default of 1600 px — which is the WEB
-    /// app's `backdropUrl` number — would be upscaled 2.4× across it. On a 1080p Apple TV the same expression
-    /// asks for 1920 px and does not download more bytes than the screen can show.
+    /// ⚠ Three layers, because they do three different jobs:
+    ///   1. **a flat wash over the whole page** — the term that guarantees contrast in the MIDDLE, where the
+    ///      synopsis, the credits and the cast sit over raw artwork;
+    ///   2. **the artwork's own colour at the top edge**, where the bar and the title block are;
+    ///   3. **a floor at the bottom edge**, for the cast row.
     ///
-    /// ⚠ The prototype paints its hero with a two-tone CSS gradient and an `.hero-emblem` watermark because a
-    /// mockup has no film behind it. Real keyart is strictly better, so the artwork is the source and the
-    /// prototype's own wash is kept only as the fallback underneath it — the same trade `HeroBand` makes.
-    private func artwork(_ snapshot: DetailSnapshot) -> some View {
-        ZStack {
-            LinearGradient(colors: [RKMColour.surface2, RKMColour.background],
-                           startPoint: .topLeading, endPoint: .bottomTrailing)
-            PosterImageView(base: base,
-                            itemID: snapshot.detail.itemID,
-                            route: .backdrop,
-                            width: PosterURL.width(points: TVTokens.Metric.screenWidth,
-                                                   scale: displayScale,
-                                                   route: .backdrop))
-        }
-        .frame(maxWidth: .infinity)
-        .frame(height: TVTokens.Title.heroHeight)
-        .clipped()
-    }
+    /// ⚠⚠ **BEFORE THE ARTWORK ARRIVES — and if it fails — `ArtworkTint.scrim(for: nil)` returns the neutral
+    /// scrim**, so the page is legible on its own background for that first frame rather than flashing raw art.
+    private var artworkScrim: some View {
+        let scrim = ArtworkTint.scrim(for: artworkTint)
+        return ZStack {
+            RKMColour.background.opacity(scrim.wash)
 
-    /// `.hero::after` — `linear-gradient(to top, void 0%, rgba(10,11,13,.65) 32%, transparent 68%)`, so the
-    /// title over the artwork's lower half stays readable without a solid panel.
-    private var scrim: some View {
-        LinearGradient(stops: [
-            .init(color: RKMColour.background, location: TVTokens.Title.scrimSolidStop),
-            .init(color: RKMColour.background.opacity(TVTokens.Title.scrimMidOpacity),
-                  location: TVTokens.Title.scrimMidStop),
-            .init(color: RKMColour.background.opacity(0), location: TVTokens.Title.scrimClearStop),
-        ], startPoint: .bottom, endPoint: .top)
+            LinearGradient(stops: [
+                .init(color: RKMColour.artwork(scrim.tint, opacity: scrim.tintAlpha), location: 0),
+                .init(color: RKMColour.artwork(scrim.tint, opacity: 0), location: scrim.tintFade),
+            ], startPoint: .top, endPoint: .bottom)
+
+            LinearGradient(stops: [
+                .init(color: RKMColour.background.opacity(0), location: scrim.tintFade),
+                .init(color: RKMColour.background.opacity(scrim.baseAlpha), location: 1),
+            ], startPoint: .top, endPoint: .bottom)
+        }
+        // ⚠ The scrim is paint: it must never intercept a press, and it holds no control of its own.
         .allowsHitTesting(false)
     }
 
@@ -463,7 +502,7 @@ struct DetailView: View {
 
     @ViewBuilder
     private func credits(_ snapshot: DetailSnapshot) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: TVTokens.Title.creditLineGap) {
             if let line = snapshot.directorLine {
                 Text(line).font(.system(size: TVTokens.Title.castRoleSize)).foregroundStyle(RKMColour.secondary)
             }
@@ -681,7 +720,11 @@ struct DetailView: View {
         }
         .padding(.horizontal, LibraryRules.marginFromPrototype)
         .padding(.top, TVTokens.Title.shelfTopPad)
-        .padding(.bottom, TVTokens.Title.bottomSpacer)
+        // ⚠⚠ No bottom tail any more (W13) — see `content`'s note: it was drawn but never budgeted, and the
+        // scroller it existed for is gone. ⚠ The episode list is the one band that can make this page LONGER
+        // than `DetailRules.titlePageHeight` budgets (a series is not the case that function's terms describe),
+        // which is the same exposure it has always had: nothing below `Play` takes focus, so it cannot be
+        // scrolled to. Recorded rather than newly introduced.
     }
 
     /// ⚠ **THE ROW CARRIES NO PLAY BUTTON** — the web's `EpisodeRow` ends in a Play/Resume/Replay control,

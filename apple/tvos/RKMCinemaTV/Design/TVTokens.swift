@@ -409,53 +409,28 @@ enum TVTokens {
 
     enum Title {
 
-        // ---- the hero (`.hero`)
-        /// `.hero { height: 66vh; min-height: 520px }` — ⚠ a FRACTION of the screen and not a point value,
-        /// because that is what `vh` is.
-        ///
-        /// ⚠⚠ **`0.66` → `0.29`, AND IT IS HIS DECISION (2026-09-20) — the ONE number of his that the built
-        /// screen could not keep.** His report: *"why cant we fit everything to one screen … a little scrolling
-        /// should be fine … but most of them should fit the screen"*, and on tvOS that is not a preference but
-        /// a CONSTRAINT: **a `ScrollView` only scrolls when focus moves onto something inside it**, and every
-        /// band below `Play` on this screen (synopsis, credits, cast) is INFORMATION with no control in it —
-        /// `docs/ARCHITECTURE.md` §11 forbids a control that does nothing. So the page has to FIT, and
-        /// `DetailRules.titlePageHeight` is that sum, kept as arithmetic rather than as a hope.
-        ///
-        /// ⚠ The measurement his number failed: at `0.66` the bands below the hero are **759.9 pt**
-        /// (action row 114.4 + resume bar 43.9 + a 3-line synopsis 179.7 + credits 103.3 + the cast row 318.6),
-        /// so the page was **1469.7 pt in a 1080 pt screen — 390 pt of it unreachable**. At `0.29` it is
-        /// **313.2 + 759.9 = 1073.1**, and the two corrections beside this one (a 3-line synopsis, and a line
-        /// height that is actually `1.6em`) bring it to **1052.8 — 27.2 pt of air.** ⚠ **This is the ONE
-        /// constant to move if his round says the page is still cut or has too much space** — never a
-        /// per-band re-derivation.
-        static let heroHeightFraction: CGFloat = 0.29
-        /// …and its `min-height`, which matters on no tvOS screen (1080 pt is fixed) but is transcribed so the
-        /// two numbers stay side by side with their source.
-        static let heroMinHeight = px * 520
-        /// ⚠⚠ **THE HERO'S HEIGHT IN POINTS, SO THE SCREEN DOES NOT NEED A `GeometryReader` — and that is a
-        /// FOCUS fix, not tidiness.** His `.hero { height:66vh }` is a fraction of the VIEWPORT; the first
-        /// build measured it with a `GeometryReader` wrapped around the whole scroll content, which is the
-        /// exact structure `BrowseView.cardWidth` blames for his *"i cant come to the titles by pressing down
-        /// arrow"* (KNOWN_ISSUES #11): a `GeometryReader` reports its size only AFTER layout, and the frames it
-        /// hands its children are what the focus engine navigates on. On tvOS the canvas is FIXED at 1080 pt,
-        /// so `66vh` has exactly one value and needs no measurement:
-        ///
-        ///     0.29 × 1080 = 313.2 pt — the hero is a LITTLE MORE THAN a quarter of the screen (W2)
-        ///
-        /// ⚠⚠ **AND THE PROSE IS NOW THE ARITHMETIC (W1): `Metric.screenHeight × heroHeightFraction`.** The
-        /// constant used to be written as `u * 37.125` — a hand-converted point value with its derivation in
-        /// a comment, which is exactly what this file's own header forbids. The box is named instead, so if
-        /// the box ever moves the hero moves with it.
-        ///
-        /// ⚠ The harness pins `heroHeight == Metric.screenHeight × heroHeightFraction` **and**
-        /// `Metric.screenHeight == 1080`, so this constant cannot drift from either the fraction it came from
-        /// or the canvas it is a fraction OF.
-        static let heroHeight = Metric.screenHeight * heroHeightFraction
-        /// `.hero::after`'s `linear-gradient(to top, var(--void) 0%, rgba(10,11,13,.65) 32%, transparent 68%)`.
-        static let scrimSolidStop: CGFloat = 0
-        static let scrimMidStop: CGFloat = 0.32
-        static let scrimMidOpacity: CGFloat = 0.65
-        static let scrimClearStop: CGFloat = 0.68
+        // ---- the artwork page (his decision, 2026-09-20)
+        //
+        // ⚠⚠ **THERE IS NO HERO BAND ANY MORE.** The artwork used to be a `313.2 pt` band at the top of the page
+        // with the title block over its lower part; his ask — *"can we make it a background of the details page"*
+        // — makes it **the page itself**, so `heroHeightFraction`, `heroMinHeight` and `heroHeight` are DELETED
+        // rather than left behind at a value nothing reads. ⚠ A dead token with a mutation attached to it is a
+        // gate asserting something no screen does (`references/falsification-and-test-stubs.md`).
+        //
+        // ⚠ **The band's whole job moved to `DetailRules.titlePageHeight`**: the title block is now a term in the
+        // page's flow instead of being drawn inside the band, and that is the +37.6 pt the plan measured. The
+        // ONE number his round should argue with is `DetailRules.titlePageHeight`'s total — never a per-band
+        // re-derivation.
+
+        /// ⚠⚠ **THE TITLE'S OWN LINE HEIGHT — HIS FILE'S, NOT SWIFTUI'S DEFAULT (W13, 2026-09-20).**
+        /// `title-view.html`: `.title-block h1 { font-size:64px; line-height:1.02 }`. ⚠ The fit budget had been
+        /// charging the h1 the shared `Metric.lineHeightRatio` of **1.2**, i.e. a line box his file does not
+        /// ask for — **29.0 pt over two lines**, and that is exactly the margin that makes the artwork page fit.
+        /// ⚠ It applies to the TITLE ONLY: every other line on the page keeps `Metric.lineHeightRatio`, because
+        /// the CSS says nothing about them and 1.2 is the honest default for text that has no declared height.
+        static let titleLineHeightRatio: CGFloat = 1.02
+
+        // Keep `Metric.lineHeightRatio` (1.2) for the title of set 1's Home — this is set 2's number only.
         /// ⚠ `.hero-emblem` (a `280px` watermark at `right:8%; top:12%; opacity:.16`) is **NOT drawn**, and
         /// the reason is that it is not layout: it is the prototype's stand-in for ARTWORK. His `.hero` has a
         /// CSS `radial-gradient` background because a prototype has no film to show; the app has the real
@@ -559,8 +534,26 @@ enum TVTokens {
         /// `.cast-item.is-focused { transform: scale(1.1) }`.
         static let castFocusScale: CGFloat = 1.1
 
-        /// `.spacer-bottom { height:100px }`.
-        static let bottomSpacer = px * 100
+        /// ⚠⚠ **THE GAP BETWEEN THE CREDIT LINES — ONE TOKEN, AND IT WAS A LITERAL `6` IN TWO PLACES (W13).**
+        ///
+        /// `credits()` sits BELOW the synopsis and carries the director / writers / studios lines. ⚠ **It is the
+        /// app's own block: his `title-view.html` has no credits at all**, so there is no design value to
+        /// transcribe — which is exactly why a bare `6` in the view AND another bare `6` in
+        /// `DetailRules.titlePageHeight` was the wrong shape for it, and why the artwork page could not be made to
+        /// fit without touching one of them blind.
+        ///
+        /// ⚠ It is `2` and not `6` because the page has to FIT: the three-line credits block's two gaps are
+        /// **8 pt of the budget**, and the artwork page (`titlePageHeight` = 1067.09) lands 12.9 pt inside a
+        /// 1080 pt screen — under the 20 pt floor this repo keeps for the line-height estimate. Four points per
+        /// gap is invisible between 14 pt lines and it is the cheapest place on the page to find them. ⚠ This is
+        /// the ONE visual change the page-as-artwork cost, and it is recorded rather than slipped in.
+        static let creditLineGap: CGFloat = 2
+
+        // ⚠⚠ **`bottomSpacer` (`.spacer-bottom { height:100px }`) IS DELETED, NOT KEPT AT ZERO (W13).** It was
+        // drawn as the page's tail while `DetailRules.titlePageHeight` never counted it — 126 pt of overflow no
+        // gate could see — and the only thing it ever did was keep the last shelf off a scroller's edge. This
+        // screen has had no scroller since round 11, so the tail goes and the budget and the page finally
+        // describe the same screen.
     }
 
     // MARK: - ⚠⚠ SET 3'S UNIT (Phase C) — his PLAYER prototype has no `--u` either

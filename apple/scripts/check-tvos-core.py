@@ -54,6 +54,10 @@ PURE_SOURCES = [
     # round and no gate on this machine can see a `View`: a portrait poster asked to FILL a landscape band loses
     # 60 % of its width. `PosterRules.treatment` decides; `PosterImageView` draws.
     TVOS / "Core" / "PosterRules.swift",
+    # ⚠⚠ **W13's scrim rule — the colour an artwork means and how deep the wash must be for it.** It is in this
+    # list for the same reason its neighbour is: the whole point of the file is that its arithmetic RUNS here
+    # rather than being eyeballed on a television one round at a time.
+    TVOS / "Core" / "ArtworkTint.swift",
     # Phase B2 — the Home's rules and its state table. Pure `Foundation` + each other, which is why they can
     # be executed here: `HomeStore` and `LibraryAPI` are NOT in this list (they import `RKMServerKit`), and
     # that is the split the phase is built on — every DECISION is runnable, only I/O is not.
@@ -603,17 +607,21 @@ MUTATIONS = [
      "        let key = person.id.isEmpty ? person.name : person.id",
      "        let key = person.name",
      "one person id is one colour, whatever else the row says"),    # ---- C3: the screen's own geometry, in the unit the prototype uses
-    ("the title hero drifting from its fraction", "TVTokens.swift",
-     "        static let heroHeight = Metric.screenHeight * heroHeightFraction",
-     "        static let heroHeight = Metric.screenHeight * 0.5",
-     "the title hero is its fraction of the platform's 1080 pt canvas — no measurement needed"),
-    # ⚠⚠ ---- W2: THE FIT. Each of these reverts a decision the SCREEN would make invisibly — and the first is
-    # the phase itself: put his original `66vh` hero back and 378 pt of the page is below the fold on a screen
-    # that cannot scroll.
-    ("the title hero back to his 66vh (and off the screen)", "TVTokens.swift",
-     "        static let heroHeightFraction: CGFloat = 0.29",
-     "        static let heroHeightFraction: CGFloat = 0.66",
-     "his ORIGINAL 66vh hero put 1458 pt of page on a 1080 pt screen"),
+    #
+    # ⚠⚠ ---- W13 DELETED THE TWO HERO MUTATIONS THAT USED TO SIT HERE, and the reason is the rule in
+    # `references/falsification-and-test-stubs.md`: the hero band is GONE, so a mutation on `heroHeight` /
+    # `heroHeightFraction` would revert a constant NO SCREEN READS — and, worse, its `old` text no longer exists
+    # in the file, so it could not even be applied. ⇒ The two mutations moved to the rules that took the band's
+    # job: the page's fit, and the scrim's legibility rule.
+    ("the fit rule losing the title block", "DetailRules.swift",
+     "        return titleBlock + actionRow + resumeBar + synopsis + credits + cast",
+     "        return actionRow + resumeBar + synopsis + credits + cast",
+     "the title page's bands add up"),
+    ("the scrim ignoring the artwork's brightness", "ArtworkTint.swift",
+     "                     wash: washRange.lowerBound + (washRange.upperBound - washRange.lowerBound) * lum,",
+     "                     wash: washRange.lowerBound,",
+     "A BRIGHT artwork GETS A DEEPER WASH THAN A DARK ONE"),
+    # ⚠⚠ ---- W2: THE FIT. Each of these reverts a decision the SCREEN would make invisibly.
     ("the synopsis losing its line cap", "TVTokens.swift",
      "        static let synopsisLineLimit = 3",
      "        static let synopsisLineLimit = 8",

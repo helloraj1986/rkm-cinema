@@ -1775,14 +1775,43 @@ check(abs(prototypeFraction - 0.4058) < 0.001, "the prototype's own 2:40:02 of 6
 checkEqual(PlaybackRules.progressFraction(position: 10, total: 0), 0,
            "an unknown total divides by nothing and draws an empty bar")
 
-// ⚠⚠ THE TITLE HERO'S HEIGHT IS ARITHMETIC ON A FIXED CANVAS, and it is checked here because the alternative
-// was a `GeometryReader` around the whole scroll content — the structure this repo already blames for a focus
-// defect (KNOWN_ISSUES #11). tvOS renders in a fixed 1920 × 1080 point space, so the fraction has one value.
-// ⚠ The FRACTION itself is W2's (0.29, down from his 0.66 — see the fit block below): this check pins that the
-// constant is the fraction applied to the canvas, not what the fraction is.
-check(abs(TVTokens.Title.heroHeight - 1080 * TVTokens.Title.heroHeightFraction) < 0.01,
-      "the title hero is its fraction of the platform's 1080 pt canvas — no measurement needed",
-      "got \(TVTokens.Title.heroHeight), want \(1080 * TVTokens.Title.heroHeightFraction)")
+// ⚠⚠ ---- W13: THE SCRIM IS BUILT FROM THE ARTWORK'S OWN COLOUR (his ask: *"gradients color depening on the
+// poster so that the text on the details page can be seen clearly"*), AND THIS IS THE HALF OF IT THAT CAN BE
+// RUN. ⚠ The hero band is GONE, so `heroHeight`/`heroHeightFraction` are deleted and their checks with them —
+// a pin on a constant no screen reads is a gate asserting something nothing does.
+//
+// ⚠⚠ **THE LEGIBILITY RULE IS THE ONE CHECK THAT MATTERS**, and it is the one a screenshot cannot settle: the
+// wash has to FOLLOW the artwork's brightness, because that is what makes text legible over ANY poster rather
+// than over the one somebody tested.
+let vivid = ArtworkRGB(red: 0.9, green: 0.2, blue: 0.1)
+let midGrey = ArtworkRGB(red: 0.5, green: 0.5, blue: 0.5)
+
+checkEqual(ArtworkTint.tint(samples: []), nil,
+           "an artwork with no usable samples takes the neutral scrim, not a black one")
+checkEqual(ArtworkTint.tint(samples: [ArtworkRGB(red: 0, green: 0, blue: 0)]), nil,
+           "an all-black artwork votes for nothing — that is a letterbox, not a colour")
+checkEqual(ArtworkTint.tint(samples: [ArtworkRGB(red: 1, green: 1, blue: 1)]), nil,
+           "…and neither does an all-white one — that is burned-in type, not a colour")
+check((ArtworkTint.tint(samples: [vivid, midGrey, midGrey, midGrey, midGrey, midGrey])?.red ?? 0) > 0.6,
+      "a VIVID accent outweighs the muted background around it — an unweighted average lands on mud",
+      "got \(String(describing: ArtworkTint.tint(samples: [vivid, midGrey, midGrey, midGrey, midGrey, midGrey])))")
+check(abs(ArtworkTint.void.luminance - 0.043) < 0.01,
+      "the neutral tint is the app's own void (#0A0B0D) as components — and this pins it against RKMColour.background",
+      "got \(ArtworkTint.void.luminance)")
+
+let darkArt  = ArtworkTint.scrim(for: ArtworkRGB(red: 0.05, green: 0.05, blue: 0.05))
+let brightArt = ArtworkTint.scrim(for: ArtworkRGB(red: 0.95, green: 0.95, blue: 0.95))
+checkEqual(ArtworkTint.scrim(for: nil).tintAlpha, 0,
+           "with no colour there is no tint — the neutral scrim is a wash and nothing else")
+check(darkArt.wash < brightArt.wash,
+      "A BRIGHT artwork GETS A DEEPER WASH THAN A DARK ONE — the legibility rule, and the reason the scrim CHANGES from title to title (falsifier A5)",
+      "dark \(darkArt.wash) vs bright \(brightArt.wash)")
+check(brightArt.wash <= ArtworkTint.washRange.upperBound && darkArt.wash >= ArtworkTint.washRange.lowerBound,
+      "…and both stay inside the calibrated band, so neither a white nor a black poster becomes a black page",
+      "got \(darkArt.wash)…\(brightArt.wash)")
+check(brightArt.tintAlpha < darkArt.tintAlpha,
+      "the tint runs the OTHER way: a bright artwork needs more of its own colour over the title, a dark one almost none",
+      "dark \(darkArt.tintAlpha) vs bright \(brightArt.tintAlpha)")
 
 // ⚠⚠ ---- W1: THE BOX A SCREEN LAYS OUT IN, WHICH IS THE WHOLE OF KNOWN_ISSUES #13.
 //
@@ -1833,8 +1862,8 @@ checkEqual(PosterURL.width(points: TVTokens.Metric.screenWidth, scale: 0), 1920,
 // apologises would be). On the Home the rails ARE focusable, so it scrolls; what is measured there is how much
 // of it is on screen at rest.
 let titlePage = DetailRules.titlePageHeight()
-check(abs(titlePage - 1058.52) < 0.5,
-      "the title page's bands add up to 1058.5 pt — the fit budget, term by term",
+check(abs(titlePage - 1059.09) < 0.5,
+      "the title page's bands add up to 1059.1 pt — the fit budget, term by term, with the hero band GONE and the title block in the flow (W13)",
       "got \(titlePage)")
 check(titlePage <= TVTokens.Metric.screenHeight,
       "…and it FITS the 1080 pt screen, which is the whole point: nothing below the fold is reachable",
@@ -1842,9 +1871,9 @@ check(titlePage <= TVTokens.Metric.screenHeight,
 check(DetailRules.titlePageSlack >= DetailRules.minimumTitlePageSlack,
       "the page keeps its \(DetailRules.minimumTitlePageSlack) pt of air, so the line-height assumption can be wrong and it still fits",
       "got \(DetailRules.titlePageSlack) pt of slack")
-check(DetailRules.titlePageHeight(heroFraction: 0.66) > TVTokens.Metric.screenHeight,
-      "his ORIGINAL 66vh hero put 1458 pt of page on a 1080 pt screen — 378 pt of it unreachable, which is the defect",
-      "got \(DetailRules.titlePageHeight(heroFraction: 0.66))")
+check(DetailRules.titlePageHeight(titleLines: 3) > TVTokens.Metric.screenHeight,
+      "a THREE-line title does NOT fit — the page is budgeted for the two lines `title-view.html` draws, and a longer one is the case that would push the cast row off a screen nothing can scroll",
+      "got \(DetailRules.titlePageHeight(titleLines: 3))")
 check(DetailRules.titlePageHeight(synopsisLines: 8) > TVTokens.Metric.screenHeight,
       "an UNCAPPED synopsis is what breaks the fit, which is why \(TVTokens.Title.synopsisLineLimit) lines is his cap",
       "got \(DetailRules.titlePageHeight(synopsisLines: 8))")

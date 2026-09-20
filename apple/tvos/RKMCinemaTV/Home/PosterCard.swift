@@ -223,6 +223,60 @@ struct PosterCard: View {
     }
 }
 
+/// ⚠⚠ **THE ONE PLACE DECODED ARTWORK BECOMES NUMBERS (W13, 2026-09-20).**
+///
+/// The details page's scrim is built from the artwork's own colour — his ask: *"gradients color depening on the
+/// poster so that the text on the details page can be seen clearly"* — and this is where that colour comes from:
+/// the image is drawn into a small grid and the pixels are read back out.
+///
+/// ⚠⚠ **A `UIImage` EXTENSION HERE, AND NOT A FUNCTION IN `PosterLoader`.** That file is deliberately
+/// Foundation-only so it compiles and runs on Linux; one `import UIKit` there would take the whole poster path out
+/// of the sandbox's reach, and with it every check that path has.
+///
+/// ⚠ **16 × 16 is the calibration**: 256 samples is enough to find an artwork's colour and far too few to cost
+/// anything. ⚠ **It draws with the SAME aspect-cover the page uses** (scale until both edges are covered, centre
+/// the overflow) so the samples come from the part of the image that is actually on screen — a letterboxed draw
+/// would sample the bars, and bars are exactly what `ArtworkTint` has to ignore. ⚠ No second request and no second
+/// decode: these are bytes already in hand.
+extension UIImage {
+
+    func rkmSampleGrid(columns: Int = 16, rows: Int = 16) -> [ArtworkRGB] {
+        guard columns > 0, rows > 0, let cgImage else { return [] }
+        var pixels = [UInt8](repeating: 0, count: columns * rows * 4)
+        var grid: [ArtworkRGB] = []
+
+        pixels.withUnsafeMutableBytes { buffer in
+            guard let base = buffer.baseAddress,
+                  let space = CGColorSpace(name: CGColorSpace.sRGB),
+                  let context = CGContext(data: base, width: columns, height: rows,
+                                          bitsPerComponent: 8, bytesPerRow: columns * 4,
+                                          space: space,
+                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+            else { return }
+
+            context.interpolationQuality = .medium
+            let cover = max(CGFloat(columns) / CGFloat(cgImage.width),
+                            CGFloat(rows) / CGFloat(cgImage.height))
+            let drawn = CGSize(width: CGFloat(cgImage.width) * cover,
+                               height: CGFloat(cgImage.height) * cover)
+            context.draw(cgImage, in: CGRect(x: (CGFloat(columns) - drawn.width) / 2,
+                                             y: (CGFloat(rows) - drawn.height) / 2,
+                                             width: drawn.width, height: drawn.height))
+
+            // ⚠ Read through the CONTEXT's own pointer rather than indexing `pixels` while its buffer is
+            // borrowed — the array's storage is the context's backing store for the length of this closure.
+            let bytes = base.assumingMemoryBound(to: UInt8.self)
+            grid = (0..<(columns * rows)).map { index in
+                let offset = index * 4
+                return ArtworkRGB(red: Double(bytes[offset]) / 255.0,
+                                  green: Double(bytes[offset + 1]) / 255.0,
+                                  blue: Double(bytes[offset + 2]) / 255.0)
+            }
+        }
+        return grid
+    }
+}
+
 /// The artwork itself: a state-driven image with its own loader, so a card never silently draws nothing.
 ///
 /// ⚠ **Why not `AsyncImage`:** it cannot log, and on a TV there is no other way to find out why a wall is
@@ -236,6 +290,8 @@ struct PosterCard: View {
 /// ⚠ **U3 gave it a `route`** so the Home's hero band can ask for the 16:9 backdrop through the same loader;
 /// **U6 made the cards ask for the backdrop too**, and the loader falls back to the poster once when an item
 /// has no keyart (`PosterLoader.fallBackToPoster`).
+/// ⚠⚠ **W13 gave it `onImage`**, so the details page can build its scrim from the artwork's own colour — the
+/// bytes are sampled by the extension above, and this view is the only place they are ever decoded.
 struct PosterImageView: View {
 
     let base: URL
@@ -251,13 +307,22 @@ struct PosterImageView: View {
     /// `@Environment(\.displayScale)`; everything else keeps the default and does not double its bytes.
     var width: Int?
 
+    /// ⚠⚠ **THE DECODED IMAGE, HANDED BACK TO WHOEVER ASKED FOR IT (W13, 2026-09-20).** The details page builds
+    /// its scrim from the artwork's own colour (*"gradients color depening on the poster"*), and this view is the
+    /// one place in the app that HOLDS a decoded `UIImage` — so the bytes are sampled here and the caller decides
+    /// what they mean (`ArtworkTint`, a pure rule). ⚠ It fires **once per image**, on appear, and it defaults to
+    /// `nil`, which is why no other caller of this view changed.
+    var onImage: ((UIImage) -> Void)?
+
     @StateObject private var loader: PosterLoader
 
-    init(base: URL, itemID: String, route: PosterURL.Route = .poster, width: Int? = nil) {
+    init(base: URL, itemID: String, route: PosterURL.Route = .poster, width: Int? = nil,
+         onImage: ((UIImage) -> Void)? = nil) {
         self.base = base
         self.itemID = itemID
         self.route = route
         self.width = width
+        self.onImage = onImage
         _loader = StateObject(wrappedValue: PosterLoader(base: base, itemID: itemID, width: width, route: route))
     }
 
@@ -272,6 +337,9 @@ struct PosterImageView: View {
             case .loaded(let data):
                 if let image = UIImage(data: data) {
                     drawn(image)
+                        // ⚠⚠ The one moment this view has both the bytes AND a laid-out body: the sampler runs
+                        // here, once, and the caller decides what the samples mean.
+                        .onAppear { onImage?(image) }
                 } else {
                     // ⚠ Bytes arrived and are not an image. That is a different fault from a failed
                     // request, and the log line above says which.

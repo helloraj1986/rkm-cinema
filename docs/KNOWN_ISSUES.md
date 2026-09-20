@@ -251,6 +251,50 @@ browser draws it full screen, and the knob is **`Metric.safeMargin` — one numb
 
 ---
 
+## 14 · The 4K question — *"so what happens now on 4k screen"*
+
+His ask, 2026-09-20. **Two separate things, and only one of them is layout.**
+
+**1 · The LAYOUT is panel-proof by construction, and that is a fact about tvOS, not a design choice.** tvOS hands
+every device the same **1920 × 1080 points** — an Apple TV 4K draws those points at `scale = 2.0`. So a `0.29`
+hero is 313 pt on a 1080p set and 313 pt on a 4K one (626 px vs 313 px); nothing reflows, nothing re-scales, and
+every number in `TVTokens` is a percentage of the canvas rather than a pixel count. ⇒ **No screen needs a panel
+check.** What IS panel-dependent is the *safe-area inset* (he measured `80/60` on the simulator; Apple documents
+`90/60`; older panels crop 2–5 %), which W1 turned into one number: `Metric.safeMargin`.
+
+**2 · ARTWORK was panel-dependent, and is now correct on the title screen.** The backdrop route's `1600 px`
+default is the WEB app's number and is **2.4× short of a full-width hero on a 4K panel**;
+`PosterURL.width(points:scale:route:)` now asks for `1920 × displayScale` — **3840 px on 4K**, 1920 px on 1080p,
+clamped by the route's own 4000 ceiling. ⚠ **`Home/HeroBand.swift` still asks for the old 1600 px and is soft on
+a 4K panel — a one-line follow-up, offered and NOT taken.**
+
+**⚠⚠ 3 · THE OPEN ONE, AND IT WOULD MAKE *EVERYTHING* SOFT: IS THE APP IN 4K COMPATIBILITY MODE?** Apple's own
+Apple-TV-4K guidance, verbatim: *"**the first step is to add a 2x launch image. Until you do so, tvOS is going to
+run your app in compatibility mode**"* — i.e. the whole UI drawn at 1080p and upscaled, in which case a
+correctly-sized 3840 px hero changes nothing. ⚠ **Measured against this repo (`Assets.xcassets`, 2026-09-20): the
+catalogue carries `AccentColor` and the app-icon set ONLY — there is NO launch image of any kind, and the app
+icon set has its `1x`/`2x` slots declared with NO image files in them.** The project also sets
+`INFOPLIST_KEY_UILaunchScreen_Generation = YES` with `GENERATE_INFOPLIST_FILE = NO`, and that key is an **iOS**
+one (`Config/Info.plist` even carries a note saying so).
+
+⚠⚠ **SO THIS IS SETTLED BY MEASUREMENT, NOT BY ARGUMENT — the app now logs its own answer on every launch:**
+
+```
+display: scale=<n> — 2.0 = drawn at 4K (3840x2160 px of these 1920x1080 points);
+                     1.0 = drawn at 1080p and upscaled, i.e. COMPATIBILITY MODE
+poster|backdrop <id> -> 200, <bytes> bytes, …, w=<3840 on a 4K panel · 1920 on 1080p>
+```
+
+⚠ Read them from the FILE log (the HUD panel cannot be scrolled):
+`find "$(xcrun simctl get_app_container booted com.helloraj1986.RKMCinemaTV data)" -name rkm-tvos.log`
+
+**If `scale` reads 1.0 on his Apple TV 4K**, the fix is an asset change and NOT a layout one: a `LaunchImage`
+(1x 1280×768 + 2x 2560×1536) — a black one matches the app's own `#08090B` void and is design-neutral — plus 2×
+app-icon/top-shelf artwork, which is a branding decision and therefore his. **⚠ NOT done in this session: it
+could not be verified from here, and the launch image is the first frame anyone sees.**
+
+---
+
 ## 9 · The detail screen's **Download** button gives no feedback — but the download starts
 
 > *"the download button when clicked … there is no feedback although download does start in the background

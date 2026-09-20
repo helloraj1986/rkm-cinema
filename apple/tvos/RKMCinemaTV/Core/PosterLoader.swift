@@ -54,6 +54,21 @@ final class PosterLoader: ObservableObject {
     /// The width this loader was asked for, so the fallback rebuilds the URL with the SAME width.
     private let width: Int?
 
+    /// ⚠⚠ **THE WIDTH THAT ACTUALLY GOES ON THE WIRE, AND IT IS LOGGED BECAUSE IT ANSWERS A 4K QUESTION.**
+    ///
+    /// His ask (2026-09-20): *"so what happens now on 4k screen"*. The answer is not in the layout — tvOS gives
+    /// every device the same 1920 × 1080 **points** — it is in the ARTWORK (a full-width hero is 3840 px on a 4K
+    /// panel and 1920 on a 1080p one) and in **whether tvOS is rendering in 4K at all**: an app with no 2× launch
+    /// image runs in **compatibility mode** on an Apple TV 4K — rendered at 1080p and upscaled — and *then* every
+    /// pixel on screen is soft no matter what width this file asks for (Apple's own Apple-TV-4K guidance: *"the
+    /// first step is to add a 2x launch image. Until you do so, tvOS is going to run your app in compatibility
+    /// mode"*).
+    ///
+    /// ⚠ So the requested width goes into the log line, where it reads as the device's own answer: **3840 means
+    /// the panel is 4K and the app saw it; 1920 means a 1080p screen (or a 4K one the app is being scaled onto
+    /// because the asset catalogue has no 2× artwork).**
+    var effectiveWidth: Int { PosterURL.clamped(width ?? route.defaultWidth, route: route) }
+
     private let base: URL
     private let timeout: TimeInterval
     private var started = false
@@ -102,7 +117,8 @@ final class PosterLoader: ObservableObject {
                     ? "not authorised — the session cookie did not reach the image request"
                     : "the server answered \(status)"
                 RKMLog.error("\(route.rawValue) \(Self.short(itemID)) -> \(status) — session-cookie="
-                                + "\(hasSession ? "present" : "ABSENT"), cached-before=\(alreadyCached)",
+                                + "\(hasSession ? "present" : "ABSENT"), cached-before=\(alreadyCached), "
+                                + "w=\(effectiveWidth)",
                              category: .net, correlation: correlation)
                 // ⚠ A missing BACKDROP is not a broken card: fall back to the poster, exactly as the web
                 // app's own hero does, and only report a failure once BOTH routes are exhausted.
@@ -112,7 +128,7 @@ final class PosterLoader: ObservableObject {
             }
             RKMLog.info("\(route.rawValue) \(Self.short(itemID)) -> \(status), \(data.count) bytes, "
                             + "session-cookie=\(hasSession ? "present" : "absent"), "
-                            + "cached-before=\(alreadyCached)",
+                            + "cached-before=\(alreadyCached), w=\(effectiveWidth)",
                         category: .net, correlation: correlation)
             state = .loaded(data)
         } catch {

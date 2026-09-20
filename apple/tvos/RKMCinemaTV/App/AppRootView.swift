@@ -22,6 +22,20 @@ struct AppRootView: View {
 
     @EnvironmentObject private var app: AppModel
 
+    /// ⚠⚠ **THE PANEL'S PIXEL DENSITY — LOGGED ONCE, BECAUSE IT IS THE ONE THING THAT DECIDES WHAT A 4K SCREEN
+    /// ACTUALLY GETS.** tvOS hands every device the same 1920 × 1080 **points**, so a 4K panel changes only the
+    /// pixels: at `scale = 2.0` the UI is drawn at 3840 × 2160 and is crisp; at `scale = 1.0` it is drawn at
+    /// 1080p and upscaled by the box, and **every pixel on screen is soft whatever any screen asks for** —
+    /// including a correctly-sized 3840 px hero.
+    ///
+    /// ⚠⚠ **`1.0` ON A 4K PANEL MEANS THE APP IS IN COMPATIBILITY MODE**, which is what tvOS does to an app with
+    /// no 2× launch image (Apple's Apple-TV-4K guidance, verbatim: *"the first step is to add a 2x launch image.
+    /// Until you do so, tvOS is going to run your app in compatibility mode"*). ⚠ **This app's asset catalogue
+    /// currently carries `AccentColor` and the app-icon set ONLY — no launch image at all** — so this line is how
+    /// that is settled on his Apple TV rather than argued about (`Assets.xcassets`, measured 2026-09-20).
+    /// ⚠ Read it from the file log; the HUD panel cannot be scrolled.
+    @Environment(\.displayScale) private var displayScale
+
     var body: some View {
         ZStack {
             content
@@ -69,6 +83,13 @@ struct AppRootView: View {
         // records it. ARTWORK may bleed into it (his `.hero` is full-bleed); a WORD may not — which is why
         // every screen keeps its prototype's own margin and nothing else is added.
         .ignoresSafeArea()
+        // ⚠⚠ One line, once per launch, and it is the answer to "what happens on a 4K screen" — see
+        // `displayScale` above. It sits at the ROOT so it is written for every screen and every round.
+        .onAppear {
+            RKMLog.info("display: scale=\(displayScale) — 2.0 = drawn at 4K (3840x2160 px of these 1920x1080 "
+                            + "points); 1.0 = drawn at 1080p and upscaled, i.e. COMPATIBILITY MODE",
+                        category: .app)
+        }
     }
 
     @ViewBuilder

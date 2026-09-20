@@ -1046,7 +1046,7 @@ let castCount = DetailRules.castRows(DetailPeople(actors: manyPeople, directors:
 checkEqual(castCount, 7, "the cast rail is capped by what FITS the page, not by a flat ten")
 let castRowWidth = CGFloat(castCount) * TVTokens.Title.castItemWidth
     + CGFloat(castCount - 1) * TVTokens.Title.trackGap
-let castContentWidth = TVTokens.Metric.screenWidth - 2 * LibraryRules.marginFromPrototype
+let castContentWidth = TVTokens.Metric.layoutWidth - 2 * LibraryRules.marginFromPrototype
 check(castRowWidth <= castContentWidth - TVTokens.Title.trackGap,
       "the cast row fits inside the page's content width with a gap to spare")
 checkEqual(DetailRules.castRows(DetailPeople(actors: [DetailPerson(id: "p", name: "", role: "r",

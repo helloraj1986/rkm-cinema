@@ -284,7 +284,12 @@ enum DetailRules {
     static var castCapacity: Int {
         let item = TVTokens.Title.castItemWidth
         let gap = TVTokens.Title.trackGap
-        let content = TVTokens.Metric.screenWidth - 2 * LibraryRules.marginFromPrototype
+        // ⚠⚠ **THE WIDTH THE APP ACTUALLY GETS, NOT THE CANVAS.** His round-9 log (the app's own file log,
+        // Apple TV 4K simulator) is `screen = 1760x960 pt at x=80 y=60` — tvOS hands a view the area inside the
+        // screen's overscan safe area, so the CONTENT is 1760 − 2 × 64px = **1598.7 pt**, not the 1758.7 pt this
+        // line first used. ⚠ The first figure was wrong in the direction that matters (it over-stated what fits
+        // by 160 pt), which is exactly why the measurement replaced it.
+        let content = TVTokens.Metric.layoutWidth - 2 * LibraryRules.marginFromPrototype
         return max(1, Int(content / (item + gap)))
     }
 

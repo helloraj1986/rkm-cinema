@@ -633,6 +633,22 @@ enum TVTokens {
         /// is the caller, and its job is to make a row FIT.
         static let screenWidth = u * 100
 
+        /// ⚠⚠ **THE OVERSCAN INSET tvOS PUTS AROUND EVERY VIEW — MEASURED, NOT ASSUMED.** His round-9 log,
+        /// straight out of the app's own file log on the Apple TV 4K simulator:
+        ///
+        ///     detail-size: screen = 1760x960 pt at x=80 y=60
+        ///
+        /// i.e. the view is handed the area INSIDE the screen's safe area: `80 pt` on each side of the 1920 pt
+        /// canvas, `60 pt` top and bottom. ⚠ **So `screenWidth` (1920) is the CANVAS, and it is NOT the width
+        /// anything the app lays out actually gets** — a rule about WHAT FITS must use `layoutWidth`.
+        static let overscanInsetX: CGFloat = 80
+
+        /// ⚠ **The width a screen's CONTENT really has: 1920 − 2 × 80 = 1760 pt.** Used by every rule that
+        /// decides whether a row FITS (`DetailRules.castCapacity` is the first) — ⚠ and it is deliberately the
+        /// SMALLER of the two numbers, because a row that comes up short is cosmetic while a row that is too
+        /// wide makes the whole PAGE wider than the screen, which is the defect he reported twice.
+        static let layoutWidth = screenWidth - 2 * overscanInsetX
+
         /// The screens' horizontal margin.
         ///
         /// ⚠ **U6 moved this from a hand-picked 60 to the prototype's own content inset** — every band in the

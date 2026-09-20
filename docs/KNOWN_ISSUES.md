@@ -188,67 +188,30 @@ whichever scenario runs last, so the failing scenario MOVES.
 
 ---
 
-## 13 · The title screen — *"its completely zoomed in with not able to navigate anywhere"*
+## 13 · The title screen — *"completely zoomed in… I can only see a portion of the page"*
 
-His words, 2026-09-20: round 6 *"ALSO WHEN I GO TO INDIVIDUAL TITLE DETAILS THIS IS WHAT I SEE ON THE SCREEN
-ITS COMPLETELY ZOOMED IN WITH NOT ABTO NAVIGATE ANYWHERE"*, and after round 7's fixes did not change it,
-*"THE PROBLEM IS WITH WHEN I LCIK ON DETAILS BUTTON OR ANY INDIVIDUAL TITLE EITHER FROM HOME OR LIBRARY PAGE...
-THE WHOLE PAGE IS ZOOMED IN AND I CAN ONLY SEE A PORTION OF THE PAGE..MAY BE IT'S A RESOLUTION ISSUE IN DETAILS
-PAGE NOT SURE"*.
+**✅ THE PAGE OVERFLOW IS FIXED AND MEASURED — the app's own file log is the proof (round 9):** `screen =
+1760x960 pt at x=80 y=60`, `bar = 1759x115 at x=80`, `hero = 1760x712 at x=80 y=175`, `page = 1760x844`. Every
+element sits inside `x = 80…1840` and none is wider than the container ⇒ nothing is off-screen and nothing is
+over-wide. His *"THE SCREEN IS NOW A LITTLE BIT ZOOMED OUT"* was this landing.
 
-**MEASURED FROM HIS SCREENSHOT (3840 × 2160 = a 1920 × 1080 pt canvas at 2×), and it is a LAYOUT fault, not a
-resolution one — every FONT on that screen measures at its token size:**
+⚠⚠ **THE MEASUREMENT THAT CLOSED IT: tvOS hands a view `1760 × 960`, not `1920 × 1080`** — the canvas minus its
+80 pt overscan inset per side (60 pt top/bottom). So `TVTokens.Metric.screenWidth` (1920) is the CANVAS and any
+rule about WHAT FITS must use the new **`TVTokens.Metric.layoutWidth`** (1760). The rail that broke the page was
+**ten of his `150px` items = 2208 pt against a 1598.7 pt content width**; the cap is now **7** (1534.68 pt, 28.8 pt
+of slack), and eight items provably overflow by 195.52 pt. ⚠ Round 7's *"an item was as wide as the name"* is
+**wrong** (`castItem` already carried his width — see PROGRESS.md's round-9 correction) and round 7 also
+squeezed the cast SECTION to 189 pt; both are repaired.
 
-| Element | Where it is | Where the tokens put it |
-|---|---|---|
-| The focused tab's label (gold pill, `Back to Home`) | x = 59.5 pt, pill 183.5 pt wide | `Bar.paddingH` (80.64) + brand + `tabSpacing` ≈ **293 pt** |
-| The bar's right-hand content (the profile avatar) | **not on screen at all** | right side, ~1699 pt |
-| The title's glyphs | begin at x = 8 pt, "Alad" **cut off** | `marginFromPrototype` = 80.64 pt |
-| The genre pills | "Family" (the 3rd pill) at 137 pt | ≈300 pt |
-| The credits | text begins at x ≤ 0 | 80.64 pt |
-| The hero's band | y 175 → 888 pt (**height exactly `heroHeight` = 712.8 pt**) | correct |
+**⚠ STILL OPEN — HIS VISUAL CALL, NOT A BUG I CAN SETTLE:** his `.hero` is full-bleed from `y = 0` with the top
+bar floating over it (`position: fixed`); the app draws both INSIDE the safe area — the hero at `x = 80…1840`,
+starting at `y = 175` (the 60 pt inset plus the 115 pt bar). So the artwork is **160 pt narrower** than his file
+and **175 pt lower**. ⚠ The cost of changing it: drawing into the overscan is what tvOS's safe area exists to
+prevent (some TVs crop it).
 
-⇒ **The page is WIDER than the canvas and shifted left** (the bar is ~233 pt off; the content ~100–160 pt), so
-its left part is off-screen and cut. ⚠ The bar's own width is its natural ~455 pt, which is what a LEADING
-child of an over-wide container looks like — the page is being widened, not the bar.
-
-**FIXED (round 7): the cast row, which was the only row on that screen with NO bound on its width.**
-`DetailView.castItem` applied his `.cast-item` width to the AVATAR only, so an item was as wide as the person's
-name; and `DetailRules.castRows` capped the row at a flat **10**, justified in the plan with the AVATAR's
-`110px` rather than with his own `.cast-item { width:150px }`:
-
-    10 × 150px + 9 × 28px = 2208 pt   against a content width of 1920 − 2 × 64px = 1758.7 pt
-
-The item now carries his `150px` (name `lineLimit(1)`, truncating as his file does), and the cap is
-**arithmetic the gate RUNS**: `DetailRules.castCapacity = content / (item + gap)` = **7** items — 1534.7 pt of
-1758.7 pt, with one gap of slack, because EIGHT items would overflow by 0.24 pt. Both halves are pinned in the
-harness (`608 checks`) and in the mutation table (⚠ the new entry is written but NOT yet exercised —
-`--falsify` waits for his word).
-
-⚠⚠ **AND THE HONEST HALF: reading every other element of that screen says nothing else can widen a page.**
-`hero`/`artwork` are `maxWidth: .infinity` with a `.resizable()` image, the synopsis has its `62ch` measure, the
-pills and meta line are flexible, the credits wrap, the `resumeBar`'s `GeometryReader` is explicitly framed —
-and SwiftUI CLAMPS a too-wide child rather than widening its parent, so the cast row may not be the whole story
-either. **So the screen now MEASURES ITSELF instead of being guessed at**: `DetailView.measured(_:_:)` logs
-
-    detail-size: <label> = <w>×<h> pt at x=<global minX> y=<global minY>
-
-for `screen`, `bar`, `page`, `hero`, `below`, `synopsis`, `credits` and `cast`. ⚠ It is a `GeometryReader` in a
-`.background`, so it cannot affect layout — the opposite of the reader round 3 DELETED from this screen's
-content. ⚠ **It exists to be deleted once the numbers are in.**
-
-**Round 8 (his): *"THE SCREEN IS NOW A LITTLE BIT ZOOMED OUT"* — the cast-row fix MOVED it, so that row WAS
-the overflow.** Two things remain open here, and they are separate:
-
-1. **The page still not being exactly the canvas.** The instrumentation is now trimmed to three labels —
-   `screen` (the canvas: if it is not 1920 × 1080, the whole token table's `u` is wrong for the device), `bar`
-   (whose leading edge measured ~233 pt left of its own tokens on his screenshot) and `cast-row` — and it is
-   read from the FILE log rather than the HUD panel, because the panel shows the newest lines only and he cannot
-   scroll it: `find "$(xcrun simctl get_app_container booted com.helloraj1986.RKMCinemaTV data)" -name rkm-tvos.log`
-2. **`Play` was unreachable from the top bar** (*"cant navigate from top to the play button"*) — FIXED in round 8
-   by making `Play` the screen's DEFAULT FOCUS (his prototype's own decision) plus an `.onExitCommand` way out.
-   ⚠ The mechanism is a HYPOTHESIS (see PROGRESS.md's round-8 record): the falsifier is whether the ring starts
-   on `Play`, whether Select plays the film, and whether the arrows reach the top bar from there.
+**Round 8's focus fix — still to be confirmed by him:** `Play` is now the screen's DEFAULT FOCUS (his prototype's
+own decision) and MENU is a real Back (`.onExitCommand`). ⚠ The mechanism is a HYPOTHESIS — the falsifier is
+whether the ring starts on `Play`, whether Select plays the film, and whether the arrows reach the top bar.
 
 ---
 

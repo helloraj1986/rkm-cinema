@@ -1,4 +1,4 @@
-## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-20) · ✅ **PHASE C — THE PLAYER — IS BUILT ON `feat/tvos-player`: C1 + C2 + C3, and C4 IS HIS ROUND** · ✅✅ **ROUNDS 6–8: THE PLAYER WORKS (F2 GREEN, C5 RETIRED) · `Back` FIXED + rule 9 · THE TITLE SCREEN'S CAST ROW WAS UNBOUNDED AND IS FIXED (his *"a little bit zoomed out"*) · AND `Play` IS NOW THE SCREEN'S DEFAULT FOCUS because his round-8 report is *"i can see the play button but cant navigate from top to the play button"* — KNOWN_ISSUES #13** · ⚠ **the branch carries ONE MERGE COMMIT from `dev` (`e0eadef`, bringing Phases U and V in) and the working tree IS on it** · ⚠ **`dev` does NOT have this branch** · **nothing needs `apply`**: no file under `backend/`, `frontend/` or `nginx/` changed
+## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-20) · ✅ **PHASE C — THE PLAYER — IS BUILT ON `feat/tvos-player`: C1 + C2 + C3, and C4 IS HIS ROUND** · ✅✅ **ROUNDS 6–9: THE PLAYER WORKS (F2 GREEN, C5 RETIRED) · `Back` FIXED + rule 9 · THE TITLE SCREEN'S PAGE OVERFLOW IS GONE and the app's own log PROVES it (his round-9 numbers: every element inside `x=80..1840`, nothing over-wide) · ⚠ **the app's container is 1760×960, not 1920×1080 — tvOS's overscan inset, now a token** · `Play` is the screen's default focus (round 8) — KNOWN_ISSUES #13** · ⚠ **the branch carries ONE MERGE COMMIT from `dev` (`e0eadef`, bringing Phases U and V in) and the working tree IS on it** · ⚠ **`dev` does NOT have this branch** · **nothing needs `apply`**: no file under `backend/`, `frontend/` or `nginx/` changed
 
 ### 🐞 HIS ROUND 5 ON THE PLAYER FAILED — ONE STRAY BACKSLASH, AND A RULE FOR THE CLASS (2026-09-20, `6e71c67`)
 
@@ -57,6 +57,59 @@ been type-checked by anything. Two things in it are worth naming before he spend
 ⚠ And the round's question is still the phase's question: **F2 — does a cookie handed to the asset reach a
 `…/hls/…` SEGMENT — remains OPEN.** The line to look for is `player: AVPlayer's own request failed — status=`,
 and a `401` in it is the answer.
+
+### 🔬 ROUND 9 — THE APP MEASURED ITSELF, AND THE ANSWER IS tvOS's OVERSCAN (2026-09-20)
+
+His round-8 ask ("read the numbers") came back as the app's own FILE log, and it settles this whole thread. Note
+first that the HUD **cannot** be scrolled — it is a READOUT, deliberately `focusable(false)` since his own first
+tvOS round (a control up there fights the app's arrows) — so the numbers are read from
+`…/rkm-tvos.log` inside the app container, one `find` away.
+
+**The numbers (verbatim, `detail-size:` lines):**
+
+| label | size | position |
+|---|---|---|
+| `screen` | **1760 × 960** | `x=80 y=60` |
+| `bar` | **1759 × 115** | `x=80 y=59` |
+| `page` | 1760 × 844 | `x=80 y=175` |
+| `hero` | 1760 × 712 | `x=80 y=175` |
+| `synopsis` | 742 × 207 | `x=160` |
+| `credits` | 514–557 × 104 | `x=160` |
+| `below` | 903 × ~700–780 | `x=80 y=887` |
+| `cast-row` | **189 × 319** | `x=160 y≈1260–1347` |
+
+⚠⚠ **THE ONE NUMBER THAT EXPLAINS EVERYTHING: the view is handed `1760 × 960` at `x=80, y=60` — the 1920 × 1080
+canvas MINUS tvOS's 80 pt overscan inset on each side (and 60 pt top/bottom).** So the 1920 pt is the CANVAS, and
+the app's own container is **1760**: every rule that decides whether a row FITS was counting 160 pt more width
+than exists. The bar is 1759 wide and 115 tall (the token arithmetic: 50 + 2 × 32.64 ✓), the hero is 1760 × 712
+at `x=80, y=175` — ⚠ **nothing is off-screen (every `x` ≥ 80), nothing is over-wide (max 1760) ⇒ the page
+overflow is GONE**, which is what his *"a little bit zoomed out"* was seeing.
+
+⚠⚠ **AND A CORRECTION TO THE ROUND-7 RECORD, BECAUSE ITS EXPLANATION WAS WRONG AND MINE WAS TOO.** `git show` is
+unambiguous: **`castItem` already carried his `.cast-item { width:150px }` BEFORE round 7** (`castItemWidth`
+appeared three times in the file at `1a98c08^`, four after). So round 7's claim *"an item was as wide as the
+person's name"* is FALSE. What was actually wrong is narrower and still real: the rail was capped at a flat
+**10** items, and ten of his 189 pt items are `2208 pt` of a content width that is **1598.7 pt** (not the
+1758.7 pt round 7 wrote — that figure counted the canvas, and round 9's measurement is what corrected it). ⚠ And
+**round 7 introduced a bug of its own**: the item's width was ALSO applied to the cast SECTION, squeezing it to
+189 pt — that is the `cast-row = 189x319` line above. Both are fixed here: the section carries no width, the
+item keeps his `150px`, the cap is `1571/224 ≈ 7` items (`1534.68 pt`, with 28.8 pt of slack), and eight items
+now provably overflow by **195.52 pt**.
+
+`TVTokens.Metric` gained the measurement as arithmetic — `overscanInsetX = 80` and
+`layoutWidth = screenWidth − 2 × overscanInsetX = 1760` — so a rule can ask "does this fit?" against the width the
+app ACTUALLY gets. ⚠ It is deliberately the SMALLER number: a row that comes up short is cosmetic, a row that is
+too wide makes the whole page wider than the screen, which is the defect he reported twice.
+
+**Gates:** core **608 checks** (the two cast checks now run against `layoutWidth`) · members **PASS — NINE
+rules** · typecheck **PASS** · imports **PASS** · design tokens **PASS** · md-links **PASS**. ⚠ `--falsify` NOT
+run (his standing rule) — the round-7 mutation entry remains written but unproven, and says so.
+
+⚠ **STILL OPEN, AND IT IS HIS CALL (KNOWN_ISSUES #13):** his `.hero` is full-bleed from `y=0` with the top bar
+floating over it (`position: fixed`); the app draws both INSIDE the safe area — the hero at `x=80..1840`,
+starting at `y=175` (below the 115 pt bar + the 60 pt inset). So the artwork is 160 pt narrower than his file and
+175 pt lower. That is the remaining "it does not look like the html" candidate, and it is a VISUAL decision with
+a cost (drawing into the overscan is exactly what tvOS's inset exists to prevent).
 
 ### 🎯 ROUND 8 — THE CAST ROW WAS THE OVERFLOW, AND `Play` BECOMES THE DEFAULT FOCUS (2026-09-20)
 

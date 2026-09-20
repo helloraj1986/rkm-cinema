@@ -457,7 +457,6 @@ struct DetailView: View {
                 }
             }
             .padding(.top, TVTokens.Title.shelfTopPad)
-            .frame(width: TVTokens.Title.castItemWidth, alignment: .leading)
         }
     }
 
@@ -479,9 +478,9 @@ struct DetailView: View {
     ///
     /// ⚠⚠ **TRIMMED TO THE THREE THAT MATTER** after his round 8 (he could not scroll the HUD panel to read
     /// them, and the panel shows the newest lines, so the ones logged at appearance were buried): the CANVAS
-    /// (`screen` — if this is not 1920 × 1080 the whole token table is wrong for the device), the BAR (`bar` —
-    /// whose leading edge measured ~233 pt left of its own tokens on his screenshot), and the ROW THIS SESSION
-    /// BOUNDED (`cast-row`). ⚠ Read them from the FILE log, which needs no panel and no scrolling:
+    /// (`screen` — ⚠ and it is **1760 × 960 at x = 80, y = 60**, i.e. the CANVAS MINUS tvOS's overscan inset:
+    /// that is the one number that explains the whole report, because it is the width the app's rules must
+    /// count against), the BAR (`bar`), and the ROW THIS SESSION BOUNDED (`cast-row`). ⚠ Read them from the FILE log, which needs no panel and no scrolling:
     /// `find "$(xcrun simctl get_app_container booted com.helloraj1986.RKMCinemaTV data)" -name rkm-tvos.log`
     ///
     /// ⚠ **IT CANNOT AFFECT LAYOUT, WHICH IS THE ONLY REASON IT IS ALLOWED ON THIS SCREEN.** A `GeometryReader`
@@ -518,7 +517,6 @@ struct DetailView: View {
                 .padding(.bottom, TVTokens.Title.avatarGapBottom)
 
             Text(person.name)
-                .lineLimit(1)
                 .font(.system(size: TVTokens.Title.castNameSize, weight: .semibold))
                 .foregroundStyle(RKMColour.primary)
                 .lineLimit(1)

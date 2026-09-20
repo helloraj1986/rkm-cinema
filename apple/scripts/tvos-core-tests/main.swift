@@ -2456,7 +2456,8 @@ check(PlaybackRules.playerRate(isPlaying: true, rate: PlaybackRules.defaultRate)
 /// ⚠ Built by DECODING, so each fixture is the WIRE SHAPE (`subtitle_id`, `hearing_impaired`) — the same rule
 /// as `ep()` above, and the reason the rule under test is fed what the api actually sends.
 func sub(_ id: String, language: String, format: String, provider: String,
-         displayTitle: String, hi: Bool = false, local: Bool) -> SubtitleRow {
+         displayTitle: String, hi: Bool = false, local: Bool, used: Int = 0,
+         downloads: Int? = nil) -> SubtitleRow {
     let object: [String: Any] = [
         "subtitle_id": id,
         "file_id": local ? NSNull() : 1,
@@ -2464,9 +2465,11 @@ func sub(_ id: String, language: String, format: String, provider: String,
         "language": language,
         "display_title": displayTitle,
         "index": local ? 4 : NSNull(),
-        "used_count": 0,
+        "used_count": used,
         "last_used": "",
-        "download_count": 12,
+        // ⚠ A LOCAL track has NO provider count — the api's own `merge_subtitle_rows` writes 0 for one, and a
+        // fixture that gave it one would let a rule print `12 downloads` on the film's own subtitle.
+        "download_count": downloads ?? (local ? 0 : 12),
         "hearing_impaired": hi,
         "format": format,
         "vendor_format": format,
@@ -2532,12 +2535,12 @@ checkEqual(PlaybackRules.subtitleRemoteRows(Array(repeating: remoteSub1, count: 
                                             hasSearched: true, limit: 3).count, 3,
            "…and the limit is a parameter, so a round can prove the cap without a fake provider")
 
-checkEqual(PlaybackRules.subtitleRowDetail(remoteSub1), "EN · srt · opensubtitles",
-           "a result's second line is the facts that tell two release names apart")
-checkEqual(PlaybackRules.subtitleRowDetail(remoteHi), "EN · srt · opensubtitles · HI",
-           "⚠ including the one a viewer must know BEFORE choosing — a hearing-impaired track is visible for the rest of the film")
+checkEqual(PlaybackRules.subtitleRowDetail(remoteSub1), "EN · srt · opensubtitles · 12 downloads",
+           "a result's second line is the facts that tell two release names apart — now including the popularity number his 2026-09-21 instruction asked for")
+checkEqual(PlaybackRules.subtitleRowDetail(remoteHi), "EN · srt · opensubtitles · 12 downloads · SDH",
+           "⚠ including the one a viewer must know BEFORE choosing — a hearing-impaired track is visible for the rest of the film (and it is `SDH`, never `HI`: `HI` is Hindi's language code)")
 checkEqual(PlaybackRules.subtitleRowDetail(localSub), "EN · ass · local",
-           "a LOCAL track reads the same way, so the two kinds of row are comparable")
+           "a LOCAL track reads the same way — and carries NO provider count, because the provider has nothing to do with the film's own subtitle")
 
 checkEqual(PlaybackRules.subtitleShownLine(shown: 8, total: 19), "Showing 8 of 19 results",
            "⚠ a held-back list SAYS SO — a silent truncation is what this line exists to prevent")
@@ -2545,6 +2548,102 @@ check(PlaybackRules.subtitleShownLine(shown: 19, total: 19) == nil,
       "…and nothing is claimed when nothing was held back")
 check(PlaybackRules.subtitleShownLine(shown: 0, total: 0) == nil,
       "…or when there is no list at all")
+
+// ⚠⚠ ---- THE AUTO-PICK (HIS DECISION, 2026-09-21): THE POPULARITY NUMBER, THE BADGE, AND WHO SAYS WHAT.
+//
+// *"adding the no of times a subtitle is being downloaded from the opensubtitles api to better inform me
+// the user and apply the most downloaded subtitle automatically by default.. user can choose to off it
+// later"*. The api owns the RULE (docs/SUBTITLE_AUTOPICK_PLAN.md §2); what is pinned here is everything the
+// SCREEN says about it — because the two claims a viewer reads on a row are "how popular is this release"
+// and "have I used it before", and printing the same number for both would make a first-time choice look
+// like a well-used one.
+
+section("the popularity number, and whose it is")
+
+checkEqual(PlaybackRules.downloadsLabel(312), "312 downloads",
+           "a provider count under a thousand is printed exactly — it is small enough to read")
+checkEqual(PlaybackRules.downloadsLabel(1), "1 download",
+           "…and one is singular (a count is a sentence, not a number in a box)")
+checkEqual(PlaybackRules.downloadsLabel(42_412), "42.4k downloads",
+           "⚠ THOUSANDS ARE ROUNDED: `42,412` is a string nobody reads at three metres, `42.4k` is the same fact")
+checkEqual(PlaybackRules.downloadsLabel(84_050), "84.1k downloads",
+           "…one decimal below a hundred thousand, where the difference still matters")
+checkEqual(PlaybackRules.downloadsLabel(120_400), "120k downloads",
+           "…and none above it — `120.4k` is precision no viewer can use")
+checkEqual(PlaybackRules.downloadsLabel(1_240_000), "1.2M downloads",
+           "⚠ a million is its own unit, not `1240k`")
+check(PlaybackRules.downloadsLabel(0).isEmpty,
+      "⚠⚠ A ROW WITH NO COUNT SAYS NOTHING — `0 downloads` is a claim about a fact this app does not have (the provider need not send one), and a zero would read as a bad subtitle rather than a silent field")
+
+checkEqual(PlaybackRules.usedTimesLabel(1), "used once",
+           "⚠ OUR count is a DIFFERENT sentence from the provider's — one is the world's, one is his own")
+checkEqual(PlaybackRules.usedTimesLabel(3), "used 3×",
+           "…and it counts the times HE has chosen that release")
+check(PlaybackRules.usedTimesLabel(0).isEmpty,
+      "…and a release he has never picked says nothing at all (rather than `used 0 times`)")
+
+checkEqual(PlaybackRules.subtitleRowDetail(remoteSub1), "EN · srt · opensubtitles · 12 downloads",
+           "the row's second line carries the fact his instruction asked for")
+checkEqual(PlaybackRules.subtitleRowDetail(sub("os:9", language: "en", format: "srt",
+                                                provider: "opensubtitles",
+                                                displayTitle: "The Mummy (1999)", local: false,
+                                                used: 2)),
+           "EN · srt · opensubtitles · 12 downloads · used 2×",
+           "…and, once he has picked it, how often — the two facts side by side")
+check(!PlaybackRules.subtitleRowDetail(remoteHi).contains("HI"),
+      "⚠⚠ THE HEARING-IMPAIRED MARKER IS `SDH`, NEVER `HI` — `HI` IS HINDI'S LANGUAGE CODE, so a Hindi row read `HI · srt · opensubtitles · HI` (the web panel made this call first; Phase P3 shipped `HI`, and this pins the correction)")
+check(PlaybackRules.subtitleRowDetail(remoteHi).hasSuffix("SDH"),
+      "…and an SDH track still SAYS SO before it is chosen, because the wrong one is audible for the rest of the film")
+
+section("the badge — which row the rule takes, and WHICH FACT put it there")
+
+checkEqual(PlaybackRules.autoPickBadge(basis: "most-downloaded"), "Most downloaded",
+           "the provider's popularity is named as the reason when it is the reason")
+checkEqual(PlaybackRules.autoPickBadge(basis: "used-before"), "Your pick before",
+           "⚠⚠ AND WHEN HIS OWN USAGE PUT THE ROW FIRST IT SAYS SO — our count outranks the provider's, so the same row can be first for a reason that has nothing to do with popularity, and calling that `Most downloaded` would be false on the one line he uses to decide whether to trust the default")
+check(PlaybackRules.autoPickBadge(basis: "").isEmpty,
+      "…and a row that is not the pick carries no badge at all")
+
+section("the two controls, in the state they are actually in")
+
+let autoOn = SubtitleAutoPickSettings(autoPick: true, autoPickSkipAudio: [])
+let autoOff = SubtitleAutoPickSettings(autoPick: false, autoPickSkipAudio: [])
+checkEqual(PlaybackRules.autoPickSettingLabel(settings: autoOn, language: "en"),
+           "Most downloaded (en)",
+           "the switch's row says what it does AND the language it does it in (the api computes that language; the screen never guesses it)")
+checkEqual(PlaybackRules.autoPickSettingLabel(settings: autoOff, language: "en"), "Off",
+           "…and off is `Off`, not `Most downloaded (en)` with a hidden state")
+checkEqual(PlaybackRules.autoPickSkipLabel(codes: []), "None",
+           "nothing excluded reads as `None` — not as an empty row")
+checkEqual(PlaybackRules.autoPickSkipLabel(codes: ["en"]), "English",
+           "⚠ the exclusion NAMES the language it excludes (a setting nobody can check is a setting nobody can trust)")
+checkEqual(PlaybackRules.autoPickSkipLabel(codes: ["en", "hi"]), "English, Hindi",
+           "…all of them, in order")
+checkEqual(PlaybackRules.autoPickSkipLabel(codes: ["xx"]), "xx",
+           "…and an unknown code is shown as ITSELF rather than guessed at")
+checkEqual(PlaybackRules.languageName("HI"), "Hindi",
+           "⚠ `HI` IS HINDI — which is the whole reason the hearing-impaired marker above is `SDH`")
+
+section("what the pane says about the auto-pick, and what it keeps quiet about")
+
+checkEqual(PlaybackRules.autoPickNotice(decision: "quota_unknown", reason: "Sign in to OpenSubtitles"),
+           "Sign in to OpenSubtitles",
+           "⚠⚠ THE ONE HE WILL ACTUALLY MEET: with an API key and no OpenSubtitles login the allowance is unknown, the api attempts NOTHING (his decision), and this line is the only thing that tells him why and what fixes it")
+checkEqual(PlaybackRules.autoPickNotice(decision: "quota_exhausted", reason: "No downloads left today"),
+           "No downloads left today",
+           "a spent quota is information, not an error")
+checkEqual(PlaybackRules.autoPickNotice(decision: "no_candidate", reason: "No subtitle found"),
+           "No subtitle found",
+           "…and so is a search that found nothing usable")
+check(PlaybackRules.autoPickNotice(decision: "already_chosen",
+                                   reason: "You have already chosen a subtitle for this title") == nil,
+      "⚠⚠ BUT A STATE HE CREATED HIMSELF IS NOT A NOTICE — a stored choice is visible in the row above, and a line saying so would appear under every title he has ever watched")
+check(PlaybackRules.autoPickNotice(decision: "title_off", reason: "Subtitles are off for this title") == nil,
+      "…nor is the per-title Off, which HE pressed and which the `Off` row already shows")
+check(PlaybackRules.autoPickNotice(decision: "disabled", reason: "Auto-subtitles is off") == nil,
+      "…nor is the global switch being off, which the switch's own row shows")
+check(PlaybackRules.autoPickNotice(decision: "quota_unknown", reason: "   ") == nil,
+      "…and an empty sentence prints nothing rather than a blank line")
 
 // MARK: - Report
 print("")

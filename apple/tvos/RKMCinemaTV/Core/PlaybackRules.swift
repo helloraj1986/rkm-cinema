@@ -521,9 +521,115 @@ enum PlaybackRules {
         return Array(rows.prefix(max(0, limit)))
     }
 
+    /// **The provider's own popularity, in the words a viewer can read at three metres.**
+    ///
+    /// `312 downloads` · `42.4k downloads` · `1.2M downloads` — and **`""` for a row the provider sent no
+    /// count for**, because a row that prints `0 downloads` is claiming a fact the app does not have.
+    /// ⚠ The rounding is the POINT at a distance: `42,412` is a string nobody reads across a lounge room,
+    /// and `42.4k` is the same fact in four characters. One decimal below 100k, none above it.
+    static func downloadsLabel(_ count: Int) -> String {
+        guard count > 0 else { return "" }
+        if count < 1_000 { return "\(count) download" + (count == 1 ? "" : "s") }
+        let thousands = Double(count) / 1_000
+        if thousands < 100 {
+            // ⚠ The tenth is ROUNDED BY HAND before it is formatted, and that is not tidiness: `%.1f` on a
+            // binary double rounds 84.05 DOWN to `84.0`, which reads as a truncation rather than a rounding.
+            return String(format: "%.1fk downloads", (thousands * 10).rounded() / 10)
+        }
+        if count < 1_000_000 {
+            return String(format: "%.0fk downloads", thousands)
+        }
+        return String(format: "%.1fM downloads", (Double(count) / 1_000_000 * 10).rounded() / 10)
+    }
+
+    /// **OUR** count — how many times this exact release has been chosen, here. `""` when it never has.
+    ///
+    /// ⚠ It is deliberately a different sentence from `downloadsLabel`: one says how popular the release is
+    /// with the world, the other says how often the viewer has picked it, and a viewer who reads them as one
+    /// number would think a first-time choice was a well-used one.
+    static func usedTimesLabel(_ count: Int) -> String {
+        guard count > 0 else { return "" }
+        return count == 1 ? "used once" : "used \(count)×"
+    }
+
+    /// The badge on the row the auto-pick would take — and ⚠ **WHICH** fact put it there.
+    ///
+    /// `"used-before"` → *Your pick before*; `"most-downloaded"` → *Most downloaded*. Two different claims,
+    /// because our usage count outranks the provider's popularity in the ranking: a row can be first for a
+    /// reason that has nothing to do with how popular it is, and calling that "most downloaded" would be
+    /// false — on the one line a viewer uses to decide whether to trust the default.
+    static func autoPickBadge(basis: String) -> String {
+        switch basis {
+        case "used-before": return "Your pick before"
+        case "most-downloaded": return "Most downloaded"
+        default: return ""
+        }
+    }
+
+    /// **The one sentence the Subtitles pane prints about the auto-pick — and only when he can act on it.**
+    ///
+    /// ⚠⚠ The api answers a CODE for every outcome, and its sentence for each. Three of them describe states
+    /// the viewer created and can SEE in the rows above (a stored choice, a per-title `Off`, the switch) —
+    /// printing those would put a line under every title he has ever watched. What is left is the set where
+    /// the rule tried and could not: no quota, an unknown quota, no candidate, an unreachable vendor, no key.
+    /// ⚠ `quota_unknown` is the important one: it is the answer an anonymous OpenSubtitles setup gets, and its
+    /// sentence names the fix — a silent no-op would read as a broken feature.
+    static func autoPickNotice(decision: String, reason: String) -> String? {
+        let actionable: Set<String> = ["quota_unknown", "quota_exhausted", "no_candidate",
+                                       "unavailable", "not_configured", "no_search_terms"]
+        guard actionable.contains(decision) else { return nil }
+        let text = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty ? nil : text
+    }
+
+    /// The auto-pick row's own value: `Most downloaded (en)` / `Off` — the state, and the language it acts in.
+    static func autoPickSettingLabel(settings: SubtitleAutoPickSettings, language: String) -> String {
+        guard settings.autoPick else { return "Off" }
+        let code = language.trimmingCharacters(in: .whitespaces)
+        return code.isEmpty ? "Most downloaded" : "Most downloaded (\(code))"
+    }
+
+    /// The exclusion row's value: which languages the auto-pick stays out of — `None` · `English audio`.
+    ///
+    /// ⚠ It names the languages it is excluding rather than counting them: "1 language" is a setting nobody
+    /// can check, and the whole point of this control is being able to tell whether it is doing what he wants.
+    static func autoPickSkipLabel(codes: [String]) -> String {
+        let named = codes.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+        guard !named.isEmpty else { return "None" }
+        return named.map { languageName($0) }.joined(separator: ", ")
+    }
+
+    /// `en` → `English`, and anything unrecognised back unchanged (⚠ uppercase kept: `HI` is a language
+    /// code, and lower-casing an unknown code would invent a word that is not one).
+    static func languageName(_ code: String) -> String {
+        let key = code.trimmingCharacters(in: .whitespaces).lowercased()
+        return subtitleLanguageNames[key] ?? code
+    }
+
+    /// The languages this app can NAME. ⚠ Not a translation table — a display table, and small on purpose:
+    /// an unknown code is shown as itself, which is honest, rather than guessed at.
+    static let subtitleLanguageNames: [String: String] = [
+        "en": "English", "hi": "Hindi", "ta": "Tamil", "te": "Telugu", "ml": "Malayalam",
+        "kn": "Kannada", "bn": "Bengali", "mr": "Marathi", "pa": "Punjabi", "ur": "Urdu",
+        "es": "Spanish", "fr": "French", "de": "German", "it": "Italian", "pt": "Portuguese",
+        "nl": "Dutch", "ru": "Russian", "ar": "Arabic", "zh": "Chinese", "ja": "Japanese",
+        "ko": "Korean", "tr": "Turkish", "pl": "Polish", "sv": "Swedish", "no": "Norwegian",
+        "da": "Danish", "fi": "Finnish", "el": "Greek", "he": "Hebrew", "th": "Thai",
+        "vi": "Vietnamese", "id": "Indonesian", "ms": "Malay",
+    ]
+
     /// The remote row's SECOND line: the facts that tell two results apart when the first line is a release
     /// name. ⚠ Every part is a field the server sent (`SubtitleRow`), and an absent one is left out rather
     /// than rendered blank.
+    ///
+    /// ⚠⚠ **THE POPULARITY NUMBER IS HERE BECAUSE HE ASKED FOR IT** (2026-09-21: *"adding the no of times a
+    /// subtitle is being downloaded … to better inform me the user"*), and so is **ours** — the two facts a
+    /// viewer chooses between are "how good is this release" and "have I used it before".
+    ///
+    /// ⚠⚠ **`SDH`, NOT `HI`.** The web panel made this call first and the reason is in its comment: **`HI` is
+    /// the language code for Hindi**, so a bare `HI` marker reads as a language on a Hindi subtitle — and a
+    /// Hindi row would have read `HI · srt · opensubtitles · HI`. Phase P3 shipped `HI` on both rows; this is
+    /// that defect, corrected.
     static func subtitleRowDetail(_ row: SubtitleRow) -> String {
         var parts: [String] = []
         let language = row.language.trimmingCharacters(in: .whitespaces).uppercased()
@@ -532,9 +638,11 @@ enum PlaybackRules {
         if !format.isEmpty { parts.append(format) }
         let provider = row.provider.trimmingCharacters(in: .whitespaces)
         if !provider.isEmpty { parts.append(provider) }
-        // ⚠ His file's own convention for "this one is a hearing-impaired track" — a real field, and the one
-        // fact a viewer needs BEFORE choosing, because the wrong one is visible for the rest of the film.
-        if row.hearingImpaired { parts.append("HI") }
+        let downloads = downloadsLabel(row.downloadCount)
+        if !downloads.isEmpty { parts.append(downloads) }
+        let used = usedTimesLabel(row.usedCount)
+        if !used.isEmpty { parts.append(used) }
+        if row.hearingImpaired { parts.append("SDH") }
         return parts.joined(separator: " · ")
     }
 

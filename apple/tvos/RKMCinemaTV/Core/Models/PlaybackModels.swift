@@ -182,6 +182,13 @@ struct SubtitleSearch: Decodable, Equatable {
     let remainingDownloads: Int?
     /// Why the remote half degraded — never a reason to stop local playback.
     let warning: String
+    /// ADDITIVE (auto-pick, 2026-09-21): the global switch + the audio-language exclusion, so the
+    /// pane draws its settings rows from the listing it already fetched.
+    let settings: SubtitleAutoPickSettings
+    /// The ONE language the auto-pick acts in — the first entry of `OPENSUBTITLES_LANGUAGES`.
+    let autoLanguage: String
+    /// Which row the rule WOULD take, why, and what (if anything) is blocking it — the badge's source.
+    let auto: SubtitleAutoFacts
 
     enum CodingKeys: String, CodingKey {
         case itemID = "item_id"
@@ -192,6 +199,141 @@ struct SubtitleSearch: Decodable, Equatable {
         case disabled
         case remainingDownloads = "remaining_downloads"
         case warning
+        case settings
+        case autoLanguage = "auto_language"
+        case auto
+    }
+}
+
+/// The auto-pick's stored settings — `SubtitleAutoPickSettings` in `client.ts`.
+///
+/// ⚠⚠ **ONE STATE, TWO CLIENTS.** This is the SERVER's setting, read and written by the tvOS drawer
+/// and the web panel both, so neither can hold a private copy that disagrees with the other.
+struct SubtitleAutoPickSettings: Decodable, Equatable {
+    /// The global switch. **ON by default** (his decision, 2026-09-21); a stored `false` is the off switch.
+    let autoPick: Bool
+    /// Audio languages never auto-picked — `["en"]` limits the rule to foreign-language titles.
+    let autoPickSkipAudio: [String]
+
+    enum CodingKeys: String, CodingKey {
+        case autoPick = "auto_pick"
+        case autoPickSkipAudio = "auto_pick_skip_audio"
+    }
+
+    /// The default the api applies before anything is stored — used only to draw a pane whose
+    /// settings call has not answered yet.
+    static let byDefault = SubtitleAutoPickSettings(autoPick: true, autoPickSkipAudio: [])
+}
+
+/// The auto-pick's own facts, carried on the search listing — `SubtitleAutoFacts` in `client.ts`.
+///
+/// `subtitleID` is the row the rule WOULD take (the top of the same ranking the pane draws, in
+/// `autoLanguage`, never SDH) — which is what the row badge renders. `blocked` is `""` when nothing is
+/// in the way, or one of the api's reason codes; `reason` is the sentence for it.
+struct SubtitleAutoFacts: Decodable, Equatable {
+    let subtitleID: String
+    /// `"used-before"` | `"most-downloaded"` | `""` — why that row is first.
+    let basis: String
+    let blocked: String
+    let reason: String
+
+    enum CodingKeys: String, CodingKey {
+        case subtitleID = "subtitle_id"
+        case basis, blocked, reason
+    }
+}
+
+/// `POST /api/jellyfin/subtitle-auto` — one shape for every outcome, applied or not.
+/// Shape source: `SubtitleAutoResult` in `client.ts`.
+///
+/// ⚠⚠ **A DECLINE IS A 200.** The viewer did not ask for this download — the app did — so a refusal is
+/// `decision` + `reason` (a code and its sentence from the api's own vocabulary), never an error the
+/// screen has to survive. `applied` is `nil` for every one of them.
+struct SubtitleAutoOutcome: Decodable, Equatable {
+    let ok: Bool
+    let itemID: String
+    /// `"apply"`, or a reason code (`quota_unknown`, `quota_exhausted`, `no_candidate`, …).
+    let decision: String
+    let reason: String
+    let detail: String
+    let applied: SubtitleAutoApplied?
+    let language: String
+    let settings: SubtitleAutoPickSettings
+    let remainingDownloads: Int?
+    let usedCount: Int
+    let subtitles: [PlaybackTrack]
+    let preferredSubtitle: PreferredSubtitle?
+
+    enum CodingKeys: String, CodingKey {
+        case ok
+        case itemID = "item_id"
+        case decision, reason, detail, applied, language, settings
+        case remainingDownloads = "remaining_downloads"
+        case usedCount = "used_count"
+        case subtitles
+        case preferredSubtitle = "preferred_subtitle"
+    }
+}
+
+/// What the api actually applied, when it did.
+struct SubtitleAutoApplied: Decodable, Equatable {
+    let subtitleID: String
+    let fileID: Int
+    let language: String
+    let displayTitle: String
+    /// The provider's own popularity number, as it decided the pick.
+    let downloadCount: Int
+    /// `"used-before"` | `"most-downloaded"` — which fact put this row first.
+    let basis: String
+
+    enum CodingKeys: String, CodingKey {
+        case subtitleID = "subtitle_id"
+        case fileID = "file_id"
+        case language
+        case displayTitle = "display_title"
+        case downloadCount = "download_count"
+        case basis
+    }
+}
+
+/// `GET`/`POST /api/jellyfin/subtitle-settings` — `SubtitleSettingsShape` in `client.ts`.
+struct SubtitleSettingsResponse: Decodable, Equatable {
+    let settings: SubtitleAutoPickSettings
+    /// The language the auto-pick acts in — computed from `.env`, never stored.
+    let language: String
+    let languages: [String]
+    /// `false` when no OpenSubtitles key is configured — the switch is meaningless then.
+    let enabled: Bool
+}
+
+/// The body of `POST /api/jellyfin/subtitle-settings`.
+///
+/// ⚠ **A PARTIAL update, and the optionals are the mechanism**: a field left out is left ALONE in the
+/// store, so the tvOS drawer and the web panel cannot reset each other's control.
+///
+/// ⚠⚠ **THE NAME IS THE SCHEMA'S** (`SubtitleSettingsRequest` in `docs/api/openapi.v1.json`, not
+/// `…Update`): R1 of `check-tvos-models.py` matches a request model to the contract BY NAME, and a model
+/// named for what it does rather than what it is would be an invented type the gate cannot vouch for.
+struct SubtitleSettingsRequest: Encodable {
+    let autoPick: Bool?
+    let autoPickSkipAudio: [String]?
+
+    enum CodingKeys: String, CodingKey {
+        case autoPick = "auto_pick"
+        case autoPickSkipAudio = "auto_pick_skip_audio"
+    }
+}
+
+/// The body of `POST /api/jellyfin/subtitle-auto`.
+///
+/// ⚠ **An item id and NOTHING ELSE**, and that is the rule being enforced rather than a simplification:
+/// the language, the ranking, the switch and the quota are the SERVER's, so a client cannot choose the
+/// subtitle — it can only ask whether the server's own rule wants to apply one.
+struct SubtitleAutoRequest: Encodable {
+    let itemID: String
+
+    enum CodingKeys: String, CodingKey {
+        case itemID = "item_id"
     }
 }
 

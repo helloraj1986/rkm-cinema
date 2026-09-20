@@ -171,3 +171,46 @@ decision was *no attempt*. The fix is one line in `.env` (`OPENSUBTITLES_USERNAM
 which also raises the allowance from ~5 to ~20/day). ⚠ The pane says exactly that, in the sentence for the
 code — a silent no-op is the outcome this design refuses.
 
+---
+
+## §8 — As built (Phase B — the tvOS client, 2026-09-21)
+
+| | |
+|---|---|
+| **Models** | `SubtitleSearch` +`settings`/`auto_language`/`auto` · NEW `SubtitleAutoPickSettings`, `SubtitleAutoFacts`, `SubtitleAutoOutcome`, `SubtitleAutoApplied`, `SubtitleSettingsResponse` · NEW request models `SubtitleSettingsRequest` (⚠ named for the SCHEMA — R1 matches by name) and `SubtitleAutoRequest`. ⚠ All five registered in `check-tvos-models.py`'s `NON_CONTRACT_MODELS` **with their `client.ts` shape sources**, so each exemption is a deliberate act the gate checks — the registry went 180 → **213 keys** |
+| **API** | `subtitleSettings()`, `updateSubtitleSettings(_:)`, `autoPickSubtitle(itemID:)` — ⚠ the last one sends **an item id and nothing else**, because the language, the ranking, the switch, the exclusions and the quota are the server's to decide |
+| **Store** | `subtitleSettings` / `autoLanguage` / `autoFacts` / `autoDecision` / `autoReason` / `autoAppliedID` (all published, all filled from the search listing) · `runAutoPick()` — ⚠ **once per screen** (`autoPickAsked`), the same two steps a HAND pick takes (`load()` re-reads the server's track list, then the index is looked up in THAT), and **no failure path worth a screen**: a refusal is a 200 whose sentence the pane prints · `setAutoPick(_:)` and `setAutoSkipAudio(_:included:)` — both writes, both **partial**, so the two clients cannot reset each other |
+| **Rules** (RUN here) | `downloadsLabel` (`312 downloads` / `42.4k` / `1.2M`, and **`""` for no count**) · `usedTimesLabel` (`used once` / `used 3×`, `""` for none) · `autoPickBadge` (`Most downloaded` / **`Your pick before`** when OUR usage is the reason) · `autoPickNotice(decision:reason:)` — the one sentence the pane may print, and **only for the answers he can act on** · `autoPickSettingLabel` · `autoPickSkipLabel` · `languageName` + a display table · and `subtitleRowDetail` rewritten: the count, our usage, and **`SDH` instead of `HI`** |
+| **Views** | `PlayerSettingsPanel` — the badge on the pick (server's answer, never a local guess), the notice line, the **two settings rows at the foot of the Subtitles pane** (each stating its CURRENT state, not its action) · `PlayerView.start()` — ⚠ `runAutoPick()` is called **after `load()`**, because a stored choice must beat the rule and asking first would spend a download on a title that already has one |
+| **Gates** | core **761 checks / 0 failures** (was 730) · members **36 pairs** · models **PASS — 213 keys, 25 endpoint literals** · imports **51 files** + selftest **12/12** · tokens PASS · typecheck PASS · mac-round stub **10/10** · md links **80 files**. ⚠ `--falsify` **not** run (his standing rule) but **7 new mutations, all 7 EXERCISED** — applied, compiled, RED on the named check |
+| **⚠ NOT verified** | **no SwiftUI view compiles here.** The hook's ORDER (`load()` then `runAutoPick()`), the badge's placement and the two settings rows are **hypotheses** with the plan's own falsifiers (A-F3, A-F5, P4-F1…F4 below) |
+
+### 8.1 · Two defects the HARNESS caught while this phase was being built
+
+⚠ **A fixture was lying about a LOCAL track.** `sub(local: true)` hardcoded `download_count: 12`, so the
+detail-line rule happily printed `EN · ass · local · 12 downloads` for the film's **own** subtitle — a fact the
+api never sends for a local row (`merge_subtitle_rows` writes 0). The fixture now derives the count from
+`local`, and the check pins that a local row carries no provider number at all.
+
+⚠⚠ **`%.1f` ROUNDED A COUNT DOWN.** `84_050` formatted as `84.0k` — a binary-double artifact that reads as
+truncation. The tenth is now rounded by hand before formatting, so `84.1k` is what the screen says and what the
+rule is pinned to.
+
+### 8.2 · His round, on Phase B (the tvOS side of the auto-pick)
+
+| # | Falsifier | What disproves it |
+|---|---|---|
+| **P4-F1** | **a searched result's second line ends with its download count** (`EN · srt · opensubtitles · 42.4k downloads`) and a **local** track's does not | a count on no row (the field does not arrive), or a count on the film's own subtitle |
+| **P4-F2** | **a release he has picked before reads `used 2×`** on that row, and a first-time one says nothing | the two numbers rendered as one sentence |
+| **P4-F3** | **an SDH row is marked `SDH`** (never `HI`) | `HI` on the row — and specifically `HI · srt · opensubtitles · HI` on a Hindi result |
+| **P4-F4** | **the row the rule picks carries the badge** — `Most downloaded`, or `Your pick before` when his own usage put it first | no badge; a badge on a row that is not the one the auto-pick takes; `Most downloaded` on a row our usage ranked first |
+| **P4-F5** | **a title he has never touched gets its subtitle by itself on first play** (a toast says which, with the badge), and the pane then shows that row `Active` | no subtitle; a subtitle applied and not remembered |
+| **P4-F6** | **the Subtitles pane's foot has the two controls**, and toggling each writes to the server (the web panel shows the same state) | a control that flips only on this screen |
+| **P4-F7** | **`Auto-subtitles · Off` stops the next untouched title**, and re-opening a title he has already chosen does nothing at all | the switch appears to work and the next first-play still downloads |
+| **P4-F8** | **the notice line appears only when the rule could not do its job** — e.g. `quota_unknown`'s sentence naming the sign-in — and **never** under a title he has already chosen or turned off | a line under every title he has ever touched |
+
+⚠ **What this round cannot prove:** nothing about real Apple TV hardware, and a `BUILD FAILED` proves nothing
+about any of P4-F1…P4-F8 — it is a build round. ⚠ **Phase C (the web player) is not built**: the counts, the
+badge and the two controls are tvOS-only until it is.
+
+

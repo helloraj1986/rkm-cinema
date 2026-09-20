@@ -150,6 +150,22 @@ final class PlaybackStore: ObservableObject {
     /// *"Search OpenSubtitles…"*, an ACTION. So this flag is set by `searchSubtitles()` and by nothing else,
     /// and `PlaybackRules.subtitleRemoteRows` is what reads it.
     @Published private(set) var hasSearchedSubtitles = false
+    /// ⚠⚠ **THE AUTO-PICK (his decision, 2026-09-21).** The settings are the SERVER's — read from the
+    /// search listing and written back through the api — so this screen and the web panel cannot disagree
+    /// about whether subtitles are being applied by themselves.
+    @Published private(set) var subtitleSettings: SubtitleAutoPickSettings = .byDefault
+    /// The language the auto-pick acts in (the api computes it from `.env`; never stored).
+    @Published private(set) var autoLanguage: String = ""
+    /// Which row the rule WOULD take, why, and what is blocking it — the badge's source.
+    @Published private(set) var autoFacts: SubtitleAutoFacts?
+    /// The outcome of the one attempt this screen makes: the api's reason code and its sentence.
+    @Published private(set) var autoDecision: String = ""
+    @Published private(set) var autoReason: String = ""
+    /// The identity the api actually applied, so the row can say so.
+    @Published private(set) var autoAppliedID: String = ""
+    /// ⚠ ONE ATTEMPT PER SCREEN. The hook is `PlayerView`'s `onAppear`; a redraw, a settings change or a
+    /// second `load()` must not spend another OpenSubtitles download.
+    private var autoPickAsked = false
     @Published private(set) var remainingDownloads: Int?
     @Published private(set) var isSearchingSubtitles: Bool = false
     private var cues: [PlaybackRules.Cue] = []
@@ -887,6 +903,11 @@ final class PlaybackStore: ObservableObject {
             subtitleSearchEnabled = search.enabled
             remainingDownloads = search.remainingDownloads
             subtitleWarning = search.warning
+            // ⚠ The auto-pick's own facts ride on this listing (the badge's source and the settings rows'),
+            // because a second call to draw them could answer differently from the list beside it.
+            subtitleSettings = search.settings
+            autoLanguage = search.autoLanguage
+            autoFacts = search.auto
         } catch let error as APIError {
             // ⚠ A failed SEARCH must not disturb playback: the local tracks are already on screen from
             // `playback-info`, and the picker degrades to them. (The api's own rule: only the search half
@@ -945,6 +966,102 @@ final class PlaybackStore: ObservableObject {
             showToast(error.errorDescription ?? "Could not get that subtitle")
         } catch {
             showToast("Could not get that subtitle")
+        }
+    }
+
+    /// **THE HOOK HIS DECISION NEEDS: the top-ranked subtitle applies itself, once, on first play.**
+    ///
+    /// His instruction, 2026-09-21: *"apply the most downloaded subtitle automatically by default.. user
+    /// can choose to off it later"*. ⚠⚠ **EVERY DECISION IS THE SERVER'S** — the language, the ranking, the
+    /// global switch, the per-title `Off`, the audio-language exclusion and the QUOTA — and it answers with
+    /// a **`200` carrying `decision` + `reason` whether it applied anything or not**. That is why this
+    /// function has no failure path worth a screen: a refusal is drawn in the Subtitles pane as the
+    /// server's own sentence, and the film is never interrupted by a download the viewer did not ask for.
+    ///
+    /// ⚠ It is asked ONCE per screen (`autoPickAsked`), because a second attempt is a second download.
+    func runAutoPick() async {
+        guard !autoPickAsked else { return }
+        autoPickAsked = true
+        do {
+            let outcome = try await client.autoPickSubtitle(itemID: itemID, correlation: correlation)
+            subtitleSettings = outcome.settings
+            autoDecision = outcome.decision
+            autoReason = outcome.reason
+            if let remaining = outcome.remainingDownloads { remainingDownloads = remaining }
+            guard let applied = outcome.applied else {
+                RKMLog.info("player: auto subtitles — \(outcome.decision): \(outcome.reason)",
+                            category: .app, correlation: correlation)
+                return
+            }
+            autoAppliedID = applied.subtitleID
+            autoLanguage = outcome.language
+            // ⚠ The same two steps a HAND pick takes, for the same reason: `load()` re-reads the server's
+            // track list (the attached stream has no index until it exists), and the index is looked up in
+            // THAT — never assumed. Then the text of the chosen track is what actually draws.
+            await load()
+            if let preferred = outcome.preferredSubtitle {
+                subtitleIndex = PlaybackRules.resolveActiveSubtitle(
+                    tracks: outcome.subtitles,
+                    preferredDisplayTitle: preferred.displayTitle,
+                    preferredLanguage: preferred.language) ?? preferred.index
+            }
+            await loadSubtitleTextIfChosen()
+            let badge = PlaybackRules.autoPickBadge(basis: applied.basis)
+            showToast(badge.isEmpty ? "Subtitle \(subtitleSelectionLabel)"
+                                    : "Subtitle \(subtitleSelectionLabel) · \(badge)")
+            RKMLog.info("player: auto subtitle applied \(applied.subtitleID) (\(applied.basis), "
+                        + "\(applied.downloadCount) downloads)", category: .app, correlation: correlation)
+        } catch let error as APIError {
+            // ⚠ Not a toast: the viewer did not ask for this, and the pane already has a way to say why.
+            RKMLog.info("player: auto subtitles unavailable — \(error.errorDescription ?? "")",
+                        category: .app, correlation: correlation)
+        } catch {
+            RKMLog.info("player: auto subtitles unavailable", category: .app, correlation: correlation)
+        }
+        // ⚠ And the listing is re-read, so the badge marks the row that was actually taken (the rule now
+        // answers `already_chosen`) rather than the one it would have taken.
+        await loadSubtitleChoices()
+    }
+
+    /// The global switch — ⚠ **a WRITE, and a PARTIAL one**: the api stores it, the web panel sees it, and
+    /// the field this screen does not send is left alone.
+    func setAutoPick(_ enabled: Bool) async {
+        do {
+            let response = try await client.updateSubtitleSettings(
+                SubtitleSettingsRequest(autoPick: enabled, autoPickSkipAudio: nil),
+                correlation: correlation)
+            subtitleSettings = response.settings
+            showToast(enabled ? "Auto-subtitles on" : "Auto-subtitles off")
+        } catch let error as APIError {
+            showToast(error.errorDescription ?? "Could not change auto-subtitles")
+        } catch {
+            showToast("Could not change auto-subtitles")
+        }
+    }
+
+    /// The per-AUDIO-language exclusion (his decision 2's third clause): a title whose audio is in this
+    /// language is never auto-picked. ⚠ It writes the WHOLE list because the list is what the setting is —
+    /// and it sends `autoPick: nil` so the switch itself is untouched.
+    func setAutoSkipAudio(_ code: String, included: Bool) async {
+        let trimmed = code.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !trimmed.isEmpty else { return }
+        var codes = subtitleSettings.autoPickSkipAudio
+        if included, !codes.contains(trimmed) {
+            codes.append(trimmed)
+        } else if !included {
+            codes.removeAll { $0 == trimmed }
+        }
+        do {
+            let response = try await client.updateSubtitleSettings(
+                SubtitleSettingsRequest(autoPick: nil, autoPickSkipAudio: codes),
+                correlation: correlation)
+            subtitleSettings = response.settings
+            showToast(included ? "Auto-subtitles will skip \(PlaybackRules.languageName(trimmed)) titles"
+                               : "Auto-subtitles applies to every language")
+        } catch let error as APIError {
+            showToast(error.errorDescription ?? "Could not change the exclusion")
+        } catch {
+            showToast("Could not change the exclusion")
         }
     }
 

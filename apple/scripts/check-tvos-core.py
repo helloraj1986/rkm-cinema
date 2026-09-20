@@ -924,6 +924,42 @@ MUTATIONS = [
      "        guard total > shown, shown >= 0 else { return nil }",
      "        guard total >= shown, shown >= 0 else { return nil }",
      "nothing is claimed when nothing was held back"),
+
+    # ⚠⚠ ---- THE AUTO-PICK (2026-09-21). Seven reversions: the four claims the ROW makes (its count, whose
+    # count it is, its SDH marker, and the badge's reason), the two the CONTROLS make (off is off, the
+    # exclusion names a language), and the one SENTENCE the pane is allowed to print. ⚠ They are all in this
+    # file rather than the api's because that is where the copy lives — the api answers CODES (pinned by
+    # pytest), and a code printed as the wrong sentence is a defect no backend test can see.
+    ("the count a row prints when it has none", "PlaybackRules.swift",
+     '        guard count > 0 else { return "" }\n        if count < 1_000 { return "\\(count) download"',
+     '        guard count >= 0 else { return "" }\n        if count < 1_000 { return "\\(count) download"',
+     "A ROW WITH NO COUNT SAYS NOTHING"),
+    ("the exact count under a thousand", "PlaybackRules.swift",
+     '        if count < 1_000 { return "\\(count) download" + (count == 1 ? "" : "s") }',
+     '        if count < 100 { return "\\(count) download" + (count == 1 ? "" : "s") }',
+     "a provider count under a thousand is printed exactly"),
+    ("our usage rendered as the provider's kind of number", "PlaybackRules.swift",
+     '        return count == 1 ? "used once" : "used \\(count)×"',
+     '        return count == 1 ? "used once" : "used \\(count) times"',
+     "OUR count is a DIFFERENT sentence from the provider"),
+    ("the badge naming the wrong reason", "PlaybackRules.swift",
+     '        case "used-before": return "Your pick before"',
+     '        case "used-before": return "Most downloaded"',
+     "AND WHEN HIS OWN USAGE PUT THE ROW FIRST IT SAYS SO"),
+    ("the hearing-impaired marker", "PlaybackRules.swift",
+     '        if row.hearingImpaired { parts.append("SDH") }',
+     '        if row.hearingImpaired { parts.append("HI") }',
+     "THE HEARING-IMPAIRED MARKER IS `SDH`, NEVER `HI`"),
+    ("the switch reported as on when it is off", "PlaybackRules.swift",
+     '        guard settings.autoPick else { return "Off" }',
+     '        guard settings.autoPick else { return "Most downloaded" }',
+     "off is `Off`"),
+    ("the sentence the pane is allowed to print", "PlaybackRules.swift",
+     '        let actionable: Set<String> = ["quota_unknown", "quota_exhausted", "no_candidate",\n'
+     '                                       "unavailable", "not_configured", "no_search_terms"]',
+     '        let actionable: Set<String> = ["quota_exhausted", "no_candidate",\n'
+     '                                       "unavailable", "not_configured", "no_search_terms"]',
+     "THE ONE HE WILL ACTUALLY MEET"),
 ]
 
 

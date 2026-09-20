@@ -190,6 +190,23 @@ struct PlayerSettingsPanel: View {
                                 }
                             }
                             Spacer(minLength: 0)
+                            // ⚠⚠ **THE BADGE — WHICH ROW THE RULE PICKED, AND WHY.** It sits on the row itself
+                            // rather than in a line above the list, because the question it answers is *"which of
+                            // these nineteen release names will the app take?"* and an answer that is not ON the
+                            // row is an answer the viewer has to hold in his head while he scrolls.
+                            if let badge = row.badge {
+                                Text(badge)
+                                    .font(.system(size: TVTokens.Player.subtitleDetailSize,
+                                                  weight: .semibold))
+                                    .foregroundStyle(RKMColour.primary)
+                                    .padding(.horizontal, TVTokens.Player.badgePaddingH)
+                                    .padding(.vertical, TVTokens.Player.badgePaddingV)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: TVTokens.Player.badgeRadius,
+                                                         style: .continuous)
+                                            .stroke(Color.white.opacity(0.28), lineWidth: 1)
+                                    )
+                            }
                             if row.isSelected {
                                 Image(systemName: "checkmark")
                                     .font(.system(size: TVTokens.Player.checkSize, weight: .bold))
@@ -216,6 +233,18 @@ struct PlayerSettingsPanel: View {
             Text(shown)
                 .font(.system(size: TVTokens.Player.paneDescSize))
                 .foregroundStyle(RKMColour.muted)
+        }
+        // ⚠⚠ **AND WHEN THE AUTO-PICK COULD NOT DO ITS JOB, IT SAYS THAT TOO** — but only for the answers a
+        // viewer can ACT on (`quota_unknown` names the OpenSubtitles sign-in that fixes it). ⚠ The states he
+        // created himself — a choice, a per-title `Off`, the switch — are visible in the rows above, and
+        // printing them would put a line under every title he has ever touched.
+        if store.category == .subtitles,
+           let notice = PlaybackRules.autoPickNotice(decision: store.autoDecision,
+                                                     reason: store.autoReason) {
+            Text(notice)
+                .font(.system(size: TVTokens.Player.paneDescSize))
+                .foregroundStyle(RKMColour.muted)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -299,14 +328,19 @@ struct PlayerSettingsPanel: View {
     /// One row in a list pane.
     private struct Row {
         let title: String
-        /// ⚠⚠ **THE ROW'S SECOND LINE — `EN · srt · opensubtitles`, or `nil` for a row that has only one fact.**
+        /// ⚠⚠ **THE ROW'S SECOND LINE — `EN · srt · opensubtitles · 42.4k downloads · used 2×`, or `nil`
+        /// for a row that has only one fact.**
         ///
         /// ⚠ It exists because a remote result's *title* is its release filename
         /// (`.The.Mummy.1999.1080p.BluRay.x264.AC3-ETRG`), which is nineteen near-identical strings to a viewer
         /// and tells him nothing he needs: **his own round's screenshot is exactly that list.** The language,
-        /// the format and the provider are the fields that separate one result from another, and all three are
-        /// on the wire. ⚠ Built by `PlaybackRules.subtitleRowDetail`, so the line cannot invent a fact.
+        /// the format, the provider, the download count and our own usage are the fields that separate one
+        /// result from another, and all five are on the wire. ⚠ Built by `PlaybackRules.subtitleRowDetail`,
+        /// so the line cannot invent a fact.
         var detail: String? = nil
+        /// **The trailing badge** — `Most downloaded` / `Your pick before` / `Auto-applied` on the row the
+        /// auto-pick is about, and `nil` on every other row (and on the settings rows below).
+        var badge: String? = nil
         let isSelected: Bool
         let isAction: Bool
         let apply: () -> Void
@@ -346,16 +380,56 @@ struct PlayerSettingsPanel: View {
             // film's own tracks) and grows only on the viewer's own action.
             rows += store.remoteSubtitleRows.map { row in
                 Row(title: row.displayTitle,
-                    // ⚠ The facts that separate two release names: language, format, provider, HI.
+                    // ⚠ The facts that separate two release names: language, format, provider,
+                    // downloads, our own usage, SDH.
                     detail: PlaybackRules.subtitleRowDetail(row),
+                    badge: autoBadge(for: row),
                     isSelected: false, isAction: false) {
                     Task { await store.chooseRemoteSubtitle(row) }
                 }
+            }
+            // ⚠⚠ **THE TWO CONTROLS HIS DECISION NAMED** — the global switch and the per-AUDIO-language
+            // exclusion — and they live HERE, at the foot of the pane the rule acts on, rather than in a
+            // settings screen three screens away from the moment he wants to turn it off.
+            // ⚠ Each row states its CURRENT state (not the action): a control that reports what it will do
+            // rather than what is true is the thing this repo keeps having to fix elsewhere.
+            // ⚠ Both are WRITES to the api — one state, two clients — so the web panel shows the same value.
+            rows.append(Row(
+                title: "Auto-subtitles · " + PlaybackRules.autoPickSettingLabel(
+                    settings: store.subtitleSettings, language: store.autoLanguage),
+                detail: "Applies the best result when a title has none of its own",
+                isSelected: false, isAction: false) {
+                Task { await store.setAutoPick(!store.subtitleSettings.autoPick) }
+            })
+            if !store.autoLanguage.isEmpty {
+                let excluded = store.subtitleSettings.autoPickSkipAudio.contains(store.autoLanguage)
+                rows.append(Row(
+                    title: "Skip audio language · " + PlaybackRules.autoPickSkipLabel(
+                        codes: store.subtitleSettings.autoPickSkipAudio),
+                    detail: excluded
+                        ? "Titles whose audio is \(PlaybackRules.languageName(store.autoLanguage)) are never auto-picked"
+                        : "Auto-subtitles applies to every language",
+                    isSelected: false, isAction: false) {
+                    Task { await store.setAutoSkipAudio(store.autoLanguage, included: !excluded) }
+                })
             }
             return rows
         case .picture, .speed, .quality:
             return []
         }
+    }
+
+    /// Which badge a row earns — ⚠ **and it is the SERVER's answer, never a local guess.**
+    ///
+    /// `store.autoFacts.subtitleID` is the row the api's own rule would take (it ranks, filters to the
+    /// auto language, and excludes SDH) — so this badge and the subtitle the api applies **cannot disagree**.
+    /// `Auto-applied` is the identity that actually landed, which the response names.
+    private func autoBadge(for row: SubtitleRow) -> String? {
+        guard !row.subtitleID.isEmpty else { return nil }
+        if row.subtitleID == store.autoAppliedID { return "Auto-applied" }
+        guard let facts = store.autoFacts, row.subtitleID == facts.subtitleID else { return nil }
+        let badge = PlaybackRules.autoPickBadge(basis: facts.basis)
+        return badge.isEmpty ? nil : badge
     }
 }
 

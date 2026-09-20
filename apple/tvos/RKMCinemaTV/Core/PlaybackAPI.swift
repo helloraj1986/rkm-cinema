@@ -73,6 +73,37 @@ extension APIClient {
                                    correlation: correlation)
     }
 
+    /// `GET`/`POST /api/jellyfin/subtitle-settings` — the auto-pick's switch + exclusion.
+    ///
+    /// ⚠⚠ **THE SERVER OWNS THIS STATE, AND THAT IS THE POINT.** It is read by the tvOS drawer and the
+    /// web panel both, so a client that kept its own copy would be a client that could disagree with the
+    /// other about whether subtitles are being applied by themselves.
+    func subtitleSettings(correlation: CorrelationID = .next()) async throws
+        -> SubtitleSettingsResponse {
+        try await get("api/jellyfin/subtitle-settings", correlation: correlation)
+    }
+
+    /// Change the auto-pick settings — ⚠ **a PARTIAL update**: a field left `nil` is left ALONE in the
+    /// store, so this screen cannot reset the web panel's control (or its own) by sending a whole block.
+    func updateSubtitleSettings(_ body: SubtitleSettingsRequest,
+                                correlation: CorrelationID = .next()) async throws
+        -> SubtitleSettingsResponse {
+        try await post("api/jellyfin/subtitle-settings", body: body, correlation: correlation)
+    }
+
+    /// `POST /api/jellyfin/subtitle-auto` — **ask the api to choose and apply the top-ranked subtitle**
+    /// for a title it has never been given one for (his decision, 2026-09-21).
+    ///
+    /// ⚠⚠ **EVERY DECISION IS THE SERVER'S** — the language, the ranking, the switch, the exclusions and
+    /// the quota — so this request cannot ask for a subtitle the server's own rule would refuse.
+    /// ⚠ It is asked ONCE per play, and a refusal is a `200` carrying `decision` + `reason`: a viewer who
+    /// never asked for the download must never see it fail as an error.
+    func autoPickSubtitle(itemID: String, correlation: CorrelationID = .next()) async throws
+        -> SubtitleAutoOutcome {
+        try await post("api/jellyfin/subtitle-auto",
+                       body: SubtitleAutoRequest(itemID: itemID), correlation: correlation)
+    }
+
     /// Fetch a subtitle stream as text (the api converts it to WebVTT).
     ///
     /// ⚠⚠ **DELIBERATELY NOT `AVPlayer`'s LEGIBLE MEDIA.** The api hands over an EXTERNAL WebVTT stream

@@ -1,4 +1,42 @@
-## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-21, session 4) · ⚙️🔧 **THE SUBTITLE AUTO-PICK, PHASE A (THE SERVER) IS BUILT — HE ASKED FOR THE POPULARITY NUMBER AND A DEFAULT THAT PICKS ITSELF**: *"add the no of times a subtitle is being downloaded from the opensubtitles api to better inform me the user and apply the most downloaded subtitle automatically by default.. user can choose to off it later"* ⇒ his four decisions (first play / global switch + per-title Off + per-language exclusion / the configured list's first entry / **never SDH**) are executed in **`docs/SUBTITLE_AUTOPICK_PLAN.md`**, and **Phase A — the api side — is committed**. ⚠⚠ **THIS NEEDS A DEPLOY TO BE VISIBLE**: `backend/` changed, so RKM-HP needs `setup-watchlist.ps1` (or `apply`) — **nothing under `frontend/` or `nginx/` changes the running stack from here**. ⚠ **Phases B (tvOS) and C (web) are NOT built yet** — the two clients still render neither the counts nor the badge, and neither calls `subtitle-auto`, so until B/C land the feature is server-capable and client-invisible.
+## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-21, session 4) · ⚙️🔧 **THE SUBTITLE AUTO-PICK: PHASES A (THE SERVER) AND B (tvOS) ARE BUILT — HE ASKED FOR THE POPULARITY NUMBER AND A DEFAULT THAT PICKS ITSELF**: *"add the no of times a subtitle is being downloaded from the opensubtitles api to better inform me the user and apply the most downloaded subtitle automatically by default.. user can choose to off it later"* ⇒ his four decisions (first play / global switch + per-title Off + per-language exclusion / the configured list's first entry / **never SDH**) are executed in **`docs/SUBTITLE_AUTOPICK_PLAN.md`**, and **A and B are committed**. ⚠⚠ **A NEEDS A DEPLOY TO BE VISIBLE**: `backend/` changed, so RKM-HP needs `setup-watchlist.ps1` (or `apply`) — **nothing under `frontend/` or `nginx/` changes the running stack from here**. ⚠ **Phase C (the web player's parity) is NOT built** — the counts, the badge and the two controls are tvOS-only until it is.
+
+### ⚙️ PHASE B — THE tvOS CLIENT: THE COUNT, THE BADGE, AND THE TWO CONTROLS (2026-09-21)
+
+⚠ **THE TWO FACTS A VIEWER CHOOSES BETWEEN ARE NOW ON THE ROW, AND THEY ARE DELIBERATELY DIFFERENT
+SENTENCES.** *The provider's popularity* (`EN · srt · opensubtitles · 42.4k downloads` — exact under a
+thousand, `k`/`M` above, and **NOTHING at all when the provider sent no count**, because `0 downloads` is a
+claim the app cannot make) and *ours* (`used 2×`). ⚠⚠ **`SDH`, NEVER `HI`** — Phase P3 shipped `HI`, and **`HI`
+is Hindi's language code**: a Hindi result read `HI · srt · opensubtitles · HI`. The web panel had already made
+this call; the tvOS line is now the same, and the harness pins it.
+
+⚠ **THE BADGE IS THE SERVER'S ANSWER, NEVER A LOCAL GUESS.** `store.autoFacts.subtitleID` is the row the api's
+own rule would take, so the badge and the applied subtitle **cannot disagree** — and it says `Most downloaded`
+only when popularity is what put the row first, `Your pick before` when **his own usage** did (our count
+outranks the provider's, so those are two different claims on the one line he uses to decide whether to trust
+the default).
+
+⚠⚠ **THE HOOK IS AFTER THE LOAD, ON PURPOSE.** `PlayerView.start()` runs `await store.load()` **then**
+`await store.runAutoPick()`, because `load()` is what reads a stored choice — asking first would spend an
+OpenSubtitles download on a title that already has one. It is asked **once per screen** (`autoPickAsked`), and
+a refusal is a 200 whose sentence the pane prints: the film is never blocked by a download the viewer did not
+ask for.
+
+⚠ **THE TWO CONTROLS SIT AT THE FOOT OF THE SUBTITLES PANE** — `Auto-subtitles · Most downloaded (en)` and
+`Skip audio language · None` — each stating its CURRENT state and each a **partial write to the api**, so the
+tvOS drawer and the web panel show one state and neither can reset the other's field. ⚠ And the pane prints
+the api's sentence for the auto-pick **only when he can act on it** (`quota_unknown` names the sign-in that
+fixes it); the states he created himself — a choice, a per-title `Off`, the switch — are visible in the rows
+above and get no line.
+
+⚠⚠ **TWO DEFECTS THE HARNESS CAUGHT MID-BUILD:** a FIXTURE that gave a **local** track `download_count: 12`
+(so the rule printed `EN · ass · local · 12 downloads` for the film's own subtitle — a fact the api never
+sends), and `%.1f` silently rounding **84 050 down to `84.0k`**. Both are fixed and both are pinned.
+
+| | |
+|---|---|
+| **Gates** | core **761 checks / 0 failures** (was 730) · members **36 pairs** · models **PASS — 213 keys, 25 endpoint literals** · imports **51 files** · selftest **12/12** · tokens PASS · typecheck PASS · mac-round stub **10/10** · md links **80 files** |
+| **Mutations** | **7 new — ALL 7 EXERCISED** (applied, compiled, RED on the named check): the count a row prints when it has none · the exact count under a thousand · our usage rendered as the provider's kind of number · the badge naming the wrong reason · the hearing-impaired marker · the switch reported as on when it is off · the sentence the pane is allowed to print. ⚠ **NOT `--falsify`** — his standing rule |
+| **⚠ NOT verified** | **no SwiftUI view compiles on this machine.** The hook's ORDER, the badge's placement and the two settings rows are **hypotheses**: his round's falsifiers are **P4-F1…P4-F8** in the plan's §8.2 |
 
 ### ⚙️ PHASE A — THE SERVER: THE AUTO-PICK, AND THE NUMBER THAT JUSTIFIES IT (2026-09-21)
 
@@ -37,7 +75,7 @@ will say so.
 | **Files** | `backend/services/subtitles.py` (the seven pure rules + `AUTO_PICK_REASONS`) · `backend/services/subtitle_store.py` (`load()` gains `settings`; `settings()`, `update_settings()` — partial) · `backend/api/models.py` (`SubtitleSettingsRequest`, `SubtitleAutoRequest`) · `backend/api/routes/jellyfin_subtitles.py` (`GET`/`POST …/subtitle-settings`, `POST …/subtitle-auto`, and `subtitle-search` +`settings`/`auto_language`/`auto`) · `backend/tests/test_subtitles_api.py` (+25) · `backend/tests/test_route_protection.py` (3 routes declared `SESSION`) · `docs/api/openapi.v1.json` (**regenerated from `app.openapi()` — additive: 3 routes, 2 schemas**) · `frontend/src/lib/api/types.ts` (regenerated) · `frontend/src/lib/api/client.ts` (4 shapes + 3 methods — **the shape source for Phase B**) |
 | **Gates** | backend **1366 passed** · `check-tvos-models.py` **PASS** (180 keys, 25 endpoint literals) · frontend `tsc --noEmit` **clean** · vitest **589 passed (23 files)** · `tools/check_md_links.py` **80 files** |
 | **⚠ NOT run** | `--falsify` on the backend (the repo's backend gates are pytest, which ran in full) — and **no live OpenSubtitles call was possible: the sandbox has no `OPENSUBTITLES_API_KEY`**, so *whether `download_count` actually arrives on every search row* is **assumed from the parser, not observed**. His round settles it (A-F1); if it does not arrive, the row simply shows no count (§3's rule) |
-| **⚠ NOT built** | **Phase B (tvOS: the counts, the badge, the settings rows, the `subtitle-auto` call on load) and Phase C (the web player's parity)** — the plan's §4 says what they are |
+| **⚠ NOT built** | **Phase C (the web player's parity)** — the plan's §4.2 says what it is |
 
 ## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-21, session 3 continued) · 🔧🔧 **PHASE P3 IS BUILT — HIS SECOND REPORT IN THE SAME ROUND: *"i click on subtitles all the other control vanishes.. i only see"*** [nineteen OpenSubtitles release names] ⇒ **TWO MECHANISMS, AND ONLY ONE WAS A LAYOUT BUG**: **(a)** the Subtitles pane was a bare `VStack` of every row it had, so **19 rows = 1875.2 pt of panel on a 1080 pt screen**, and a child taller than its container overflows **BOTH** ways — **≈398 pt of the panel was drawn ABOVE the top edge** (the "PLAYER SETTINGS" header, the pane title, `Off`, the film's own tracks, the `Search` action **and all five rail items**); **(b)** and the pane **had no business drawing those rows at all** — `subtitle-search` was fetched on LOAD and drawn immediately, in a pane whose prototype is *`Off` · the film's own tracks · an ACTION*. Full record: **`docs/TVOS_PLAYER_POLISH_PLAN.md` §8** · ⚠⚠ **NO deploy and nothing needs `apply`: no file under `backend/`, `frontend/` or `nginx/` changed** · ⚠ **not one SwiftUI view compiles here** — whether the pane *scrolls under the ring* is P3-F3, and only his round can answer it.
 

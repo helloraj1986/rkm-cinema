@@ -472,7 +472,15 @@ struct PlayerView: View {
     private func start() {
         RKMLog.info("player: opening \(store.title) — \(store.itemID.prefix(8))", category: .app)
         installTimeObserver()
-        Task { await store.load() }
+        Task {
+            await store.load()
+            // ⚠⚠ **THE AUTO-PICK'S HOOK, AND IT IS DELIBERATELY *AFTER* THE LOAD** (his decision,
+            // 2026-09-21): `load()` is what reads the stored choice, and a subtitle the viewer already
+            // chose must beat the rule — asking first would spend a download on a title that has one.
+            // ⚠ The SERVER decides everything here (the switch, the language, the exclusions, the quota),
+            // and a refusal is a 200 whose sentence the Subtitles pane draws. The film is never blocked.
+            await store.runAutoPick()
+        }
     }
 
     /// One observer for the whole screen: it keeps the store's clock honest and drives the chrome's auto-hide.

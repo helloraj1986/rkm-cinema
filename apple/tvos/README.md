@@ -91,6 +91,20 @@ results`), and each result grew the second line that makes two release names tel
 opensubtitles · HI`. ⚠ Full record: `docs/TVOS_PLAYER_POLISH_PLAN.md` §8. ⚠ **Gates: core 730 checks / 0
 failures · 8 new mutations, all 8 exercised. None of it verified on a screen.**
 
+⚠⚠ **AND THE SUBTITLE AUTO-PICK IS BUILT — THE SERVER (A) AND tvOS (B) (2026-09-21).** His instruction:
+*"add the no of times a subtitle is being downloaded from the opensubtitles api to better inform me the user
+and apply the most downloaded subtitle automatically by default.. user can choose to off it later"*. Plan and
+his four decisions: **`../../docs/SUBTITLE_AUTOPICK_PLAN.md`**. The api now ranks, chooses and applies the
+top-ranked subtitle **once per title, on first play** — behind a global switch, a per-title `Off`, a
+per-audio-language exclusion and a quota guard — and the tvOS pane shows **the provider's download count**,
+**your own `used 2×`**, and **a badge on the row the rule picks** (`Most downloaded`, or `Your pick before` when
+your own usage is what put it first). ⚠⚠ **`SDH`, never `HI`** — Phase P3 shipped `HI` and **`HI` is Hindi's
+language code**. The two controls are at the foot of the Subtitles pane and write to the api, so the web panel
+will show the same state (⚠ **Phase C, its parity, is not built**). ⚠ The subtitle routes live in
+`backend/api/routes/jellyfin_subtitles.py` and the store in `backend/services/subtitle_store.py` — ⚠⚠ **the
+auto-pick NEEDS A DEPLOY** (`backend/` changed), and with an API key and no OpenSubtitles login its answer is
+`quota_unknown` (no attempt, by his decision) until `OPENSUBTITLES_USERNAME`/`PASSWORD` are in `.env`.
+
 ⚠⚠ **AND ROUND 10 REVERTED W3's STRUCTURAL GUESS, ON ARITHMETIC.** His report after W3 shipped: *"still stuck on
 back to browse cannot come down using keyboard"* — so the bar-inside-the-scroller shape fails exactly as the
 bar-as-a-sibling shape did, and `KNOWN_ISSUES` **#15 is open again**. What W3 cost, measurably: the bar became a
@@ -137,10 +151,11 @@ at the cost of not installing on tvOS 17–25). See §1's build-settings table.
 one line: a member that did not exist, then a nested `struct Body`) — **⚠ but the player's own views have NOT
 yet: rounds 1, 2 and 5 on Phase C all failed to build, each on one line, and no round has type-checked
 `PlayerView.swift` at all.** ⚠ **What is true throughout: nothing on the Linux side can compile a view.** The
-pure rules are compiled and RUN there — **730 checks** (⚠ read that count live: it moves with every pinned rule,
-and this file said 467 until 2026-09-20, then 607, then 687, then 712) and **151/151 falsified mutations as recorded at
-`46443ff`, plus Phase P's eleven, Phase P2's six and Phase P3's eight, each exercised individually in its own
-phase** — and that is type-and-rule evidence only, never evidence that a screen works.
+pure rules are compiled and RUN there — **761 checks** (⚠ read that count live: it moves with every pinned rule,
+and this file said 467 until 2026-09-20, then 607, then 687, then 712, then 730) and **151/151 falsified
+mutations as recorded at `46443ff`, plus Phase P's eleven, Phase P2's six, Phase P3's eight and the subtitle
+auto-pick's seven, each exercised individually in its own phase** — and that is type-and-rule evidence only,
+never evidence that a screen works.
 
 The round, on the **MacBook Pro** — against `feat/tvos-player`, which is where the player is. ⚠ **Pick the HUD flag
 by the round's QUESTION**: a SCREEN round (does it look like his file, does the film play) runs **without**

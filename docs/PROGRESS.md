@@ -1,4 +1,4 @@
-## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-20) · ✅ **PHASE C — THE PLAYER — IS BUILT ON `feat/tvos-player`: C1 + C2 + C3, and C4 IS HIS ROUND** · ✅✅ **ROUNDS 6–7: THE PLAYER WORKS (F2 GREEN, C5 RETIRED) · `Back` FIXED + rule 9 · THE TITLE SCREEN'S PAGE IS WIDER THAN THE CANVAS — the cast row is fixed and the screen now MEASURES ITSELF; the round that reads the numbers is the next one (KNOWN_ISSUES #13)** · ⚠ **the branch carries ONE MERGE COMMIT from `dev` (`e0eadef`, bringing Phases U and V in) and the working tree IS on it** · ⚠ **`dev` does NOT have this branch** · **nothing needs `apply`**: no file under `backend/`, `frontend/` or `nginx/` changed
+## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-20) · ✅ **PHASE C — THE PLAYER — IS BUILT ON `feat/tvos-player`: C1 + C2 + C3, and C4 IS HIS ROUND** · ✅✅ **ROUNDS 6–8: THE PLAYER WORKS (F2 GREEN, C5 RETIRED) · `Back` FIXED + rule 9 · THE TITLE SCREEN'S CAST ROW WAS UNBOUNDED AND IS FIXED (his *"a little bit zoomed out"*) · AND `Play` IS NOW THE SCREEN'S DEFAULT FOCUS because his round-8 report is *"i can see the play button but cant navigate from top to the play button"* — KNOWN_ISSUES #13** · ⚠ **the branch carries ONE MERGE COMMIT from `dev` (`e0eadef`, bringing Phases U and V in) and the working tree IS on it** · ⚠ **`dev` does NOT have this branch** · **nothing needs `apply`**: no file under `backend/`, `frontend/` or `nginx/` changed
 
 ### 🐞 HIS ROUND 5 ON THE PLAYER FAILED — ONE STRAY BACKSLASH, AND A RULE FOR THE CLASS (2026-09-20, `6e71c67`)
 
@@ -57,6 +57,39 @@ been type-checked by anything. Two things in it are worth naming before he spend
 ⚠ And the round's question is still the phase's question: **F2 — does a cookie handed to the asset reach a
 `…/hls/…` SEGMENT — remains OPEN.** The line to look for is `player: AVPlayer's own request failed — status=`,
 and a `401` in it is the answer.
+
+### 🎯 ROUND 8 — THE CAST ROW WAS THE OVERFLOW, AND `Play` BECOMES THE DEFAULT FOCUS (2026-09-20)
+
+**His words:** *"THE SCREEN IS NOW A LITTLE BIT ZOOMED OUT"* — i.e. the page-overflow fix MOVED IT (round 7's
+byte-exact arithmetic: `10 × 150px + 9 × 28px = 2208 pt` of a `1758.7 pt` content width, now capped at **7**
+items for `1534.7 pt`) — and *"ALSO ON THE DETAILS PAGE..I CAN SE ETHE PLAY BUTTON BUT CANT NAVIGATE FROM TOP TO
+THE PLAY BUTTON"*, with *"I CANT SCROLL THROUGH KEYBOARD WHEN DEBUG OVERLAY IS ON"* — the HUD panel is a
+READOUT (deliberately `focusable(false)`, his own first tvOS round), so the lines logged when the screen appeared
+had already been pushed out of it. ⚠ **The measurement therefore moved to the FILE log**, which needs no panel:
+`find "$(xcrun simctl get_app_container booted com.helloraj1986.RKMCinemaTV data)" -name rkm-tvos.log`.
+
+**THE FOCUS DEFECT — the screen's only focusable control could not be reached.**
+
+`Play` is one button, ~758 pt into the ONE `ScrollView`, behind a 712.8 pt hero with nothing focusable in it;
+the focused `Back` tab is a SIBLING above that container. The fix is **his prototype's own decision, made
+load-bearing**: `.defaultFocus($playFocused, true)` (his file: *"default focus: play/pause"*, the same reading
+the player took) — so the screen OPENS on the primary verb instead of depending on a direction search into a
+container whose only focusable item is 758 pt down. The screen also gained `.onExitCommand { closeDetail() }`,
+because the MENU button is tvOS's canonical Back and the only other exit (the bar's tab) is inside a scroller:
+`ARCHITECTURE.md` ranks a dead end above any cosmetic rule.
+
+⚠⚠ **THE MECHANISM IS A HYPOTHESIS AND IS WRITTEN AS ONE.** No focus engine runs here, and this app's own record
+cuts both ways — the HOME's bar is a sibling of its scroll container and Down into the rails IS confirmed on his
+simulator, while the LIBRARY's sibling filter row could not be returned to (`BrowseView` moved it INTO the
+scroller, and he accepted that screen). What the change removes is the only difference it can. **The round's
+falsifier is his:** does the ring START on `Play`, does Select play the film, and can the arrows reach the top
+bar from there? ⚠ A `defaultFocus` that does not take would show as *"the ring is still on Back"* — a one-line
+answer, not a hunt.
+
+**Gates:** core **608 checks** (both cast checks run) · members **PASS — NINE rules** · typecheck **PASS** ·
+imports **PASS** · design tokens **PASS** · md-links **PASS**. ⚠ `--falsify` NOT run (his standing rule); the
+round-7 mutation entry remains **written but unproven** and says so. ⚠ Nothing under `backend/`, `frontend/` or
+`nginx/` changed ⇒ **no `apply`**.
 
 ### 🔍 ROUND 7 — HIS CONFIRMATION, AND THE TITLE SCREEN MEASURED RATHER THAN GUESSED (2026-09-20)
 

@@ -237,10 +237,18 @@ for `screen`, `bar`, `page`, `hero`, `below`, `synopsis`, `credits` and `cast`. 
 `.background`, so it cannot affect layout — the opposite of the reader round 3 DELETED from this screen's
 content. ⚠ **It exists to be deleted once the numbers are in.**
 
-**Falsifier for the next round (a LOG round):** with the HUD on, open ANY title and read the `detail-size:`
-lines. What settles it: (a) `screen` = 1920 × 1080 — if it is NOT, the canvas is the fault and the whole token
-table's `u` is wrong for this device; (b) any row whose width is > `1920 − 161` or whose `x` is NEGATIVE is the
-culprit, named by its own label; (c) visually, is the left edge cut and by roughly how much.
+**Round 8 (his): *"THE SCREEN IS NOW A LITTLE BIT ZOOMED OUT"* — the cast-row fix MOVED it, so that row WAS
+the overflow.** Two things remain open here, and they are separate:
+
+1. **The page still not being exactly the canvas.** The instrumentation is now trimmed to three labels —
+   `screen` (the canvas: if it is not 1920 × 1080, the whole token table's `u` is wrong for the device), `bar`
+   (whose leading edge measured ~233 pt left of its own tokens on his screenshot) and `cast-row` — and it is
+   read from the FILE log rather than the HUD panel, because the panel shows the newest lines only and he cannot
+   scroll it: `find "$(xcrun simctl get_app_container booted com.helloraj1986.RKMCinemaTV data)" -name rkm-tvos.log`
+2. **`Play` was unreachable from the top bar** (*"cant navigate from top to the play button"*) — FIXED in round 8
+   by making `Play` the screen's DEFAULT FOCUS (his prototype's own decision) plus an `.onExitCommand` way out.
+   ⚠ The mechanism is a HYPOTHESIS (see PROGRESS.md's round-8 record): the falsifier is whether the ring starts
+   on `Play`, whether Select plays the film, and whether the arrows reach the top bar from there.
 
 ---
 

@@ -59,11 +59,28 @@ struct DetailView: View {
     @ObservedObject var store: DetailStore
     let base: URL
 
+    /// ⚠⚠ **HIS PROTOTYPE'S OWN DECISION, AND HIS ROUND-8 REPORT IS WHY IT IS NOW LOAD-BEARING:** *"I CAN SE
+    /// ETHE PLAY BUTTON BUT CANT NAVIGATE FROM TOP TO THE PLAY BUTTON"*. `Play` is the one focusable control
+    /// this screen draws and it sits ~758 pt into the ONE `ScrollView` — below a 712.8 pt hero that has nothing
+    /// focusable in it — while the focused `Back` tab is a SIBLING ABOVE that scroll container. The screen
+    /// therefore opens with the ring ON `Play` (`title-view.html`: *"default focus: play/pause"*, the same
+    /// reading the player screen took), so the primary verb is reachable even if the direction search down
+    /// from the bar is not.
+    ///
+    /// ⚠⚠ **THE MECHANISM IS A HYPOTHESIS, STATED AS ONE.** No engine runs on this machine, and the app's own
+    /// record cuts both ways: the HOME's bar is a sibling of its scroll container and Down into the rails IS
+    /// confirmed on his simulator, while the LIBRARY's sibling filter row could not be returned to
+    /// (`BrowseView` moved it INTO the scroller, and he accepted that screen). What this change removes is the
+    /// only difference it can: the screen no longer depends on a search into a container whose sole focusable
+    /// item is 758 pt down. **The falsifier is his own:** does the ring start on `Play`, does Select play the
+    /// film, and can the arrows reach the top bar from there?
+    @FocusState private var playFocused: Bool
+
     var body: some View {
         measured("screen", VStack(alignment: .leading, spacing: 0) {
             measured("bar", topBar)
 
-            measured("page", Group {
+            Group {
                 switch store.state {
                 case .loading:
                     loading
@@ -75,8 +92,16 @@ struct DetailView: View {
                     failure(message)
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading))
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         })
+        // ⚠⚠ The screen's default focus — see `playFocused`. `.defaultFocus` is the PLATFORM's way to say
+        // this (the focus engine owns every move from there); nothing here computes a neighbour.
+        .defaultFocus($playFocused, true)
+        // ⚠⚠ **AND THE SCREEN GETS ITS OWN WAY OUT.** The tvOS MENU button is the canonical Back and this
+        // screen's only other exit is the top bar's tab — which is INSIDE a `ScrollView` and therefore can
+        // scroll out of reach. `ARCHITECTURE.md` ranks a dead end above any cosmetic rule, and the player
+        // screen already answers MENU this way.
+        .onExitCommand { app.closeDetail() }
         // ⚠ `.task`, not `.onAppear`: the load is async, and the store is built per item (`AppModel`), so
         // this runs once for the item that is open.
         .task {
@@ -167,9 +192,9 @@ struct DetailView: View {
         // is a plain `VStack`, exactly like the Home's rails.
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: 0) {
-                measured("hero", hero(snapshot, height: TVTokens.Title.heroHeight))
+                hero(snapshot, height: TVTokens.Title.heroHeight)
 
-                measured("below", below(snapshot))
+                below(snapshot)
 
                 if snapshot.showsEpisodes {
                     episodes(snapshot)
@@ -323,11 +348,11 @@ struct DetailView: View {
             // ⚠ His file's order after the actions is `.synopsis` → the cast shelf; the credits lines
             // (director / writers / studios) are Jellyfin information his file does not carry, so they sit
             // with the other text, between the synopsis and the shelf, where they cannot push a control.
-            measured("synopsis", synopsis(snapshot))
+            synopsis(snapshot)
 
-            measured("credits", credits(snapshot))
+            credits(snapshot)
 
-            measured("cast", cast(snapshot))
+            measured("cast-row", cast(snapshot))
         }
         .padding(.horizontal, LibraryRules.marginFromPrototype)
     }
@@ -390,6 +415,7 @@ struct DetailView: View {
             }
         }
         .buttonStyle(CtaButtonStyle(kind: .primary))
+        .focused($playFocused)
         .accessibilityLabel(snapshot.primaryVerb)
     }
 
@@ -450,6 +476,13 @@ struct DetailView: View {
     /// round measures it instead of guessing:
     ///
     ///     detail-size: <label> = <w>×<h> pt at x=<global minX> y=<global minY>
+    ///
+    /// ⚠⚠ **TRIMMED TO THE THREE THAT MATTER** after his round 8 (he could not scroll the HUD panel to read
+    /// them, and the panel shows the newest lines, so the ones logged at appearance were buried): the CANVAS
+    /// (`screen` — if this is not 1920 × 1080 the whole token table is wrong for the device), the BAR (`bar` —
+    /// whose leading edge measured ~233 pt left of its own tokens on his screenshot), and the ROW THIS SESSION
+    /// BOUNDED (`cast-row`). ⚠ Read them from the FILE log, which needs no panel and no scrolling:
+    /// `find "$(xcrun simctl get_app_container booted com.helloraj1986.RKMCinemaTV data)" -name rkm-tvos.log`
     ///
     /// ⚠ **IT CANNOT AFFECT LAYOUT, WHICH IS THE ONLY REASON IT IS ALLOWED ON THIS SCREEN.** A `GeometryReader`
     /// in a `.background` is handed the view's size AFTER the view has laid out — the opposite of the reader

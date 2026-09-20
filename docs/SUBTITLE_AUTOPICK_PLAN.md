@@ -125,7 +125,7 @@ held in either client.
 
 | Phase | Scope | Deploy needed? |
 |---|---|---|
-| **A — the server** | the store's `settings` block, the rules, `GET/POST /api/jellyfin/subtitle-settings`, `POST /api/jellyfin/subtitle-auto`, `subtitle-search` gaining `settings` + `auto`, the contract (`client.ts`), backend tests | **yes** — `backend/` changed, so RKM-HP needs `setup-watchlist.ps1` |
+| **A — the server** | the store's `settings` block, the rules, `GET/POST /api/jellyfin/subtitle-settings`, `POST /api/jellyfin/subtitle-auto`, `subtitle-search` gaining `settings` + `auto`, the contract (`client.ts`), backend tests | **yes** — `backend/` changed, so RKM-HP needs `.\rkm-cinema.ps1 apply` (⚠ **NOT** `setup-watchlist.ps1`: that file is gone, and `apply` is the one script — it re-renders `.env` → `.rkm.env` and rebuilds `api`) |
 | **B — tvOS** | the row's second line, the badge, the `SDH` fix, the two settings rows, the `subtitle-auto` call on load | no |
 | **C — the web player** | the same facts and rows in the player slice, vitest | no (volume mount), but the api must be deployed first or the calls 404 |
 

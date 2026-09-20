@@ -298,17 +298,29 @@ struct DetailView: View {
 
     private func below(_ snapshot: DetailSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            credits(snapshot)
+            // ⚠⚠ **THE ACTION ROW COMES FIRST — IT IS HIS FILE'S OWN ORDER, AND PUTTING IT LATER IS HIS
+            // ROUND-6 REPORT.** `title-view.html` runs `.hero` → `.actions` (`padding: 36px 64px 0`) →
+            // `.synopsis` → the shelves, and `.actions` holds the `Play` control his prototype OPENS ON (`the
+            // one-button path to watching`). Nothing competes with it: this screen is otherwise information
+            // only, and the top bar's `Back` is above it.
+            // ⚠ What it must NOT be is the THIRD thing down. The credits block below is not in his file at
+            // all, and with it first the primary verb landed at ≈1030 pt of a 1080 pt screen — at the bottom
+            // edge, on a screen whose only other focusable control is the top bar's `Back`. That is the shape
+            // he described as *"not able to navigate anywhere"*.
+            playAction(snapshot)
+                .padding(.top, TVTokens.Title.actionTopPad)
 
             if snapshot.isInProgress, snapshot.resumePercent > 0 {
                 resumeBar(percent: snapshot.resumePercent)
                     .padding(.top, TVTokens.Title.metaGapBottom)
             }
 
-            playAction(snapshot)
-                .padding(.top, TVTokens.Title.sectionTitleGap)
-
+            // ⚠ His file's order after the actions is `.synopsis` → the cast shelf; the credits lines
+            // (director / writers / studios) are Jellyfin information his file does not carry, so they sit
+            // with the other text, between the synopsis and the shelf, where they cannot push a control.
             synopsis(snapshot)
+
+            credits(snapshot)
 
             cast(snapshot)
         }

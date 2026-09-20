@@ -188,6 +188,43 @@ whichever scenario runs last, so the failing scenario MOVES.
 
 ---
 
+## 13 · The title screen — *"its completely zoomed in with not able to navigate anywhere"*
+
+His words, 2026-09-20 (round 6, with a simulator screenshot of the Aladdin title screen): *"ALSO WHEN I GO TO
+INDIVIDUAL TITLE DETAILS THIS IS WHAT I SEE ON THE SCREEN ITS COMPLETELY ZOOMED IN WITH NOT ABTO NAVIGATE
+ANYWHERE"*.
+
+**What was measured, and what was changed** — `DetailView.below()` drew his screen's bands in the wrong ORDER:
+`credits` (director / writers / studios — a block **his `title-view.html` does not contain at all**) came
+first, then the resume bar, and only then the action row. His file runs `.hero` → `.actions`
+(`padding: 36px 64px 0`) → `.synopsis` → the shelves, and `.actions` holds the `Play` control his prototype
+*opens on*. With the credits block above it the primary verb landed at **≈1030 pt of a 1080 pt screen** — at
+the bottom edge, on a screen whose only other focusable control is the top bar's `Back`.
+
+⚠ **FIXED (order) IN `feat/tvos-player`** — the action row is now the first thing under the hero, with a new
+transcribed token `TVTokens.Title.actionTopPad` (`px * 36`, his `.actions` padding — it had been borrowing
+`sectionTitleGap`'s 22px), and the credits sit with the other text below the synopsis.
+
+⚠⚠ **What is NOT measured, and is what a round must settle:** the screenshot's own geometry is at TOKEN scale
+(the tab text ≈20 pt, the title's cap height ≈120 px at 2×, the hero band ≈713 pt = `heroHeight`, the genre
+pills at the hero's bottom, the credits at 915–992 pt) — i.e. **nothing on that screen is scaled up**, and the
+api serves a real **16:9** backdrop for this item (`GET /api/jellyfin/backdrop?id=84ff00fd…` → HTTP 200,
+1600 × 900, verified over a live session on 2026-09-20), so it is not the poster fallback either. The two
+candidate readings of *"completely zoomed in"* are therefore: **(a)** the artwork genuinely dominates the screen
+— a 16:9 backdrop fill-cropped into a 2.69:1 band, and the hero's 712.8 pt begin BELOW the 162 pt top bar,
+where his `.topbar` is `position: fixed` and floats OVER the hero; or **(b)** the screen's scale really is
+wrong and the measurement missed it. ⚠ **His file says (a): the bar floats and the hero is full-bleed — the app
+draws the bar as a sibling above the hero on every screen, which the accepted Home shares.** Changing that is a
+VISUAL decision for him, not a silent fix.
+
+**Falsifier for the next round** (ui-verifiable, no tool): with a title open, (1) does a `Resume`/`Play`
+control now sit just under the artwork and take focus on ONE press of Down? (2) does the artwork read as a wide
+film still, or as a hugely magnified image? (3) can focus move at all — down from the bar into the row, and
+back up? ⚠ If the control is reachable but the picture still reads as zoomed, it is (a) and the fix is the
+hero/top-bar layout, not the artwork.
+
+---
+
 ## 9 · The detail screen's **Download** button gives no feedback — but the download starts
 
 > *"the download button when clicked … there is no feedback although download does start in the background

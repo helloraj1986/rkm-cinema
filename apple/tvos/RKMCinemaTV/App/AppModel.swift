@@ -98,6 +98,19 @@ final class AppModel: ObservableObject {
     /// Browse. It is a `Phase`, so it cannot drift out of sync with an enum case being added.
     private var detailReturnPhase: Phase = .browse
 
+    /// Where `Back` on the PLAYER returns to. ⚠⚠ **Recorded when the player OPENS, for the same reason
+    /// `detailReturnPhase` exists one guard up — and its absence is his round-6 report.**
+    ///
+    /// The player is reachable from TWO screens (the Home hero's `Play`, and the detail screen's action row),
+    /// and `closePlayer` used to assume `.detail` unconditionally. Played from HOME, `app.detail` is nil — so
+    /// the app entered a phase whose store did not exist, and `AppRootView`'s nil-store fallback (correct for
+    /// a blank-screen bug) rendered `ConnectingView`, whose copy is *"Checking the server…"* and whose only
+    /// control is **Change server**. His words: *"it doesnt go back to home screen but some kind message shows
+    /// change the server.. basicalY the app ui disappeared"* — a navigation outcome telling the viewer a story
+    /// about the SERVER. ⚠ `AppRootView`'s fallback is not the bug and must stay: what is wrong is ENTERING a
+    /// phase with nothing behind it, and that decision belongs here, in the model.
+    private var playerReturnPhase: Phase = .library
+
     /// What `Back` says — naming the screen is the difference between a viewer pressing it and a viewer
     /// wondering where it goes.
     var detailReturnLabel: String {
@@ -334,6 +347,11 @@ final class AppModel: ObservableObject {
                     facts: PlaybackStore.PlaybackFacts = .unknown) {
         guard let session, !itemID.isEmpty else { return }
         playback = PlaybackStore(client: session.api, itemID: itemID, detail: detail, facts: facts)
+        // ⚠ Recorded only on a FRESH open — the same rule `openDetail` states above, so a player opened again
+        // from the player cannot rewrite where the viewer originally came from.
+        if phase != .player {
+            playerReturnPhase = (phase == .detail) ? .detail : (phase == .browse ? .browse : .library)
+        }
         phase = .player
         RKMLog.info("player: opened \(itemID.prefix(8))", category: .app)
     }
@@ -343,7 +361,21 @@ final class AppModel: ObservableObject {
     /// cannot report anything, and the write is the whole point of the phase.
     func closePlayer() {
         playback = nil
-        phase = .detail
+        // ⚠⚠ **A PHASE IS ONLY ENTERED IF ITS STORE IS STILL THERE.** Every screen-scoped store is dropped
+        // when the app leaves its screen (`enterLibrary`, `closeDetail`), so "go back" is only safe to the
+        // screen that still HAS something behind it — otherwise the viewer gets `ConnectingView`, the app's
+        // SERVER screen, for a navigation outcome. Played from Home the return is `.library` (whose store is
+        // right there); played from a title it is `.detail`.
+        let target = playerReturnPhase
+        if target == .detail, detail != nil {
+            phase = .detail
+        } else if target == .browse, browse != nil {
+            phase = .browse
+        } else if home != nil {
+            phase = .library
+        } else {
+            phase = .profiles
+        }
     }
 
     func changeProfile() async {

@@ -4,11 +4,14 @@ A **native SwiftUI client**. tvOS has no WebKit at all (Apple removed it; the gu
 embedding one), so there is no shell shortcut here — the UI is written for the TV. Full reasoning:
 [`../../docs/APPLE_CLIENTS_PLAN.md`](../../docs/APPLE_CLIENTS_PLAN.md) §4.
 
-**Status: PHASE C (THE PLAYER) IS BUILT on `feat/tvos-player` (2026-09-20) — C1 + C2 + C3 — and HIS ROUND is the
-next thing that happens.** ⚠⚠ **Round 5 (`6e71c67`) was a BUILD round**: ONE stray backslash
-(`+ \(LogRedactor.redact(url: url))` on `PlayerView.swift:260`) that Swift read as a key path. It is fixed, and
-its class is now **rule 8** of the members gate — see the note below, and ⚠ **the next round is the first
-TYPE-CHECK the player's own views have ever had**, because a parse error abandons a file's semantic analysis. The branch carries one merge from `dev` (Phases U and V), so it is the newest tree
+**Status: PHASE C (THE PLAYER) IS BUILT on `feat/tvos-player` (2026-09-20) — C1 + C2 + C3 — AND IT PLAYS.**
+His round 6 built and the film **resumed at its saved position**, which is **F2 answered GREEN by behaviour**
+(an unauthenticated HLS route `401`s and draws a black screen, so a playing film IS the segment test) — so
+**C5, the backend auth carrier, is NOT needed** and the phase needed no server change at all. ⚠ The same round
+found two navigation/layout defects, both fixed: the player's `Back` (which told him *"change the server"* —
+now recorded and gated as **rule 9**) and the title screen's band order (`KNOWN_ISSUES` **#13**). ⚠ Round 5
+(`6e71c67`) was a BUILD round — ONE stray backslash that Swift read as a key path — and its class is now
+**rule 8** of the members gate. The branch carries one merge from `dev` (Phases U and V), so it is the newest tree
 here. ⚠ **`dev` does not have it yet.** Phases U (U1–U7b) and V are MERGED to `dev` (`b78c210`) with both of the
 defects their round found closed and confirmed on his UI. ⚠ **V redesigned the Library and Title screens to his second prototype**
 (`tvos_ux/2. LibraryViewandItemDetailsView/`): a fixed 6-column grid of 2:3 posters whose caption appears only

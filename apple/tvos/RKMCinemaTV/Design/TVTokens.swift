@@ -406,6 +406,13 @@ enum TVTokens {
         static let pillGap = px * 10
         static let pillRadius = px * 999
 
+        // ---- the action row (`.actions { padding: 36px 64px 0 }`)
+        /// ⚠ **THE ACTION ROW'S OWN TOP PADDING, transcribed rather than approximated by `sectionTitleGap`
+        /// (22px).** His title screen opens on `Play`, and `DetailView.below()` draws this row FIRST for that
+        /// reason — with the wrong pad the primary verb of the whole screen sits 14px low, which is how a
+        /// control ends up within a button's height of the bottom edge.
+        static let actionTopPad = px * 36
+
         // ---- the synopsis (`.synopsis`)
         static let synopsisTopPad = px * 40
         static let synopsisSize = px * 19

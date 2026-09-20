@@ -1,4 +1,4 @@
-## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-20) · ✅ **PHASE C — THE PLAYER — IS BUILT ON `feat/tvos-player`: C1 + C2 + C3, and C4 IS HIS ROUND** · ⚠⚠ **ROUND 5 WAS A BUILD ROUND — FIXED IN `6e71c67` (ONE STRAY BACKSLASH), AND THE NEXT ROUND IS THE FIRST TYPE-CHECK ROUND-4's CODE HAS EVER HAD** · ⚠ **the branch carries ONE MERGE COMMIT from `dev` (`e0eadef`, bringing Phases U and V in) and the working tree IS on it** · ⚠ **`dev` does NOT have this branch** · **nothing needs `apply`**: no file under `backend/`, `frontend/` or `nginx/` changed
+## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-20) · ✅ **PHASE C — THE PLAYER — IS BUILT ON `feat/tvos-player`: C1 + C2 + C3, and C4 IS HIS ROUND** · ✅✅ **ROUND 6 BUILT AND THE FILM RESUMED — WHICH IS F2's ANSWER — and it found TWO navigation/layout defects: the player's `Back` (FIXED + rule 9) and the title screen's order (FIXED); see the round-6 record immediately below** · ⚠ **the branch carries ONE MERGE COMMIT from `dev` (`e0eadef`, bringing Phases U and V in) and the working tree IS on it** · ⚠ **`dev` does NOT have this branch** · **nothing needs `apply`**: no file under `backend/`, `frontend/` or `nginx/` changed
 
 ### 🐞 HIS ROUND 5 ON THE PLAYER FAILED — ONE STRAY BACKSLASH, AND A RULE FOR THE CLASS (2026-09-20, `6e71c67`)
 
@@ -58,6 +58,65 @@ been type-checked by anything. Two things in it are worth naming before he spend
 `…/hls/…` SEGMENT — remains OPEN.** The line to look for is `player: AVPlayer's own request failed — status=`,
 and a `401` in it is the answer.
 
+### ✅ HIS ROUND 6 ON THE PLAYER BUILT AND PLAYED — F2 IS GREEN, AND TWO NAVIGATION DEFECTS CAME WITH IT (2026-09-20)
+
+**His words:** *"IT RESUME BUT WHEN I GO BACK CLIKING ON THE BACK BUTTON ON THE PLAYER IT DOENST GO N=BACK TO
+HOME SCREEN BUT SOME KIND MESSAGE CHOWS CHANGE THE SERVER..BASICALYY THE APP UI DISAPPEARED"* — plus the title
+screen report now filed as **KNOWN_ISSUES #13**.
+
+⚠⚠ **THE PHASE'S HEADLINE RESULT: THE PLAYER WORKS.** Round 5's stray backslash was the only thing between the
+app and its first successful build of `PlayerView.swift`, and the film now **resumes at the saved position** —
+which is three separate things proved at once: the credential C1 built reaches `AVPlayer`'s own sub-requests,
+the deferred seek (applied only when `status == .readyToPlay`) survives the load, and `AVPlayer` plays the HLS
+route the api hands it.
+
+**F2 — *does a cookie handed to the asset reach a `…/hls/…` SEGMENT* — is GREEN, and by BEHAVIOUR.** An
+unauthenticated HLS load does not fail cleanly: the route answers `401` and the player draws a black screen with
+nothing in any app log (this phase's own statement of F2). A film that plays is therefore the segment test
+itself. ⚠ **The ceiling, stated so the next session does not over-claim:** the confirming line was NOT captured
+(`player: AVPlayer's own request failed — status=` prints only on FAILURE, so its absence in a working session
+requires a log round to observe), and the answer rests on his observation of the screen. That is the strongest
+evidence this repo can obtain for a platform question it cannot measure in the sandbox — and it is enough to
+**retire C5** (the backend auth carrier), whose only justification was a RED F2.
+
+**Defect 1 — the player's `Back` (FIXED, `AppModel`).** `closePlayer()` set `phase = .detail` unconditionally,
+but the player is reachable from TWO screens (the Home hero's `Play`, and the title screen's action row), and
+when it is opened from HOME `AppModel.detail` is nil. So the app entered a phase with nothing behind it and
+`AppRootView`'s nil-store fallback — a guard that is RIGHT for a blank-screen bug — rendered `ConnectingView`,
+whose copy is *"Checking the server…"* and whose only control is **Change server**. **A navigation outcome
+presented as a SERVER problem.** The return phase is now RECORDED when the player opens (mirroring
+`detailReturnPhase`, and only on a fresh open), and `closePlayer` only enters a phase whose store is still
+there. ⚠ `AppRootView`'s fallback is not the bug and stays — the wrong decision was entering the phase.
+
+⚠ **AND IT GOT A GATE (rule 9), because `phase` is `private(set)` and one file can write it.** `phase` is the
+app's state machine and no gate here could see it: the compiler cannot (a nil store is legal Swift), and the
+five rules before it are about NAMES. **Rule 9** — *a store-backed phase is only entered where its store is
+named* — reads `App/AppModel.swift`'s functions and requires `.library`/`.browse`/`.detail`/`.player` to be
+entered in a function that mentions `home`/`browse`/`detail`/`playback` or a `…ReturnPhase`. ⚠ **Its first
+draft was a TAUTOLOGY and its own selftest caught it:** it asked `store in body`, and `phase = .detail`
+*contains* the word "detail" — the fix is the store as an IDENTIFIER (`(?<!\.)\bdetail\b`), so `guard detail !=
+nil` counts and `.detail` does not. **Proof, not a claim: rule 9 goes RED on the real pre-fix file**
+(`git show HEAD:…AppModel.swift` → `AppModel.swift:346: func closePlayer() enters .detail without naming its
+store`) and is silent on the fixed tree.
+
+**Defect 2 — the title screen's order (FIXED, `DetailView` + one transcribed token).** See KNOWN_ISSUES #13:
+the action row is now the first thing under the hero (his file's own order), with `.actions`' own
+`36px` padding as a token, and the credits — a block his file does not contain — moved below the synopsis where
+they cannot push a control off the screen. ⚠ **The "zoomed in" half of his report is NOT measured** (the
+screenshot's geometry is at token scale and the api serves a real 16:9 backdrop — the arithmetic and the live
+probe are in #13), so the round's falsifier is written there rather than claimed here.
+
+**Gates on the fixed tree:** `check-tvos-members.py` **PASS — 35 view/type pairs, NINE rules** (rule 9 proved
+red on the pre-fix file, silent on the fixed one) · core **607 checks** · `check-apple-typecheck.sh` **PASS**
+(AppModel, TVTokens and the stores all typecheck) · imports **PASS — 49 files** · design tokens **PASS — R1/R2/R3**
+· `check_md_links.py` **PASS — 71 files, 70 links**. ⚠ `--falsify` was **NOT** run (his standing rule), and no
+new mutation was added for rule 9 — its evidence is the pre-fix red plus the selftest.
+
+⚠ **Both fixes touch `AppModel`/`DetailView`/`TVTokens` only — nothing under `backend/`, `frontend/` or
+`nginx/`, so the handover needs no `apply`.** ⚠ And the title screen's remaining divergence (his `.topbar` is
+`position: fixed` over a full-bleed hero; the app draws the bar as a sibling above it on every screen) is a
+VISUAL decision left to him, named in #13 with the arithmetic.
+
 ### ▶ PHASE C, AS IT ACTUALLY STANDS (2026-09-20) — read this before anything below
 
 `docs/TVOS_PLAYER_PLAN.md` is the plan, and **§7–§9 are new this session**: §7 measures his THIRD design input
@@ -69,7 +128,7 @@ the phase state. ⚠ That plan file exists on THIS branch only — it is not on 
 | **C1** | **BUILT** (`6919626`) — `Core/PlaybackAuth.swift`, the cookie carrier. Merged with `dev` here. |
 | **C2** | **BUILT** (`e5a1d89`) — `Core/PlaybackRules.swift` (**the decisions**), `Core/PlaybackURLs.swift` (**the URLs `AVPlayer` fetches itself**), `Core/Models/PlaybackModels.swift`, `Core/PlaybackAPI.swift`, `Core/PlaybackStore.swift`. **All four pure/wire files are COMPILED AND RUN by the sandbox gate**; the write is re-read rather than trusted. |
 | **C3** | **BUILT** (`f12374d`) — `Player/{PlayerView,PlayerChrome,PlayerSettingsPanel}.swift`, the `TVTokens.Player` table (1.2 pt per CSS px), `AppModel`'s `.player` phase, and the detail screen's Play / Resume control, which B4 refused to draw until the player existed. ⚠⚠ **SwiftUI: compiled ONLY on his Mac.** |
-| **C4** | **IN FLIGHT — HIS ROUND, and it has already found four real defects** (three build rounds and the never-wired credential — see the round records below). ⚠⚠ **F2 — *do the SEGMENTS authenticate* — is STILL OPEN**, and it is the phase's real question: round 4 proved the app had been sending NO credential at all, which is not the same test. |
+| **C4** | ✅ **THE ROUND HAS RUN AND IT PLAYS: his round-6 report is *"IT RESUME"* — the film starts at the saved position.** ⚠⚠ **F2 IS THEREFORE ANSWERED GREEN BY BEHAVIOUR** (see the round-6 record: an unauthenticated HLS route answers `401` and draws a black screen with no log line, so a playing film IS the segment test) — **and C5, whose whole purpose was a red F2, is NOT needed.** ⚠ The round also found two navigation/layout defects, both fixed in this session. |
 | **C5** | **NOT BUILT, and deliberately so** — the backend carrier is built **only if F2 comes back red** (§2's option (b)). |
 
 ### ✅ PHASE C RECORD — the player is built, and the round is his (2026-09-20, `feat/tvos-player`)

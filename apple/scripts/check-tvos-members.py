@@ -740,6 +740,67 @@ def check_leaked_escapes(root: pathlib.Path) -> list[str]:
     return problems
 
 
+
+#: ⚠⚠ RULE 9 — A STORE-BACKED PHASE IS ONLY ENTERED WHERE ITS STORE IS NAMED. Bought by his round-6 report,
+#: and it is the FIRST rule here that is about the app's STATE MACHINE rather than a view's names:
+#:
+#:     "it doesnt go back to home screen but some kind message shows change the server..
+#:      basicaly the app ui disappeared"
+#:
+#: `closePlayer()` set `phase = .detail` unconditionally. The player is reachable from TWO screens (the Home
+#: hero's Play, and the detail screen's action row) — and when it is opened from HOME, `AppModel.detail` is
+#: nil. So the app entered a phase with nothing behind it, and `AppRootView`'s nil-store fallback (a guard that
+#: is RIGHT for a blank-screen bug) rendered `ConnectingView` — whose copy is *"Checking the server…"* and
+#: whose only control is **Change server**. **A navigation outcome presented as a SERVER problem**, which is
+#: this repo's oldest rule wearing a new hat: a silent fallback is worse than an error.
+#:
+#: ⚠ WHY A TEXT RULE CAN SEE THIS AND THE COMPILER CANNOT: `phase` is `private(set)`, so the ONLY file that can
+#: write it is `App/AppModel.swift` — one file, four store-backed cases, one mapping. A function that enters
+#: `.library`/`.browse`/`.detail`/`.player` must name the store that backs it (`home`/`browse`/`detail`/
+#: `playback`) or a recorded `…ReturnPhase`, because that is exactly what the two correct helpers do
+#: (`showBrowse` guards `browse != nil`; `closePlayer` may only reach a phase whose store is still there).
+#: The four AUTH phases are deliberately NOT covered: for them `ConnectingView` is the honest screen.
+PHASE_STORES = {"library": "home", "browse": "browse", "detail": "detail", "player": "playback"}
+FUNC_HEAD = re.compile(r"^    (?:@\w+(?:\([^)]*\))?\s+)*(?:private\s+|public\s+|internal\s+|final\s+)*"
+                       r"func\s+([A-Za-z_][A-Za-z0-9_]*)")
+
+
+def check_phase_stores(root: pathlib.Path) -> list[str]:
+    """⚠ Every `phase = .<store-backed screen>` in `AppModel` sits in a function that names that store."""
+    path = root / "App" / "AppModel.swift"
+    if not path.exists():
+        return [f"{path.relative_to(root)}: missing — rule 9 has nothing to read"]
+    lines = path.read_text(encoding="utf-8").splitlines()
+    starts = [index for index, line in enumerate(lines) if FUNC_HEAD.match(line)]
+    starts.append(len(lines))
+    problems: list[str] = []
+    for first, last in zip(starts, starts[1:]):
+        body = lines[first:last]
+        name = FUNC_HEAD.match(lines[first]).group(1)
+        joined = "\n".join(body)
+        for offset, line in enumerate(body):
+            if line.lstrip().startswith("//"):
+                continue
+            found = re.search(r"\bphase\s*=\s*\.([A-Za-z_][A-Za-z0-9_]*)", line)
+            if not found:
+                continue
+            store = PHASE_STORES.get(found.group(1))
+            if store is None:
+                continue
+            # ⚠⚠ **THE STORE NAME AS AN IDENTIFIER, NEVER AS A CASE NAME** — the first draft asked
+            # `store in joined` and its own selftest failed: `phase = .detail` CONTAINS the word "detail", so
+            # the rule proved nothing. `(?<!\.)` is the whole difference: `guard detail != nil` (preceded by a
+            # space) is the store being NAMED, `.detail` (preceded by a dot) is the phase being entered.
+            if re.search(rf"(?<!\.)\b{store}\b", joined) or "ReturnPhase" in joined:
+                continue
+            problems.append(
+                f"{path.relative_to(root)}:{first + offset + 1}: `func {name}()` enters `.{found.group(1)}` "
+                f"without naming its store (`{store}`) — a phase with no store behind it renders "
+                f"`ConnectingView`, i.e. the app's SERVER screen for a navigation outcome"
+            )
+    return problems
+
+
 #: ⚠⚠ RULE 4 — `Body` IS NOT A SAFE NAME TO NEST, and this is the SECOND round U6 spent on the same blind
 #: spot. Every `Style` protocol (and `View`) declares an associatedtype requirement called `Body`, so a helper
 #: view nested inside a conformer and named `Body` collides with it. Measured on his Mac, 2026-09-20:
@@ -962,6 +1023,24 @@ def selftest() -> int:
                             "another string) — it would cry wolf")
         escape_probe.unlink()
 
+        # ⚠⚠ Rule 9 — the nil-store phase, which is his round-6 report. Both halves pinned: an unbacked
+        # `.detail` fires, and the SAME function with its store named stays silent.
+        app_model = scratch / "App" / "AppModel.swift"
+        original = app_model.read_text(encoding="utf-8")
+        app_model.write_text(original
+                             + "\n    func scratchBad9() {\n        phase = .detail\n    }\n",
+                             encoding="utf-8")
+        if not any("without naming its store" in problem for problem in check_phase_stores(scratch)):
+            failures.append("rule 9 did not fire on a function that enters `.detail` with no store named — "
+                            "the shape that put Change server on his screen")
+        app_model.write_text(original
+                             + "\n    func scratchGood9() {\n        guard detail != nil else { return }\n"
+                               "        phase = .detail\n    }\n",
+                             encoding="utf-8")
+        if check_phase_stores(scratch):
+            failures.append("rule 9 fires once the store IS named — it would cry wolf")
+        app_model.write_text(original, encoding="utf-8")
+
         if check(TVOS):
             failures.append("it fires on the REAL tree, so its red above proved nothing")
         if check_calls(TVOS):
@@ -978,6 +1057,8 @@ def selftest() -> int:
             failures.append("rule 7 fires on the REAL tree, so its red above proved nothing")
         if check_leaked_escapes(TVOS):
             failures.append("rule 8 fires on the REAL tree, so its red above proved nothing")
+        if check_phase_stores(TVOS):
+            failures.append("rule 9 fires on the REAL tree, so its red above proved nothing")
 
         # Rule 5: the defect he found — chrome on the Button rather than in the style.
         profile = scratch / "Auth" / "ProfilesView.swift"
@@ -1048,7 +1129,7 @@ def selftest() -> int:
         for line in failures:
             print(f"  · {line}")
         return 1
-    print("selftest: fires on all EIGHT defects (member, call label, static name, nested `Body`, chrome on a styled Button, a passed `FocusState` binding used as a wrapper, an unawaited `async` store call, an escape leaked out of its string literal) — and each rule is also proved SILENT on the correct form beside it, which is what stops it crying wolf.")
+    print("selftest: fires on all NINE defects (member, call label, static name, nested `Body`, chrome on a styled Button, a passed `FocusState` binding used as a wrapper, an unawaited `async` store call, an escape leaked out of its string literal, a store-backed phase entered without its store) — and each rule is also proved SILENT on the correct form beside it, which is what stops it crying wolf.")
     return 0
 
 
@@ -1068,7 +1149,7 @@ def main(argv: list[str]) -> int:
         problems = (check(TVOS) + check_calls(TVOS) + check_namespaces(TVOS)
                     + check_nested_body(TVOS) + check_style_ownership(TVOS)
                     + check_focus_binding(TVOS) + check_async_calls(TVOS)
-                    + check_leaked_escapes(TVOS))
+                    + check_leaked_escapes(TVOS) + check_phase_stores(TVOS))
     except (FileNotFoundError, ValueError) as error:
         print(f"cannot run: {error}", file=sys.stderr)
         return 2
@@ -1081,14 +1162,16 @@ def main(argv: list[str]) -> int:
     print(f"PASS — {len(USES)} view/type pair(s) checked: every member a view names exists on its model, "
           f"and every call to one of the {len(VIEW_TYPES)} app view/type names uses a label it takes.")
     print("⚠ Not covered: TYPES (a value of the wrong type still needs the compiler), argument ORDER, and")
-    print("  behaviour. EIGHT rules, every one bought by a defect that reached his Mac:")
+    print("  behaviour. NINE rules, every one bought by a defect that reached his Mac:")
     print("  1 a member a view names that its model lacks;  2 a call using a label its type does not take;")
     print("  3 a static-namespace name (HomeRules.*, TVTokens.* …) declared nowhere;  4 a nested `struct Body`")
     print("  (a `Style` protocol owns that name);  5 chrome applied to a `Button` whose style already "
           "draws it;  6 `$name` / `name = …` where `name` is a PASSED `FocusState` binding (no "
           "wrapper to project, and a binding is a `let`);  7 an `async` store call from a line that "
           "neither awaits it nor runs in a `Task`;  8 an escape that leaked out of its string literal "
-          "(an interpolation where no string is open, or a DOUBLED one, which logs its own source).")
+          "(an interpolation where no string is open, or a DOUBLED one, which logs its own source);  9 a "
+          "store-backed `phase` entered where the store that backs it is not named (the nil-store fallback "
+          "renders `ConnectingView`, the app's SERVER screen).")
     return 0
 
 

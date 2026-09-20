@@ -430,6 +430,180 @@ enum TVTokens {
         static let bottomSpacer = px * 100
     }
 
+    // MARK: - ⚠⚠ SET 3'S UNIT (Phase C) — his PLAYER prototype has no `--u` either
+
+    /// ⚠⚠ **THE PLAYER IS DRAWN IN CSS px AGAINST A 1600 × 900 FRAME, SO THE FRAME IS THE ANCHOR.**
+    ///
+    /// `tvos_ux/3. MediaPlayerUx/rkm-cinema-tvos-player.html` mixes `%`, `rem` and absolute pixels — it is a
+    /// browser mock, so it has a viewport. What it does fix is its own canvas:
+    /// `.tv { width:100%; height:100%; max-width:1600px; aspect-ratio:16/9 }` — **1600 × 900**. tvOS renders
+    /// in a fixed 1920 × 1080 point space, so:
+    ///
+    /// > **`playerPx` = 1920 / 1600 = `1.2` pt per CSS px**, and a PERCENTAGE in that file is a percentage of
+    /// > the same canvas — so `p%` ≡ **`u * p`** (1920 pt = 100u).
+    ///
+    /// ⚠⚠ **CHECKED AGAINST THE ONE VALUE THREE PROTOTYPES NOW SHARE — the screen margin.** This file pads
+    /// `.topbar` and `.bottombar` by `4.2%`; 4.2 % of 1920 = **80.64 pt = `Metric.safeMargin` (4.2u)** — the
+    /// margin set 1 fixed and set 2's `px` was derived from. Three files, one margin, which is the strongest
+    /// evidence available that this scale is right. ⚠ **If a round shows the player too large or too small,
+    /// this is the ONE constant to change — never one metric at a time.**
+    static let playerPx: CGFloat = 1.2
+
+    /// The player screen — `tvos_ux/3. MediaPlayerUx/rkm-cinema-tvos-player.html`, transcribed.
+    ///
+    /// ⚠ Every entry is `playerPx * <his px>` or `u * <his %>`, and the line it came from is named, because a
+    /// number that cannot be traced back is a number that has already drifted.
+    enum Player {
+
+        // ---- the frame
+        /// `.topbar { padding: 3.6% 4.2% 0 }` / `.bottombar { padding: 0 4.2% 4.2% }`.
+        static let barPaddingTop = u * 3.6
+        static let barPaddingH = u * 4.2
+        static let barPaddingBottom = u * 4.2
+
+        // ---- the top bar
+        /// `.backbtn { width/height:44px }` and its `svg { width:18px }`.
+        static let backSize = playerPx * 44
+        static let backGlyph = playerPx * 18
+        /// `.film-title { font-size:2.5rem }` — `rem` is the browser's 16 px, so 40 px.
+        static let titleSize = playerPx * 40
+        static let titleGap = playerPx * 5.6          // `.titleblock { gap:.35em }` at 2.5rem
+        static let titleMaxWidth = u * 62             // `.titleblock { max-width:62% }`
+        static let metaSize = playerPx * 14.72        // `.meta-row { font-size:.92rem }`
+        static let metaGap = playerPx * 10.3          // `.meta-row { gap:.7em }`
+        static let metaDot = playerPx * 3             // `.meta-row .dot { width:3px }`
+        static let clockSize = playerPx * 15.2        // `.clock { font-size:.95rem }`
+        /// `.badge { padding:.22em .62em; border-radius:5px; font-size:.72rem }` — the paddings are `em`, so
+        /// they are the badge's OWN font size multiplied, which is exactly what the CSS says.
+        static let badgeSize = playerPx * 11.52
+        static let badgeRadius = playerPx * 5
+        static let badgePaddingH = badgeSize * 0.62
+        static let badgePaddingV = badgeSize * 0.22
+        static let backrowGap = playerPx * 13.6       // `.backrow { gap:.85em }` at the root 16 px
+
+        // ---- the scrims (`.scrim-top` / `.scrim-bottom`) — KEPT, and they are not decoration: the title,
+        // the meta row and the transport all sit on live video, and keyart is often bright exactly there.
+        static let scrimTopFraction: CGFloat = 0.34
+        static let scrimBottomFraction: CGFloat = 0.48
+
+        // ---- the centre pulse (`@keyframes pulseFeedback`, 0.62 s)
+        static let pulseSize = playerPx * 108
+        static let pulseGlyph = playerPx * 42
+        static let pulseSeconds: Double = 0.62
+
+        // ---- the scrubber (`.scrub-wrap`, `.track`, `.playhead`, `.scrub-tooltip`)
+        static let scrubTopPad = playerPx * 22         // `.scrub-wrap { padding-top:1.6em }` at `.86rem`
+        static let scrubTimesSize = playerPx * 13.76   // `.scrub-times { font-size:.86rem }`
+        static let scrubTimesGap = playerPx * 7.6      // …its `margin-bottom:.55em`
+        static let trackHeight = playerPx * 5
+        static let trackFocusHeight = playerPx * 8     // `.track.is-focused { height:8px }`
+        static let trackRadius = playerPx * 4
+        /// `.ticks` — ⚠⚠ **THE ONE ELEMENT IN THIS FILE THE APP CANNOT DRAW.** His tick marks come from a
+        /// hardcoded `chapters` array in its JavaScript; the api sends no chapter data at all (measured
+        /// 2026-09-20: no `Chapters` anywhere in `backend/`). The constant is transcribed and DELIBERATELY
+        /// UNUSED so the gap is visible to the next session rather than looking like an oversight.
+        static let tickWidth = playerPx * 2
+        static let tickHeight = playerPx * 10
+        static let playheadSize = playerPx * 16
+        /// `.track.is-focused .playhead { box-shadow: 0 0 0 8px rgba(232,196,104,.18) }` — transcribed as a
+        /// RING, and its colour comes from the app's accent rather than from his `--gold-bright` (see the plan's
+        /// palette table: his gold is not the brand).
+        static let playheadRing = playerPx * 8
+        static let playheadRingOpacity: CGFloat = 0.18
+        static let tooltipLift = playerPx * 14         // the focused tooltip's `translate(-50%,-14px)`
+        static let tooltipRadius = playerPx * 6
+        static let tooltipPaddingH = playerPx * 8.6    // `.tooltip-time { padding:.25em .65em }`
+        static let tooltipPaddingV = playerPx * 3.3
+        static let tooltipSize = playerPx * 13.76
+
+        // ---- the transport row (`.controls`, `.ctl-btn`)
+        static let controlSize = playerPx * 58
+        static let controlPrimarySize = playerPx * 74
+        static let controlGlyph = playerPx * 22
+        static let controlPrimaryGlyph = playerPx * 26
+        static let controlGap = playerPx * 13.6        // `.controls { gap:.85em }`
+        static let controlSpacer = playerPx * 22.4     // `.ctl-spacer { width:1.4em }`
+        static let controlLabelSize = playerPx * 12.48 // `.ctl-label { font-size:.78rem }`
+        static let controlLabelLift = playerPx * 26.2  // `top:-2.1em` at that font
+        static let focusScale: CGFloat = 1.14          // `--focus-scale`
+        static let focusRingWidth = playerPx * 2
+        /// `.ctl-btn.primary { background:rgba(245,242,234,.98) }` — the near-white play button, which is the
+        /// only element on the screen that is brighter than the film.
+        static let primaryFillOpacity: CGFloat = 0.98
+
+        // ---- the info panel (`.info-panel`, `.info-inner`)
+        static let infoTopFraction: CGFloat = 0.32
+        static let infoPaddingBottom = u * 5.2
+        static let infoMeasure = playerPx * 640        // `.info-inner { max-width:640px }`
+        static let infoBodySize = playerPx * 16        // `.info-inner p { font-size:1rem }`
+        static let infoBodyLineSpacing = playerPx * 8.8  // `line-height:1.55` on a 1rem body
+        static let infoGap = playerPx * 11.2           // `.info-inner { gap:.7em }`
+        static let tagSize = playerPx * 13.6
+        static let tagRadius = playerPx * 20
+        static let tagPaddingH = playerPx * 9.5
+        static let tagPaddingV = playerPx * 3.8
+        static let tagGap = playerPx * 8.2
+
+        // ---- the settings drawer (`.settings-panel` and friends)
+        /// `width: min(58%, 760px)` — ⚠ transcribed as the MINIMUM of the two, exactly as CSS resolves it:
+        /// 58 % of 1920 is 1113.6 pt and the 760 px cap is 912 pt, so **the cap wins** on every tvOS screen.
+        static let settingsFraction: CGFloat = 0.58
+        static let settingsMaxWidth = playerPx * 760
+        static let settingsTopPad = u * 5.5            // `padding:5.5% 0 4.5%`
+        static let settingsBottomPad = u * 4.5
+        static let settingsHeaderSize = playerPx * 12.48  // `.settings-header { font-size:.78rem }`
+        static let settingsHeaderTop = u * 2.6
+        static let settingsHeaderInset = playerPx * 41.6  // `left/right:2.6em` at the root 16 px
+        static let navWidth = playerPx * 230
+        static let navGap = playerPx * 4.8             // `.settings-nav { gap:.3em }`
+        static let navItemSize = playerPx * 16         // `.settings-nav-item { font-size:1rem }`
+        static let navItemRadius = playerPx * 9
+        static let navItemPaddingH = playerPx * 14.4   // `.8em .9em`
+        static let navItemPaddingV = playerPx * 12.8
+        static let navFocusScale: CGFloat = 1.06       // `.settings-nav-item.is-focused { transform:scale(1.06) }`
+        static let contentPaddingH = playerPx * 44.8   // `.settings-content { padding:0 2.8em }`
+        static let contentGap = playerPx * 24          // …`gap:1.5em`
+        static let paneGap = playerPx * 17.6           // `.settings-pane { gap:1.1em }`
+        static let paneTitleSize = playerPx * 25.6     // `.settings-section-title { font-size:1.6rem }`
+        static let paneDescSize = playerPx * 13.6      // `.settings-desc { font-size:.85rem }`
+        static let segGap = playerPx * 9.6             // `.segmented { gap:.6em }`
+        static let segSize = playerPx * 14.72          // `.seg-btn { font-size:.92rem }`
+        static let segRadius = playerPx * 9
+        static let segPaddingH = playerPx * 16.9       // `.62em 1.15em` at `.92rem`
+        static let segPaddingV = playerPx * 9.1
+        static let segFocusScale: CGFloat = 1.09       // `.seg-btn.is-focused { transform:scale(1.09) }`
+        static let listGap = playerPx * 4.8            // `.settings-list { gap:.3em }`
+        static let listItemSize = playerPx * 16        // `.settings-item` inherits 1rem
+        static let listItemRadius = playerPx * 8
+        static let listItemPaddingH = playerPx * 12.8  // `.7em .8em`
+        static let listItemPaddingV = playerPx * 11.2
+        static let listFocusScale: CGFloat = 1.04      // `.settings-item.is-focused { transform:scale(1.04) }`
+        static let footerSize = playerPx * 13.12       // `.settings-footer { font-size:.82rem }`
+        static let footerTopPad = playerPx * 13.2      // …`padding-top:1.1em`
+        static let checkSize = playerPx * 14           // the `✓` on a selected row
+
+        // ---- the toast (`.toast`)
+        static let toastBottom = u * 6
+        static let toastRadius = playerPx * 24
+        static let toastSize = playerPx * 13.6         // `.toast { font-size:.85rem }`
+        static let toastPaddingH = playerPx * 16.3
+        static let toastPaddingV = playerPx * 9.5
+
+        /// The subtitle cues — ⚠ **A tvOS ADDITION, not a transcription.** His file has no caption strip (the
+        /// web player draws cues in its own `Player.tsx`), so there is nothing to transcribe: the strip sits
+        /// above the transport row, in the app's own primary colour with a shadow, because a caption over a
+        /// bright frame is unreadable without one.
+        static let cueBottom = u * 12
+        static let cueSize = playerPx * 20
+        static let cueMeasure = u * 70
+
+        /// tvOS-only tints for the player's glass. ⚠ Same status as `Colour.topBarTint`: the blur itself is the
+        /// platform's material, these are only the tints under it, transcribed from his `--glass` /
+        /// `--glass-strong` — and kept OUT of the generated table so they cannot become a brand change.
+        static let glass = RGBAColor(red: 16 / 255, green: 16 / 255, blue: 18 / 255, alpha: 0.66)
+        static let glassStrong = RGBAColor(red: 12 / 255, green: 12 / 255, blue: 14 / 255, alpha: 0.86)
+    }
+
     /// tvOS layout metrics that have no prototype line to point at.
     enum Metric {
 

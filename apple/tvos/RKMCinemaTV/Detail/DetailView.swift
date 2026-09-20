@@ -4,13 +4,18 @@ import RKMServerKit
 /// Item detail — screen #5, **redesigned in Phase V to `tvos_ux/2. LibraryViewandItemDetailsView/title-view.html`**.
 ///
 /// ⚠⚠ **READ-ONLY, AND IT SAYS SO — AND IN PHASE V THAT IS A DECISION HE MADE, NOT A DEFAULT.**
-/// His prototype opens with focus on **Play** (*"the one-button path to watching"*). The tvOS player is
-/// Phase C and parked (`Core/PlaybackAuth.swift` exists; C2–C5 do not), so on 2026-09-20 he was asked which
-/// he wanted and chose: **no Play control at all until the player exists.** `docs/ARCHITECTURE.md` §11's rule
-/// is *"never OFFER what the server will refuse"*, and a focusable Play button that apologises when pressed
+/// His prototype opens with focus on **Play** (*"the one-button path to watching"*). ⚠ That control was
+/// deliberately ABSENT until 2026-09-20: the tvOS player was Phase C and parked (`Core/PlaybackAuth.swift`
+/// existed; C2–C5 did not), so he was asked and chose **no Play control until the player exists** —
+/// `docs/ARCHITECTURE.md` §11's rule is *"never OFFER what the server will refuse"*, and a focusable Play
+/// button that apologises when pressed
 /// is that lie told one press later.
 ///
 /// ⇒ **NOTHING ON THIS SCREEN IS A BUTTON EXCEPT THE WAY OUT.** The top bar carries the app's own `TopBar`
+/// ⚠⚠ **PHASE C3 LANDED THE PLAYER, SO THE ROW IS NOW ONE REAL CONTROL** — `playAction` below, labelled by
+/// `DetailSnapshot.primaryVerb` and wired to `AppModel.openPlayer`. Everything else about this screen is
+/// unchanged: it still states where playback comes from, and the verb it offers is still a rule.
+///
 /// with ONE tab — `Back`, named by `AppModel.detailReturnLabel` — and the profile avatar; the avatar opens
 /// the Profile Switcher, which is where `Sign out`, `Change server` and `Manage profiles` already live (the
 /// move Home made in U3, accepted on his simulator). **`Back` therefore has the default focus**, which is
@@ -296,7 +301,7 @@ struct DetailView: View {
                     .padding(.top, TVTokens.Title.metaGapBottom)
             }
 
-            playbackNotice(snapshot)
+            playAction(snapshot)
                 .padding(.top, TVTokens.Title.sectionTitleGap)
 
             synopsis(snapshot)
@@ -343,31 +348,28 @@ struct DetailView: View {
         }
     }
 
-    /// ⚠⚠ **THE PLACE THE ACTION ROW WOULD BE, AND WHY THERE ISN'T ONE.** See this file's header: he chose to
-    /// keep the screen honest until the player lands, so his prototype's `Play · Trailer · Add to Watchlist ·
-    /// More` row is NOT drawn. What is drawn is B4's own placeholder — the two sentences the Home's hero also
-    /// shows (`DetailCopy.playPending*`), plus the verb this screen WILL offer, which is a RULE
-    /// (`DetailSnapshot.primaryVerb`) so Phase C's button cannot disagree with this sentence.
-    private func playbackNotice(_ snapshot: DetailSnapshot) -> some View {
-        VStack(alignment: .leading, spacing: TVTokens.Title.pillPaddingV) {
-            Text(DetailCopy.playPendingTitle)
-                .font(.system(size: TVTokens.Title.castNameSize, weight: .semibold))
-                .foregroundStyle(RKMColour.primary)
-            Text(DetailCopy.playPendingSub)
-                .font(.system(size: TVTokens.Title.castRoleSize))
-                .foregroundStyle(RKMColour.secondary)
-            Text(DetailCopy.nextUp(snapshot.primaryVerb))
-                .font(.system(size: TVTokens.Title.castRoleSize))
-                .foregroundStyle(RKMColour.secondary)
+    /// ⚠⚠ **THE ACTION ROW — AND PHASE C IS WHAT MADE IT HONEST.** B4 deliberately drew no Play control:
+    /// the api had routes this app had not yet been taught to use, and a focusable button that apologises
+    /// when pressed is exactly what `docs/ARCHITECTURE.md` §11 forbids. The player exists now, so the
+    /// control does, and **its WORD was already a rule** — `DetailSnapshot.primaryVerb` ("Play" /
+    /// "Resume S1E4" / "Play next") has been rendered by the Home's hero since B4, so the button and the
+    /// sentence can never disagree about what pressing it does.
+    ///
+    /// ⚠ **ONE control, not his prototype's four.** `Trailer` needs `RemoteTrailers` on the detail payload
+    /// and `Add to Watchlist` / `More` are acquisition/administration — the half of rkm-cinema that
+    /// `apple/tvos/README.md` keeps on web/iOS. A row of controls this screen cannot honour is the thing
+    /// this file's header has been refusing since B4.
+    private func playAction(_ snapshot: DetailSnapshot) -> some View {
+        Button {
+            app.openPlayer(itemID: snapshot.detail.itemID, detail: snapshot.detail)
+        } label: {
+            HStack(spacing: TVTokens.Hero.actionSpacing) {
+                Image(systemName: "play.fill")
+                Text(snapshot.primaryVerb)
+            }
         }
-        .padding(.vertical, TVTokens.Title.pillPaddingH)
-        .padding(.horizontal, TVTokens.Title.pillPaddingH)
-        .background(RKMColour.surface1,
-                    in: RoundedRectangle(cornerRadius: TVTokens.Grid.cardRadius, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: TVTokens.Grid.cardRadius, style: .continuous)
-                .stroke(RKMColour.border, lineWidth: 1)
-        )
+        .buttonStyle(CtaButtonStyle(kind: .primary))
+        .accessibilityLabel(snapshot.primaryVerb)
     }
 
     /// `.synopsis` — *"max-width capped for readability (~60 characters per line) rather than spanning the

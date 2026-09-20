@@ -50,11 +50,21 @@ final class AppModel: ObservableObject {
         /// Screen #5 — Item detail, read-only (Phase B4). Reached from Home or Browse, and it knows which
         /// one it came from so `Back` returns there.
         ///
-        /// ⚠ **`Play` is not on it, and that is deliberate**: the tvOS player is Phase C and the api has no
-        /// route this app may play from yet, so a Play control would be a promise the app cannot keep — the
-        /// opposite of the app's own rule (`docs/ARCHITECTURE.md` §11: never OFFER what the server will
-        /// refuse). The screen states where playback comes from instead, and shows the verb it WILL offer.
+        /// ⚠ It carried no Play control until Phase C, deliberately: a Play button the api could not serve
+        /// would be a promise the app cannot keep (`docs/ARCHITECTURE.md` §11: never OFFER what the server
+        /// will refuse). **C3 makes the verb honest**, so `Play` / `Resume S1E4` — whose WORD was always a
+        /// rule (`DetailSnapshot.primaryVerb`) — is now a control, and it lands in the same phase as the
+        /// screen it opens.
         case detail
+        /// Screen #6 — the player (Phase C). Reached from the detail screen, and it is where playback
+        /// actually happens: `AVPlayer`, the resume position, and the progress reports that put this film
+        /// back into the web app's Continue Watching.
+        ///
+        /// ⚠ **It is a PHASE and not a `fullScreenCover`**, for the reason every other screen here is one:
+        /// the app's own rule is that each screen owns one way forward and one way out, and an overlay that
+        /// hides the profile-scoped stores behind it would make "who is watching" ambiguous at exactly the
+        /// moment the app is writing that person's progress.
+        case player
     }
 
     @Published private(set) var phase: Phase = .setup
@@ -76,6 +86,12 @@ final class AppModel: ObservableObject {
     /// `DetailStore`'s header explains why it is not reused across items. It is also dropped on every entry
     /// to `.library` and on sign-out / `changeServer`, because it read the previous profile's library.
     @Published private(set) var detail: DetailStore?
+
+    /// ⚠ **The player's store, built ONE FILM at a time** and dropped when the film is left — same reason
+    /// `detail` is (`PlaybackStore`'s header: it holds one item's playback-info, its positions and its
+    /// pending writes). It is dropped on every entry to `.library` and on sign-out / `changeServer`, because
+    /// its whole life is scoped to the profile that was watching.
+    @Published private(set) var playback: PlaybackStore?
 
     /// Where `Back` on the detail screen returns to. ⚠ Recorded rather than assumed: the screen is reachable
     /// from two places, and "back" that always goes to Home would lose a viewer three folders deep in
@@ -254,6 +270,7 @@ final class AppModel: ObservableObject {
         // ⚠ Dropped with the other two: a detail screen holds one title's synopsis, cast and episode list,
         // read from the profile that was watching a moment ago.
         detail = nil
+        playback = nil
         phase = .library
     }
 
@@ -305,6 +322,29 @@ final class AppModel: ObservableObject {
         phase = detailReturnPhase == .detail ? .browse : detailReturnPhase
     }
 
+    // MARK: - Screen #6: the player
+
+    /// Detail → the player. ⚠ **The `ItemDetail` is PASSED IN rather than re-fetched**: the screen behind it
+    /// already has the title, the run time, the synopsis and the resume ticks, and a second read of the same
+    /// item would be one more request whose only purpose is to risk disagreeing with the first.
+    ///
+    /// ⚠ The store is built HERE and not in the view, so a profile switch, a sign-out or a `changeServer`
+    /// cannot leave a player alive that holds the previous viewer's position (see `enterLibrary`).
+    func openPlayer(itemID: String, detail: ItemDetail?) {
+        guard let session, !itemID.isEmpty else { return }
+        playback = PlaybackStore(client: session.api, itemID: itemID, detail: detail)
+        phase = .player
+        RKMLog.info("player: opened \(itemID.prefix(8))", category: .app)
+    }
+
+    /// Player → the detail screen it came from. ⚠ **The position write is NOT done here** — `PlayerView`
+    /// fires it (and awaits the server's own answer) before this runs, because a store that has been dropped
+    /// cannot report anything, and the write is the whole point of the phase.
+    func closePlayer() {
+        playback = nil
+        phase = .detail
+    }
+
     func changeProfile() async {
         guard let session else { return }
         phase = .profiles
@@ -318,6 +358,7 @@ final class AppModel: ObservableObject {
         home = nil
         browse = nil
         detail = nil
+        playback = nil
         phase = .signIn
     }
 
@@ -349,6 +390,7 @@ final class AppModel: ObservableObject {
         home = nil
         browse = nil
         detail = nil
+        playback = nil
         phase = .setup
         setupError = nil
         typedAddress = store.address?.displayString ?? typedAddress

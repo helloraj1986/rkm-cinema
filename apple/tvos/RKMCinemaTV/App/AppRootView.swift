@@ -95,6 +95,16 @@ struct AppRootView: View {
             } else {
                 ConnectingView()
             }
+        case .player:
+            // ⚠ The player is the ONE screen with no `ConnectingView` fallback, and deliberately: its store
+            // is created by `openPlayer` from the `ItemDetail` the previous screen already holds, so a nil
+            // store here is unreachable — and if it ever were reachable, the honest answer is the way BACK
+            // rather than a spinner over a black frame.
+            if let playback = app.playback {
+                PlayerView(store: playback, app: app)
+            } else {
+                Color.black.ignoresSafeArea()
+            }
         }
     }
 }

@@ -65,6 +65,13 @@ TYPE_SOURCES = {
     "EpisodeProgress": "Core/DetailRules.swift",
     "EpisodeItem": "Core/Models/LibraryModels.swift",
     "DetailPerson": "Core/Models/DetailModels.swift",
+    # ⚠⚠ Phase C3 — the player. ⚠ `AVPlayer` is NOT listed and must not be: the SDK type is not a file this
+    # scan can read, and rule 1 is a deliberate (file, variable, type) table precisely so it never has to
+    # guess. The player's OWN types are all readable, and they are the ones worth checking.
+    "PlaybackStore": "Core/PlaybackStore.swift",
+    # ⚠ `PlayerFocus` / `DrawerFocus` are FOCUS ENUMS: their only "members" are cases, which the
+    # depth-1 declaration scan does not read, so listing them would make this gate fail on itself.
+    # Their correctness is the compiler's, and the compiler is the Mac.
 }
 
 #: (view file, variable, type). ⚠ `snapshot` appears twice with DIFFERENT types, which is exactly why the
@@ -95,6 +102,14 @@ USES = [
     ("Detail/DetailView.swift", "episode", "EpisodeItem"),
     ("Detail/DetailView.swift", "group", "SeasonGroup"),
     ("Detail/DetailView.swift", "progress", "EpisodeProgress"),
+    # ⚠⚠ Phase C3: the player. Rule 1 is the gate that caught round 1's `navFailure` and it is the ONLY
+    # thing standing between these files and a failed Mac round, so the store, the snapshot's owner and
+    # the panel are all listed. ⚠ `store` is listed FOUR times against four different types (the reason
+    # this table is keyed by (file, variable) and not by variable name).
+    ("Player/PlayerView.swift", "store", "PlaybackStore"),
+    ("Player/PlayerView.swift", "app", "AppModel"),
+    ("Player/PlayerChrome.swift", "store", "PlaybackStore"),
+    ("Player/PlayerSettingsPanel.swift", "store", "PlaybackStore"),
     ("Auth/ProfilesView.swift", "session", "SessionStore"),
     ("Auth/ProfilesView.swift", "profile", "ProfileUser"),
     ("Auth/ProfilesView.swift", "app", "AppModel"),
@@ -148,6 +163,24 @@ VIEW_TYPES = {
     "ProfileTileStyle": "Auth/ProfilesView.swift",
     "LibraryCardStyle": "Browse/LibraryGridCard.swift",
     "ChipButtonStyle": "Browse/FilterChip.swift",
+    # ⚠⚠ Phase C3's player. `PlayerView` and the drawer are constructed from `AppRootView` / each other
+    # with labelled arguments, and the four new control styles are the same class of construction
+    # (`PlayerControlButtonStyle(primary:label:)`). ⚠ This is the ONE gate that sees these files at all:
+    # `Player/PlayerView.swift` imports SwiftUI + AVFoundation + UIKit, so nothing here can compile it.
+    "PlayerView": "Player/PlayerView.swift",
+    "PlayerTopBar": "Player/PlayerChrome.swift",
+    "PlayerScrubber": "Player/PlayerChrome.swift",
+    "PlayerControlsRow": "Player/PlayerChrome.swift",
+    "PlayerInfoPanel": "Player/PlayerChrome.swift",
+    "PlayerCueStrip": "Player/PlayerChrome.swift",
+    "PlayerToast": "Player/PlayerChrome.swift",
+    "PlayerSettingsPanel": "Player/PlayerSettingsPanel.swift",
+    "PlayerControlButtonStyle": "Player/PlayerChrome.swift",
+    "PlayerCircleButtonStyle": "Player/PlayerChrome.swift",
+    "PlayerScrubStyle": "Player/PlayerChrome.swift",
+    "DrawerNavStyle": "Player/PlayerSettingsPanel.swift",
+    "DrawerSegmentStyle": "Player/PlayerSettingsPanel.swift",
+    "DrawerListStyle": "Player/PlayerSettingsPanel.swift",
 }
 
 #: Where a call to one of those types may appear. ⚠ Their own declaration files are excluded: `HomeView`'s
@@ -156,6 +189,7 @@ CALL_SITES = [
     "Home/HomeView.swift", "Home/TopBar.swift", "Home/HeroBand.swift", "Home/RailView.swift",
     "Home/PosterCard.swift", "Browse/BrowseView.swift", "Detail/DetailView.swift",
     "Browse/LibraryGridCard.swift", "Browse/FilterChip.swift",
+    "Player/PlayerView.swift", "Player/PlayerChrome.swift", "Player/PlayerSettingsPanel.swift",
     "Auth/ProfilesView.swift", "Auth/LoginView.swift", "App/AppRootView.swift",
     "Server/ServerSetupView.swift", "Server/UnreachableServerView.swift",
 ]
@@ -364,7 +398,56 @@ def namespace_members(root: pathlib.Path, namespace: str, cache: dict) -> set[st
             if found and not line.strip().startswith("//"):
                 names.add(found.group(1))
     cache[namespace] = names
+    cache[namespace + "::file"] = declaring
     return names
+
+
+def nested_members(declaring: pathlib.Path, type_name: str) -> set[str]:
+    """Every name declared INSIDE `type_name`'s braces in `declaring` — the resolver for a DOTTED path.
+
+    ⚠⚠ **WHY THIS EXISTS (added 2026-09-20, Phase C3).** Rule 3 verified `TVTokens.Player` and stopped: the
+    metric AFTER it (`TVTokens.Player.controlSize`) was checked by NOTHING, because `namespace_members`
+    returns a FLAT set of every name in the file and cannot tell a nested type's members from its siblings'.
+    The player phase added ~100 such three-segment references in one go, and a typo in one of them is a
+    compile error on the Mac — i.e. a whole round, for a hand-typed name. That is the same trade rule 3
+    already makes for two segments; this closes the third.
+
+    ⚠ It follows BRACES rather than indentation: a `func` body's braces are not a nesting level, and an
+    indentation-based scan would either miss a one-line `enum` or invent members from a function's locals.
+    ⚠ It looks for ANY type declaration with that name at any depth, because `Player` is nested inside
+    `TVTokens` — the same reason rule 3's scan is depth-free.
+    """
+    lines = declaring.read_text(encoding="utf-8").splitlines()
+    start = None
+    for index, line in enumerate(lines):
+        if re.match(rf"^\s*(?:public\s+|internal\s+|private\s+|fileprivate\s+|final\s+|static\s+)*"
+                    rf"(?:enum|struct|class|extension)\s+{re.escape(type_name)}\b", line):
+            start = index
+            break
+    if start is None:
+        return set()
+    members: set[str] = set()
+    depth = 0
+    opened = False
+    for line in lines[start:]:
+        stripped = line.strip()
+        if not opened:
+            if "{" in line:
+                opened = True
+                depth = line.count("{") - line.count("}")
+            continue
+        if depth == 1 and not stripped.startswith("//"):
+            found = re.match(r"^\s*(?:@\w+(?:\([^)]*\))?\s+)*"
+                             r"(?:public\s+|internal\s+|private\s*\(set\)\s+|private\s+|fileprivate\s+"
+                             r"|static\s+|final\s+)*"
+                             r"(?:let|var|func|case|enum|struct|class|typealias)\s+([A-Za-z_][A-Za-z0-9_]*)",
+                             line)
+            if found:
+                members.add(found.group(1))
+        depth += line.count("{") - line.count("}")
+        if depth <= 0:
+            break
+    return members
 
 
 def check_namespaces(root: pathlib.Path) -> list[str]:
@@ -381,15 +464,25 @@ def check_namespaces(root: pathlib.Path) -> list[str]:
             for namespace in NAMESPACES:
                 # ⚠ Skip `extension Foo` / `enum Foo` declarations, which are not member uses.
                 declared = re.search(rf"(?:enum|struct|class|extension)\s+{namespace}\b", line)
-                for match in re.finditer(rf"\b{namespace}\.([A-Za-z_][A-Za-z0-9_]*)", line):
+                for match in re.finditer(
+                        rf"\b{namespace}\.([A-Za-z_][A-Za-z0-9_]*)(?:\.([A-Za-z_][A-Za-z0-9_]*))?", line):
                     if declared and match.start() >= declared.start():
                         continue
-                    member = match.group(1)
+                    member, deep = match.group(1), match.group(2)
                     if member not in namespace_members(root, namespace, cache):
                         problems.append(
                             f"{path.relative_to(root)}:{number}: `{namespace}.{member}` — {namespace} does "
                             f"not declare '{member}'"
                         )
+                    elif deep:
+                        # ⚠⚠ THE THIRD SEGMENT — see `nested_members`. Checked only when the SECOND segment
+                        # resolved, so one typo reports once rather than twice.
+                        nested = nested_members(cache[namespace + "::file"], member)
+                        if nested and deep not in nested:
+                            problems.append(
+                                f"{path.relative_to(root)}:{number}: `{namespace}.{member}.{deep}` — "
+                                f"{member} does not declare '{deep}'"
+                            )
     return problems
 
 
@@ -559,6 +652,19 @@ def selftest() -> int:
             failures.append("it did not fire on `TopBarTab(rails: …)` — a label TopBarTab does not take")
         if any("detail:" in problem for problem in reports):
             failures.append("it fired on a colon inside a string literal — the 2026-09-20 false positive")
+
+        # Rule 3's THIRD SEGMENT (added 2026-09-20, Phase C3's player): `TVTokens.Player.<metric>` was
+        # verified as far as `TVTokens.Player` and the metric name after it by nothing at all.
+        chrome = scratch / "Player" / "PlayerChrome.swift"
+        chrome.parent.mkdir(parents=True, exist_ok=True)
+        chrome.write_text((TVOS / "Player" / "PlayerChrome.swift").read_text(encoding="utf-8")
+                          + "\nlet scratchBad3c = TVTokens.Player.controlSizee\n", encoding="utf-8")
+        deep = check_namespaces(scratch)
+        if not any("controlSizee" in problem for problem in deep):
+            failures.append("it did not fire on `TVTokens.Player.controlSizee` — a metric Player does not "
+                            "declare, and the name a token table is most likely to get wrong")
+        if any("TVTokens.Player." in problem for problem in check_namespaces(TVOS)):
+            failures.append("the deep rule fires on the REAL tree, so its red above proved nothing")
 
         if check(TVOS):
             failures.append("it fires on the REAL tree, so its red above proved nothing")

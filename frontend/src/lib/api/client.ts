@@ -322,6 +322,81 @@ export interface SubtitleSearchShape {
   remaining_downloads: number | null;
   /** Why the remote half degraded (never blocks local playback). */
   warning: string;
+  /** ADDITIVE (auto-pick, 2026-09-21): the global switch + the exclusion, so the pane can
+   *  draw its settings rows from the listing it already fetched. */
+  settings: SubtitleAutoPickSettings;
+  /** The ONE language the auto-pick searches in (the first of OPENSUBTITLES_LANGUAGES). */
+  auto_language: string;
+  /** Which row the rule would take, why, and what (if anything) is blocking it. */
+  auto: SubtitleAutoFacts;
+}
+
+/**
+ * The auto-pick's settings, as the api stores them (SUBTITLE_AUTOPICK_PLAN §2 — his decision,
+ * 2026-09-21). ONE state for both clients: the tvOS drawer and the web panel read and write
+ * this, so neither can hold a private copy that disagrees.
+ */
+export interface SubtitleAutoPickSettings {
+  /** The global switch. ON by default; a stored `false` is the off switch. */
+  auto_pick: boolean;
+  /** Audio languages never auto-picked — `["en"]` limits it to foreign-language films. */
+  auto_pick_skip_audio: string[];
+}
+
+/** GET/POST /api/jellyfin/subtitle-settings. */
+export interface SubtitleSettingsShape {
+  settings: SubtitleAutoPickSettings;
+  /** The language the auto-pick acts in — computed from `.env`, never stored. */
+  language: string;
+  languages: string[];
+  /** False when no OpenSubtitles key is configured (the switch is then meaningless). */
+  enabled: boolean;
+}
+
+/**
+ * The auto-pick's own facts, carried on the search listing. `subtitle_id` is the row the rule
+ * WOULD take (top of the same ranking the panel draws, in `auto_language`, never SDH) — which
+ * is what the row badge renders. `blocked` is "" when nothing is in the way, or one of the
+ * api's reason codes (`already_chosen`, `title_off`, `has_local_track`, `audio_excluded`,
+ * `disabled`), with `reason` as the sentence for it.
+ */
+export interface SubtitleAutoFacts {
+  subtitle_id: string;
+  /** "used-before" | "most-downloaded" | "" — why that row is first. */
+  basis: string;
+  blocked: string;
+  reason: string;
+}
+
+/**
+ * POST /api/jellyfin/subtitle-auto — the outcome, applied or not.
+ *
+ * ⚠ A DECLINE IS A 200: the viewer did not ask for this download, so `applied: null` plus a
+ * `decision`/`reason` is information, never an error the player has to survive.
+ */
+export interface SubtitleAutoResult {
+  ok: boolean;
+  item_id: string;
+  /** "apply", or one of the reason codes (`quota_unknown`, `quota_exhausted`, `no_candidate`…). */
+  decision: string;
+  reason: string;
+  detail: string;
+  applied: {
+    subtitle_id: string;
+    file_id: number;
+    language: string;
+    display_title: string;
+    /** The provider's own popularity number, as it decided the pick. */
+    download_count: number;
+    /** "used-before" | "most-downloaded". */
+    basis: string;
+  } | null;
+  language: string;
+  settings: SubtitleAutoPickSettings;
+  remaining_downloads: number | null;
+  used_count: number;
+  subtitles: PlaybackTrack[];
+  preferred_subtitle: PreferredSubtitle | null;
 }
 
 /** POST /api/jellyfin/subtitle-select result. */
@@ -1210,6 +1285,23 @@ export const api = {
     postJson<{ ok: boolean; disabled: boolean }>("/jellyfin/subtitle-disable", {
       item_id: itemId,
     }),
+  /** The auto-pick's global switch + audio-language exclusion (ONE server-side state). */
+  subtitleSettings: () => getJson<SubtitleSettingsShape>("/jellyfin/subtitle-settings"),
+  /** Change them. ⚠ A PARTIAL update: a field left out of the body is left alone, so the
+   *  two clients cannot reset each other's control. */
+  updateSubtitleSettings: (payload: {
+    auto_pick?: boolean; auto_pick_skip_audio?: string[];
+  }) => postJson<SubtitleSettingsShape>("/jellyfin/subtitle-settings", payload),
+  /**
+   * Ask the api to choose and apply the top-ranked subtitle for a title it has never been
+   * given one for (SUBTITLE_AUTOPICK_PLAN §2).
+   *
+   * ⚠ The decision is the SERVER's — the language, the ranking, the switch, the exclusions and
+   * the quota all live there — so this call cannot request something the rule would refuse.
+   * ⚠ A decline answers 200 with `applied: null` and a reason; only a malformed request 4xxs.
+   */
+  autoPickSubtitle: (itemId: string) =>
+    postJson<SubtitleAutoResult>("/jellyfin/subtitle-auto", { item_id: itemId }),
   /** Proxy URL for a text subtitle (WebVTT) stream. */
   subtitleUrl: (itemId: string, mediaSourceId: string, index: number) =>
     `${BASE}/jellyfin/subtitle?id=${encodeURIComponent(itemId)}&ms=${encodeURIComponent(mediaSourceId)}&index=${index}`,

@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from config.settings import get_config
-from services.subtitles import resolve_active_track, usage_key
+from services.subtitles import normalise_auto_pick_settings, resolve_active_track, usage_key
 
 logger = logging.getLogger("rkm.subtitles.store")
 
@@ -77,11 +77,17 @@ class SubtitleStore:
 
     # ------------------------------------------------------------------ reading
     def load(self) -> dict:
-        """The whole store as ``{"prefs": {...}, "usage": {...}}`` (never raises)."""
+        """The whole store as ``{"prefs": …, "usage": …, "settings": …}`` (never raises).
+
+        ⚠⚠ **``settings`` IS IN HERE BECAUSE ``_mutate`` WRITES BACK WHAT ``load()`` RETURNED.**
+        A block that only ``settings()`` could read would be **dropped by the next preference
+        write** — the store would appear to lose the switch the moment a subtitle was chosen,
+        and nothing about the write would look wrong.
+        """
         try:
             mtime = self.path.stat().st_mtime
         except OSError:
-            self._cache, self._cache_mtime = {"prefs": {}, "usage": {}}, 0.0
+            self._cache, self._cache_mtime = {"prefs": {}, "usage": {}, "settings": {}}, 0.0
             return dict(self._cache)
         if self._cache is not None and mtime == self._cache_mtime:
             return self._cache
@@ -96,6 +102,7 @@ class SubtitleStore:
         data = {
             "prefs": dict(raw.get("prefs") or {}) if isinstance(raw, dict) else {},
             "usage": dict(raw.get("usage") or {}) if isinstance(raw, dict) else {},
+            "settings": dict(raw.get("settings") or {}) if isinstance(raw, dict) else {},
         }
         self._cache, self._cache_mtime = data, mtime
         return data
@@ -132,7 +139,34 @@ class SubtitleStore:
                 out[sid] = 0
         return out
 
+    def settings(self) -> dict:
+        """The auto-pick settings, normalised — the shape the routes answer with.
+
+        ⚠ The stored file is tolerated in ANY shape (absent, partial, a bool where a list
+        belongs); the normalisation lives in `services.subtitles` so the rule and the
+        route cannot disagree about what "on" means.
+        """
+        return normalise_auto_pick_settings(self.load().get("settings") or {})
+
     # ------------------------------------------------------------------ writing
+    def update_settings(self, *, auto_pick=None, auto_pick_skip_audio=None) -> dict:
+        """Change the auto-pick settings — **only the fields that were passed**.
+
+        A partial update on purpose: the two clients each own one control, and a client
+        that sent the whole block would silently reset the other one's field the moment the
+        two disagreed about a default. ``None`` means "leave it alone".
+        """
+        def mutate(data):
+            raw = dict(data.get("settings") or {})
+            if auto_pick is not None:
+                raw["auto_pick"] = bool(auto_pick)
+            if auto_pick_skip_audio is not None:
+                raw["auto_pick_skip_audio"] = list(auto_pick_skip_audio)
+            data["settings"] = normalise_auto_pick_settings(raw)
+            return data["settings"]
+
+        return self._mutate(mutate)
+
     def _write(self, data: dict) -> None:
         """Atomically persist the whole store (tmp + ``os.replace``)."""
         self.path.parent.mkdir(parents=True, exist_ok=True)

@@ -69,6 +69,31 @@ class SubtitleDisableRequest(BaseModel):
     item_id: str = ""
 
 
+class SubtitleSettingsRequest(BaseModel):
+    """The auto-pick settings (SUBTITLE_AUTOPICK_PLAN §2, his decision 2026-09-21).
+
+    ⚠ **Both fields are optional and ``None`` means "leave it alone"** — a partial update,
+    because the two clients each own one control and a whole-block write would let one reset
+    the other's field whenever their defaults disagreed. ``auto_pick_skip_audio`` is the
+    per-language exclusion: a title whose AUDIO is in one of these languages is never
+    auto-picked (add ``en`` and the auto-pick only ever applies to foreign-language films).
+    """
+
+    auto_pick: Optional[bool] = None
+    auto_pick_skip_audio: Optional[List[str]] = None
+
+
+class SubtitleAutoRequest(BaseModel):
+    """Ask the api to choose and apply the top-ranked subtitle for an untouched title.
+
+    ⚠ It carries an item id and nothing else, deliberately: the language, the ranking, the
+    switch, the exclusions and the quota are all the SERVER's to decide (his standing rule),
+    so a client cannot ask for a subtitle the server's own rule would refuse.
+    """
+
+    item_id: str = ""
+
+
 class LoginRequest(BaseModel):
     """Sign in as a Jellyfin user (AUTH_MULTIUSER_PLAN §3.7, Phase 0).
 

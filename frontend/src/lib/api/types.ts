@@ -973,6 +973,69 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/jellyfin/subtitle-settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Subtitle Settings
+         * @description The auto-pick settings + the language they act on (read by every client on open).
+         */
+        get: operations["subtitle_settings_api_jellyfin_subtitle_settings_get"];
+        put?: never;
+        /**
+         * Subtitle Settings Update
+         * @description Change the auto-pick settings — the global switch and the audio-language exclusion.
+         *
+         *     ⚠ **A partial update**: a field left out of the body is left alone in the store. Two
+         *     clients own one control each, and a whole-block write would let one reset the other's
+         *     field the moment their defaults disagreed.
+         */
+        post: operations["subtitle_settings_update_api_jellyfin_subtitle_settings_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jellyfin/subtitle-auto": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Subtitle Auto
+         * @description **Choose and apply the top-ranked subtitle for an untouched title — ONCE.**
+         *
+         *     His decision, 2026-09-21: *"apply the most downloaded subtitle automatically by default
+         *     .. user can choose to off it later"*. The whole rule is `SUBTITLE_AUTOPICK_PLAN.md` §2,
+         *     and the two halves of it are composed here in the order that costs nothing first:
+         *
+         *     1. `auto_pick_blocked` — every gate knowable LOCALLY (the switch, an existing choice —
+         *        including a per-title `Off` — the item's own tracks, the audio-language exclusion).
+         *        ⚠ **A blocked title returns before a single request is made**, so the switch and the
+         *        exclusions cost no quota and no network.
+         *     2. the search (which is all this needs) → `auto_pick_shortfall` — the quota and the
+         *        candidate.
+         *     3. `attach` + `set_preference` + `record_use` — **the SAME writes a manual pick makes**,
+         *        so from here on the subtitle is indistinguishable from one he chose, `Active` in the
+         *        pane, and costs **one download per title, ever**. `record_use` is what ranks it next
+         *        time (criterion 7).
+         */
+        post: operations["subtitle_auto_api_jellyfin_subtitle_auto_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/jellyfin/subtitle-select": {
         parameters: {
             query?: never;
@@ -2395,6 +2458,21 @@ export interface components {
             indexerIssue?: string | null;
         };
         /**
+         * SubtitleAutoRequest
+         * @description Ask the api to choose and apply the top-ranked subtitle for an untouched title.
+         *
+         *     ⚠ It carries an item id and nothing else, deliberately: the language, the ranking, the
+         *     switch, the exclusions and the quota are all the SERVER's to decide (his standing rule),
+         *     so a client cannot ask for a subtitle the server's own rule would refuse.
+         */
+        SubtitleAutoRequest: {
+            /**
+             * Item Id
+             * @default
+             */
+            item_id: string;
+        };
+        /**
          * SubtitleDisableRequest
          * @description Turn subtitles off for an item without forgetting which one was chosen.
          */
@@ -2438,6 +2516,22 @@ export interface components {
              * @default opensubtitles
              */
             provider: string;
+        };
+        /**
+         * SubtitleSettingsRequest
+         * @description The auto-pick settings (SUBTITLE_AUTOPICK_PLAN §2, his decision 2026-09-21).
+         *
+         *     ⚠ **Both fields are optional and ``None`` means "leave it alone"** — a partial update,
+         *     because the two clients each own one control and a whole-block write would let one reset
+         *     the other's field whenever their defaults disagreed. ``auto_pick_skip_audio`` is the
+         *     per-language exclusion: a title whose AUDIO is in one of these languages is never
+         *     auto-picked (add ``en`` and the auto-pick only ever applies to foreign-language films).
+         */
+        SubtitleSettingsRequest: {
+            /** Auto Pick */
+            auto_pick?: boolean | null;
+            /** Auto Pick Skip Audio */
+            auto_pick_skip_audio?: string[] | null;
         };
         /**
          * SuggestDetail
@@ -3926,6 +4020,92 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    subtitle_settings_api_jellyfin_subtitle_settings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    subtitle_settings_update_api_jellyfin_subtitle_settings_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubtitleSettingsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    subtitle_auto_api_jellyfin_subtitle_auto_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubtitleAutoRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

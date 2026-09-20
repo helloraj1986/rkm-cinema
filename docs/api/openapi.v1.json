@@ -1531,6 +1531,95 @@
         }
       }
     },
+    "/api/jellyfin/subtitle-settings": {
+      "get": {
+        "summary": "Subtitle Settings",
+        "description": "The auto-pick settings + the language they act on (read by every client on open).",
+        "operationId": "subtitle_settings_api_jellyfin_subtitle_settings_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Subtitle Settings Update",
+        "description": "Change the auto-pick settings \u2014 the global switch and the audio-language exclusion.\n\n\u26a0 **A partial update**: a field left out of the body is left alone in the store. Two\nclients own one control each, and a whole-block write would let one reset the other's\nfield the moment their defaults disagreed.",
+        "operationId": "subtitle_settings_update_api_jellyfin_subtitle_settings_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubtitleSettingsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/jellyfin/subtitle-auto": {
+      "post": {
+        "summary": "Subtitle Auto",
+        "description": "**Choose and apply the top-ranked subtitle for an untouched title \u2014 ONCE.**\n\nHis decision, 2026-09-21: *\"apply the most downloaded subtitle automatically by default\n.. user can choose to off it later\"*. The whole rule is `SUBTITLE_AUTOPICK_PLAN.md` \u00a72,\nand the two halves of it are composed here in the order that costs nothing first:\n\n1. `auto_pick_blocked` \u2014 every gate knowable LOCALLY (the switch, an existing choice \u2014\n   including a per-title `Off` \u2014 the item's own tracks, the audio-language exclusion).\n   \u26a0 **A blocked title returns before a single request is made**, so the switch and the\n   exclusions cost no quota and no network.\n2. the search (which is all this needs) \u2192 `auto_pick_shortfall` \u2014 the quota and the\n   candidate.\n3. `attach` + `set_preference` + `record_use` \u2014 **the SAME writes a manual pick makes**,\n   so from here on the subtitle is indistinguishable from one he chose, `Active` in the\n   pane, and costs **one download per title, ever**. `record_use` is what ranks it next\n   time (criterion 7).",
+        "operationId": "subtitle_auto_api_jellyfin_subtitle_auto_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubtitleAutoRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/jellyfin/subtitle-select": {
       "post": {
         "summary": "Subtitle Select",
@@ -4242,6 +4331,18 @@
         ],
         "title": "StatusResponse"
       },
+      "SubtitleAutoRequest": {
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "title": "Item Id",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "SubtitleAutoRequest",
+        "description": "Ask the api to choose and apply the top-ranked subtitle for an untouched title.\n\n\u26a0 It carries an item id and nothing else, deliberately: the language, the ranking, the\nswitch, the exclusions and the quota are all the SERVER's to decide (his standing rule),\nso a client cannot ask for a subtitle the server's own rule would refuse."
+      },
       "SubtitleDisableRequest": {
         "properties": {
           "item_id": {
@@ -4285,6 +4386,38 @@
         "type": "object",
         "title": "SubtitleSelectRequest",
         "description": "Choose a subtitle for an item (spec \u00a73: discovery \u2192 apply \u2192 persist).\n\n``file_id`` is the OpenSubtitles file id; ``subtitle_id`` (``os:<file_id>``) is\nwhat the store keeps, so the identity survives a stream-index change."
+      },
+      "SubtitleSettingsRequest": {
+        "properties": {
+          "auto_pick": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Pick"
+          },
+          "auto_pick_skip_audio": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Pick Skip Audio"
+          }
+        },
+        "type": "object",
+        "title": "SubtitleSettingsRequest",
+        "description": "The auto-pick settings (SUBTITLE_AUTOPICK_PLAN \u00a72, his decision 2026-09-21).\n\n\u26a0 **Both fields are optional and ``None`` means \"leave it alone\"** \u2014 a partial update,\nbecause the two clients each own one control and a whole-block write would let one reset\nthe other's field whenever their defaults disagreed. ``auto_pick_skip_audio`` is the\nper-language exclusion: a title whose AUDIO is in one of these languages is never\nauto-picked (add ``en`` and the auto-pick only ever applies to foreign-language films)."
       },
       "SuggestDetail": {
         "properties": {

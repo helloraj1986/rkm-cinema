@@ -413,6 +413,16 @@ superseded, it is **split**: this branch delivers the on-demand in-player path (
 background fetching for the whole library remains a separate, later decision. The store in §3.4 is
 designed so a future bulk fetcher could reuse it without a schema change.
 
+⚠⚠ **AMENDED 2026-09-21 — the middle ground was asked for and decided.** §7 excludes *"library-wide
+automatic subtitle downloading"*, and that exclusion stands: nothing here fetches for the whole library.
+But his instruction of 2026-09-21 asks for the **per-title** version of it — *"apply the most downloaded
+subtitle automatically by default.. user can choose to off it later"* — so the api now chooses and applies
+the top-ranked subtitle **once per title, on first play**, behind a global switch, a per-title `Off` and a
+per-audio-language exclusion. It is the same store, no schema change (a `settings` block was added, which
+is additive), and it is planned and gated in
+[`SUBTITLE_AUTOPICK_PLAN.md`](SUBTITLE_AUTOPICK_PLAN.md). ⚠ **What did NOT change: no queue, no library
+scan, no background worker.** One title, one subtitle, one download, only when the viewer plays it.
+
 ## 9. Sizing
 
 | Phase | Effort |

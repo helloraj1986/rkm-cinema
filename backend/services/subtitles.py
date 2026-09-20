@@ -449,6 +449,177 @@ def rank_results(results: List, counts: Dict[str, int]) -> List:
     return sorted(results, key=key)
 
 
+# ------------------------------------------------------------------ the auto-pick
+# SUBTITLE_AUTOPICK_PLAN §2. His decision, 2026-09-21: the api chooses and applies the
+# top-ranked subtitle ONCE per title, on first play, behind a global switch, a per-title
+# `Off` and a per-AUDIO-language exclusion — and never for a hearing-impaired track.
+#
+# ⚠ Everything below is a PURE rule: no store, no network, no Jellyfin. The route composes
+# them, and that is what lets a test prove the ORDER too (a blocked title must not spend a
+# search).
+
+#: Used when `.env` names no language at all. His decision 3 is "the first entry of the
+#: configured list", so this is only reachable on an empty list.
+AUTO_PICK_FALLBACK_LANGUAGE = "en"
+
+
+def auto_pick_language(languages=None) -> str:
+    """The ONE language the auto-pick searches in — the first entry of the configured list.
+
+    ⚠ Deliberately NOT derived per item (not the audio language, not the last pick): his
+    decision 3 chose the predictable rule. ``OPENSUBTITLES_LANGUAGES`` stays the single
+    source, so changing it in `.env` changes the auto-pick with no stored state to migrate.
+    """
+    for raw in (languages or []):
+        code = normalise_language(str(raw or ""))
+        if code:
+            return code
+    return AUTO_PICK_FALLBACK_LANGUAGE
+
+
+def normalise_auto_pick_settings(raw) -> dict:
+    """The stored setting, in one shape, whatever was in the file.
+
+    * ``auto_pick`` (bool) — **defaults to ON**, which is his decision 1. A stored
+      ``false`` is the global off switch.
+    * ``auto_pick_skip_audio`` (list of ISO codes) — his decision 2's third clause: a title
+      whose AUDIO is in one of these languages is never auto-picked. Empty by default.
+      ⚠ Codes are normalised through :func:`normalise_language` so ``English``/``eng``/``en``
+      all mean ``en`` — a skip list that silently failed to match would read as the switch
+      being ignored.
+    """
+    raw = raw if isinstance(raw, dict) else {}
+    skip = raw.get("auto_pick_skip_audio")
+    codes: List[str] = []
+    if isinstance(skip, (list, tuple, set)):
+        for item in skip:
+            code = normalise_language(str(item or ""))
+            if code and code not in codes:
+                codes.append(code)
+    return {
+        "auto_pick": bool(raw.get("auto_pick", True)),
+        "auto_pick_skip_audio": codes,
+    }
+
+
+def has_local_track_in(tracks, language: str) -> bool:
+    """Does the item already HAVE a subtitle in this language, of its own?
+
+    His decision 1's trigger, and criterion 9: what the film already has is never
+    second-guessed — a downloaded subtitle may only fill a gap.
+    ⚠ Compared through :func:`normalise_language`, because Jellyfin reports ``eng`` while
+    OpenSubtitles speaks ``en`` (the mismatch this whole feature would silently miss).
+    """
+    want = normalise_language(language)
+    if not want:
+        return False
+    for track in (tracks or []):
+        if normalise_language(str((track or {}).get("language") or "")) == want:
+            return True
+    return False
+
+
+def auto_pick_candidate(results, *, language: str, counts=None, allow_sdh: bool = False):
+    """The subtitle the auto-pick would take — or ``None``.
+
+    ⚠⚠ **IT IS THE FIRST ROW OF THE SAME RANKING THE PANEL DRAWS** (:func:`rank_results`),
+    filtered to the language and to non-SDH. That is not tidiness: it is what makes the
+    badge the panel shows and the subtitle the api applies **incapable of disagreeing**.
+    His decision 4 excludes hearing-impaired tracks (they are often the most downloaded,
+    and they carry sound descriptions); ``allow_sdh`` exists so that rule is a parameter a
+    test can falsify rather than a hardcoded absence.
+    """
+    want = normalise_language(language)
+    pool = [row for row in (results or [])
+            if normalise_language(str(getattr(row, "language", "") or "")) == want
+            and (allow_sdh or not bool(getattr(row, "hearing_impaired", False)))]
+    ranked = rank_results(pool, counts or {})
+    return ranked[0] if ranked else None
+
+
+def auto_pick_basis(candidate, counts=None) -> str:
+    """Why THIS row is the pick: ``used-before`` or ``most-downloaded``.
+
+    The two facts the badge renders. ⚠ They are genuinely different claims: our usage count
+    outranks the provider's number in the ranking, so a row can be first for a reason that
+    has nothing to do with popularity, and saying "most downloaded" about it would be false.
+    """
+    if candidate is None:
+        return ""
+    if count_for(counts or {}, getattr(candidate, "subtitle_id", "")) > 0:
+        return "used-before"
+    return "most-downloaded"
+
+
+def auto_pick_blocked(*, settings, stored_preference, tracks, audio_language: str,
+                      language: str) -> str:
+    """The gates BEFORE any network call — ``""`` when none of them blocks.
+
+    ⚠⚠ **THIS HALF EXISTS SO A BLOCKED TITLE COSTS NOTHING.** Every answer here is
+    knowable locally (the store, the item's own tracks, the setting), so the route can
+    return the reason without asking OpenSubtitles anything — which is both the honest
+    order and the cheap one.
+
+    ⚠ A stored **disabled** record counts as a choice: his decision 2's per-title `Off`
+    must beat the auto-pick, or "off" would re-arm on the next play.
+    """
+    s = normalise_auto_pick_settings(settings)
+    if not s["auto_pick"]:
+        return "disabled"
+    if stored_preference:
+        # ⚠ TWO DIFFERENT FACTS, TWO DIFFERENT SENTENCES. "You already chose one" is wrong
+        # (and unhelpfully vague) for a title the viewer turned subtitles OFF on — the
+        # disabled record is a choice all the same (his decision 2's per-title Off).
+        if stored_preference.get("disabled"):
+            return "title_off"
+        return "already_chosen"
+    if has_local_track_in(tracks, language):
+        return "has_local_track"
+    code = normalise_language(audio_language)
+    if code and code in s["auto_pick_skip_audio"]:
+        return "audio_excluded"
+    return ""
+
+
+def auto_pick_shortfall(*, remaining, candidate) -> str:
+    """The gates that need the search's own answer — ``""`` when the pick may go ahead.
+
+    ⚠ ``remaining is None`` is NOT the same as zero: with an API key and no login, the
+    allowance is only reported on a download, so "unknown" means the api cannot promise
+    the download will succeed. His decision 1 is explicit — *no attempt* — and the client
+    turns ``quota_unknown`` into the one line that fixes it (*add OPENSUBTITLES_USERNAME /
+    PASSWORD*), because a silent no-op would read as a broken feature.
+    """
+    if remaining is None:
+        return "quota_unknown"
+    try:
+        if int(remaining) <= 0:
+            return "quota_exhausted"
+    except (TypeError, ValueError):
+        return "quota_unknown"
+    if candidate is None:
+        return "no_candidate"
+    return ""
+
+
+#: Every reason the auto-pick can decline, with the sentence the clients render. ⚠ One
+#: vocabulary, one place: the api answers with the CODE and the clients never invent copy.
+AUTO_PICK_REASONS = {
+    "apply": "Auto-subtitles applied the most downloaded result",
+    "disabled": "Auto-subtitles is off",
+    "already_chosen": "You have already chosen a subtitle for this title",
+    "title_off": "Subtitles are off for this title",
+    "has_local_track": "This title already has its own subtitle in that language",
+    "audio_excluded": "This title's language is excluded from auto-subtitles",
+    "not_configured": "OpenSubtitles is not configured",
+    "no_search_terms": "This item has no title to search subtitles with",
+    "unavailable": "OpenSubtitles could not be reached — nothing was applied",
+    "quota_unknown": "Download count unknown — sign in to OpenSubtitles to enable auto-subtitles",
+    "quota_exhausted": "No OpenSubtitles downloads left today",
+    "no_candidate": "No subtitle in that language was found",
+}
+
+
 def merge_subtitle_rows(tracks: List[dict], remote: List, *, counts=None,
                         active_index: Optional[int] = None,
                         active_subtitle_id: Optional[str] = None,

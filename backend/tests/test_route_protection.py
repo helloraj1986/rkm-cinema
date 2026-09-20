@@ -104,6 +104,17 @@ ROUTE_LEVELS: dict[str, str] = {
     "GET /api/jellyfin/subtitle-search": SESSION,
     "POST /api/jellyfin/subtitle-select": SESSION,
     "POST /api/jellyfin/subtitle-disable": SESSION,
+    #    ⚠ THE AUTO-PICK'S OWN THREE, and they are SESSION for the same reason the rest of the
+    #    subtitle group is: choosing what a member watches is theirs, not the administrator's.
+    #    ⚠ `subtitle-settings` is a HOUSEHOLD preference (one store, like the subtitle prefs
+    #    themselves — multi-user scoping is explicitly out of scope in the subtitle plan §7),
+    #    so it is not `ADMIN`: promoting it would hide the off switch from the person who
+    #    needs it. It writes no file outside the api's own store.
+    "GET /api/jellyfin/subtitle-settings": SESSION,
+    "POST /api/jellyfin/subtitle-settings": SESSION,
+    #    ⚠ This one DOWNLOADS and attaches a subtitle — a write, like `subtitle-select`, and it
+    #    is spent ON THE CALLER'S BEHALF. Same level as the manual pick it mirrors.
+    "POST /api/jellyfin/subtitle-auto": SESSION,
     "GET /api/jobs": SESSION,
     "GET /api/library": SESSION,
     "GET /api/library/continue-watching": SESSION,

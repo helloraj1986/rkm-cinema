@@ -1,3 +1,44 @@
+## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-21, session 4) · ⚙️🔧 **THE SUBTITLE AUTO-PICK, PHASE A (THE SERVER) IS BUILT — HE ASKED FOR THE POPULARITY NUMBER AND A DEFAULT THAT PICKS ITSELF**: *"add the no of times a subtitle is being downloaded from the opensubtitles api to better inform me the user and apply the most downloaded subtitle automatically by default.. user can choose to off it later"* ⇒ his four decisions (first play / global switch + per-title Off + per-language exclusion / the configured list's first entry / **never SDH**) are executed in **`docs/SUBTITLE_AUTOPICK_PLAN.md`**, and **Phase A — the api side — is committed**. ⚠⚠ **THIS NEEDS A DEPLOY TO BE VISIBLE**: `backend/` changed, so RKM-HP needs `setup-watchlist.ps1` (or `apply`) — **nothing under `frontend/` or `nginx/` changes the running stack from here**. ⚠ **Phases B (tvOS) and C (web) are NOT built yet** — the two clients still render neither the counts nor the badge, and neither calls `subtitle-auto`, so until B/C land the feature is server-capable and client-invisible.
+
+### ⚙️ PHASE A — THE SERVER: THE AUTO-PICK, AND THE NUMBER THAT JUSTIFIES IT (2026-09-21)
+
+⚠⚠ **THE VENDOR'S POPULARITY NUMBER WAS ALREADY ON THE WIRE AND SHOWN NOWHERE.** `download_count` is fetched,
+parsed, decoded by BOTH clients and used to RANK results (criterion 8) — so the panel could say *which* row was
+best but never *why*, and `used_count` (criterion 7) was rendered by the web panel and **not on tvOS**. Phase A
+puts both facts in one payload — `settings`, `auto_language` and `auto` on `subtitle-search` — and gives the api
+the rule that acts on them.
+
+⚠⚠ **THE RULE IS TWO HALVES, AND THE SPLIT IS THE POINT: everything knowable LOCALLY answers before a single
+request is made.** `auto_pick_blocked` (the switch · a stored choice — **including a per-title `Off`** · the
+item's own subtitle in that language · the audio-language exclusion) is pure store/metadata; only a title that
+passes all four reaches `auto_pick_shortfall` (the quota and the candidate) and the search. A test holds it with
+`transport.count("/subtitles") == 0` — **a blocked title that still searched would be handing a metered account
+to a rule that had already declined.**
+
+⚠ **The candidate is the first row of the SAME ranking the panel draws** — our usage, then `download_count` —
+filtered to the language and to non-SDH (his decision 4). That is what makes the badge and the applied subtitle
+**incapable of disagreeing**, and it is why the badge says `Your pick before` when our usage put the row first
+and `Most downloaded` only when popularity actually did.
+
+⚠⚠ **THE STORE TRAP, AND IT WOULD HAVE BEEN INVISIBLE:** `_mutate` writes back whatever `load()` returned, so a
+`settings` block that `load()` did not carry would be **ERASED by the next subtitle the user chose** — silently,
+with nothing about that write looking wrong. `load()` now returns `prefs`, `usage` **and** `settings`, and a test
+pins the survival.
+
+⚠ **A DECLINE IS A 200, ALWAYS.** The viewer never asked for the download — the app did — so every refusal is
+`decision` + `reason` from ONE vocabulary (`subtitles.AUTO_PICK_REASONS`), never a 500 the player must survive.
+⚠ And **`quota_unknown` is a real answer he will meet**: without an OpenSubtitles login the allowance is only
+reported ON a download, so his own decision (*0 or unknown → no attempt*) means an anonymous setup gets that
+sentence instead of a hopeful attempt — the fix is `OPENSUBTITLES_USERNAME`/`PASSWORD` in `.env`, and the pane
+will say so.
+
+| | |
+|---|---|
+| **Files** | `backend/services/subtitles.py` (the seven pure rules + `AUTO_PICK_REASONS`) · `backend/services/subtitle_store.py` (`load()` gains `settings`; `settings()`, `update_settings()` — partial) · `backend/api/models.py` (`SubtitleSettingsRequest`, `SubtitleAutoRequest`) · `backend/api/routes/jellyfin_subtitles.py` (`GET`/`POST …/subtitle-settings`, `POST …/subtitle-auto`, and `subtitle-search` +`settings`/`auto_language`/`auto`) · `backend/tests/test_subtitles_api.py` (+25) · `backend/tests/test_route_protection.py` (3 routes declared `SESSION`) · `docs/api/openapi.v1.json` (**regenerated from `app.openapi()` — additive: 3 routes, 2 schemas**) · `frontend/src/lib/api/types.ts` (regenerated) · `frontend/src/lib/api/client.ts` (4 shapes + 3 methods — **the shape source for Phase B**) |
+| **Gates** | backend **1366 passed** · `check-tvos-models.py` **PASS** (180 keys, 25 endpoint literals) · frontend `tsc --noEmit` **clean** · vitest **589 passed (23 files)** · `tools/check_md_links.py` **80 files** |
+| **⚠ NOT run** | `--falsify` on the backend (the repo's backend gates are pytest, which ran in full) — and **no live OpenSubtitles call was possible: the sandbox has no `OPENSUBTITLES_API_KEY`**, so *whether `download_count` actually arrives on every search row* is **assumed from the parser, not observed**. His round settles it (A-F1); if it does not arrive, the row simply shows no count (§3's rule) |
+| **⚠ NOT built** | **Phase B (tvOS: the counts, the badge, the settings rows, the `subtitle-auto` call on load) and Phase C (the web player's parity)** — the plan's §4 says what they are |
+
 ## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-21, session 3 continued) · 🔧🔧 **PHASE P3 IS BUILT — HIS SECOND REPORT IN THE SAME ROUND: *"i click on subtitles all the other control vanishes.. i only see"*** [nineteen OpenSubtitles release names] ⇒ **TWO MECHANISMS, AND ONLY ONE WAS A LAYOUT BUG**: **(a)** the Subtitles pane was a bare `VStack` of every row it had, so **19 rows = 1875.2 pt of panel on a 1080 pt screen**, and a child taller than its container overflows **BOTH** ways — **≈398 pt of the panel was drawn ABOVE the top edge** (the "PLAYER SETTINGS" header, the pane title, `Off`, the film's own tracks, the `Search` action **and all five rail items**); **(b)** and the pane **had no business drawing those rows at all** — `subtitle-search` was fetched on LOAD and drawn immediately, in a pane whose prototype is *`Off` · the film's own tracks · an ACTION*. Full record: **`docs/TVOS_PLAYER_POLISH_PLAN.md` §8** · ⚠⚠ **NO deploy and nothing needs `apply`: no file under `backend/`, `frontend/` or `nginx/` changed** · ⚠ **not one SwiftUI view compiles here** — whether the pane *scrolls under the ring* is P3-F3, and only his round can answer it.
 
 ### 🔧 PHASE P3 — HIS SECOND REPORT: THE SUBTITLES PANE (2026-09-21)

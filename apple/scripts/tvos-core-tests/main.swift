@@ -1416,11 +1416,17 @@ section("the grid's arithmetic")
 // ⚠⚠ THE CARD'S WIDTH IS AN INVARIANT, not a hope: `repeat(6, 1fr)` with a `64px` page margin and a `28px`
 // column gap, pinned to the platform's 1920pt canvas. This is the same trade as the profile row's fit — the
 // alternative is finding out on his television.
-check(abs(LibraryRules.cardWidth(containerWidth: 1920) - 263.72) < 0.01,
+// ⚠⚠ **AND IT IS NOW BOUND TO `u`, WHICH IS HOW THE VIEW FINDS IT** (`BrowseView.cardWidth` uses
+// `TVTokens.u * 100` instead of measuring a container). `u` is DEFINED as one percent of the screen's width,
+// so "the canvas is 100u" is the identity that makes the constant below correct — and pinning it here is what
+// stops the view's constant and this arithmetic from becoming one rule in two places.
+check(abs(TVTokens.u * 100 - 1920) < 0.001,
+      "the platform's canvas is 100u wide — the identity the grid's card width is derived from")
+check(abs(LibraryRules.cardWidth(containerWidth: TVTokens.u * 100) - 263.72) < 0.01,
       "six columns at 1920pt are 263.72pt wide")
-check(abs(LibraryRules.cardWidth(containerWidth: 1920) * TVTokens.Grid.cardAspect - 395.58) < 0.01,
+check(abs(LibraryRules.cardWidth(containerWidth: TVTokens.u * 100) * TVTokens.Grid.cardAspect - 395.58) < 0.01,
       "a 2:3 card at that width is 395.58pt tall")
-check(abs(6 * LibraryRules.cardWidth(containerWidth: 1920)
+check(abs(6 * LibraryRules.cardWidth(containerWidth: TVTokens.u * 100)
           + 5 * TVTokens.Grid.columnGap
           + 2 * LibraryRules.marginFromPrototype - 1920) < 0.01,
       "six cards, five gaps and two margins are exactly the screen")

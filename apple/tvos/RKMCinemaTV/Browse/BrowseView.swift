@@ -205,36 +205,54 @@ struct BrowseView: View {
         return VStack(alignment: .leading, spacing: 0) {
             filterRow(total: items.count, shown: shown.count)
 
-            // ⚠ The card's width is the grid's arithmetic and it needs the container's own width, so the
-            // measuring happens here and the RESULT is handed to every card — one calculation, six columns,
-            // and no card measuring itself (`LibraryRules.cardWidth` is RUN in the gate set).
-            GeometryReader { geometry in
-                let cardWidth = LibraryRules.cardWidth(containerWidth: geometry.size.width)
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(alignment: .leading, spacing: TVTokens.Grid.gridTitleGap) {
+                    Text(gridTitle)
+                        .font(.system(size: TVTokens.Grid.gridTitleSize))
+                        .foregroundStyle(RKMColour.secondary)
 
-                ScrollView(.vertical, showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: TVTokens.Grid.gridTitleGap) {
-                        Text(gridTitle)
-                            .font(.system(size: TVTokens.Grid.gridTitleSize))
-                            .foregroundStyle(RKMColour.secondary)
+                    if shown.isEmpty {
+                        emptyState
+                    } else {
+                        gridRows(shown, cardWidth: Self.cardWidth)
 
-                        if shown.isEmpty {
-                            emptyState
-                        } else {
-                            gridRows(shown, cardWidth: cardWidth)
-
-                            if store.canMountMore {
-                                Button("Load more titles") { store.mountMore() }
-                                    .font(.system(size: TVTokens.Grid.emptyBodySize))
-                                    .padding(.top, TVTokens.Grid.filterBottomPad)
-                            }
+                        if store.canMountMore {
+                            Button("Load more titles") { store.mountMore() }
+                                .font(.system(size: TVTokens.Grid.emptyBodySize))
+                                .padding(.top, TVTokens.Grid.filterBottomPad)
                         }
                     }
-                    .padding(.horizontal, LibraryRules.marginFromPrototype)
-                    .padding(.bottom, TVTokens.Grid.gridBottomPad)
-                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                .padding(.horizontal, LibraryRules.marginFromPrototype)
+                .padding(.bottom, TVTokens.Grid.gridBottomPad)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
+    }
+
+    /// ⚠⚠ **THE GRID'S CARD WIDTH — AND WHY THERE IS NO `GeometryReader` AROUND THE GRID ANY MORE.**
+    ///
+    /// It used to be `GeometryReader { geometry in LibraryRules.cardWidth(containerWidth: geometry.size.width) }`,
+    /// which measured the container. Three reasons it is now a constant, in order of weight:
+    ///
+    ///  1. **The measurement was never needed.** `TVTokens.u` is *defined* as one percent of the screen's width
+    ///     (`u = 19.2 pt` on the platform's fixed 1920 × 1080 point canvas), so the screen is **`u * 100`** by
+    ///     definition. The harness pins that identity, so the constant and `u` cannot drift apart.
+    ///  2. ⚠⚠ **A `GeometryReader` was wrapped around a focusable, LAZILY laid-out region, and that is the one
+    ///     structural difference between this grid and the app's own working pattern.** The Home's rails are a
+    ///     `ScrollView` of focusable cards in a `VStack` with **no** reader around them, and Down into them
+    ///     works; a `LazyVGrid` decides which rows to materialise from the size it is PROPOSED, while a
+    ///     `GeometryReader` reports its size only after layout — two ideas about the same box, and the rows'
+    ///     frames are what the focus engine navigates on.
+    ///  3. ⚠⚠ **It is offered as the cause of his second report, and it is NOT proven** — his words:
+    ///     *"when i filter by clicking on any tags … i cant come to the titles by pressing down arrow"*. Note
+    ///     the condition: filtering is exactly when the grid's content becomes SHORTER than the viewport. If
+    ///     Down still cannot enter the grid after this change, the reader was not it — and then a screenshot
+    ///     of the FILTERED state is the next thing to look at, not another blind change.
+    ///
+    /// ⚠ No focus arithmetic is added anywhere: this REMOVES a container. It does not compute a destination.
+    private static var cardWidth: CGFloat {
+        LibraryRules.cardWidth(containerWidth: TVTokens.u * 100)
     }
 
     /// `.grid { grid-template-columns: repeat(6, 1fr) }` — a FIXED six, which is also what gives the focus
@@ -331,22 +349,21 @@ struct BrowseView: View {
     /// the real grid: a skeleton laid out by its own arithmetic is a layout that jumps the moment the posters
     /// land, which is the one thing the state exists to prevent.
     private var skeletonGrid: some View {
-        GeometryReader { geometry in
-            let cardWidth = LibraryRules.cardWidth(containerWidth: geometry.size.width)
-
-            ScrollView(.vertical, showsIndicators: false) {
-                LazyVGrid(columns: gridColumns(cardWidth),
-                          alignment: .leading,
-                          spacing: TVTokens.Grid.rowGap) {
-                    ForEach(0..<(TVTokens.Grid.columns * 2), id: \.self) { _ in
-                        RoundedRectangle(cornerRadius: TVTokens.Grid.cardRadius, style: .continuous)
-                            .fill(RKMColour.surface2)
-                            .frame(width: cardWidth, height: cardWidth * TVTokens.Grid.cardAspect)
-                    }
+        ScrollView(.vertical, showsIndicators: false) {
+            // ⚠ The same `Self.cardWidth` and the same column count as the real grid, and no
+            // `GeometryReader` — see `cardWidth`'s note. A skeleton laid out by its own arithmetic is a layout
+            // that jumps the moment the posters land, which is the one thing this state exists to prevent.
+            LazyVGrid(columns: gridColumns(Self.cardWidth),
+                      alignment: .leading,
+                      spacing: TVTokens.Grid.rowGap) {
+                ForEach(0..<(TVTokens.Grid.columns * 2), id: \.self) { _ in
+                    RoundedRectangle(cornerRadius: TVTokens.Grid.cardRadius, style: .continuous)
+                        .fill(RKMColour.surface2)
+                        .frame(width: Self.cardWidth, height: Self.cardWidth * TVTokens.Grid.cardAspect)
                 }
-                .padding(.horizontal, LibraryRules.marginFromPrototype)
-                .padding(.vertical, TVTokens.Grid.filterBottomPad)
             }
+            .padding(.horizontal, LibraryRules.marginFromPrototype)
+            .padding(.vertical, TVTokens.Grid.filterBottomPad)
         }
     }
 

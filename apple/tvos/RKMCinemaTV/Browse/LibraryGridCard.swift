@@ -76,15 +76,20 @@ struct LibraryGridCard: View {
     private var artwork: some View {
         PosterImageView(base: base, itemID: item.itemID)
             .frame(width: width, height: artHeight)
-            .clipShape(RoundedRectangle(cornerRadius: TVTokens.Grid.cardRadius, style: .continuous))
-            // ⚠ `.label { position:absolute; left:0; right:0; bottom:0 }` — the caption lives INSIDE the
-            // card's bottom edge, over a `.label`-own `linear-gradient(to top, rgba(0,0,0,.85), transparent)`
-            // scrim. That scrim travels WITH the label, so at rest the card really is art only.
+            // ⚠⚠ **THE CAPTION IS INSIDE THE CARD'S SILHOUETTE — ONE `clipShape` AFTER the overlay, not
+            // before it.** Measured from his screenshot, 2026-09-20: *"on the card on the bottom left and right
+            // i can see square shape black background corners possibly coming from the background color"*.
+            // They were the caption's scrim — a `Rectangle`, so square — drawn as an `.overlay` on a view that
+            // had ALREADY been clipped, so the scrim's square corners sat on top of the artwork's rounded ones
+            // and the card's bottom corners read as two black squares.
+            // ⚠ His CSS has the answer: `.card { border-radius:14px; overflow:hidden }` — the artwork AND the
+            // label are clipped by ONE rounded shape. Clipping last is that, in SwiftUI.
             .overlay(alignment: .bottom) {
                 LibraryCardReveal {
                     caption
                 }
             }
+            .clipShape(RoundedRectangle(cornerRadius: TVTokens.Grid.cardRadius, style: .continuous))
     }
 
     private var caption: some View {
@@ -175,19 +180,28 @@ struct LibraryCardStyle: ButtonStyle {
 
         var body: some View {
             configuration.label
-                .scaleEffect(isFocused ? TVTokens.Grid.cardFocusScale : 1)
-                .shadow(color: .black.opacity(0.55),
-                        radius: TVTokens.Grid.cardShadowRadius * 0.6,
-                        y: TVTokens.Grid.cardShadowY)
+                // ⚠⚠ **THE RING AND THE LIFT ARE IN THIS ORDER, AND THAT ORDER IS THE BUG HE REPORTED.**
+                // His words, 2026-09-20: *"when i hover over card by navigating, the yellow line should be
+                // covering the card"* — with `scaleEffect` applied FIRST, the ring was drawn on the UNSCALED
+                // label, so the card grew to 1.14 OUT OF the ring: the artwork and the caption stuck out past
+                // it on every side, the bottom worst of all, which is exactly where the black squares showed.
+                // ⚠ **The ring is inside the transform, so it scales with the card** — which is what his CSS
+                // does: `.card.is-focused { transform: scale(1.14); box-shadow: 0 0 0 3px var(--gold) }` — a
+                // transform in CSS scales the element AND its box-shadow, so putting the ring inside the scale
+                // is his file's behaviour, not a workaround.
                 .overlay {
                     RoundedRectangle(cornerRadius: TVTokens.Grid.cardRadius, style: .continuous)
                         .stroke(RKMColour.accent,
                                 lineWidth: isFocused ? TVTokens.Grid.cardFocusRing : 0)
                 }
+                .shadow(color: .black.opacity(0.55),
+                        radius: TVTokens.Grid.cardShadowRadius * 0.6,
+                        y: TVTokens.Grid.cardShadowY)
                 // ⚠ The focus GLOW — the prototype's second shadow, `0 0 34px rgba(232,179,61,.45)` — drawn
                 // only when focused, because a glow at rest would tint every card in the wall.
                 .shadow(color: RKMColour.accent.opacity(isFocused ? 0.45 : 0),
                         radius: TVTokens.Grid.cardShadowRadius)
+                .scaleEffect(isFocused ? TVTokens.Grid.cardFocusScale : 1)
                 .animation(.timingCurve(0.34, 1.56, 0.64, 1, duration: 0.26), value: isFocused)
         }
     }

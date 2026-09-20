@@ -109,6 +109,9 @@ Its own comment: *"Is this band wider than it is tall — a hero band, a 16:9 ca
 * **It does not reintroduce a `ScrollView`.** The page fits (§2), nothing below `Play` takes focus, and the
   container was deleted in round 11 for a reason that has not changed.
 * **It does not touch the Home.** The Home's hero band is a band by design — it sits above two rails that DO scroll,
-  and Apple's own TV apps do the same. ⚠ Offered, not done: `HeroBand` could take the same tinted scrim, which is
-  one shared change once this one is confirmed.
+  and Apple's own TV apps do the same. ⚠ **TAKEN — W14 (2026-09-20): `HeroBand` carries the same tinted scrim**,
+  on his instruction. ⚠ It uses `ArtworkTint.bandScrim(for:)`, the BAND variant, which is this file's rule at a
+  lighter wash — because a band's copy already sits on the band's own fade to solid `background`, so a
+  page-strength wash would flatten the keyart into a grey rectangle. The one number that differs is a named
+  constant (`bandWashFactor`), pinned, and not a magic factor in a view.
 * **It adds no focusable control.** The bands below `Play` stay information; `ARCHITECTURE.md` §11 is unchanged.

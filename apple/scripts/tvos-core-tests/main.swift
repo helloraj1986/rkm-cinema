@@ -1799,8 +1799,10 @@ check(abs(ArtworkTint.void.luminance - 0.043) < 0.01,
       "the neutral tint is the app's own void (#0A0B0D) as components — and this pins it against RKMColour.background",
       "got \(ArtworkTint.void.luminance)")
 
-let darkArt  = ArtworkTint.scrim(for: ArtworkRGB(red: 0.05, green: 0.05, blue: 0.05))
-let brightArt = ArtworkTint.scrim(for: ArtworkRGB(red: 0.95, green: 0.95, blue: 0.95))
+let darkColour = ArtworkRGB(red: 0.05, green: 0.05, blue: 0.05)
+let brightColour = ArtworkRGB(red: 0.95, green: 0.95, blue: 0.95)
+let darkArt  = ArtworkTint.scrim(for: darkColour)
+let brightArt = ArtworkTint.scrim(for: brightColour)
 checkEqual(ArtworkTint.scrim(for: nil).tintAlpha, 0,
            "with no colour there is no tint — the neutral scrim is a wash and nothing else")
 check(darkArt.wash < brightArt.wash,
@@ -1812,6 +1814,21 @@ check(brightArt.wash <= ArtworkTint.washRange.upperBound && darkArt.wash >= Artw
 check(brightArt.tintAlpha < darkArt.tintAlpha,
       "the tint runs the OTHER way: a bright artwork needs more of its own colour over the title, a dark one almost none",
       "dark \(darkArt.tintAlpha) vs bright \(brightArt.tintAlpha)")
+
+// ⚠⚠ ---- W14: THE HOME'S HERO BAND USES THE SAME RULE AT A LIGHTER WASH (his instruction: *"the Home's hero gets
+// the same tinted scrim"*). ⚠ The two surfaces differ by ONE NAMED CONSTANT, so the reason is written where the
+// number is — not as a magic factor inside a view, which is a design value nothing could compare against anything.
+let bandWash = ArtworkTint.bandScrim(for: brightColour).wash
+check(abs(bandWash - brightArt.wash * ArtworkTint.bandWashFactor) < 0.0001,
+      "the hero band's wash is the page's times `bandWashFactor` — one rule, and the one number that differs is named",
+      "got \(bandWash), want \(brightArt.wash * ArtworkTint.bandWashFactor)")
+check(bandWash < brightArt.wash,
+      "…and it is LIGHTER than the page's, because the band's copy already sits on its own fade to solid background — a page-strength wash would flatten the keyart",
+      "band \(bandWash) vs page \(brightArt.wash)")
+checkEqual(ArtworkTint.bandScrim(for: brightColour).tintColour, brightArt.tintColour,
+           "the band and the page use the SAME colour — only the depth differs")
+checkEqual(ArtworkTint.bandScrim(for: nil).tintAlpha, 0,
+           "the band's neutral case has no tint either, so a failed artwork leaves the fallback wash a wash")
 
 // ⚠⚠ ---- W1: THE BOX A SCREEN LAYS OUT IN, WHICH IS THE WHOLE OF KNOWN_ISSUES #13.
 //

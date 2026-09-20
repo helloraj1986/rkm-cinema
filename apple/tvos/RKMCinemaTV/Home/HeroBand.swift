@@ -38,6 +38,14 @@ struct HeroBand: View {
     let onPrimary: () -> Void
     let onDetails: () -> Void
 
+    /// ⚠⚠ **THE ARTWORK'S OWN COLOUR, FOR THE BAND'S SCRIM (W14, 2026-09-20).** The title screen got this in
+    /// W13 and his next instruction was to bring it here — *"the Home's hero gets the same tinted scrim"*. It is
+    /// filled once by the band's `PosterImageView` (`onImage:`) and consumed by `gradients`.
+    ///
+    /// ⚠ `nil` is the FIRST state, and it is what the band keeps if the artwork fails: `ArtworkTint.scrim(for:)`
+    /// answers it with the neutral scrim, so the copy is legible on the fallback wash before any colour exists.
+    @State private var artworkTint: ArtworkRGB?
+
     private var isSeries: Bool { HomeRules.isSeries(item) }
     private var isEpisode: Bool { HomeRules.isEpisodeItem(item) }
     private var percent: Int { HomeRules.heroPercent(item) }
@@ -84,7 +92,12 @@ struct HeroBand: View {
     private var artwork: some View {
         ZStack {
             Self.fallbackWash
-            PosterImageView(base: base, itemID: item.itemID, route: .backdrop)
+            PosterImageView(base: base,
+                            itemID: item.itemID,
+                            route: .backdrop,
+                            // ⚠⚠ W14: the band's scrim is built from the artwork's own colour, exactly as the
+                            // title page's is — one rule (`ArtworkTint`), one sampler, two surfaces.
+                            onImage: { artworkTint = ArtworkTint.tint(samples: $0.rkmSampleGrid()) })
         }
         // ⚠⚠ **THE ARTWORK FILLS WHATEVER THE BAND TURNS OUT TO BE (W2), AND IT CARRIES THE GRADIENTS ITSELF.**
         // It used to restate `TVTokens.Hero.height` as its own frame — which was right while that number WAS the
@@ -107,8 +120,32 @@ struct HeroBand: View {
     /// The bands that make the copy readable, built from the app's own `--bg` token rather than a hex: the
     /// prototype stacks three gradients (`0deg` bottom-first, plus a top darkening); these are those two jobs,
     /// and the bottom-fade is the one that carries the title.
+    ///
+    /// ⚠⚠ **AND SINCE W14 THEY START WITH THE ARTWORK'S OWN COLOUR** (his instruction: *"the Home's hero gets the
+    /// same tinted scrim"*). The rule is `ArtworkTint.bandScrim(for:)` — ⚠ the BAND variant, which is the page's
+    /// rule at a lighter wash, and which says why in one place. ⚠ **The geometry reads the same way round as the
+    /// title page's**: the tint is strongest at the TOP and fades out by `tintFade`, and the bottom — where the
+    /// eyebrow, the title and the buttons are — is the floor.
+    ///
+    /// ⚠ The two structural fades below are the app's own and stay: the LEADING one (the copy is at the leading
+    /// edge, and the keyart must not fight it) and the BOTTOM one, which is what makes the band blend into the
+    /// page instead of ending on a seam. ⚠ That bottom fade reaches `background` at FULL opacity rather than
+    /// `scrim.baseAlpha`, and deliberately: a band has a page below it to join, where the title page's floor has
+    /// nothing below it.
     private var gradients: some View {
-        ZStack {
+        let scrim = ArtworkTint.bandScrim(for: artworkTint)
+        return ZStack {
+            // ⚠ THE LEGIBILITY TERM — a flat wash, and the one that holds the copy against a BRIGHT poster
+            // rather than against the one that happened to be tested.
+            RKMColour.background.opacity(scrim.wash)
+
+            // ⚠ …and the artwork's own colour over the upper part of the band: the "gradient colour depending on
+            // the poster" half, and the reason two films give two different bands (falsifier A5).
+            LinearGradient(stops: [
+                .init(color: RKMColour.artwork(scrim.tintColour, opacity: scrim.tintAlpha), location: 0),
+                .init(color: RKMColour.artwork(scrim.tintColour, opacity: 0), location: scrim.tintFade),
+            ], startPoint: .top, endPoint: .bottom)
+
             LinearGradient(colors: [RKMColour.background.opacity(0.9), .clear],
                            startPoint: .leading, endPoint: .trailing)
             LinearGradient(colors: [RKMColour.background.opacity(0.15), RKMColour.background],

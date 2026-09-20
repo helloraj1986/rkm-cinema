@@ -1,4 +1,4 @@
-## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-20) · 🖼️ **W13 IS BUILT AND IS HIS NEXT ROUND: the ARTWORK IS THE PAGE and the scrim is built from its own colour** (his ask, 2nd time: *"make it a background of the details page with using gradients color depening on the poster so that the text … can be seen clearly"*) — the hero band is GONE, the page is **1059.1 pt of 1080** (20.9 pt of air, pinned), `Core/ArtworkTint.swift` is the NEW pure rule (tint + the legibility wash, run on Linux), and **the ONE falsifier a screenshot cannot settle is A5: the scrim must CHANGE between a dark title and a bright one** · ⚠ no `apply` needed — no file under `backend/`, `frontend/` or `nginx/` changed · ✅ **`KNOWN_ISSUES` #15 IS CLOSED — HE CONFIRMED IT ON HIS SIMULATOR: *"yes it works now....i can switch between play button and back to browse"*** — **a tvOS press only moves focus to a target DIRECTLY BENEATH the pressed item**, and `Play`'s narrow frame did not overlap the bar's tab where `Resume (9%)`'s longer label did (which is why the defect looked data-dependent and survived four structural changes); the action row now carries a full-width `.focusSection()` and the content group's section sits OUTSIDE its `.frame(…)` · ✅ **`KNOWN_ISSUES` #17 IS CLOSED — HE CONFIRMED IT: *"the profile card is also working"*** · ⚠ branch `feat/tvos-player` carries it; `dev` does NOT · **nothing needs `apply`**: no file under `backend/`, `frontend/` or `nginx/` changed · ✅ **AND `KNOWN_ISSUES` #17 IS FIXED, AWAITING HIS ROUND** — the profile-switch password card lost focus out of the `SecureField` and stranded him, because **an `.overlay` is VISUAL ONLY** and left the screen behind in the focus chain (`Auth/ProfilesView.swift`: `.disabled` while a panel is up · `.focusSection()` on each card · `.onExitCommand` on each card · both cards claim focus) · 🎯 **AND DEFAULT FOCUS IS NOW A PER-SCREEN DECISION, ON HIS CHOICE** (2026-09-20): **Home → first card of the first rail** (`HomeSnapshot.defaultFocusCardID`, pure + 3 pins) and **Browse → the first poster the current filter shows** (his own `tvos-ux-principles.md` §6); detail (`Play`) and player (play/pause) already had it, and the profile picker stays on its first tile by his call. ⚠ `RailView` now takes the screen's `FocusState` binding because `.focused` must sit on the focusable view
+## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-20) · 🖼️ **W13 + W14 ARE BUILT, AND HIS ROUND ON THEM IS NEXT — the title screen's ARTWORK IS THE PAGE and the HOME'S HERO BAND carries the same tinted scrim**: (his ask, 2nd time: *"make it a background of the details page with using gradients color depening on the poster so that the text … can be seen clearly"*) — the hero band is GONE, the page is **1059.1 pt of 1080** (20.9 pt of air, pinned), `Core/ArtworkTint.swift` is the NEW pure rule (tint + the legibility wash, run on Linux), and **the ONE falsifier a screenshot cannot settle is A5: the scrim must CHANGE between a dark title and a bright one** · ⚠ no `apply` needed — no file under `backend/`, `frontend/` or `nginx/` changed · ✅ **`KNOWN_ISSUES` #15 IS CLOSED — HE CONFIRMED IT ON HIS SIMULATOR: *"yes it works now....i can switch between play button and back to browse"*** — **a tvOS press only moves focus to a target DIRECTLY BENEATH the pressed item**, and `Play`'s narrow frame did not overlap the bar's tab where `Resume (9%)`'s longer label did (which is why the defect looked data-dependent and survived four structural changes); the action row now carries a full-width `.focusSection()` and the content group's section sits OUTSIDE its `.frame(…)` · ✅ **`KNOWN_ISSUES` #17 IS CLOSED — HE CONFIRMED IT: *"the profile card is also working"*** · ⚠ branch `feat/tvos-player` carries it; `dev` does NOT · **nothing needs `apply`**: no file under `backend/`, `frontend/` or `nginx/` changed · ✅ **AND `KNOWN_ISSUES` #17 IS FIXED, AWAITING HIS ROUND** — the profile-switch password card lost focus out of the `SecureField` and stranded him, because **an `.overlay` is VISUAL ONLY** and left the screen behind in the focus chain (`Auth/ProfilesView.swift`: `.disabled` while a panel is up · `.focusSection()` on each card · `.onExitCommand` on each card · both cards claim focus) · 🎯 **AND DEFAULT FOCUS IS NOW A PER-SCREEN DECISION, ON HIS CHOICE** (2026-09-20): **Home → first card of the first rail** (`HomeSnapshot.defaultFocusCardID`, pure + 3 pins) and **Browse → the first poster the current filter shows** (his own `tvos-ux-principles.md` §6); detail (`Play`) and player (play/pause) already had it, and the profile picker stays on its first tile by his call. ⚠ `RailView` now takes the screen's `FocusState` binding because `.focused` must sit on the focusable view
 
 ### 🔁 ROUND 10 — the fix was reverted on arithmetic, and the falsifier finally exists (2026-09-20)
 
@@ -162,6 +162,36 @@ green for the wrong reason.
 ⚠⚠ **THE ONE THING HIS ROUND MUST PROVE THAT A SCREENSHOT CANNOT:** the scrim has to **change between two titles** —
 one dark, one bright. Everything else (the art covering the page, text staying readable, a poster-only title not
 cropped to a third, the page fitting, `Play` still reachable) is visible in a single frame.
+
+### 🎬 W14 — THE HOME'S HERO BAND TAKES THE SAME TINTED SCRIM (2026-09-20)
+
+His instruction, straight off the back of W13: *"the Home's hero gets the same tinted scrim"*. **One rule, two
+surfaces** — `Core/ArtworkTint.swift` was already there, so this is a view change and one new constant.
+
+⚠⚠ **AND THE ONE NEW CONSTANT IS THE INTERESTING PART: A BAND DOES NOT WANT A PAGE-STRENGTH WASH.**
+`ArtworkTint.bandScrim(for:)` is the page's rule at `bandWashFactor` (0.55) of its wash, **because the two surfaces
+carry contrast differently**: on the title page the wash is the only thing between the text and the artwork over
+most of the page, whereas a hero band's copy sits ON the band's own fade to solid `background` (kept, because the
+band has to blend into the page below it). A page-strength wash on top of that flattens the keyart into a grey
+rectangle — the one thing a band exists to avoid. ⚠ The colour, the luminance rule and the fade point are SHARED;
+only the depth differs, and the number that says so is named and pinned rather than a factor buried in a view.
+
+⚠ **AND THE BAND'S GEOMETRY READS THE SAME WAY ROUND AS THE PAGE'S** — tint strongest at the top, fading out by
+`tintFade`, with the floor at the bottom where the copy is. Two screens, one rule, no second vocabulary.
+
+| | |
+|---|---|
+| **Files** | `Home/HeroBand.swift` (`@State artworkTint` fed by `PosterImageView(onImage:)`, and the scrim in `gradients`) · `Core/ArtworkTint.swift` (`bandWashFactor`, `bandScrim(for:)`) · `apple/scripts/tvos-core-tests/main.swift` (+4 pins) |
+| **Gates** | core **655 checks / 0 failures** · members PASS · models PASS · imports PASS · design tokens PASS · typecheck PASS (46 files) · ⚠ `--falsify` NOT run (his standing rule) |
+| **⚠ NOT verified** | no SwiftUI view compiles here — `HeroBand` is Mac-only. What IS executed is the rule and its two variants |
+| **⚠ His round** | the Home's band must **change colour from title to title** (falsifier **A5**, the same one W13's round has), and the hero's copy must stay readable on a bright one |
+
+⚠⚠ **A NAMING TRAP THAT COST A COMPILE HERE, WORTH KNOWING:** `ArtworkTint` has a static method `tint(samples:)`, so
+a property called `tint` on its nested `Scrim` reported `cannot convert value of type 'ArtworkTint.Scrim' to
+expected argument type 'ArtworkRGB'` — a message that names neither the property nor the shadowing. ⇒ the property
+is `tintColour`. ⚠ And the first draft of the W14 pin passed a SCRIM where a COLOUR was wanted (the fixtures were
+named `brightArt`/`darkArt`), which the compiler caught immediately — **the sandbox's harness is the only thing on
+this machine that reads this code, so it pays to let it.**
 
 ### 🎬 PHASE W — THE SCREENS WERE DRAWN IN THE WRONG BOX, AND THE TITLE SCREEN IS NOW HIS FILE'S STRUCTURE (2026-09-20)
 

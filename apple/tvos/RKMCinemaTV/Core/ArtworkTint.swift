@@ -93,7 +93,11 @@ enum ArtworkTint {
     /// The scrim, as data — the view draws it and decides nothing.
     struct Scrim: Equatable {
         /// The colour the wash is tinted with: the artwork's own, or `void` when there is none.
-        let tint: ArtworkRGB
+        /// ⚠⚠ **NAMED `tintColour` AND NOT `tint`, AND THAT IS NOT STYLE.** `ArtworkTint` also has a STATIC METHOD
+        /// `tint(samples:)`, and a member called `tint` on a nested type makes `someScrim.tint` ambiguous for the
+        /// compiler — it reported `cannot convert value of type 'ArtworkTint.Scrim' to expected argument type
+        /// 'ArtworkRGB'`, measured. ⇒ the property is named for what it IS, and the collision cannot come back.
+        let tintColour: ArtworkRGB
         /// ⚠ A FLAT wash over the whole page. **This is the term that guarantees contrast in the middle**, where
         /// the synopsis, the credits and the cast sit — a gradient alone leaves the centre of the page on raw
         /// artwork, which is exactly where a bright poster beats the text.
@@ -122,14 +126,38 @@ enum ArtworkTint {
             // ⚠ The neutral case, and it is his prototype's own scrim measured against a flat page: a plain wash
             // with no tint at all. It is what the screen shows before the artwork arrives, and what a title with
             // no usable colour keeps.
-            return Scrim(tint: void, wash: 0.55, tintAlpha: 0, tintFade: 0, baseAlpha: 0.85)
+            return Scrim(tintColour: void, wash: 0.55, tintAlpha: 0, tintFade: 0, baseAlpha: 0.85)
         }
         let lum = min(max(tint.luminance, 0), 1)
-        return Scrim(tint: tint,
+        return Scrim(tintColour: tint,
                      wash: washRange.lowerBound + (washRange.upperBound - washRange.lowerBound) * lum,
                      tintAlpha: tintAlphaRange.lowerBound
                         + (tintAlphaRange.upperBound - tintAlphaRange.lowerBound) * (1 - lum),
                      tintFade: 0.45,
                      baseAlpha: 0.85)
+    }
+
+    // ---------------------------------------------------------------- the Home's hero band (W14)
+
+    /// ⚠⚠ **THE HERO BAND'S WASH IS A FRACTION OF THE PAGE'S, AND THE FRACTION IS A NAMED CONSTANT HERE — NOT A
+    /// MAGIC NUMBER IN A VIEW (`W14`, his instruction: *"the Home's hero gets the same tinted scrim"*).**
+    ///
+    /// ⚠ **Why it is not the same strength.** On the title page the wash is the ONLY thing between the text and
+    /// the artwork over most of its surface, so it carries the whole contrast job. A **hero band** is different:
+    /// its copy sits ON the band's own fade to solid `background` — a gradient that exists because the band has to
+    /// blend into the page below it — so most of the contrast is already there, and a page-strength wash on top of
+    /// it would flatten the keyart into a grey rectangle. That is the one thing a hero band exists to avoid.
+    ///
+    /// ⚠ **Everything else is shared**: the colour, the luminance rule behind its depth, and where it fades out.
+    /// ⇒ two surfaces, one rule, and the one number that differs says exactly why it differs.
+    static let bandWashFactor: Double = 0.55
+
+    static func bandScrim(for tint: ArtworkRGB?) -> Scrim {
+        let page = scrim(for: tint)
+        return Scrim(tintColour: page.tintColour,
+                     wash: page.wash * bandWashFactor,
+                     tintAlpha: page.tintAlpha,
+                     tintFade: page.tintFade,
+                     baseAlpha: page.baseAlpha)
     }
 }

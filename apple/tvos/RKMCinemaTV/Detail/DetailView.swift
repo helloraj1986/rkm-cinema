@@ -366,8 +366,8 @@ struct DetailView: View {
             RKMColour.background.opacity(scrim.wash)
 
             LinearGradient(stops: [
-                .init(color: RKMColour.artwork(scrim.tint, opacity: scrim.tintAlpha), location: 0),
-                .init(color: RKMColour.artwork(scrim.tint, opacity: 0), location: scrim.tintFade),
+                .init(color: RKMColour.artwork(scrim.tintColour, opacity: scrim.tintAlpha), location: 0),
+                .init(color: RKMColour.artwork(scrim.tintColour, opacity: 0), location: scrim.tintFade),
             ], startPoint: .top, endPoint: .bottom)
 
             LinearGradient(stops: [

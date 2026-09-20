@@ -174,8 +174,11 @@ corners (**#10**), and reaching the titles with Down after picking a genre (**#1
   this one — has measured the Profile row's dim state, the platform's column memory, the top bar's dim, or the
   Liquid Glass focus treatment. They stay **unmeasured** and must not be claimed either way.
 
-**What is next is HIS CALL, not a build:** merge `feat/tvos-ux` into `dev` if he wants it, and then Phase C — the
-player — parked on `feat/tvos-player` (state: `docs/TVOS_PLAYER_PLAN.md` §3).
+**What is next is PHASE C — THE PLAYER**, and he merged this branch on 2026-09-20 (recorded right below).
+⚠⚠ **`docs/TVOS_PLAYER_PLAN.md` is NOT on `dev`** — the plan was committed on `feat/tvos-player` only, so read it
+with `git show feat/tvos-player:docs/TVOS_PLAYER_PLAN.md` (or after checking that branch out); a session that
+greps `docs/` on `dev` will conclude the file is missing. State: **C1 built and parked (`6919626`); C2–C5 not
+started**; **C5 (the backend carrier) is built ONLY if C4's F2 comes back red.**
 
 ### ✅ MERGED: `feat/tvos-ux` → `dev` (`b78c210`, 2026-09-20)
 
@@ -261,7 +264,7 @@ deliberately unfinished.
 | Branch | Carries | State |
 |---|---|---|
 | **`feat/tvos-ux`** | `docs/TVOS_UX_PLAN.md` — the Profile Switcher + Home redesign, plus his design input under `tvos_ux/` | **PLAN ONLY — no Swift written.** All four of his decisions are recorded in §0.2/§1a/§2b. **U1 is the next phase** |
-| **`feat/tvos-player`** | **C1 — the playback credential** (`Core/PlaybackAuth.swift` + its gate section + 10 mutations) | **BUILT, GATED, PUSHED** (`6919626`): 320 checks / 55 mutations RED, typecheck + imports + models + md-links green. ⚠ **Parked MID-PHASE** — C2–C5 are not started, and `docs/TVOS_PLAYER_PLAN.md` §3 says C5 (the backend carrier) is built **only if the round's F2 proves it is needed** |
+| **`feat/tvos-player`** | **C1 — the playback credential** (`Core/PlaybackAuth.swift` + its gate section + 10 mutations) | **BUILT, GATED, PUSHED** (`6919626`): 320 checks / 55 mutations RED, typecheck + imports + models + md-links green. ⚠ **Parked MID-PHASE** — C2–C5 are not started, and `docs/TVOS_PLAYER_PLAN.md` §3 says C5 (the backend carrier) is built **only if the round's F2 proves it is needed**. ⚠⚠ **That plan file lives on THIS branch only — it is NOT on `dev`** (`git show feat/tvos-player:docs/TVOS_PLAYER_PLAN.md`) |
 
 ⚠⚠ **The one fact a next session must not get wrong:** the UX plan **supersedes the sequencing in
 `APPLE_CLIENTS_PLAN.md` §4.4 and `apple/tvos/README.md` §8**, both of which still describe Phase C as

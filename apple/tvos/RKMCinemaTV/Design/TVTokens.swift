@@ -679,6 +679,12 @@ enum TVTokens {
         static let settingsBottomPad = u * 4.5
         static let settingsHeaderSize = playerPx * 12.48  // `.settings-header { font-size:.78rem }`
         static let settingsHeaderTop = u * 2.6
+        /// ⚠⚠ **THE TRACKING, AND IT WAS MISSING FROM THE TRANSCRIPTION ENTIRELY** — his
+        /// `.settings-header { letter-spacing:.09em }` is what makes "PLAYER SETTINGS" read as a label rather
+        /// than as a stray line of text, and it is the reason the header is recognisable in his own screenshot.
+        /// ⚠ `em` is relative to the element's own font size, exactly like `badgePaddingH`, so it is the
+        /// header size multiplied rather than a second point value.
+        static let settingsHeaderTracking = settingsHeaderSize * 0.09
         static let settingsHeaderInset = playerPx * 41.6  // `left/right:2.6em` at the root 16 px
         static let navWidth = playerPx * 230
         static let navGap = playerPx * 4.8             // `.settings-nav { gap:.3em }`

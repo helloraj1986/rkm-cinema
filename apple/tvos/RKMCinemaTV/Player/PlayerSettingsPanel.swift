@@ -27,11 +27,33 @@ struct PlayerSettingsPanel: View {
     let onClose: () -> Void
 
     var body: some View {
-        HStack(alignment: .top, spacing: 0) {
-            rail
-            content
+        // ⚠⚠ **THE DRAWER IS A COLUMN WITH A HEADER — AND THE HEADER WAS THE MOST VISIBLE THING MISSING.**
+        // His screenshot's panel opens with **"PLAYER SETTINGS"** in small uppercase letterspaced type, and
+        // `TVTokens.Player.settingsHeaderSize` / `settingsHeaderTop` were transcribed for exactly that line
+        // (`…player.html:234`: `.settings-header { position:absolute; top:2.6%; left:2.6em; right:2.6em;
+        // font-size:.78rem; letter-spacing:.09em; … text-transform:uppercase }`) **and read by nothing**. An
+        // untitled rail of five words reads as a stray menu; the title is what says it is the player's settings.
+        // ⚠ His `position:absolute` means the header does NOT push the nav down, which is why it is a `VStack`
+        // header rather than an overlay: the nav's own inset (`settingsHeaderTop`) is what sits under it.
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Player Settings")
+                .font(.system(size: TVTokens.Player.settingsHeaderSize, weight: .bold))
+                .tracking(TVTokens.Player.settingsHeaderTracking)
+                .textCase(.uppercase)
+                .foregroundStyle(RKMColour.muted)
+                .padding(.horizontal, TVTokens.Player.settingsHeaderInset)
+                .padding(.top, TVTokens.Player.settingsHeaderTop)
+
+            HStack(alignment: .top, spacing: 0) {
+                rail
+                content
+            }
         }
         .frame(width: drawerWidth, alignment: .leading)
+        // ⚠ `padding:5.5% 0 4.5%` — the panel's own vertical inset, also read by nothing until now. Without it
+        // the drawer's first row sat against the top edge of a 1080 pt screen, where tvOS's overscan crops.
+        .padding(.top, TVTokens.Player.settingsTopPad)
+        .padding(.bottom, TVTokens.Player.settingsBottomPad)
         .background(RKMColour.background.opacity(0.86))
         .overlay(alignment: .leading) {
             Rectangle().fill(Color.white.opacity(0.09)).frame(width: 1)
@@ -64,6 +86,12 @@ struct PlayerSettingsPanel: View {
         }
         .frame(width: TVTokens.Player.navWidth, alignment: .leading)
         .padding(.leading, TVTokens.Player.settingsHeaderInset)
+        // ⚠⚠ **THE RAIL IS A SECTION, AND SO IS THE PANE — THIS IS WHAT MAKES THE DRAWER NAVIGABLE AT ALL.**
+        // His spec (§"Settings panel"): *"Left/Right moves between the rail and whichever content is on the
+        // right"*. Without a section on each side the two are just siblings in an `HStack`, and `Right` from
+        // the rail has no section to be aimed at — the same class of defect as `KNOWN_ISSUES` #15, and the
+        // reason a drawer that LOOKS right can be unusable. ⚠ A hypothesis (falsifier **P2-F4**).
+        .focusSection()
     }
 
     // MARK: - The content (`.settings-content`)
@@ -81,6 +109,9 @@ struct PlayerSettingsPanel: View {
         }
         .padding(.horizontal, TVTokens.Player.contentPaddingH)
         .frame(maxWidth: .infinity, alignment: .leading)
+        // ⚠ The pane is the drawer's OTHER section — the order matters (`frame` THEN `focusSection`), because
+        // a section is aimed at by its frame and must take up more space than its contents (round 12).
+        .focusSection()
         .overlay(alignment: .leading) {
             Rectangle().fill(Color.white.opacity(0.09)).frame(width: 1)
         }
@@ -294,6 +325,7 @@ struct DrawerNavStyle: ButtonStyle {
         let configuration: ButtonStyle.Configuration
         let isCurrent: Bool
         @Environment(\.isFocused) private var isFocused
+        @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
         var body: some View {
             configuration.label
@@ -306,7 +338,14 @@ struct DrawerNavStyle: ButtonStyle {
                         .fill(isFocused ? Color.white.opacity(0.1)
                                         : (isCurrent ? Color.white.opacity(0.06) : .clear))
                 )
-                .animation(.timingCurve(0.34, 1.56, 0.64, 1, duration: 0.22), value: isFocused)
+                // ⚠⚠ **THE RAIL'S FOCUS LIFT, WHICH NO VIEW EVER DREW** — his `.settings-nav-item.is-focused
+                // { transform:scale(1.06) }` (`…player.html:246`). `TVTokens.Player.navFocusScale` had **zero
+                // readers** from the day it was transcribed, so the drawer's rail gave NO feedback on focus: the
+                // background tint was the only cue, and against a near-black panel at three metres it is not
+                // one. ⚠ Drawn INSIDE the style, which is the U7 rule — the style owns its box.
+                .scaleEffect(isFocused && !reduceMotion ? TVTokens.Player.navFocusScale : 1)
+                .animation(reduceMotion ? nil : .timingCurve(0.34, 1.56, 0.64, 1, duration: 0.22),
+                           value: isFocused)
         }
     }
 }
@@ -362,6 +401,7 @@ struct DrawerListStyle: ButtonStyle {
         let isSelected: Bool
         let isAction: Bool
         @Environment(\.isFocused) private var isFocused
+        @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
         var body: some View {
             configuration.label
@@ -374,7 +414,14 @@ struct DrawerListStyle: ButtonStyle {
                     RoundedRectangle(cornerRadius: TVTokens.Player.listItemRadius, style: .continuous)
                         .fill(isFocused ? Color.white.opacity(0.1) : .clear)
                 )
-                .animation(.timingCurve(0.34, 1.56, 0.64, 1, duration: 0.22), value: isFocused)
+                // ⚠⚠ **AND THE LIST ROWS' OWN LIFT** — his `.settings-item.is-focused { transform:scale(1.04) }`
+                // (`…player.html:273`). `TVTokens.Player.listFocusScale` was the second of the drawer's two
+                // dead focus tokens, and it is the one that matters most: Audio Track and Subtitles are LISTS
+                // (`DetailRules`-style rows), so on those two panes the focused row was pixel-identical to
+                // every other row. ⚠ Both scales are his numbers, not the app's.
+                .scaleEffect(isFocused && !reduceMotion ? TVTokens.Player.listFocusScale : 1)
+                .animation(reduceMotion ? nil : .timingCurve(0.34, 1.56, 0.64, 1, duration: 0.22),
+                           value: isFocused)
         }
 
         /// ⚠ `.settings-item.action { color: var(--gold-bright) }` — an ACTION reads as a different kind of

@@ -231,6 +231,18 @@ struct PlayerView: View {
             RKMLog.info("player: leaving the foreground — pausing", category: .app)
             store.pause()
         }
+        // ⚠⚠ **P2 (his round) — EVERY INPUT RESTARTS THE CHROME'S CLOCK.** Three handlers, because on tvOS a
+        // remote press reaches the app by one of exactly three routes and no single one covers all of them:
+        //   · it MOVED the ring            → `onChange(of: focus)`
+        //   · it moved the drawer's ring   → `onChange(of: drawerFocus)`
+        //   · it moved neither (the ring is at the end of a row, so the focus engine had nowhere to put it)
+        //                                  → the root `onMoveCommand`, which is called for exactly the presses
+        //                                    the engine could not consume
+        // ⚠ Together they are his file's `resetIdle()` on `keydown`, and without them the 4 s timer would hide
+        // the controls out from under a viewer who is using them.
+        .onChange(of: focus) { _, _ in noteInput() }
+        .onChange(of: drawerFocus) { _, _ in noteInput() }
+        .onMoveCommand { _ in noteInput() }
         // ⚠⚠ **`AVPlayer`'S OWN REQUESTS ARE NOT THIS APP'S REQUESTS, SO NOTHING ELSE CAN LOG THEM.** Every
         // JSON call goes through `APIClient` (which logs and redacts); the HLS playlist and its segments are
         // fetched by AVFoundation itself, so a `401` there is invisible unless the item's own error log is read
@@ -246,10 +258,17 @@ struct PlayerView: View {
         }
         .onChange(of: store.url) { _, _ in attachItem(reason: "route changed") }
         .onChange(of: store.isPlaying) { _, playing in
-            playing ? player.play() : player.pause()
+            // ⚠⚠ **`player.play()` / `player.pause()` ARE NOT USED HERE, AND THAT IS THE SPEED FEATURE.**
+            // `play()` sets the rate to `1` whatever the viewer chose — so a film at 1.5× that was paused and
+            // resumed would silently come back at 1×. All three places that start or stop this player now go
+            // through the ONE rule (here, `attachItem`, and the speed change below), which is exactly what the
+            // two-answers shape of bug 1 was.
+            player.rate = PlaybackRules.playerRate(isPlaying: playing, rate: store.rate)
         }
         .onChange(of: store.rate) { _, rate in
-            if store.isPlaying { player.rate = Float(rate) }
+            // ⚠ The same rule as `attachItem` — one function, so the speed change and the attach cannot
+            // disagree about what a rate MEANS (bug 1's shape was two call sites, two answers).
+            player.rate = PlaybackRules.playerRate(isPlaying: store.isPlaying, rate: rate)
         }
         .onChange(of: store.quality) { _, _ in seekPlayer(to: store.position) }
         .onChange(of: store.audioIndex) { _, _ in seekPlayer(to: store.position) }
@@ -277,18 +296,44 @@ struct PlayerView: View {
             Spacer(minLength: 0)
             VStack(spacing: TVTokens.Player.paneGap) {
                 // ⚠⚠ **D2 — THE JOG IS WIRED HERE, WHICH IS THE LINE THE OLD COMMENT CLAIMED AND NO CODE DID.**
-                // A left/right press with the track focused now moves the playhead by `PlaybackRules.jogSeconds`
-                // through the store, and the player follows it in `jog(_:)` below — one path, so the bar and the
-                // film cannot disagree about where the playhead is.
+                // A left/right press with the track focused now moves the playhead — by `PlaybackRules.jogSeconds`
+                // on a single press, accelerating while the presses keep coming — through the store, and the
+                // player follows it in `jog(_:)` below. One path, so the bar and the film cannot disagree about
+                // where the playhead is.
                 PlayerScrubber(store: store, focus: $focus) { direction in jog(direction) }
                 PlayerControlsRow(store: store,
                                   focus: $focus,
                                   onTogglePlay: { togglePlay() },
-                                  onSkip: { delta in skip(delta) })
+                                  onSkip: { delta in skip(delta) },
+                                  onOpenSettings: { openSettings() })
             }
             .padding(.horizontal, TVTokens.Player.barPaddingH)
             .padding(.bottom, TVTokens.Player.barPaddingBottom)
+            // ⚠⚠ **THE TRACK AND THE TRANSPORT ARE ONE FOCUS SECTION — AND SPLITTING THEM IS A DEFECT THIS
+            // PHASE UNDID.** Phase P gave the transport row a section of its own and left the track outside it;
+            // round 12's lesson is that the engine prefers targets INSIDE the section the ring is in, so a row
+            // that is a section can hold the ring and make `Up` do nothing — killing the ONE gesture that
+            // reaches the scrubber, which is the control his round went looking for. Both together: `Up` from
+            // `Play` reaches the track, `Down` from the track returns. ⚠ Hypothesis (falsifier **P2-F3**);
+            // no focus engine runs on Linux.
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .focusSection()
         }
+    }
+
+    /// ⚠⚠ **OPENING THE DRAWER IS TWO THINGS, AND ONE OF THEM WAS MISSING — HIS BUG 4.**
+    ///
+    /// `store.openSettings()` only sets the panel's state. **An `.overlay` is VISUAL ONLY** (the lesson
+    /// `KNOWN_ISSUES` #17 already bought on the profile picker): the panel appeared on top of the transport
+    /// without the transport leaving the focus chain, so the ring stayed on the headphone button *behind* the
+    /// panel. The viewer then pressed a direction and either nothing moved or the ring went somewhere invisible
+    /// — a drawer that looks right and cannot be used.
+    ///
+    /// ⚠ So the screen claims the drawer's focus in the SAME action that opens it, on the category the store
+    /// actually selected (`.picture`, which is what `openSettings()` sets) rather than a hardcoded one.
+    private func openSettings() {
+        store.openSettings()
+        drawerFocus = .category(store.category)
     }
 
     @ViewBuilder
@@ -367,7 +412,12 @@ struct PlayerView: View {
                     + LogRedactor.redact(url: url), category: .app)
         let wasPlaying = store.isPlaying
         player.replaceCurrentItem(with: AVPlayerItem(asset: makeAsset(url: url, session: session)))
-        player.rate = Float(store.rate)
+        // ⚠⚠ **THE PLAYER'S RATE NOW COMES FROM THE STORE'S FLAG, AND THAT IS THE STRUCTURAL HALF OF BUG 1.**
+        // It used to be a bare `player.rate = Float(store.rate)` — **`rate = 1` is `play()`**, so this line
+        // STARTED the film whatever the store believed, and the flag and the picture could never be reconciled.
+        // A route change (quality, audio track, an escalation) while paused must also STAY paused, which this
+        // is the only line that can express. ⚠ One source of truth, and it is the store's.
+        player.rate = PlaybackRules.playerRate(isPlaying: store.isPlaying, rate: store.rate)
         // ⚠⚠ **THE SEEK IS DEFERRED UNTIL THE ITEM IS READY.** `AVPlayer.seek` issued before an item has
         // loaded is routinely DROPPED for an HLS stream (there is no playlist to seek inside yet) — which is
         // how "the player opens but it never resumes" happens with nothing in the log. So the target is
@@ -537,20 +587,30 @@ struct PlayerView: View {
             switching: store.isSwitching,
             failed: store.hasFailed,
             hoveringChrome: false,
-            // ⚠⚠ **THE UP NEXT CARD PINS THE CHROME ON, BECAUSE THE CARD IS A STATE SOMEBODY IS BEING ASKED
-            // ABOUT.** The viewer has fifteen seconds to answer it, and hiding the transport underneath would
-            // take away the only other thing they might want to do — the same reason a drawer does.
-            panelOpen: store.panel != .none || isAnythingFocused || store.upNextSecondsLeft != nil,
+            // ⚠⚠ **BUG 2, AND THIS LINE IS HALF OF IT.** It used to pass
+            // `store.panel != .none || isAnythingFocused || store.upNextSecondsLeft != nil` — and on a
+            // television `isAnythingFocused` is **always true** (the focus engine puts a ring on something the
+            // instant the screen opens), so the rule could never let the chrome go. It now asks
+            // `PlaybackRules.chromePinned`, which is his own file's condition (`!settingsOpen && !infoOpen`)
+            // plus the one mode the file does not have.
+            panelOpen: PlaybackRules.chromePinned(panelOpen: store.panel != .none,
+                                                  upNextCardVisible: store.upNextSecondsLeft != nil),
             idleSeconds: now.timeIntervalSince(lastInteraction))
     }
 
-    /// ⚠⚠ **A FOCUSED CONTROL KEEPS THE CHROME ON — and this is the one tvOS-specific addition to the web's
-    /// rule.** The web's version watches the POINTER (`hoverChrome`); a television has no pointer, and its
-    /// equivalent is that somebody is standing on a control. Without this, a viewer who paused on "Forward 10s"
-    /// and thought about it would watch the row fade out from under the focus ring.
-    private var isAnythingFocused: Bool {
-        focus != nil || drawerFocus != nil
-    }
+    /// ⚠⚠ **EVERY REMOTE INPUT RESTARTS THE CHROME'S CLOCK — AND THAT IS HIS FILE'S OWN RULE, VERBATIM.**
+    /// `…player.html:721`: `document.addEventListener('keydown', (e)=>{ dismissHint(); resetIdle(); … })` —
+    /// **every key**, whatever it does, and it is what makes the 4 s timer safe to have.
+    ///
+    /// ⚠⚠ **THE APP HAD NO EQUIVALENT AT ALL.** `lastInteraction` was written only by `togglePlay`, `skip`
+    /// and `jog` — so a viewer who pressed Up, Down, Left or Right across the transport would not have touched
+    /// it, and (once the `isAnythingFocused` bug stopped hiding the fault) the controls would have vanished
+    /// while they were using them. Falsifier **P2-F2**.
+    ///
+    /// ⚠ The FOCUS changes are the reliable half — a directional press that moves the ring changes `focus`,
+    /// and one that cannot (a press at the end of a row) is caught by the root's `onMoveCommand`. Between them
+    /// no remote input can fail to restart the clock.
+    private func noteInput() { lastInteraction = Date() }
 }
 
 // MARK: - The video surface

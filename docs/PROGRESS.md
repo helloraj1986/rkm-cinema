@@ -1,3 +1,51 @@
+## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-20, session 3) · 🔧🔧 **PHASE P2 IS BUILT — HIS ROUND ON P FOUND FOUR DEFECTS, AND THREE OF THEM WERE IN CODE NO PHASE HAD TOUCHED**: *"when i resume any title, i can see play button icon … while its playing"* · *"the controls never auto hide and always on the screen"* · *"i cant use touch control … to move forward or backward wherever i want"* · *"where is the other control which was there in the html file"* ⇒ **two of the four share ONE root cause** (`PlaybackStore.isPlaying` started `false` while `attachItem` started the film with `player.rate = 1` — **`rate = 1` IS `play()`**), **one was INTRODUCED BY PHASE P** (`isAnythingFocused` as `panelOpen` — on a TV something is ALWAYS focused), and **one is six dead tokens plus a missing focus claim** (the settings drawer was built and never finished). Full diagnosis, the dead-token table and the six falsifiers: **`docs/TVOS_PLAYER_POLISH_PLAN.md` §6–§7** · ⚠⚠ **NO `apply` and nothing deployed: no file under `backend/`, `frontend/` or `nginx/` changed** · ⚠ **not one SwiftUI view compiles here** — the four focus changes are HYPOTHESES (P2-F3/P2-F4)
+
+### 🔧🔧 PHASE P2 — HIS ROUND ON P: FOUR DEFECTS, TWO OF THEM PHASE P'S OWN (2026-09-20)
+
+⚠⚠ **BUG 1 AND BUG 2 ARE THE SAME BUG, AND IT IS ONE FLAG.** `PlaybackStore.isPlaying` started **`false`**
+(`PlaybackStore.swift:111`) while `PlayerView.attachItem` starts the film with `player.rate = Float(store.rate)`
+— and **`rate = 1` IS `play()` in `AVPlayer`**. ⇒ the transport drew `play.fill` over a moving picture; the first
+press therefore called `play()` on a film already playing (so *nothing happened* — which is why he pressed
+again); and the second press did the pausing he had asked for on the first. ⚠ **And `shouldHideChrome(playing:
+false, …)` returns at its second line**, so the 4 s clock was never consulted — the controls could not hide.
+⚠ **His own file is the authority for the value**: `let isPlaying = true;` (`…player.html:489`).
+
+⚠⚠ **AND PHASE P PUT A SECOND, INDEPENDENT CAUSE UNDER BUG 2 — *"a focused control keeps the chrome on"* was
+mine, and it is a constant `true` on a television**, where the focus engine puts a ring on something the instant
+the screen opens. His file's rule has **no focus condition at all** (`if(isPlaying && !settingsOpen &&
+!infoOpen)`, `:706`) and resets its clock on **every keydown** (`:721`) — a distinction the app had lost both
+halves of. ⇒ `PlaybackRules.chromePinned(panelOpen:upNextCardVisible:)` now has **no focus parameter**, and
+`noteInput()` fires on `focus`, on `drawerFocus` **and** on the root `onMoveCommand` (a remote press reaches the
+app by one of exactly three routes; without the third, the controls would vanish while he was navigating them).
+
+⚠⚠ **BUG 3 — AND PHASE P MADE THIS ONE WORSE TOO.** It gave the transport row `.focusSection()` and left the
+scrub track OUTSIDE it; the engine prefers targets inside the section the ring is in (#15's lesson), so `Up`
+from `Play` could do nothing — killing the one gesture that reaches the scrubber. **The track and the transport
+are ONE section again**, and *"wherever i want"* is answered by `PlaybackRules.jogSteps`: 30 s (his file's own
+step, unchanged for a single press) → 60 → 120 → 300 → 600 while the presses keep coming, resetting after a
+1.2 s pause. ⚠ **At a flat 30 s a 2h40 film is 320 presses end to end; at the top step it is 16.** ⚠ That ladder
+is the APP'S OWN and is declared as an addition, not transcribed.
+
+⚠⚠ **BUG 4 — THE SETTINGS DRAWER WAS BUILT AND NEVER FINISHED, AND THE EVIDENCE IS SIX TOKENS WITH ZERO
+READERS:** `settingsHeaderSize`/`settingsHeaderTop` (**the "PLAYER SETTINGS" title** — the most visible thing
+missing from his screenshot), `settingsTopPad`/`settingsBottomPad` (the panel's inset), and — the two that
+matter most — **`navFocusScale` (1.06) and `listFocusScale` (1.04)**: the rail and the Audio/Subtitles lists gave
+**no focus feedback at all** beyond a 10 % background tint, so a focused row was pixel-identical to every other
+row. ⚠ **Plus the one that is not a token: the drawer never CLAIMED focus.** It is an `.overlay`, and *an overlay
+is VISUAL ONLY* (#17's lesson) — so the panel appeared with the ring still on the headphone button **behind**
+it, and a direction press did nothing visible. Also fixed with it: the trigger's glyph is his file's
+**headphone**, not `speaker.wave.2.fill` (his screenshot points at it by name), and the rail/pane each got a
+`.focusSection()` so *"left/right moves between the rail and the content"* is possible at all. ⚠ **INSTRUMENT:**
+`openSettings`/`closePanel` now log `player: drawer opened on <category>` — the one fact that splits *"the
+trigger never fired"* from *"the panel drew and he could not tell"*.
+
+|| |
+|---|---|
+| **Gates** | core **712 checks / 0 failures** (was 687) · members **36 pairs** · models PASS · imports **51 files** · selftest **12/12** · design tokens PASS · typecheck PASS · md-links **79 files** |
+| **Mutations** | **6 new + 1 RE-POINTED** (⚠ `jogTarget`'s signature moved its anchor, and a stale anchor pins nothing) — **all exercised**: applied to the real sources, compiled, RED on the named line. ⚠ **NOT `--falsify`** — his standing rule |
+| **⚠ NOT verified** | **no SwiftUI view compiles on this machine.** The four focus changes are hypotheses: one section around track + transport (**P2-F3**), two sections + a focus claim in the drawer (**P2-F4**) |
+| **⚠ IF HIS ROUND HAD NOT YET INCLUDED PHASE P** | a build failure must be bisected by commit: `e33f8e3` (plan) → `5526d51` (P1: rules, store, views, Up Next) → `447c3ec` (P1 docs) → **this session's P2 commit** |
+
 ## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-20, session 2) · 🔧 **PHASE P IS BUILT ON `feat/tvos-player` — THE PLAYER AUDIT, AND EVERY DEFECT IT FOUND FIXED**: his instruction *"work on the media player now on every aspect of it make it perfect for a tv os app… go through the code and find out what else can be done on this"* ⇒ **eight defects with a file:line, six tvOS gaps closed, and Up Next** — plan, findings and the round's falsifiers in **`docs/TVOS_PLAYER_POLISH_PLAN.md`** · ⚠⚠ **NOTHING IS DEPLOYED AND NOTHING NEEDS `apply`: no file under `backend/`, `frontend/` or `nginx/` changed.** · ⚠ **NOT ONE SWIFTUI VIEW IS COMPILED ON THIS MACHINE** — the gates below are arithmetic and rules, and his Mac round is what decides the screen.
 
 ### 🔧 PHASE P — THE PLAYER, AUDITED: EIGHT DEFECTS, SIX GAPS, AND UP NEXT (2026-09-20)

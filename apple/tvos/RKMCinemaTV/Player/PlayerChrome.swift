@@ -313,11 +313,21 @@ struct PlayerControlsRow: View {
     let focus: FocusState<PlayerFocus?>.Binding
     let onTogglePlay: () -> Void
     let onSkip: (Double) -> Void
+    /// ⚠⚠ **THE DRAWER IS OPENED BY THE SCREEN, NOT BY THE ROW.** `store.openSettings()` was called straight
+    /// from here, which left the RING on the button behind the panel — an `.overlay` is VISUAL ONLY, so the
+    /// panel appeared and nothing in it had focus (the `ProfilesView` #17 lesson, and his bug 4). The screen
+    /// owns `@FocusState drawerFocus`, so the screen has to be the one that opens it.
+    let onOpenSettings: () -> Void
 
     var body: some View {
         HStack(spacing: TVTokens.Player.controlGap) {
-            control(.audio, glyph: "speaker.wave.2.fill", label: "Audio & Subtitles", primary: false) {
-                store.openSettings()
+            // ⚠⚠ **THE GLYPH IS HIS FILE'S.** `rkm-cinema-tvos-player.html` draws a **headphone** here, and
+            // his bug report points at it by name (*"you can see the headphone icon is clicked and on the
+            // right side control panels"*) — the app was drawing `speaker.wave.2.fill`, which is a different
+            // object, so the one control that opens the drawer did not look like the one he was looking for.
+            // ⚠ His file is the spec for the shape; the label was already his ("Audio & Subtitles").
+            control(.audio, glyph: "headphones", label: "Audio & Subtitles", primary: false) {
+                onOpenSettings()
             }
             control(.back10, glyph: "gobackward.10", label: "Back 10s", primary: false) {
                 onSkip(-PlaybackRules.skipSeconds)
@@ -338,13 +348,12 @@ struct PlayerControlsRow: View {
                 store.toggleInfo()
             }
         }
-        // ⚠⚠ **THE TRANSPORT ROW IS ITS OWN SECTION — the same fix his round-12 confirmation bought on the
-        // title screen** (`KNOWN_ISSUES` #15): a section is aimed at by its frame and *"has to take up more
-        // space than its contents"*, so `.focusSection()` must come AFTER the `.frame(…)`. Without it the row's
-        // section was content-sized around the five buttons, and a `Down` press from the track — or an `Up`
-        // from a button — has no section to land in.
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .focusSection()
+        // ⚠⚠ **THE ROW IS *NOT* ITS OWN SECTION — THE SCRUBBER AND THE TRANSPORT ARE ONE SECTION TOGETHER**
+        // (see `PlayerView.chrome`). Round 12's lesson is that a section is aimed at by its FRAME and that the
+        // engine prefers targets INSIDE the section it is in, so a transport row that was a section with the
+        // track outside it could hold the ring and make `Up` do nothing — turning the one gesture that reaches
+        // the scrubber into a dead press. One section around both is what makes `Up` from `Play` land on the
+        // track. ⚠ A hypothesis: no focus engine runs on Linux (falsifier **P2-F3**).
     }
 
     private func control(_ slot: PlayerFocus, glyph: String, label: String, primary: Bool,

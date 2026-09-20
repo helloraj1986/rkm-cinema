@@ -58,6 +58,22 @@ tokens PASS · typecheck PASS**, and **all eleven new mutations were exercised**
 RED) — which is NOT `--falsify`, the full gate his standing rule keeps for his own call.
 ⚠⚠ **None of it is verified on a screen:** not one SwiftUI view compiles on Linux.
 
+⚠⚠ **AND PHASE P2 — HIS ROUND ON P — IS BUILT (2026-09-20, session 3), BECAUSE THAT ROUND FOUND FOUR
+DEFECTS AND TWO OF THEM WERE PHASE P'S OWN.** His words: *"when i resume any title, i can see play button icon on
+the title while its playing"* · *"the controls never auto hide and always on the screen"* · *"i cant use touch
+control … to move forward or backward wherever i want"* · *"where is the other control which was there in the html
+file"*. ⇒ **Bugs 1 and 2 are one flag**: `PlaybackStore.isPlaying` started `false` while `attachItem` starts the
+film with `player.rate = 1` — **`rate = 1` IS `play()`** — so the glyph said *Play* over a moving picture and
+`shouldHideChrome(playing: false…)` never consulted its clock. ⚠ **Bug 2 had a second cause that was OURS**:
+`isAnythingFocused` as `panelOpen` is a constant `true` on a television. ⚠ **Bug 3 was made worse by P** (the
+transport row was a section with the track outside it) and is now answered by an accelerating jog — 30 s → 600 s.
+⚠ **Bug 4 is the answer to "where is the other control": the settings drawer was built and never finished** — six
+transcribed tokens with **zero readers** (the "PLAYER SETTINGS" header, the panel inset, and **both focus scales**,
+so the rail and the lists gave no focus feedback at all), plus **no focus claim**, so the panel opened with the
+ring still on the transport button behind it. ⚠ Full diagnosis and the six falsifiers (P2-F1…P2-F6):
+`docs/TVOS_PLAYER_POLISH_PLAN.md` §6–§7. ⚠ **Gates: core 712 checks / 0 failures · members 36 pairs · 6 new
+mutations exercised. None of it verified on a screen.**
+
 ⚠⚠ **AND ROUND 10 REVERTED W3's STRUCTURAL GUESS, ON ARITHMETIC.** His report after W3 shipped: *"still stuck on
 back to browse cannot come down using keyboard"* — so the bar-inside-the-scroller shape fails exactly as the
 bar-as-a-sibling shape did, and `KNOWN_ISSUES` **#15 is open again**. What W3 cost, measurably: the bar became a
@@ -104,9 +120,9 @@ at the cost of not installing on tvOS 17–25). See §1's build-settings table.
 one line: a member that did not exist, then a nested `struct Body`) — **⚠ but the player's own views have NOT
 yet: rounds 1, 2 and 5 on Phase C all failed to build, each on one line, and no round has type-checked
 `PlayerView.swift` at all.** ⚠ **What is true throughout: nothing on the Linux side can compile a view.** The
-pure rules are compiled and RUN there — **687 checks** (⚠ read that count live: it moves with every pinned rule,
-and this file said 467 until 2026-09-20, then 607) and **151/151 falsified mutations as recorded at `46443ff`,
-plus Phase P's eleven, each exercised individually in that phase** — and that
+pure rules are compiled and RUN there — **712 checks** (⚠ read that count live: it moves with every pinned rule,
+and this file said 467 until 2026-09-20, then 607, then 687) and **151/151 falsified mutations as recorded at
+`46443ff`, plus Phase P's eleven and Phase P2's six, each exercised individually in its own phase** — and that
 is type-and-rule evidence only, never evidence that a screen works.
 
 The round, on the **MacBook Pro** — against `feat/tvos-player`, which is where the player is. ⚠ **Pick the HUD flag
@@ -324,7 +340,7 @@ makes the next fix possible.
 python3 apple/scripts/check-tvos-models.py            # models + endpoints vs the frozen contract
 python3 apple/scripts/check-tvos-models.py --falsify  # 14 mutations, each must go red
 python3 apple/scripts/check-tvos-core.py              # RUNS the URLs, the models + every screen's rules
-python3 apple/scripts/check-tvos-core.py --falsify    # every rule reverted, one at a time (169; ~15 min)
+python3 apple/scripts/check-tvos-core.py --falsify    # every rule reverted, one at a time (175; ~15 min)
 TMPDIR=/root/tmp bash apple/scripts/check-apple-typecheck.sh   # compiles the 19 portable files
 python3 apple/scripts/check-imports.py apple/tvos/RKMCinemaTV  # missing imports — INCLUDING the views
 python3 apple/scripts/check-imports.py --selftest     # 12 snippets, incl. the RKMServerKit and MediaPlayer rules' edges

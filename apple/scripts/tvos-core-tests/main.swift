@@ -2365,6 +2365,86 @@ check(TVTokens.Player.noticeMeasure + TVTokens.Player.noticePadding * 2 <= TVTok
       "the failure notice's sentence wraps well inside the screen, padding included",
       "\(TVTokens.Player.noticeMeasure) + 2×\(TVTokens.Player.noticePadding) of \(TVTokens.Metric.screenWidth)")
 
+// ⚠⚠ ---- PHASE P2 (HIS ROUND): TWO RULES, TWO BUGS, AND BOTH RULES EXIST SO THE BUG CANNOT COME BACK.
+//
+//  · BUG 2 — "the controls never auto hide and always on the screen". Two independent causes, and the second
+//    one is this rule: the screen passed `isAnythingFocused` as `panelOpen`, and on a television SOMETHING IS
+//    ALWAYS FOCUSED, so `shouldHideChrome` could never return true. `chromePinned` has no focus parameter —
+//    that is the whole point of it existing.
+//  · BUG 3/"no free scrub" — the jog now accelerates, so a 2h40 film is reachable in a dozen presses instead
+//    of 320. ⚠ The ladder is the APP'S OWN (his file has one 30 s step); the FIRST step is still his.
+
+section("what may pin the chrome (his round: the controls never hid)")
+
+check(!PlaybackRules.chromePinned(panelOpen: false, upNextCardVisible: false),
+      "with no drawer and no card, NOTHING pins the chrome — so its 4 s clock can run at all")
+check(PlaybackRules.chromePinned(panelOpen: true, upNextCardVisible: false),
+      "an open drawer pins it — the viewer is being asked something with no timeout")
+check(PlaybackRules.chromePinned(panelOpen: false, upNextCardVisible: true),
+      "and so does the Up Next card")
+// ⚠⚠ THE END-TO-END STATE HIS ROUND COULD NEVER REACH: a PLAYING film, nothing open, and the clock run out.
+// ⚠ It is written through `chromePinned` rather than passing `false` by hand — the composition is the fix.
+check(PlaybackRules.shouldHideChrome(playing: true, switching: false, failed: false, hoveringChrome: false,
+                                     panelOpen: PlaybackRules.chromePinned(panelOpen: false,
+                                                                           upNextCardVisible: false),
+                                     idleSeconds: PlaybackRules.chromeHideSeconds),
+      "⚠ a PLAYING film with nothing open HIDES its chrome at the 4 s mark — the state that never happened")
+check(!PlaybackRules.shouldHideChrome(playing: true, switching: false, failed: false, hoveringChrome: false,
+                                      panelOpen: PlaybackRules.chromePinned(panelOpen: false,
+                                                                            upNextCardVisible: true),
+                                      idleSeconds: PlaybackRules.chromeHideSeconds),
+      "…and the SAME film with the Up Next card up does not — one rule, two answers, no second condition")
+check(!PlaybackRules.shouldHideChrome(playing: false, switching: false, failed: false, hoveringChrome: false,
+                                      panelOpen: PlaybackRules.chromePinned(panelOpen: false,
+                                                                            upNextCardVisible: false),
+                                      idleSeconds: 999),
+      "a PAUSED film never hides them, however long the viewer waits")
+
+section("the jog's acceleration (his round: “move forward or backward wherever i want”)")
+
+checkEqual(PlaybackRules.jogSteps[0], 30,
+           "the FIRST step is still his file's own 30 s, so a single press behaves exactly as the prototype does")
+checkEqual(PlaybackRules.jogStep(repeats: 0), 30, "a run that has not started is the first step")
+checkEqual(PlaybackRules.jogStep(repeats: 1), 30, "…and so is the first press")
+checkEqual(PlaybackRules.jogStep(repeats: 2), 60, "the second press of a run doubles it")
+checkEqual(PlaybackRules.jogStep(repeats: 3), 120, "…then two minutes")
+checkEqual(PlaybackRules.jogStep(repeats: 4), 300, "…then five")
+checkEqual(PlaybackRules.jogStep(repeats: 5), 600, "…and ten, which is where it stops")
+checkEqual(PlaybackRules.jogStep(repeats: 99), 600,
+           "⚠ the ladder is CLAMPED, not indexed — a long run cannot run off the end of it")
+checkEqual(PlaybackRules.jogRepeats(current: 3, gapSinceLastJog: 0.4), 4,
+           "presses inside the window are one run, and the step keeps growing")
+checkEqual(PlaybackRules.jogRepeats(current: 3, gapSinceLastJog: 2.0), 1,
+           "⚠ a press taken AFTER a pause starts again at 30 s — a viewer who stopped to think is never given a five-minute jump")
+checkEqual(PlaybackRules.jogRepeats(current: 0, gapSinceLastJog: 0.4), 1,
+           "the first press of a session is the first step, not the second")
+checkEqual(PlaybackRules.jogTarget(from: 1000, direction: 1, total: 7200, step: 300), 1300,
+           "a 300 s step moves the playhead 300 s — the step is the distance, not a label")
+checkEqual(PlaybackRules.jogTarget(from: 1000, direction: -1, total: 7200, step: 600), 400,
+           "…and it works backwards too")
+checkEqual(PlaybackRules.jogTarget(from: 600, direction: 1, total: 7200), 630,
+           "⚠ the DEFAULT is still his 30 s — the accelerated call is opt-in, so every Phase P pin above still holds")
+
+// ⚠⚠ ---- PHASE P2 (HIS ROUND): THE RULE THAT MAKES BUG 1 UNREPEATABLE.
+//
+// The domain fact the whole defect turned on: **`rate = 1` IS `play()`** in `AVPlayer`. The rate is the
+// transport, so any line that sets one starts or stops the film — and `attachItem` set one while `isPlaying`
+// said `false`. Three call sites set a rate (attach, the play/pause of the flag, the speed change) and the
+// rule below is what they now have in common.
+
+section("who decides whether the film is running (his round: the glyph said Play over a moving picture)")
+
+checkEqual(PlaybackRules.playerRate(isPlaying: true, rate: 1), 1,
+           "a playing film is given its own speed, which is 1× by default")
+checkEqual(PlaybackRules.playerRate(isPlaying: false, rate: 1), 0,
+           "⚠⚠ a PAUSED film is given rate 0 — the store cannot say one thing and the player do another (bug 1)")
+checkEqual(PlaybackRules.playerRate(isPlaying: true, rate: 1.5), 1.5,
+           "⚠ a film at 1.5× resumes at 1.5× — `player.play()` would have reset it to 1×, which is why this rule exists")
+checkEqual(PlaybackRules.playerRate(isPlaying: false, rate: 1.5), 0,
+           "…and a paused film is stopped whatever speed it was set to")
+check(PlaybackRules.playerRate(isPlaying: true, rate: PlaybackRules.defaultRate) > 0,
+      "⚠ THE INITIAL STATE OF THE SCREEN IS PLAYING: `isPlaying` starts true, so the rate it is given is > 0 and the film starts — which is what the `Play` / `Resume` verb that opened this screen promised")
+
 // MARK: - Report
 print("")
 if failures.isEmpty {

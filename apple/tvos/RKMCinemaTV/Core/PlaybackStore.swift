@@ -108,7 +108,26 @@ final class PlaybackStore: ObservableObject {
     @Published private(set) var duration: Double = 0
     @Published private(set) var position: Double = 0
     @Published private(set) var resumePosition: Double = 0
-    @Published var isPlaying: Bool = false
+    /// ⚠⚠ **IT STARTS `true`, AND THAT IS BUG 1 OF HIS ROUND — NOT A DEFAULT, A FACT.**
+    ///
+    /// **His words:** *"when i resume any title, i can see play button icon on the title while its playing in
+    /// the background (its should be pause button, since its already playing). Then when i click on the play
+    /// icon it changes to pause button, but the titles keeps playing, i click again the pause button turns to
+    /// play and then finally the title stops the play."*
+    ///
+    /// ⚠⚠ **THE MECHANISM, AND IT IS EXACTLY THAT SEQUENCE.** `PlayerView.attachItem` starts the film with
+    /// `player.rate = Float(store.rate)` — **`rate = 1` IS `play()` in `AVPlayer`** — while this flag stayed
+    /// `false`. So the film played, the transport drew `play.fill` (a control describing a state the app was
+    /// not in), and the FIRST press therefore called `play()` on a film that was already playing — which is
+    /// why nothing visible happened — leaving the SECOND press to do the pausing the viewer had asked for on
+    /// the first. ⚠ **One desynchronised flag, three visible symptoms** (the wrong glyph, a press that does
+    /// nothing, and the chrome below that can never hide because `shouldHideChrome(playing: false)` returns
+    /// before its clock is ever consulted).
+    ///
+    /// ⚠ **AND HIS FILE IS THE AUTHORITY FOR THE VALUE**: `…player.html:489` — `let isPlaying = true;`. The
+    /// prototype's player is a player that is PLAYING. ⚠ Opening this screen is what the `Play` / `Resume
+    /// (9%)` verb promised, and round 6 confirmed the film resumes and plays, so `true` is also simply true.
+    @Published var isPlaying: Bool = true
     @Published var isScrubbing: Bool = false
     @Published private(set) var isSwitching: Bool = false
 
@@ -179,6 +198,11 @@ final class PlaybackStore: ObservableObject {
 
     private var lastReportAt: Date?
     private var toastTask: Task<Void, Never>?
+    /// ⚠⚠ **THE JOG RUN'S OWN STATE** — how many presses are in the current run, and when the last one was.
+    /// It lives in the STORE and not in the view because the run spans presses *and* the actions between them
+    /// (`skip` ends it), which is a fact about the session rather than about the layout.
+    private var jogRepeats = 0
+    private var lastJogAt: Date?
     /// ⚠ **D6 — the stop write happens ONCE.** Two callers fire it (`Back`, and the screen's `onDisappear`) and
     /// the platform does not promise which is first, so the guard belongs here rather than at either call site.
     private var didFinish = false
@@ -532,14 +556,41 @@ final class PlaybackStore: ObservableObject {
         cueText = PlaybackRules.activeCue(cues, position: position)
     }
 
-    func skip(by delta: Double) { seek(to: PlaybackRules.skipTarget(from: position, by: delta, total: duration)) }
+    /// ⚠ The ±10 s buttons END a jog run (see `endJogRun`), because they are a different verb: a viewer who
+    /// jogs, then nudges with ±10 s, has stopped scrubbing — and the next jog must be 30 s again.
+    func skip(by delta: Double) {
+        endJogRun()
+        seek(to: PlaybackRules.skipTarget(from: position, by: delta, total: duration))
+    }
 
-    /// ⚠⚠ **D2 — the scrub row's own verb, which existed only as a comment until Phase P.** A left/right press
-    /// with the track focused jogs the playhead instead of moving focus, exactly as his prototype's `moveItem`
-    /// does on row 1. ⚠ It goes through the SAME `seek` as the scrubber and the ±10 s buttons, so the bar, the
-    /// store's position and the player cannot disagree about where the playhead is.
+    /// ⚠⚠ **D2 — the scrub row's own verb, which existed only as a comment until Phase P — AND SINCE HIS
+    /// ROUND IT ACCELERATES.** A left/right press with the track focused jogs the playhead instead of moving
+    /// focus, exactly as his prototype's `moveItem` does on row 1. ⚠ It goes through the SAME `seek` as the
+    /// scrubber and the ±10 s buttons, so the bar, the store's position and the player cannot disagree about
+    /// where the playhead is.
+    ///
+    /// ⚠⚠ **THE ACCELERATION IS HERE AND NOT IN THE VIEW, because the counter is STATE** (when the last press
+    /// was) and a view that owned it would need a `@State` for every call site. His ask — *"move forward or
+    /// backward wherever i want"* — is answered by `PlaybackRules.jogStep`: 30 s on a single press (his file's
+    /// own step), growing through 60 · 120 · 300 · 600 while the presses keep coming, and back to 30 s the
+    /// moment the viewer stops. ⚠ The reader of this clock is the CONTROLLER, never the player, so a viewer
+    /// on a slow film is never given a five-minute jump for a press they took two seconds over.
     func jog(direction: Int) {
-        seek(to: PlaybackRules.jogTarget(from: position, direction: direction, total: duration))
+        let now = Date()
+        jogRepeats = PlaybackRules.jogRepeats(current: jogRepeats,
+                                              gapSinceLastJog: now.timeIntervalSince(lastJogAt ?? .distantPast))
+        lastJogAt = now
+        let step = PlaybackRules.jogStep(repeats: jogRepeats)
+        if step != PlaybackRules.jogSteps[0] { showToast("±\(Int(step))s") }
+        seek(to: PlaybackRules.jogTarget(from: position, direction: direction, total: duration, step: step))
+    }
+
+    /// ⚠ The run's own state. ⚠ A run ENDS when anything else moves the playhead, which is why `seek` and
+    /// `skip` clear it — otherwise a scrub, a ±10 s press and then a jog would compound into one run and the
+    /// viewer would get a 300 s jump for what felt like their first go.
+    private func endJogRun() {
+        jogRepeats = 0
+        lastJogAt = nil
     }
 
     func setRate(_ newRate: Double) {
@@ -606,6 +657,10 @@ final class PlaybackStore: ObservableObject {
     /// changed nothing would look identical to a broken button.
     func retryPlayback() {
         playbackFailure = nil
+        // ⚠⚠ **THE VIEWER ASKED FOR THE FILM BACK, SO THE FLAG SAYS SO — AND IT IS NOW LOAD-BEARING.** The
+        // player's rate comes FROM this flag (`attachItem`), so a retry that left it `false` would re-attach a
+        // film it then refused to start: a still pair of legs where his bug 1 used to be.
+        isPlaying = true
         if escalateMode() { return }
         reloadToken &+= 1
         showToast("Trying again…")
@@ -622,6 +677,11 @@ final class PlaybackStore: ObservableObject {
     func reportPlaybackFailure(_ sentence: String) {
         if escalateMode() { return }
         playbackFailure = sentence
+        // ⚠⚠ **AND THE FLAG IS CORRECTED WITH IT.** `isPlaying` now starts `true` because the screen opens
+        // PLAYING — so the one state where it is definitely false is this one, where the app has run out of
+        // things to try. Leaving it `true` would put a `pause` glyph under the notice, describing a film that is
+        // not running: the same lie as bug 1, in the one place a viewer is already being told bad news.
+        isPlaying = false
         RKMLog.error("player: giving up after \(escalationAttempt) escalation(s) — \(sentence)",
                      category: .app, correlation: correlation)
     }
@@ -914,9 +974,17 @@ final class PlaybackStore: ObservableObject {
     func openSettings() {
         panel = .settings
         category = .picture
+        // ⚠⚠ **THE LINE HIS NEXT LOG ROUND READS, AND IT IS THE INSTRUMENT FOR BUG 4.** He reported the
+        // drawer's controls as missing: this says whether the app was ever asked to open it at all, which is
+        // the one fact that splits "the trigger never fired" from "the panel drew and he could not tell".
+        RKMLog.info("player: drawer opened on \(category.title)", category: .app, correlation: correlation)
     }
 
-    func closePanel() { panel = .none }
+    func closePanel() {
+        guard panel != .none else { return }
+        RKMLog.info("player: drawer closed", category: .app, correlation: correlation)
+        panel = .none
+    }
 
     func selectCategory(_ next: PlaybackRules.SettingsCategory) { category = next }
 

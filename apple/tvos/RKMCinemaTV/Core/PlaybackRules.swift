@@ -97,8 +97,43 @@ enum PlaybackRules {
     ///
     /// ⚠ It COMPOSES `skipTarget` rather than repeating the clamp — one clamp, two callers, which is the
     /// difference between naming a verb and growing a second copy of a rule.
-    static func jogTarget(from position: Double, direction: Int, total: Double) -> Double {
-        skipTarget(from: position, by: Double(direction) * jogSeconds, total: total)
+    ///
+    /// ⚠ `step` defaults to his file's 30 s, so a SINGLE press is exactly the prototype's `dir*30`; the
+    /// acceleration below is what a viewer gets for pressing repeatedly.
+    static func jogTarget(from position: Double, direction: Int, total: Double,
+                          step: Double = jogSeconds) -> Double {
+        skipTarget(from: position, by: Double(direction) * step, total: total)
+    }
+
+    // MARK: - The jog's acceleration (⚠ the app's own; his file has one step)
+
+    /// ⚠⚠ **WHY THERE IS MORE THAN ONE STEP, AND IT IS HIS ROUND THAT ASKED FOR IT.** His report:
+    /// *"there is oonly 10 second back and forth control, i cant use touch control … to move forward or
+    /// backward wherever i want"*. At a flat 30 s a two-and-a-half hour film is **320 presses** end to end,
+    /// which is not "wherever I want" — it is a control that technically reaches every position and
+    /// practically reaches none.
+    ///
+    /// ⚠ **NOT FROM HIS FILE**: it specifies one 30 s step, and this ladder is the app's own addition,
+    /// declared as such in `docs/TVOS_PLAYER_POLISH_PLAN.md` §6. The FIRST step is still his 30 s, so a
+    /// single press behaves exactly as the prototype does; only the repeated ones grow.
+    static let jogSteps: [Double] = [jogSeconds, 60, 120, 300, 600]
+
+    /// ⚠ How long a gap between presses still counts as "the same scrub". Faster than this and the step
+    /// grows; slower and it starts again at 30 s — so a viewer who paused to think about what they were
+    /// doing is never surprised by a five-minute jump.
+    static let jogAccelerationWindow: Double = 1.2
+
+    /// The repeat counter after a gap: inside the window the ladder CONTINUES, outside it restarts at 1.
+    static func jogRepeats(current: Int, gapSinceLastJog: Double) -> Int {
+        gapSinceLastJog <= jogAccelerationWindow ? current + 1 : 1
+    }
+
+    /// The distance the `repeats`-th press of a run moves the playhead.
+    /// ⚠ Clamped at the ladder's own end rather than allowed to run off it, so the step can never be
+    /// `jogSteps[99]` and a longer ladder is a change to ONE array.
+    static func jogStep(repeats: Int) -> Double {
+        guard repeats > 0 else { return jogSteps[0] }
+        return jogSteps[min(repeats - 1, jogSteps.count - 1)]
     }
 
     /// One second of playhead for one second of media — the progress bar's own arithmetic, extracted
@@ -247,6 +282,24 @@ enum PlaybackRules {
 
     /// ⚠ Everything non-direct rides the HLS transport; only a static MP4 is range-seekable.
     static func usesHLS(_ mode: StreamMode) -> Bool { mode != .direct }
+
+    // MARK: - The one line that says who decides whether the film is running
+
+    /// ⚠⚠ **THE RATE `AVPlayer` IS GIVEN FOR A STORE STATE — AND IT EXISTS BECAUSE OF HIS BUG 1.**
+    ///
+    /// **The domain fact the whole defect turned on: `rate = 1` IS `play()`.** `AVPlayer` has no separate
+    /// play/pause call in this screen's plumbing — the rate *is* the transport — so a line that sets a rate
+    /// sets the film running, whether or not anybody meant it to. `attachItem` did exactly that
+    /// (`player.rate = Float(store.rate)`) while `isPlaying` said `false`, and the result was a transport
+    /// offering *Play* over a moving picture, a first press that did nothing, and a second that paused.
+    ///
+    /// ⇒ **A paused film is given `0`, not its speed.** ⚠ Returns `Float` because that is `AVPlayer`'s own
+    /// type — and it is named here so the two call sites that set a rate cannot disagree about the rule
+    /// (that duplication is how the original defect survived: the rate was set in two places, and neither
+    /// consulted the flag).
+    static func playerRate(isPlaying: Bool, rate: Double) -> Float {
+        isPlaying ? Float(rate) : 0
+    }
 
     /// The escalation order on a fatal HLS error. ⚠ Audio-aware: a copy-copy remux of an EAC3 title
     /// keeps `ec-3` in the playlist, so a client that cannot decode it must go to `transcode_audio`
@@ -608,6 +661,27 @@ enum PlaybackRules {
         if panelOpen { return false }
         if !playing || switching || failed || hoveringChrome { return false }
         return idleSeconds >= chromeHideSeconds
+    }
+
+    /// ⚠⚠ **WHAT MAY PIN THE CHROME — AND "SOMETHING IS FOCUSED" IS DELIBERATELY NOT ONE OF THEM.**
+    ///
+    /// His file's rule, verbatim (`…player.html:706`): *`if(isPlaying && !settingsOpen && !infoOpen)`* — a
+    /// draw, an info panel, or nothing. ⚠⚠ **THE APP GOT THIS WRONG TWICE OVER, AND HIS ROUND FOUND IT:**
+    ///
+    ///  1. the web rule watches the POINTER (`hoverChrome`), and the tvOS "equivalent" this screen took was
+    ///     *"somebody is standing on a control"* — the `isAnythingFocused` its `PlayerView` passed as
+    ///     `panelOpen`. ⚠⚠ **THAT IS ALWAYS TRUE ON A TELEVISION.** The focus engine guarantees a ring is on
+    ///     something from the moment the screen opens (`.defaultFocus($focus, .play)`), so a rule that reads
+    ///     it can never let the chrome hide, on any screen, for any viewer, ever;
+    ///  2. and it never mattered, because `isPlaying` was `false` while the film played (see the store), so
+    ///     `!playing` returned first.
+    ///
+    /// ⇒ **His words: *"the controls never auto hide and always on the screen"*.** What pins the chrome is a
+    /// MODE — a drawer, or the Up Next card — because each is a question with NO TIMEOUT. Recency of INPUT is
+    /// the idle clock's job (`PlayerView.lastInteraction`), and his file resets that on **every keydown**
+    /// (`…player.html:721`). ⚠ Two jobs, two mechanisms; conflating them is what this function exists to stop.
+    static func chromePinned(panelOpen: Bool, upNextCardVisible: Bool) -> Bool {
+        panelOpen || upNextCardVisible
     }
 
     // MARK: - Subtitles as text (WebVTT, ported from the web's parser)

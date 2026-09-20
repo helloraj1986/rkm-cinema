@@ -200,7 +200,7 @@ for rel in Core/ServerDefaults.swift Core/APIClient.swift Core/Models/AuthModels
            Core/PlaybackRules.swift Core/PlaybackURLs.swift Core/Models/PlaybackModels.swift \
            Core/PlaybackAPI.swift Core/PlaybackStore.swift \
            Core/LibraryAPI.swift Core/HomeStore.swift Core/BrowseStore.swift Core/DetailStore.swift \
-           Core/PosterURL.swift Core/PosterLoader.swift \
+           Core/PosterURL.swift Core/PosterRules.swift Core/PosterLoader.swift \
            Design/DesignTokens.swift Design/TVTokens.swift \
            Server/ServerProbe.swift App/AppLog.swift App/AppModel.swift Auth/SessionStore.swift; do
   if [ ! -f "$TV_SRC/$rel" ]; then

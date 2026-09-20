@@ -1859,6 +1859,25 @@ check(HomeRules.railHeight * 2 + 2 * TVTokens.u * 2 + TVTokens.Hero.minHeight > 
       "…and TWO need the cards to shrink too: they would leave only 109 pt for a hero whose copy needs 397",
       "hero room \(HomeRules.homeScrollArea - (HomeRules.railHeight * 2 + 2 * TVTokens.u * 2))")
 
+// ⚠⚠ ---- W3: THE ARTWORK'S SHAPE, WHICH IS HIS *"i can only see 1/3rd of the poster"*.
+//
+// The title page's band falls back from a missing 16:9 backdrop to the item's 2:3 poster (the web's own chain),
+// and a 2:3 image asked to FILL a 1920 × 313 band is scaled until its height covers the band — cutting 60 % of
+// its width, i.e. leaving the middle third on screen. `PosterRules.treatment` decides the drawing; this is it
+// being RUN.
+checkEqual(PosterRules.treatment(imageWidth: 400, imageHeight: 600, bandWidth: 1920, bandHeight: 313),
+           .ambient, "a 2:3 poster in a 6:1 band is shown WHOLE over a blurred copy, never cropped")
+checkEqual(PosterRules.treatment(imageWidth: 1920, imageHeight: 1080, bandWidth: 1920, bandHeight: 1080),
+           .fill, "a 16:9 backdrop in a 16:9 band is the shape it was drawn for — it fills")
+checkEqual(PosterRules.treatment(imageWidth: 400, imageHeight: 600, bandWidth: 400, bandHeight: 600),
+           .fill, "…and so does that same poster in a POSTER-shaped band: 2:3 cards are untouched")
+checkEqual(PosterRules.treatment(imageWidth: 600, imageHeight: 600, bandWidth: 1920, bandHeight: 313),
+           .fill, "a square image is not portrait, so it fills")
+checkEqual(PosterRules.treatment(imageWidth: 0, imageHeight: 600, bandWidth: 1920, bandHeight: 313),
+           .fill, "an image with no measured size must not be treated as portrait")
+checkEqual(PosterRules.treatment(imageWidth: 400, imageHeight: 600, bandWidth: 313, bandHeight: 1920),
+           .fill, "a portrait image in a PORTRAIT band is the shape it was drawn for")
+
 section("the route: which mode this client should ask the api for")
 
 checkEqual(PlaybackRules.StreamMode.allCases.map(\.rawValue),

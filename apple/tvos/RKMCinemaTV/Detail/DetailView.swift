@@ -71,12 +71,25 @@ struct DetailView: View {
     @FocusState private var playFocused: Bool
 
     var body: some View {
-        // ⚠⚠ **THE BAR IS AN OVERLAY, WHICH IS HIS FILE'S OWN STRUCTURE** (`.topbar { position: fixed }`,
-        // drawn over a `.hero` that starts at `y = 0`). In the previous build the bar was a BAND above the
-        // scroller, which is the one difference that a rewrite can remove and a patch cannot: it changes where
-        // the hero starts, and therefore what the first screenful contains.
-        ZStack(alignment: .top) {
-            measured("screen", VStack(alignment: .leading, spacing: 0) {
+        // ⚠⚠ **ONE SCROLLER, AND THE BAR IS ITS FIRST CHILD (fixed 2026-09-20 after his report, and it is the
+        // app's OWN proven shape).** His words: *"in the library view (Movies Kids) i come down to tile and press
+        // enter, i am on back to browse button but i cant come down to play button through navigation"*. That is
+        // the **focus island** defect this repo has already paid for once: in a browser a bar above a scrolling
+        // page costs nothing; on tvOS a focusable row that is a SIBLING of the scroller is a container the
+        // direction search cannot reliably cross — which is why `BrowseView` moved its filter row INTO the wall's
+        // scroller and he accepted that screen.
+        //
+        // ⚠⚠ **AND W2 MAKES THIS FREE.** Round 8 gave `Play` the default focus because that was the only way to
+        // reach it from a sibling bar; the bar is now a band ABOVE the hero, which is a visible divergence from
+        // his `.topbar { position: fixed }` — and with the page now fitting one screen (nothing scrolls) a
+        // floating bar buys exactly nothing. ⇒ Reachability wins, and the divergence is recorded rather than
+        // kept for looks. ⚠ The MECHANISM is a hypothesis stated as one — no engine runs on this machine — and
+        // **the falsifier is his own: on entry, is the ring on `Play`; can `Up` reach the bar; can `Down` come
+        // back to `Play`?**
+        measured("screen", ScrollView(.vertical, showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 0) {
+                measured("bar", topBar)
+
                 Group {
                     switch store.state {
                     case .loading:
@@ -89,20 +102,16 @@ struct DetailView: View {
                         failure(message)
                     }
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            })
-
-            VStack(spacing: 0) {
-                measured("bar", topBar)
-                Spacer(minLength: 0)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
             }
-        }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        })
         // ⚠⚠ The screen's default focus — see `playFocused`. `.defaultFocus` is the PLATFORM's way to say
         // this (the focus engine owns every move from there); nothing here computes a neighbour.
         .defaultFocus($playFocused, true)
-        // ⚠⚠ **AND THE SCREEN GETS ITS OWN WAY OUT.** The tvOS MENU button is the canonical Back and the
-        // bar's tab is an OVERLAY at the top of a screen that scrolls — so the screen does not depend on it
-        // being reachable. `ARCHITECTURE.md` ranks a dead end above any cosmetic rule.
+        // ⚠⚠ **AND THE SCREEN GETS ITS OWN WAY OUT.** The tvOS MENU button is the canonical Back and it does
+        // not depend on the bar being on screen or reachable — which matters more now that the bar is inside
+        // the scroller. `ARCHITECTURE.md` ranks a dead end above any cosmetic rule.
         .onExitCommand { app.closeDetail() }
         // ⚠ `.task`, not `.onAppear`: the load is async, and the store is built per item (`AppModel`), so
         // this runs once for the item that is open.
@@ -141,11 +150,10 @@ struct DetailView: View {
                 .font(.system(size: TVTokens.Title.metaSize))
                 .foregroundStyle(RKMColour.secondary)
         }
-        // ⚠⚠ **THE BAR FLOATS OVER THE CONTENT NOW, SO EVERY STATE THAT IS NOT THE HERO HAS TO CLEAR IT.**
-        // `Title.blockPaddingBottom` would be a guess; `Bar.clearance` is the bar's own measured height off
-        // his round-9 log (`bar = 1759x115 pt`).
-        .padding(.top, TVTokens.Bar.clearance)
+        // ⚠ The bar is a BAND above this state now (the screen is ONE scroller), so it no longer needs
+        // `Bar.clearance` — that padding existed only while the bar floated over the content.
         .padding(.leading, LibraryRules.marginFromPrototype)
+        .padding(.vertical, TVTokens.Grid.emptyPaddingV)
     }
 
     // MARK: - The two failure states
@@ -180,7 +188,6 @@ struct DetailView: View {
             .padding(.top, TVTokens.Grid.gridTopPad)
         }
         .padding(.horizontal, LibraryRules.marginFromPrototype)
-        .padding(.top, TVTokens.Bar.clearance)
         .padding(.bottom, TVTokens.Grid.emptyPaddingV)
         .buttonStyle(.bordered)
     }
@@ -192,30 +199,28 @@ struct DetailView: View {
         // The reader was removed in round 3: it was here to measure `66vh`, and on tvOS the box is FIXED
         // (`TVTokens.Metric.screenHeight`), so the fraction is a constant and nothing needs measuring. A
         // reader whose frames the focus engine navigates on is the structure `BrowseView.cardWidth` blames
-        // for his *"i cant come to the titles by pressing down arrow"* (KNOWN_ISSUES #11). What is left is
-        // the app's own working shape — a `ScrollView` whose content is a plain `VStack`.
-        ScrollView(.vertical, showsIndicators: false) {
-            // ⚠⚠ `measured("page", …)` IS W2's FALSIFIER: **the fit is a claim, and this is the instrument
-            // that checks it.** `DetailRules.titlePageHeight` says the page is 1052.8 pt of a 1080 pt screen —
-            // if this line logs MORE than 1080, the cast row is below the fold on a screen that cannot scroll
-            // and one number (the hero's fraction, or `Metric.lineHeightRatio`) is what moves.
-            measured("page", VStack(alignment: .leading, spacing: 0) {
-                measured("hero", hero(snapshot))
+        // for his *"i cant come to the titles by pressing down arrow"* (KNOWN_ISSUES #11).
+        //
+        // ⚠ `measured("page", …)` IS W2's FALSIFIER: **the fit is a claim, and this is the instrument that
+        // checks it.** `DetailRules.titlePageHeight` says the page is 1058.5 pt of a 1080 pt screen — if this
+        // line logs MORE than 1080, the cast row is below the fold on a screen that cannot scroll and one
+        // number (the hero's fraction, or `Metric.lineHeightRatio`) is what moves.
+        measured("page", VStack(alignment: .leading, spacing: 0) {
+            measured("hero", hero(snapshot))
 
-                below(snapshot)
+            below(snapshot)
 
-                if snapshot.showsEpisodes {
-                    episodes(snapshot)
-                }
-
-                // `.spacer-bottom { height:100px }` — the tail, so the last shelf is not flush with the
-                // screen's bottom edge. ⚠ A fixed-height `Color.clear` and NOT a `Spacer()`: a `Spacer`
-                // inside a `ScrollView`'s stack has no space to claim, so it collapses to nothing.
-                Color.clear
-                    .frame(height: TVTokens.Title.bottomSpacer)
+            if snapshot.showsEpisodes {
+                episodes(snapshot)
             }
-            .frame(maxWidth: .infinity, alignment: .leading))
+
+            // `.spacer-bottom { height:100px }` — the tail, so the last shelf is not flush with the
+            // screen's bottom edge. ⚠ A fixed-height `Color.clear` and NOT a `Spacer()`: a `Spacer`
+            // inside a `ScrollView`'s stack has no space to claim, so it collapses to nothing.
+            Color.clear
+                .frame(height: TVTokens.Title.bottomSpacer)
         }
+        .frame(maxWidth: .infinity, alignment: .leading))
     }
 
     /// `.hero` — the full-bleed backdrop with the title block over its lower part.

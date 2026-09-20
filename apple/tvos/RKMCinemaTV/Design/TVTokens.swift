@@ -169,6 +169,27 @@ enum TVTokens {
         static let clearance = u * 6
     }
 
+    // MARK: - Artwork that is the wrong SHAPE for its band (`PosterRules`)
+
+    /// ⚠⚠ **NOT A PROTOTYPE NUMBER — tvOS METRICS FOR THE ONE CASE HIS REPORT FOUND (2026-09-20): a 2:3
+    /// poster standing in for a 16:9 backdrop.** `PosterRules.treatment` decides *that* the art is shown whole
+    /// over a blurred copy of itself; these two numbers decide *how* that copy looks. ⚠ They are here rather
+    /// than in the view because a blur radius and an opacity are design values, and a design value inside a
+    /// `View` is a value nothing can compare against anything.
+    enum Artwork {
+
+        /// The blur on the ambient copy, in points. ⚠ Large on purpose: the job is to remove every hard edge
+        /// from a picture that is standing behind the artwork rather than being looked at. `2u` = 38.4 pt on a
+        /// 1920 pt screen — at that radius a 16:9 frame is a colour wash and nothing else.
+        static let ambientBlur = u * 2
+
+        /// ⚠ **`0.55`, and the dark half is what makes the fitted poster readable.** A blur that is not dimmed
+        /// competes with the image in front of it; a film's keyart is often bright, and the whole treatment
+        /// exists so that ONE image is legible. Below ~0.4 the ambient layer stops being visible as art and the
+        /// band reads as a flat tint; above ~0.7 it starts to be mistaken for the main image.
+        static let ambientOpacity: Double = 0.55
+    }
+
     // MARK: - A shelf (`.shelf` + `.card` in the prototype)
 
     enum Shelf {

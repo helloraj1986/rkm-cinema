@@ -251,6 +251,47 @@ browser draws it full screen, and the knob is **`Metric.safeMargin` — one numb
 
 ---
 
+## 15 · ✅ FIXED, AWAITING HIS ROUND — *"i cant come down to play button through navigation"*
+
+His words, 2026-09-20, on the title screen reached from the Library: *"in the librray view (Movies Kids) i come
+down to tile and press enter, i am on back to browse button but i cant come down to play button through
+navigation"*.
+
+**That is the FOCUS ISLAND defect, and this repo has paid for it once already.** In a browser a bar above a
+scrolling page costs nothing; on tvOS a focusable row that is a **sibling of the scroller** is a container the
+direction search cannot reliably cross — which is why `BrowseView` moved its filter row *into* the wall's
+scroller and he accepted that screen. Round 8's fix (default focus on `Play`) made the primary verb reachable
+**on entry**, but never fixed *up to the bar and back down*.
+
+**⇒ The bar is now the FIRST CHILD of the screen's one scroller** — the app's own proven shape — and W2 made that
+free: with the page fitting one screen, nothing scrolls, so a `position: fixed` bar buys nothing but the dead
+end. ⚠ **The mechanism is a hypothesis stated as one** (no focus engine runs on this machine); **the falsifier
+is his own: on entry, is the ring on `Play`; can `Up` reach the bar; can `Down` come back to `Play`?**
+
+---
+
+## 16 · ✅ FIXED, AWAITING HIS ROUND — *"i can only see 1/3rd of the poster"*
+
+His words, 2026-09-20: *"i can only see 1/3rd of the poster"*.
+
+**The band had fallen back to the item's 2:3 POSTER and was drawn `fill` into a 1920 × 313 band.** The fallback
+itself is correct — it is the WEB app's own chain (`PosterLoader.fallBackToPoster`: a missing 16:9 backdrop
+becomes the poster, the one artwork every item has) — and it is what makes a title with no keyart show something
+rather than a black band. **What was wrong is the drawing:** a 2:3 image asked to FILL a 6:1 band is scaled
+until its *height* covers the band, which cuts **60 % of its width** — the middle third, exactly what he saw.
+
+**⇒ `Core/PosterRules.swift` (new, pure, RUN on Linux): a portrait image in a landscape band is shown WHOLE over
+a blurred, dimmed copy of itself** (`ArtworkTreatment.ambient`) — no crop, no black bars, and **no extra
+request** (it is the bytes already in hand, drawn twice). Everything else fills as before: a 16:9 backdrop in a
+16:9 band, a 2:3 poster in a 2:3 card, a square image, and an image whose size the platform did not report. Six
+cases pinned in the harness and a mutation behind each direction of the predicate.
+
+⚠ This also changes the **Home's** card and hero-band fallback for poster-only titles — the same treatment,
+because it is the same predicate and the same defect shape. Recorded because it is a visible change to a screen
+he had already accepted.
+
+---
+
 ## 14 · The 4K question — *"so what happens now on 4k screen"*
 
 His ask, 2026-09-20. **Two separate things, and only one of them is layout.**

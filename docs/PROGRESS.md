@@ -101,6 +101,45 @@ tells a viewer there is more below.
 hero restored, the synopsis cap removed, the line height back to 1.8 em), alongside W1's two.
 
 
+### 🧭 W3 — THE TWO DEFECTS HIS LIBRARY ROUND FOUND: a focus dead end, and a poster cropped to a third (2026-09-20)
+
+His report: *"in the librray view (Movies Kids) i come down to tile and press enter, i am on back to browse
+button but i cant come down to play button through navigation also i can only see 1/3rd of the poster"*.
+
+**1 · THE FOCUS DEAD END — the bar is now the first child of the screen's ONE scroller.** This is the focus-island
+defect the repo paid for once already (`BrowseView` moved its filter row INTO the wall's scroller after his
+*"i cant go up from tags to upper navbar"*): a focusable row that is a **sibling** of the scroller is a container
+the direction search cannot reliably cross. Round 8's default-focus fix made `Play` reachable on entry but never
+made the bar reachable-then-leaveable. ⚠ **W2 made the fix free** — with the page fitting one screen nothing
+scrolls, so his `.topbar { position: fixed }` bought nothing but the dead end, and the bar is a visible band
+above the hero instead (a recorded divergence, traded for reachability). ⚠ Mechanism is a HYPOTHESIS; the
+falsifier is his: **on entry is the ring on `Play`, can `Up` reach the bar, can `Down` come back?**
+
+**2 · THE POSTER CROPPED TO A THIRD — `Core/PosterRules.swift`, NEW, PURE AND RUN.** The band fell back from a
+missing 16:9 backdrop to the item's 2:3 **poster** (the web's own chain, and correct — it is the one artwork every
+item has) and drew it `fill` into a 1920 × 313 band: a 2:3 image scaled until its height covers a 6:1 band loses
+**60 % of its width**. ⇒ **a portrait image in a landscape band is now shown WHOLE over a blurred, dimmed copy of
+itself** (`ArtworkTreatment.ambient`) — no crop, no black bars, **no extra request** (the bytes in hand, drawn
+twice). Everything else fills as before, and the six shaping cases are pinned (portrait/landscape/square/unknown
+size, wide band/tall band) with a mutation on the predicate itself. ⚠ It changes the **Home's** fallback too —
+same predicate, same defect shape, but it IS a visible change to a screen he had accepted, so it is recorded
+rather than slipped in.
+
+**His design question, answered in the same breath:** *"rather than giving the poster its own portion why cant we
+keep it as background of the whole page… do you think it will be a better ux"* — **yes, and the numbers say it is
+about immersion rather than space.** Removing the hero band and putting the artwork behind the whole page costs
+`bar 115.2 + title block 203.6` where the hero band alone was `313.2`, so the page comes out **5.6 pt TALLER,
+not shorter** (1064 vs 1058.5) — the win is that nothing is cropped and the art fills the panel, not that more
+fits. ⚠ **NOT BUILT: it restructures the screen again (title block moves to the top, artwork becomes a fixed page
+background with a two-stop scrim), and it is his call.** The crop half of the complaint is fixed regardless.
+
+**Gates, live on this commit:** `check-tvos-core.py` **640 checks / 0 failures** (17 pure sources — `PosterRules`
+joins them) · members PASS · models PASS · `check-apple-typecheck.sh` PASS · imports PASS (**50** files) ·
+design-tokens PASS · md links PASS (73 files). ⚠ `--falsify` still NOT run (his standing rule) — **now FIVE new
+mutations are written and UNEXERCISED.**
+
+
+
 ### 🐞 HIS ROUND 5 ON THE PLAYER FAILED — ONE STRAY BACKSLASH, AND A RULE FOR THE CLASS (2026-09-20, `6e71c67`)
 
 ```

@@ -49,6 +49,11 @@ TVOS = REPO / "apple" / "tvos" / "RKMCinemaTV"
 PURE_SOURCES = [
     TVOS / "Core" / "Models" / "LibraryModels.swift",
     TVOS / "Core" / "PosterURL.swift",
+    # ⚠ W2/W3 — how a piece of artwork is DRAWN into the band it was given. It is one predicate, and it is a
+    # file because his report (*"i can only see 1/3rd of the poster"*) is the second time this class has cost a
+    # round and no gate on this machine can see a `View`: a portrait poster asked to FILL a landscape band loses
+    # 60 % of its width. `PosterRules.treatment` decides; `PosterImageView` draws.
+    TVOS / "Core" / "PosterRules.swift",
     # Phase B2 — the Home's rules and its state table. Pure `Foundation` + each other, which is why they can
     # be executed here: `HomeStore` and `LibraryAPI` are NOT in this list (they import `RKMServerKit`), and
     # that is the split the phase is built on — every DECISION is runnable, only I/O is not.
@@ -629,6 +634,12 @@ MUTATIONS = [
      "        clamped(Int((points * max(scale, 1)).rounded()), route: route)",
      "        clamped(Int((points * scale).rounded()), route: route)",
      "a panel reporting no scale still asks for the band's own points"),
+    # ⚠⚠ ---- W3: THE ARTWORK'S SHAPE. His report — *"i can only see 1/3rd of the poster"* — is a predicate with
+    # a whole-image consequence, so reverting it must take the harness red.
+    ("artwork cropping a portrait poster into a wide band", "PosterRules.swift",
+     "        return width < height * (1 - squareTolerance)",
+     "        return width > height * (1 - squareTolerance)",
+     "a 2:3 poster in a 6:1 band is shown WHOLE over a blurred copy, never cropped"),
     # ⚠⚠ ---- PHASE C2: THE PLAYER'S RULES. Every one of these reverts a decision the SCREEN would have made
     # invisibly: a mode chosen for the wrong client, a URL that turns a query into a path, a subtitle that
     # silently does not apply. What is NOT here: the SwiftUI itself, which no gate on this machine can compile.

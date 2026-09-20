@@ -271,9 +271,7 @@ struct PosterImageView: View {
             switch loader.state {
             case .loaded(let data):
                 if let image = UIImage(data: data) {
-                    Image(uiImage: image)
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
+                    drawn(image)
                 } else {
                     // ⚠ Bytes arrived and are not an image. That is a different fault from a failed
                     // request, and the log line above says which.
@@ -287,6 +285,41 @@ struct PosterImageView: View {
         }
         .task {
             await loader.load()
+        }
+    }
+
+    /// ⚠⚠ **THE BYTES DECIDE HOW THEY ARE DRAWN — AND IT IS `Core/PosterRules.swift` THAT DECIDES, so the rule
+    /// is RUN on Linux rather than eyeballed here.** His report (2026-09-20): *"i can only see 1/3rd of the
+    /// poster"* — the band had fallen back to the 2:3 poster and `.fill` into a 1920 × 313 band cuts **60 % of
+    /// its width**. A portrait image in a landscape band is now shown WHOLE over a blurred, dimmed copy of
+    /// itself (`ArtworkTreatment.ambient`); everything else fills exactly as it did.
+    ///
+    /// ⚠ The band's own size is what the rule needs, so this reads it with a `GeometryReader` **in a
+    /// `.background`** — the one placement that cannot affect layout and cannot join the focus engine (the same
+    /// instrument `DetailView.measured` uses, and the opposite of the reader round 3 had to delete).
+    @ViewBuilder
+    private func drawn(_ image: UIImage) -> some View {
+        GeometryReader { proxy in
+            switch PosterRules.treatment(imageWidth: image.size.width,
+                                         imageHeight: image.size.height,
+                                         bandWidth: proxy.size.width,
+                                         bandHeight: proxy.size.height) {
+            case .fill:
+                Image(uiImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+            case .ambient:
+                ZStack {
+                    Image(uiImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .blur(radius: TVTokens.Artwork.ambientBlur, opaque: true)
+                        .opacity(TVTokens.Artwork.ambientOpacity)
+                    Image(uiImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                }
+            }
         }
     }
 

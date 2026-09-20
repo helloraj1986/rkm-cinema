@@ -1760,9 +1760,11 @@ checkEqual(PlaybackRules.progressFraction(position: 10, total: 0), 0,
 
 // ⚠⚠ THE TITLE HERO'S HEIGHT IS ARITHMETIC ON A FIXED CANVAS, and it is checked here because the alternative
 // was a `GeometryReader` around the whole scroll content — the structure this repo already blames for a focus
-// defect (KNOWN_ISSUES #11). tvOS renders in a fixed 1920 × 1080 point space, so `66vh` has one value.
+// defect (KNOWN_ISSUES #11). tvOS renders in a fixed 1920 × 1080 point space, so the fraction has one value.
+// ⚠ The FRACTION itself is W2's (0.29, down from his 0.66 — see the fit block below): this check pins that the
+// constant is the fraction applied to the canvas, not what the fraction is.
 check(abs(TVTokens.Title.heroHeight - 1080 * TVTokens.Title.heroHeightFraction) < 0.01,
-      "the title hero is 66% of the platform's 1080 pt canvas — no measurement needed",
+      "the title hero is its fraction of the platform's 1080 pt canvas — no measurement needed",
       "got \(TVTokens.Title.heroHeight), want \(1080 * TVTokens.Title.heroHeightFraction)")
 
 // ⚠⚠ ---- W1: THE BOX A SCREEN LAYS OUT IN, WHICH IS THE WHOLE OF KNOWN_ISSUES #13.
@@ -1805,6 +1807,57 @@ checkEqual(PosterURL.width(points: 0, scale: 2), PosterURL.Route.poster.widthRan
            "a zero-width band cannot ask for a zero-width image")
 checkEqual(PosterURL.width(points: TVTokens.Metric.screenWidth, scale: 0), 1920,
            "a panel reporting no scale still asks for the band's own points")
+
+// ⚠⚠ ---- W2: THE FIT, WHICH IS ARITHMETIC BECAUSE NOTHING ON EITHER PAGE CAN SCROLL IT.
+//
+// A tvOS `ScrollView` scrolls only when focus moves onto something INSIDE it. On the title page every band
+// below `Play` is information — synopsis, credits, cast — so nothing can pull focus down and the page MUST
+// fit (`ARCHITECTURE.md` §11 forbids a control that does nothing, which is what a focusable avatar whose press
+// apologises would be). On the Home the rails ARE focusable, so it scrolls; what is measured there is how much
+// of it is on screen at rest.
+let titlePage = DetailRules.titlePageHeight()
+check(abs(titlePage - 1058.52) < 0.5,
+      "the title page's bands add up to 1058.5 pt — the fit budget, term by term",
+      "got \(titlePage)")
+check(titlePage <= TVTokens.Metric.screenHeight,
+      "…and it FITS the 1080 pt screen, which is the whole point: nothing below the fold is reachable",
+      "got \(titlePage) of \(TVTokens.Metric.screenHeight)")
+check(DetailRules.titlePageSlack >= DetailRules.minimumTitlePageSlack,
+      "the page keeps its \(DetailRules.minimumTitlePageSlack) pt of air, so the line-height assumption can be wrong and it still fits",
+      "got \(DetailRules.titlePageSlack) pt of slack")
+check(DetailRules.titlePageHeight(heroFraction: 0.66) > TVTokens.Metric.screenHeight,
+      "his ORIGINAL 66vh hero put 1458 pt of page on a 1080 pt screen — 378 pt of it unreachable, which is the defect",
+      "got \(DetailRules.titlePageHeight(heroFraction: 0.66))")
+check(DetailRules.titlePageHeight(synopsisLines: 8) > TVTokens.Metric.screenHeight,
+      "an UNCAPPED synopsis is what breaks the fit, which is why \(TVTokens.Title.synopsisLineLimit) lines is his cap",
+      "got \(DetailRules.titlePageHeight(synopsisLines: 8))")
+check(DetailRules.titlePageHeight(hasResumeBar: false) < DetailRules.titlePageHeight(),
+      "a title that has never been played has a SHORTER page than a resumed one — the bar is budgeted for")
+
+// ⚠ The synopsis' line box: `line-height: 1.6` is 1.6em TOTAL, and SwiftUI's own ~1.2em is already there.
+check(abs(DetailRules.synopsisLineHeight - TVTokens.Title.synopsisSize * 1.6) < 0.01,
+      "a synopsis line is his 1.6em line box — not the 1.8em the first build drew",
+      "got \(DetailRules.synopsisLineHeight), want \(TVTokens.Title.synopsisSize * 1.6)")
+checkEqual(TVTokens.Title.synopsisLineLimit, 3, "the synopsis is capped at the three lines he chose")
+
+// ⚠⚠ ---- W2: THE HOME'S FIRST SCREEN — the number his report was about (*"i can only see continue watching
+// hero page and one title in continue watching"*).
+check(abs(HomeRules.railHeight - 389.4048) < 0.5,
+      "a rail is its heading, its gap, its 16:9 card at 19u and the room the focus lift needs",
+      "got \(HomeRules.railHeight)")
+checkEqual(TVTokens.Hero.minHeight, 270,
+           "the hero band's FLOOR is a quarter of the screen, and its height is the copy's to decide")
+checkEqual(HomeRules.firstScreenRails, 1,
+           "the Home's first screen carries ONE whole rail — and the arithmetic is why it cannot be three")
+check(HomeRules.firstScreenNextRailFraction > 0.6,
+      "…and most of the next rail, so the page reads as scrollable rather than full",
+      "got \(HomeRules.firstScreenNextRailFraction)")
+check(HomeRules.railHeight * 3 + 2 * TVTokens.u * 2 > HomeRules.homeScrollArea,
+      "THREE rails do not fit at ANY hero height — 1245 pt of rails in a 964.8 pt area, before the hero",
+      "rails \(HomeRules.railHeight * 3 + 2 * TVTokens.u * 2) vs area \(HomeRules.homeScrollArea)")
+check(HomeRules.railHeight * 2 + 2 * TVTokens.u * 2 + TVTokens.Hero.minHeight > HomeRules.homeScrollArea,
+      "…and TWO need the cards to shrink too: they would leave only 109 pt for a hero whose copy needs 397",
+      "hero room \(HomeRules.homeScrollArea - (HomeRules.railHeight * 2 + 2 * TVTokens.u * 2))")
 
 section("the route: which mode this client should ask the api for")
 

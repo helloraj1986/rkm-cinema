@@ -195,7 +195,11 @@ struct DetailView: View {
         // for his *"i cant come to the titles by pressing down arrow"* (KNOWN_ISSUES #11). What is left is
         // the app's own working shape — a `ScrollView` whose content is a plain `VStack`.
         ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 0) {
+            // ⚠⚠ `measured("page", …)` IS W2's FALSIFIER: **the fit is a claim, and this is the instrument
+            // that checks it.** `DetailRules.titlePageHeight` says the page is 1052.8 pt of a 1080 pt screen —
+            // if this line logs MORE than 1080, the cast row is below the fold on a screen that cannot scroll
+            // and one number (the hero's fraction, or `Metric.lineHeightRatio`) is what moves.
+            measured("page", VStack(alignment: .leading, spacing: 0) {
                 measured("hero", hero(snapshot))
 
                 below(snapshot)
@@ -210,7 +214,7 @@ struct DetailView: View {
                 Color.clear
                     .frame(height: TVTokens.Title.bottomSpacer)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading))
         }
     }
 
@@ -435,9 +439,14 @@ struct DetailView: View {
         .accessibilityLabel(snapshot.primaryVerb)
     }
 
-    /// `.synopsis` — *"max-width capped for readability (~60 characters per line) rather than spanning the
+    /// ⚠ `.synopsis` — *"max-width capped for readability (~60 characters per line) rather than spanning the
     /// full screen width"*. ⚠ `TVTokens.Title.synopsisMeasure` is that cap, converted from `62ch` with the
     /// prototype's own font size (SwiftUI has no `ch`), and the derivation is written beside it.
+    ///
+    /// ⚠⚠ **AND IT IS CAPPED AT `Title.synopsisLineLimit` LINES (W2) — HIS CALL: *"cap it at 3 lines"*.** This
+    /// is the one band on the screen whose height is the DATA's rather than the design's, and the page has to
+    /// fit because nothing below it can pull focus (`DetailRules.titlePageHeight`). A longer overview
+    /// ellipsises rather than pushing the cast row off a screen nobody can scroll.
     @ViewBuilder
     private func synopsis(_ snapshot: DetailSnapshot) -> some View {
         if !snapshot.overview.isEmpty {
@@ -445,6 +454,7 @@ struct DetailView: View {
                 .font(.system(size: TVTokens.Title.synopsisSize))
                 .lineSpacing(TVTokens.Title.synopsisLineSpacing)
                 .foregroundStyle(RKMColour.primary.opacity(0.9))
+                .lineLimit(TVTokens.Title.synopsisLineLimit)
                 .frame(maxWidth: TVTokens.Title.synopsisMeasure, alignment: .leading)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, TVTokens.Title.synopsisTopPad)

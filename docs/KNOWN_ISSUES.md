@@ -234,6 +234,15 @@ one.
 7. **the app's own file log says `detail-size: screen = 1920x1080 pt at x=0 y=0`** — if it still says
    `1760x960 at x=80 y=60`, the double inset is back and this phase did not land.
    `find "$(xcrun simctl get_app_container booted com.helloraj1986.RKMCinemaTV data)" -name rkm-tvos.log`
+8. **⚠⚠ AND W2's OWN FALSIFIER, WHICH IS THE SAME LOG: `detail-size: page`.** It must read **≤ 1080** — the
+   page fits, so the cast row is on screen without scrolling. If it reads MORE, the fit is out and **one**
+   constant moves: `Title.heroHeightFraction` (0.29), or `Metric.lineHeightRatio` (1.2) if every band is out by
+   the same few percent. ⚠ The title page **cannot** be scrolled (every band below `Play` is information), which
+   is why this is a fit and not a scroll.
+9. **the Home's first screen: bar + hero + ONE whole rail + the top ~69 % of the next** — `HomeRules` computes
+   exactly that. ⚠ **Three rails is not a tuning problem, it is impossible**: `3 × 389.4 + 2 × 38.4 = 1245.0` of
+   rails in a `964.8` pt area before the hero is counted. Two whole rails need `Shelf.cardWidth` at ~`14u` (his
+   cards are `19u`) — one token, offered and NOT taken.
 
 **⚠ THE TRADE THIS ACCEPTS, AND IT IS THE ONE THING THAT COULD REOPEN THIS:** the design's margin is **80.64 pt**
 from the panel edge and Apple's tvOS guidance is **90 pt**, so a television cropping more than 4.2 % of the frame

@@ -26,6 +26,16 @@ because tvOS gives every device the same points. Plan, measurements and the roun
 ⚠ **`Trailer` / `Add to Watchlist` / `More` and the "Because you watched" shelf are NOT built — his instruction
 this phase, and each is a wire change or the acquisition half that stays on web/iOS.** The reasons are measured
 in that plan's §3.
+⚠⚠ **AND W2 — "MAKE IT FIT" — SHRANK BOTH HEROS, ON HIS REPORT: `Title.heroHeightFraction` 0.66 → 0.29 and
+`Hero.minHeightFraction` 0.25 (a FLOOR, not a height).** The title page is now **one screen long** —
+`DetailRules.titlePageHeight` = **1058.5 of 1080**, with his original `66vh` measuring **1458.1**, i.e. 378 pt of
+page he could never reach. ⚠⚠ **The reason that page has to FIT rather than scroll: a tvOS `ScrollView` scrolls
+only when focus moves onto something inside it**, and everything below `Play` is information. The Home scrolls
+(the rails take focus) and now shows **one whole rail + 68.6 % of the next**; ⚠ **three rails is arithmetically
+impossible** (`1245.0` pt of rails in a `964.8` pt area, before the hero) and two whole rails need
+`Shelf.cardWidth` at ~`14u` — offered, not taken. Two defects fell out of the arithmetic on the way: the hero
+band had to become content-sized (its copy needs ~397 pt, so a fixed 270 would clip its own buttons), and the
+synopsis' line height was **1.8 em where his CSS says 1.6** — the single largest item in the budget.
 ⚠ **BOTH OF THOSE ARE UNBUILT-UNTIL-HIS-MAC: not one SwiftUI view compiles on Linux**, and this phase changed
 `AppRootView`, `DetailView`, `HeroBand` and `PosterCard`.
 

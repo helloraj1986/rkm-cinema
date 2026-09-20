@@ -329,6 +329,76 @@ enum HomeRules {
         return percent > 0 && (!heroRuntimeLeft(item).isEmpty || isEpisodeItem(item))
     }
 
+    // ------------------------------------------------ what FITS on the first screen
+
+    /// ⚠⚠ **HOW TALL ONE RAIL IS — AND IT IS WHY HIS HERO GOT SHRUNK (W2, his report 2026-09-20).**
+    ///
+    /// His words: *"there also i can only see continue watching hero page and one title in continue watching"*.
+    /// The arithmetic agrees with him exactly. A rail is its heading, the gap under it, and the track (the
+    /// card plus the vertical room the focus lift needs — `RailView`'s own `trackPaddingV + titleGap` per
+    /// side), and a card is a 16:9 band at `Shelf.cardWidth` plus its two caption lines:
+    ///
+    ///     heading   1.5u = 28.8 → a ~34.6 pt line
+    ///     gap       1.1u = 21.1
+    ///     card      19u wide → 16:9 = 205.2, + title 24.2 + gapTop 13.4 + facts 18.9 = 261.7
+    ///     track pad 2 × (0.6u + 1.1u) = 65.3
+    ///     ───────────────────────────────────────────────────────────────  ≈ 382.7 pt per rail
+    static var railHeight: CGFloat {
+        let heading = TVTokens.Shelf.titleSize * DetailRules.lineHeightRatio
+        let card = cardHeight
+        let trackPad = 2 * (TVTokens.Shelf.trackPaddingV + TVTokens.Shelf.titleGap)
+        return heading + TVTokens.Shelf.titleGap + card + trackPad
+    }
+
+    /// One Home card: the 16:9 artwork plus the caption under it.
+    static var cardHeight: CGFloat {
+        let art = TVTokens.Shelf.cardWidth * 9 / 16
+        let title = TVTokens.Shelf.cardTitleSize * DetailRules.lineHeightRatio
+        let facts = TVTokens.Shelf.subSize * DetailRules.lineHeightRatio
+        return art + TVTokens.Shelf.titleGapTop + title + TVTokens.Shelf.factsGapTop + facts
+    }
+
+    /// The vertical space the rails have: the screen, minus the top bar, minus the hero band, minus one
+    /// section gap between each of them (`HomeView`'s `VStack(spacing: u * 2)`).
+    static var homeScrollArea: CGFloat {
+        TVTokens.Metric.screenHeight - TVTokens.Bar.clearance
+    }
+
+    /// ⚠⚠ **HOW MANY RAILS ARE WHOLLY ON THE FIRST SCREEN — THE NUMBER HIS REPORT WAS ABOUT.**
+    ///
+    /// ⚠ It is computed rather than tuned, so `TVTokens.Hero.minHeightFraction` can be moved and this answers
+    /// what it bought. **A rail that merely PEEKS is not counted** (a half-card reads as a rendering fault);
+    /// `HomeRules.firstScreenNextRailFraction` says how much of the next one is visible.
+    ///
+    /// ⚠⚠ **AND IT IS WORTH KNOWING WHAT THIS NUMBER CANNOT BE.** With the cards at `Shelf.cardWidth` and any
+    /// hero band at all, the sum is `hero + gap + n × railHeight ≤ homeScrollArea` — so **two whole rails are
+    /// the ceiling, and even those need the cards to shrink**: at `19u` a rail is 382.7 pt, and
+    /// `2 × 382.7 + 3 × 38.4 = 880.6` against a scroll area of `964.8` leaves **84.2 pt for the hero**, whose
+    /// own copy needs ~397. **Three rails do not fit at ANY hero height** (`2 × 38.4 + 3 × 382.7 = 1224.9`
+    /// before the hero is counted). ⇒ **The levers are the hero's floor and `Shelf.cardWidth`** — both single
+    /// tokens — and this rule is what makes the trade arithmetic instead of a matter of opinion.
+    ///
+    /// ⚠ The hero is counted at its FLOOR (`Hero.minHeight`), because the band is content-sized
+    /// (`HeroBand`): on a two-line title it is taller and fewer rails fit, which is the honest reading.
+    ///
+    /// ⚠⚠ **The division is `(scrollArea − hero) / (rail + gap)`, and the `gap` belongs INSIDE the divisor:**
+    /// `n` rails cost `n × rail + n × gap` (hero → gap → rail → gap → rail …), which is the shape the first
+    /// version of this rule got wrong by one — it added a rail the screen cannot hold.
+    static var firstScreenRails: Int {
+        let available = homeScrollArea - TVTokens.Hero.minHeight
+        guard available > 0, railHeight > 0 else { return 0 }
+        return max(0, Int(available / (railHeight + TVTokens.u * 2)))
+    }
+
+    /// How much of the NEXT rail is on screen — `0` when the rails end exactly, `1` when a further whole rail
+    /// would fit. ⚠ The fraction is of the RAIL, so `0.5` means half of that rail's card is visible.
+    static var firstScreenNextRailFraction: CGFloat {
+        let used = TVTokens.Hero.minHeight
+            + CGFloat(firstScreenRails) * (railHeight + TVTokens.u * 2)
+        let remaining = homeScrollArea - used
+        guard remaining > 0 else { return 0 }
+        return min(1, remaining / railHeight)
+    }
 }
 
 // MARK: - What one row's fetch produced

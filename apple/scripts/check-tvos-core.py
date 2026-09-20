@@ -601,7 +601,22 @@ MUTATIONS = [
     ("the title hero drifting from its fraction", "TVTokens.swift",
      "        static let heroHeight = Metric.screenHeight * heroHeightFraction",
      "        static let heroHeight = Metric.screenHeight * 0.5",
-     "the title hero is 66% of the platform's 1080 pt canvas — no measurement needed"),
+     "the title hero is its fraction of the platform's 1080 pt canvas — no measurement needed"),
+    # ⚠⚠ ---- W2: THE FIT. Each of these reverts a decision the SCREEN would make invisibly — and the first is
+    # the phase itself: put his original `66vh` hero back and 378 pt of the page is below the fold on a screen
+    # that cannot scroll.
+    ("the title hero back to his 66vh (and off the screen)", "TVTokens.swift",
+     "        static let heroHeightFraction: CGFloat = 0.29",
+     "        static let heroHeightFraction: CGFloat = 0.66",
+     "his ORIGINAL 66vh hero put 1458 pt of page on a 1080 pt screen"),
+    ("the synopsis losing its line cap", "TVTokens.swift",
+     "        static let synopsisLineLimit = 3",
+     "        static let synopsisLineLimit = 8",
+     "an UNCAPPED synopsis is what breaks the fit"),
+    ("the synopsis' line height back to 1.8em", "TVTokens.swift",
+     "        static let synopsisLineSpacing = px * 7.6",
+     "        static let synopsisLineSpacing = px * 11.4",
+     "a synopsis line is his 1.6em line box — not the 1.8em the first build drew"),
     # ⚠⚠ ---- W1: THE BOX. This is the one that reverts the phase: put the safe area back into the fit rule
     # and the app is 9.1 % too small for its own design again (KNOWN_ISSUES #13).
     ("the fit rule counting a smaller box than the screen", "TVTokens.swift",

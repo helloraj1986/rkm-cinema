@@ -294,6 +294,77 @@ enum DetailRules {
         return max(1, Int(content / (item + gap)))
     }
 
+    // ---------------------------------------------------------------- does the page FIT?
+
+    /// ⚠⚠ **THE LINE HEIGHT THE BUDGETS BELOW ASSUME — ONE RULE, ONE PLACE: `TVTokens.Metric.lineHeightRatio`.**
+    /// It lives in the token table because BOTH screens' fit arithmetic needs it (this page's sum and
+    /// `HomeRules.railHeight`), and a second copy here would be this repo's repeating defect.
+    static var lineHeightRatio: CGFloat { TVTokens.Metric.lineHeightRatio }
+
+    /// What ONE synopsis line costs: a `1.6em` line box, as SwiftUI builds it.
+    static var synopsisLineHeight: CGFloat {
+        TVTokens.Title.synopsisSize * lineHeightRatio + TVTokens.Title.synopsisLineSpacing
+    }
+
+    /// What one line of the smaller text (credits, cast names, roles, the resume readout) costs.
+    static func bodyLineHeight(_ size: CGFloat) -> CGFloat { size * lineHeightRatio }
+
+    /// ⚠⚠ **HOW TALL THE TITLE PAGE IS — THE ARITHMETIC THAT DECIDES THERE IS NO SCROLLING HERE.**
+    ///
+    /// On a television a `ScrollView` scrolls **only when focus moves onto something inside it**, and every
+    /// band below `Play` on this screen is INFORMATION: the synopsis, the credits and the cast row carry no
+    /// control, and `docs/ARCHITECTURE.md` §11 forbids a control that does nothing (an avatar whose press
+    /// apologises is the same lie the old Play button told). ⇒ **This page cannot scroll, so it has to FIT**,
+    /// and his own report is the brief: *"why cant we fit everything to one screen … most of them should fit
+    /// the screen"*.
+    ///
+    /// ⚠⚠ **The sum, every term a token** — and the worst honest case, so the caps are the ones the screen
+    /// actually draws: the hero, the action row, the resume bar **when the title is in progress**, a synopsis
+    /// at `Title.synopsisLineLimit` lines, the credits at their three possible lines, and the cast row.
+    /// ⚠ `hasResumeBar` defaults to `true` because a Continue-Watching title is exactly the case his round
+    /// opened on.
+    static func titlePageHeight(heroFraction: CGFloat = TVTokens.Title.heroHeightFraction,
+                                synopsisLines: Int = TVTokens.Title.synopsisLineLimit,
+                                creditLines: Int = 3,
+                                hasResumeBar: Bool = true) -> CGFloat {
+        let hero = TVTokens.Metric.screenHeight * heroFraction
+
+        // `.actions { padding: 36px 64px 0 }` + the `.btn`'s own box (`btnFontSize` line + its vertical pad).
+        let button = bodyLineHeight(TVTokens.Title.btnFontSize) + 2 * TVTokens.Title.btnPaddingV
+        let actionRow = TVTokens.Title.actionTopPad + button
+
+        // The bar is drawn only when the state can be stated honestly — but it is budgeted for, so the FIT is
+        // true of a resumed title as well as a fresh one.
+        let resumeBar = hasResumeBar
+            ? TVTokens.Title.metaGapBottom + max(bodyLineHeight(TVTokens.Title.castRoleSize),
+                                                 TVTokens.Shelf.progressHeight)
+            : 0
+
+        let synopsis = TVTokens.Title.synopsisTopPad + CGFloat(synopsisLines) * synopsisLineHeight
+
+        // `credits()` is a VStack with a 6 pt gap, and its three `if`s can each render one line.
+        let creditLine = bodyLineHeight(TVTokens.Title.castRoleSize)
+        let credits = TVTokens.Title.sectionTitleGap
+            + CGFloat(creditLines) * creditLine + CGFloat(max(0, creditLines - 1)) * 6
+
+        // `cast()`: the shelf's top pad, then its own VStack gap before the heading, then the heading, the
+        // avatar, its bottom gap, the name and the role.
+        let cast = TVTokens.Title.shelfTopPad + TVTokens.Title.sectionTitleGap
+            + bodyLineHeight(TVTokens.Title.sectionTitleSize)
+            + TVTokens.Title.avatarSize + TVTokens.Title.avatarGapBottom
+            + bodyLineHeight(TVTokens.Title.castNameSize) + bodyLineHeight(TVTokens.Title.castRoleSize)
+
+        return hero + actionRow + resumeBar + synopsis + credits + cast
+    }
+
+    /// ⚠ The slack the page has left on a 1080 pt screen — **and it is asserted, not eyeballed**: the harness
+    /// requires it to be POSITIVE and at least `minimumTitlePageSlack`, so a band that grows takes the round
+    /// DOWN rather than pushing the cast off the bottom of a television nobody can scroll.
+    static var titlePageSlack: CGFloat { TVTokens.Metric.screenHeight - titlePageHeight() }
+
+    /// How much air the page must keep for the line-height estimate above to be wrong by 2 % and still fit.
+    static let minimumTitlePageSlack: CGFloat = 20
+
     /// The hue of a cast avatar — **DERIVED from the person, never sent.**
     ///
     /// ⚠⚠ **WHY A DERIVATION AND NOT A COLOUR.** His prototype's `.avatar` is `hsl(${c.hue} 55% 62%)` with a

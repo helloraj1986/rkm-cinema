@@ -1,4 +1,4 @@
-## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-20) · ✅✅ **PHASE W — "THE BOX, NOT THE CANVAS" — IS BUILT: the WHOLE APP now fills tvOS's 1920 × 1080 point canvas and applies each prototype's own margin ONCE** · **⚠⚠ THAT IS THE FAULT BEHIND `KNOWN_ISSUES` #13, WHICH HAS BEEN OPEN SINCE ROUND 6** — the screens were drawn inside the safe area (1760 × 960 at (80, 60)) and THEN indented by his own `64px` margin, so every screen was **9.1 % narrower than its design, 80 pt too far in, and the title hero was 74 % of the height instead of `66vh`** · the **title screen is REWRITTEN** to `title-view.html`'s structure (bar OVERLAYS the full-bleed hero, action row first) · **artwork is now asked for at the panel's own pixel width** (3840 px on 4K) · ⚠ **branch `feat/tvos-player` carries it; `dev` does NOT** · **nothing needs `apply`**: no file under `backend/`, `frontend/` or `nginx/` changed · **HIS ROUND IS THE NEXT THING** — the seven falsifiers are `docs/TVOS_TITLE_SCREEN_PLAN.md` §6
+## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-20) · ✅✅ **PHASE W — "THE BOX, NOT THE CANVAS" — IS BUILT: the WHOLE APP now fills tvOS's 1920 × 1080 point canvas and applies each prototype's own margin ONCE** · **⚠⚠ THAT IS THE FAULT BEHIND `KNOWN_ISSUES` #13, WHICH HAS BEEN OPEN SINCE ROUND 6** — the screens were drawn inside the safe area (1760 × 960 at (80, 60)) and THEN indented by his own `64px` margin, so every screen was **9.1 % narrower than its design, 80 pt too far in, and the title hero was 74 % of the height instead of `66vh`** · the **title screen is REWRITTEN** to `title-view.html`'s structure (bar OVERLAYS the full-bleed hero, action row first) · **artwork is now asked for at the panel's own pixel width** (3840 px on 4K) · ✅ **W2 — "MAKE IT FIT": the title page is ONE SCREEN long (1058.5 of 1080, `DetailRules.titlePageHeight`), its hero is 0.29 of the screen instead of his 66vh, the synopsis is capped at 3 lines, and the Home's hero is a `minHeight` a quarter of the screen — which puts ONE whole rail plus 68.6 % of the next on the first screen** (⚠ three rails is ARITHMETICALLY impossible: 1245 pt of rails in a 964.8 pt area) · ⚠ **branch `feat/tvos-player` carries it; `dev` does NOT** · **nothing needs `apply`**: no file under `backend/`, `frontend/` or `nginx/` changed · **HIS ROUND IS THE NEXT THING** — the falsifiers are `docs/TVOS_TITLE_SCREEN_PLAN.md` §6 and §6ter, and the ONE line to read first is `detail-size: page` in the app's file log
 
 ### 🎬 PHASE W — THE SCREENS WERE DRAWN IN THE WRONG BOX, AND THE TITLE SCREEN IS NOW HIS FILE'S STRUCTURE (2026-09-20)
 
@@ -51,6 +51,54 @@ if a round ever shows it is **`Metric.safeMargin`, one number**, never a per-met
 ⚠ **AND THE ONE THING THE MEASUREMENT INSTRUMENTATION IS STILL FOR:** after W1 the title screen must log
 **`detail-size: screen = 1920x1080 pt at x=0 y=0`**. If it still says `1760x960 at x=80 y=60`, the double inset
 is still there and this phase did not land (`DetailView.measured`, falsifier **W-F7**).
+
+### 📐 W2 — "MAKE IT FIT": the title page is one screen long, the Home's hero is a floor, and two defects fell out of the arithmetic (2026-09-20)
+
+His second report the same session: *"why cant we fit everything to one screen … basically all the details hsould
+fit the screen..a listlle scroliing should be fine ….but most of them should fit the screen same with the home
+page i think there also i can only see, continue watching hero page and one title in contiue watching"*.
+
+**The two screens he compared were the SAME screen** — both go through `AppModel.openDetail` (the one entry
+point). They looked different because **tvOS scrolls to whatever holds focus**, and the title page was 1450 pt of
+content on a 1080 pt screen. ⚠⚠ **And the rule that turns this from taste into arithmetic: a tvOS `ScrollView`
+scrolls only when focus moves onto something INSIDE it.** The Home's rails take focus, so the Home scrolls; every
+band below the title page's `Play` is INFORMATION (synopsis, credits, cast), so **that page must FIT** — which is
+also why the cast row was not made focusable to solve it (§11 forbids a control that does nothing).
+
+| his answer | built as | why not literally |
+|---|---|---|
+| title hero **~36 %** | **`Title.heroHeightFraction = 0.29`** (313.2 pt) | 36 % measures **1148 pt** of page — still 68 pt over. Break-even is `h ≤ 0.31`; 0.29 keeps 21.5 pt of air |
+| Home hero **~25 %**, "so 3 rails are visible" | **`Hero.minHeightFraction = 0.25`, and a `minHeight` — not a height** | ⚠⚠ **3 rails do not fit at ANY hero height** (`3 × 389.4 + 2 × 38.4 = 1245.0` in a 964.8 pt area, before the hero). And a FIXED 270 pt band clips the hero's own buttons |
+| synopsis **capped at 3 lines** | `Title.synopsisLineLimit = 3` | as asked — 8 lines measures 1250 pt, so the cap is what makes the fit possible at all |
+
+**⚠⚠ TWO REAL DEFECTS FOUND WHILE SHRINKING IT, NEITHER OF WHICH WAS VISIBLE BEFORE:**
+
+1. **The hero band could not be shrunk as a fixed number.** Its own copy needs ≈**397 pt** (padding 115.2 +
+   eyebrow 32.6 + title 94.7 + meta 44.4 + progress 52.4 + the CTA row 58) — so `frame(height: 270)` cuts its own
+   buttons off. ⇒ `.frame(minHeight: Hero.minHeight)` with the **copy** deciding the height, and `HeroBand.body`
+   is now a **`.background`** rather than a `ZStack`: a ZStack sibling cannot be relied on to stretch to a height
+   another sibling decided (inside a `ScrollView` the proposal is unbounded, so `maxHeight: .infinity` falls back
+   to the ideal size and the band shows black above the copy).
+2. **The synopsis' line height was 1.8 em, not his `line-height: 1.6`.** `Text.lineSpacing` is the gap BETWEEN
+   lines and does not replace the line box (already ≈1.2 em), so `px * 11.4` made every line **12 % too tall**.
+   ⇒ `px * 7.6` (0.4 em) = exactly **38.304 pt**, which IS `1.6 em` of 23.94 pt. It was the largest single
+   consumer of the vertical budget on that screen.
+
+**The title page now, term by term** (`DetailRules.titlePageHeight`, pure and RUN): hero 313.2 + action row 114.4
++ resume bar 43.8 + synopsis 165.3 + credits 103.2 + cast 318.5 = **1058.5 of 1080 — 21.5 pt of air.** ⚠ At his
+original `66vh` the same sum is **1458.1**, i.e. 378 pt of page nobody could reach. **Both figures are pinned in
+the harness**, so the defect and its fix are checked against each other.
+
+**The Home now:** bar 115.2 + hero (≥270, as tall as its copy needs) + **one whole rail** + **68.6 % of the
+next** — `HomeRules.firstScreenRails`, computed from the tokens. ⚠ **The two levers, each ONE token:**
+`Hero.minHeightFraction`, and `Shelf.cardWidth` (at `14u` the cards fit **two whole rails**). Neither was moved
+past his instruction — he asked for the hero change, not for smaller cards — so the second-rail peek is what
+tells a viewer there is more below.
+
+**Gates, live on this commit:** `check-tvos-core.py` **634 checks / 0 failures** · members PASS · models PASS ·
+`check-apple-typecheck.sh` PASS · imports PASS (49 files) · design-tokens PASS · md links PASS (73 files).
+⚠ `--falsify` still NOT run (his standing rule) — **three new mutations are written and UNEXERCISED** (his 66vh
+hero restored, the synopsis cap removed, the line height back to 1.8 em), alongside W1's two.
 
 
 ### 🐞 HIS ROUND 5 ON THE PLAYER FAILED — ONE STRAY BACKSLASH, AND A RULE FOR THE CLASS (2026-09-20, `6e71c67`)

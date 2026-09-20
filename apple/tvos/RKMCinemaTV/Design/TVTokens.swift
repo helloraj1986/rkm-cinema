@@ -103,7 +103,28 @@ enum TVTokens {
     // MARK: - The hero band (`.hero` in the prototype)
 
     enum Hero {
-        static let height = u * 32
+        /// `.hero { padding: 3u 4.2u }` and a `32u` band in the prototype.
+        ///
+        /// ⚠⚠ **W2 SHRANK IT FROM `32u` (614.4 pt, 56.9 % OF THE SCREEN) TO A QUARTER OF THE SCREEN, AND IT IS
+        /// HIS CALL, NOT A RESTYLE (2026-09-20).** His report on the built Home: *"there also i can only see
+        /// continue watching hero page and one title in continue watching"* — and the arithmetic agrees: bar
+        /// `115.2` + hero `614.4` = **729.6** of a 1080 pt screen, which leaves **350.4** for the rails — and ONE
+        /// rail is `HomeRules.railHeight` ≈ **382.7**. So the old band showed one rail WITH ITS BOTTOM CUT, and no
+        /// more of the page at all.
+        ///
+        /// ⚠⚠ **AND IT IS A `minHeight`, NOT A `height` — FOUND WHILE SHRINKING IT, AND IT WOULD HAVE BEEN A BUG.**
+        /// The band's own copy needs ≈**397 pt** at these tokens (vertical padding 115.2 + eyebrow 32.6 + title
+        /// 94.7 + meta 44.4 + progress 52.4 + the CTA row 58), so a FIXED 270 pt band would clip its own buttons —
+        /// the hero's height is not a free number while its contents are fixed. ⇒ The band sizes to its own copy
+        /// and this is the FLOOR under it (`0.25 × 1080 = 270`), so the artwork stays at least a quarter of the
+        /// screen tall and the copy can never be cut on a title with a two-line name.
+        ///
+        /// ⚠ What it buys, and what it cannot: `HomeRules.firstScreenRails` computes it from these tokens — a rail
+        /// is ~382.7 pt and the rails' area is 964.8 pt, so **two whole rails need the hero and the cards to shrink
+        /// TOGETHER**, and three rails do not fit at any hero height. ⚠ On a fixed `32u` band, by contrast, the
+        /// content happened to fit with 217 pt of artwork left over.
+        static let minHeightFraction: CGFloat = 0.25
+        static let minHeight = Metric.screenHeight * minHeightFraction
         static let paddingV = u * 3
         static let paddingH = u * 4.2
         static let eyebrowSize = u * 1
@@ -369,14 +390,24 @@ enum TVTokens {
 
         // ---- the hero (`.hero`)
         /// `.hero { height: 66vh; min-height: 520px }` — ⚠ a FRACTION of the screen and not a point value,
-        /// because that is what `vh` is. ⚠⚠ **IT IS A FRACTION OF THE BOX THE SCREEN LAYS OUT IN, WHICH IS
-        /// THE CANVAS — and reading it as a fraction of the SAFE AREA was the whole of KNOWN_ISSUES #13.**
-        /// The screens fill tvOS's 1920 × 1080 point canvas (W1's root-level decision), so `66vh` is
-        /// `0.66 × 1080 = 712.8 pt` — the value this constant has always carried, now derived from the right
-        /// box. ⚠ While the screens were laid out inside the safe area it was 712.8 pt of a **960 pt** box,
-        /// i.e. 74.3 % of the height instead of 66 %, which pushed the action row off the bottom of the
-        /// screen and made the page open scrolled with its hero cut.
-        static let heroHeightFraction: CGFloat = 0.66
+        /// because that is what `vh` is.
+        ///
+        /// ⚠⚠ **`0.66` → `0.29`, AND IT IS HIS DECISION (2026-09-20) — the ONE number of his that the built
+        /// screen could not keep.** His report: *"why cant we fit everything to one screen … a little scrolling
+        /// should be fine … but most of them should fit the screen"*, and on tvOS that is not a preference but
+        /// a CONSTRAINT: **a `ScrollView` only scrolls when focus moves onto something inside it**, and every
+        /// band below `Play` on this screen (synopsis, credits, cast) is INFORMATION with no control in it —
+        /// `docs/ARCHITECTURE.md` §11 forbids a control that does nothing. So the page has to FIT, and
+        /// `DetailRules.titlePageHeight` is that sum, kept as arithmetic rather than as a hope.
+        ///
+        /// ⚠ The measurement his number failed: at `0.66` the bands below the hero are **759.9 pt**
+        /// (action row 114.4 + resume bar 43.9 + a 3-line synopsis 179.7 + credits 103.3 + the cast row 318.6),
+        /// so the page was **1469.7 pt in a 1080 pt screen — 390 pt of it unreachable**. At `0.29` it is
+        /// **313.2 + 759.9 = 1073.1**, and the two corrections beside this one (a 3-line synopsis, and a line
+        /// height that is actually `1.6em`) bring it to **1052.8 — 27.2 pt of air.** ⚠ **This is the ONE
+        /// constant to move if his round says the page is still cut or has too much space** — never a
+        /// per-band re-derivation.
+        static let heroHeightFraction: CGFloat = 0.29
         /// …and its `min-height`, which matters on no tvOS screen (1080 pt is fixed) but is transcribed so the
         /// two numbers stay side by side with their source.
         static let heroMinHeight = px * 520
@@ -388,7 +419,7 @@ enum TVTokens {
         /// hands its children are what the focus engine navigates on. On tvOS the canvas is FIXED at 1080 pt,
         /// so `66vh` has exactly one value and needs no measurement:
         ///
-        ///     0.66 × 1080 = 712.8 pt, and 712.8 / 19.2 = **37.125u**  (u = 1 % of the 1920 pt width)
+        ///     0.29 × 1080 = 313.2 pt — the hero is a LITTLE MORE THAN a quarter of the screen (W2)
         ///
         /// ⚠⚠ **AND THE PROSE IS NOW THE ARITHMETIC (W1): `Metric.screenHeight × heroHeightFraction`.** The
         /// constant used to be written as `u * 37.125` — a hand-converted point value with its derivation in
@@ -462,8 +493,23 @@ enum TVTokens {
         // ---- the synopsis (`.synopsis`)
         static let synopsisTopPad = px * 40
         static let synopsisSize = px * 19
-        /// `line-height: 1.6` on a `19px` font — the extra leading is `0.6 × 19px`.
-        static let synopsisLineSpacing = px * 11.4
+        /// `line-height: 1.6` on a `19px` font.
+        ///
+        /// ⚠⚠ **CORRECTED IN W2: `px * 11.4` (0.6 em) → `px * 7.6` (0.4 em), and the old number was a real
+        /// defect rather than a taste call.** `line-height:1.6` means the LINE BOX is **1.6 em** — and SwiftUI
+        /// has already supplied about **1.2 em** of that before `lineSpacing` is added (`.lineSpacing` is the
+        /// gap BETWEEN lines, not the total). The first version added the full `0.6 em`, so every synopsis line
+        /// was **1.8 em apart instead of 1.6** — about 12 % too loose, and the single largest consumer of the
+        /// vertical budget this screen has to fit. ⚠ The remaining `0.4 em` is what completes his `1.6`, and
+        /// the assumption about SwiftUI's own 1.2 em is named in `DetailRules.synopsisLineHeight` so a round
+        /// can correct it in one place.
+        static let synopsisLineSpacing = px * 7.6
+        /// ⚠⚠ **THE ONE CONTENT CAP ON THIS SCREEN, AND IT IS HIS CALL (2026-09-20): *"cap it at 3 lines"*.**
+        /// A description varies from two lines to eight, and it is the only band whose height is the DATA's
+        /// rather than the design's — so an uncapped synopsis is an uncappable page (`DetailRules.titlePageHeight`
+        /// measures the capped case). ⚠ Three lines at `synopsisMeasure` is where most of his real overviews
+        /// already end; a longer one ellipsises rather than pushing the cast off the screen.
+        static let synopsisLineLimit = 3
         /// ⚠ `max-width: 62ch`, and **a `ch` is not a point value**, so it is converted with the prototype's
         /// own font size rather than guessed: a system sans digit is ≈`0.5em`, so `62 × 0.5 × 19px = 589px`.
         /// Stated as arithmetic so the number can be re-derived if the type scale ever moves.
@@ -723,7 +769,18 @@ enum TVTokens {
         /// layout box WAS while it respected the safe area: a correct reading of the wrong box.
         static let layoutWidth = screenWidth
 
-        /// The screens' horizontal margin.
+        /// ⚠ **THE LINE BOX A SYSTEM FONT GIVES A `Text` BEFORE ANY `lineSpacing` — about 1.2 em.**
+        ///
+        /// ⚠⚠ **NAMED HERE BECAUSE TWO SCREENS' FIT ARITHMETIC DEPENDS ON IT, AND BECAUSE IT IS AN ASSUMPTION.**
+        /// `Text.lineSpacing` is the gap BETWEEN lines; it does not replace the line box. So a CSS
+        /// `line-height: 1.6` is completed by **0.4 em** (`Title.synopsisLineSpacing`), and every band height
+        /// that has text in it is `size × this` (`DetailRules.titlePageHeight`, `HomeRules.railHeight`).
+        /// ⚠ Nothing on this machine renders a `Text`, so this number **cannot be measured here** — it is the
+        /// one assumption in both budgets, both screens log their real height to the file log, and if the sums
+        /// are out this is the single constant to move (never a per-band re-derivation).
+        static let lineHeightRatio: CGFloat = 1.2
+
+        /// ⚠ The screens' horizontal margin.
         ///
         /// ⚠ **U6 moved this from a hand-picked 60 to the prototype's own content inset** — every band in the
         /// HTML pads by `4.2u` (`.tv-topbar`, `.hero`, `.shelf-title`, `.shelf-track`), so 4.2u is the app's

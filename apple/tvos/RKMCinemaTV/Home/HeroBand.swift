@@ -55,16 +55,21 @@ struct HeroBand: View {
     private var primaryOpensTheItem: Bool { isSeries }
 
     var body: some View {
-        ZStack(alignment: .bottomLeading) {
-            artwork
-            gradients
-            copy
-        }
-        .frame(height: TVTokens.Hero.height)
-        .frame(maxWidth: .infinity)
-        .clipped()
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Continue watching \(HomeRules.heroTitle(item))")
+        // ⚠⚠ **THE COPY DECIDES THE BAND'S HEIGHT AND THE ARTWORK FILLS BEHIND IT (W2), WHICH IS WHY THIS IS
+        // A `.background` AND NOT THE `ZStack` IT WAS.** The band used to be a FIXED `32u` with the artwork and
+        // the copy as ZStack siblings — correct while the height was a number. It is now `minHeight`-plus-copy,
+        // and in a `ZStack` a sibling cannot be relied on to stretch to a height another sibling decided (a
+        // `.frame(maxHeight: .infinity)` child is resolved against the parent's proposal, and inside a
+        // `ScrollView` that proposal is unbounded — the artwork would fall back to its ideal size and the band
+        // would show black above the copy). As a `.background` it is proposed **exactly** the copy's frame, so
+        // the keyart reaches every edge of whatever height the copy turns out to need.
+        copy
+            .frame(maxWidth: .infinity, alignment: .bottomLeading)
+            .frame(minHeight: TVTokens.Hero.minHeight)
+            .background { artwork }
+            .clipped()
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Continue watching \(HomeRules.heroTitle(item))")
     }
 
     // MARK: - The picture
@@ -81,8 +86,15 @@ struct HeroBand: View {
             Self.fallbackWash
             PosterImageView(base: base, itemID: item.itemID, route: .backdrop)
         }
-        .frame(maxWidth: .infinity)
-        .frame(height: TVTokens.Hero.height)
+        // ⚠⚠ **THE ARTWORK FILLS WHATEVER THE BAND TURNS OUT TO BE (W2), AND IT CARRIES THE GRADIENTS ITSELF.**
+        // It used to restate `TVTokens.Hero.height` as its own frame — which was right while that number WAS the
+        // band's height, and became a way to put the old number straight back the moment the band turned into a
+        // `minHeight` the copy decides. `maxHeight: .infinity` is safe HERE, and only here, because a
+        // `.background` is proposed exactly the primary view's frame (see `body`).
+        // ⚠ The readibility bands sit INSIDE this layer rather than beside it: they must be over the artwork and
+        // under the copy, and with the artwork now a background there is nothing to put them between.
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .overlay { gradients }
         .clipped()
     }
 

@@ -135,7 +135,94 @@ softness on a 4K panel and is a one-line follow-up — offered, not smuggled in.
 | `check-tvos-members.py` | new symbols this screen names (`PosterURL.width`, the `Title.btn*` tokens) |
 | `check-apple-typecheck.sh`, `check-imports.py`, `check-tvos-models.py`, `check-design-tokens.py`, `check_md_links.py` | run unchanged — no wire model, no colour, no new route |
 
-## 6. The round (his Mac — SCREEN round, WITHOUT `-RKMDebugHUD`)
+## 6bis. W2 — "make it FIT", added the same session after his second report
+
+His words, on the build W1 produced: *"i see its fouced on resume button directly and i can just see from the
+description of title and other info etc and then resume button and then the cast in avatar … when i click on the
+individual titles, i see the title poster year orratings tags etc and then play/resume button and then % watched
+bar and the description.. why cant we fit everything to one screen … basically all the details hsould fit the
+screen..a listlle scroliing should be fine ….but most of them should fit the screen same with the home page i
+think there also i can only see, continue watching hero page and one title in contiue watching"*.
+
+⚠ **The two screens looked different because of SCROLL POSITION, not because they are different views** — both
+go through `AppModel.openDetail` (the one entry point, `AppModel.swift:320`). The page was 1450 pt of content on
+a 1080 pt screen, and tvOS scrolls to whatever has focus, so where the page opened depended on where `Play`
+happened to land.
+
+⚠⚠ **AND THE CONSTRAINT THAT MAKES THIS ARITHMETIC RATHER THAN TASTE:** a tvOS `ScrollView` scrolls **only when
+focus moves onto something inside it**. On the Home that works (the rails take focus) — on the TITLE page every
+band below `Play` is INFORMATION, so **nothing can pull focus down and the page must FIT**. That is also why the
+cast row is not made focusable to solve it: a control whose only outcome is a press that does nothing is what
+`ARCHITECTURE.md` §11 forbids, and it is the same lie the pre-Phase-C Play button told.
+
+**His three decisions, and what the arithmetic did to the first one:**
+
+| # | His answer | Built as | Why not as asked |
+|---|---|---|---|
+| 1 | title hero **~36 %** | **`heroHeightFraction = 0.29`** (313.2 pt) | 36 % measured **1148 pt** of page — still 68 pt over. The bands below the hero are 745.3 pt, so the break-even is **`h ≤ 0.31`**; 0.29 keeps 21.5 pt of air for the line-height assumption. ⚠ The plan's own §1 already offered this as ONE constant. |
+| 2 | Home hero **~25 %**, "so 3 rails are visible" | **`Hero.minHeightFraction = 0.25` AND a `minHeight`, not a height** | ⚠⚠ **3 rails do not fit at ANY hero height** — see below. And a FIXED 270 pt band would have CLIPPED the hero's own buttons: the copy needs ≈**397 pt**. |
+| 3 | synopsis **capped at 3 lines** | `Title.synopsisLineLimit = 3` | as asked — 8 lines measures 1250 pt, i.e. the cap is what makes the page fit at all |
+
+**⚠⚠ TWO DEFECTS FOUND WHILE SHRINKING IT, BOTH OF WHICH WOULD HAVE SHIPPED AS "it still doesn't fit":**
+
+1. **The hero band could not be shrunk as a fixed number.** Its own copy needs ≈397 pt (padding 115.2 +
+   eyebrow 32.6 + title 94.7 + meta 44.4 + progress 52.4 + the CTA row 58), so `frame(height: 270)` cuts its own
+   buttons off. ⇒ it is now `.frame(minHeight: Hero.minHeight)` with the COPY deciding, and the artwork fills
+   behind it — which is also why `HeroBand.body` is a `.background` and no longer a `ZStack`: a ZStack sibling
+   cannot be relied on to stretch to a height another sibling decided (inside a `ScrollView` the proposal is
+   unbounded, so `.frame(maxHeight: .infinity)` falls back to the ideal size and the band shows black).
+2. **The synopsis' line height was 1.8 em, not his `line-height: 1.6`.** `Text.lineSpacing` is the gap BETWEEN
+   lines and does not replace the line box, which is already ~1.2 em — so `px * 11.4` (0.6 em) made every line
+   12 % too tall. ⇒ `px * 7.6` (0.4 em), which is exactly 38.304 pt for a 23.94 pt font = `1.6 em`. **It was the
+   single largest consumer of the vertical budget.**
+
+**The title page, term by term (`DetailRules.titlePageHeight`, RUN on Linux):**
+
+| band | pt |
+|---|---|
+| hero (0.29) | 313.2 |
+| action row (`36px` pad + the `.btn` box) | 114.4 |
+| resume bar | 43.8 |
+| synopsis (3 lines × 38.3 + `40px` pad) | 165.3 |
+| credits (3 lines) | 103.2 |
+| cast (heading + `110px` avatars + two caption lines) | 318.5 |
+| **total** | **1058.5 of 1080 — 21.5 pt of air** |
+
+⚠ At his original `66vh` the same sum is **1458.1** — 378 pt of it unreachable. Both are pinned in the harness,
+so the defect and the fix are checked against each other.
+
+**The Home, and the honest answer to "3 rails":**
+
+```
+bar 115.2 · hero floor 270 · gap 38.4 (HomeView's VStack spacing)
+one rail = heading 34.6 + gap 21.1 + card 268.4 + focus-lift room 65.3 = 389.4
+rails' area = 1080 − 115.2 = 964.8
+
+1 rail  : 270 + 1 × (389.4 + 38.4) = 697.8   ✅ fits, 267 pt left → the NEXT rail is 68.6 % visible
+2 rails : 270 + 2 × 427.8          = 1125.6  ❌
+3 rails :        3 × 389.4 + 2 × 38.4 = 1245.0 ❌ — impossible at ANY hero height
+2 rails even with NO hero: 2 × 427.8 + 0 = 855.6 ✅ but that leaves 109.2 pt for a hero whose copy needs 397
+```
+
+⇒ **`HomeRules.firstScreenRails` = 1, with 68.6 % of the second rail visible.** Three rails is not a matter of
+tuning: `1245.0 > 964.8` before the hero is counted at all. **The two levers, each one token:**
+`Hero.minHeightFraction`, and `Shelf.cardWidth` (a rail is 389.4 of which the card is 268.4 — at `14u` the cards
+fit **two whole rails**). ⚠ Neither was moved past his instruction: he asked for the hero change, not for smaller
+cards, so the cards stay at his `19u` and the second-rail peek is what tells a viewer there is more below.
+
+## 6ter. What is on screen now, and the falsifier
+
+| screen | first screen | the rest |
+|---|---|---|
+| Home | bar + hero (≥270, as tall as its copy needs) + **one whole rail** + 68.6 % of the next | scrolls — the rails take focus |
+| Title | **the whole page**: hero + Play + % bar + synopsis + credits + cast | nothing below the fold, by design |
+
+⚠ **The instrument, and the one thing to read first: `detail-size: page = …` in the app's file log.** If it
+says MORE than 1080, the cast row is below the fold and **one** constant moves — `Title.heroHeightFraction`, or
+`Metric.lineHeightRatio` if every band is out by the same few percent (that is the single assumption in the
+budget: nothing on this machine renders a `Text`).
+
+## 7. The round (his Mac — SCREEN round, WITHOUT `-RKMDebugHUD`)
 
 ```bash
 cd ~/dev/rkm-cinema && git checkout feat/tvos-player && git pull --ff-only && ./apple/scripts/mac-round.sh tvos --sim

@@ -307,3 +307,123 @@ Subtitles (renditions or overlay) · audio-track and quality pickers · the auto
 (C5) does `backend/` change, and then it is the api image: `docker compose -p rkm-bundled up -d --build api` —
 and **not** a full `deploy`/bootstrap, which cancels a running library scan. ⚠ **If C5 is ever built, it must be
 deployed BEFORE the round that reads F2**, or the round measures the old api.
+
+---
+
+## §7 — THE THIRD DESIGN INPUT, MEASURED (2026-09-20)
+
+He asked for the player with a fourth file in his hand: `tvos_ux/3. MediaPlayerUx/rkm-cinema-tvos-player.html`
+(781 lines — a browser mock of the whole player: video surface, top bar, scrubber, transport row, info panel and
+a five-category settings drawer). ⚠ **It is a SOURCE, not a measurement** — the rule this repo paid for on set 1
+and again on set 2 — so every claim in it was checked against this repo before it was built, and where the
+measurement contradicts the file, the file loses.
+
+### 7.1 Its palette is not the brand — THIRD TIME, same file-family failure
+
+| Its token | Its value | What the app actually uses | Verdict |
+|---|---|---|---|
+| `--gold` | `#c9a227` | `--accent` **`#ffc400`** (`frontend/src/styles/index.css`) | ⚠ **wrong — the brand accent, for the third design input in a row** (set 1's spec said `#F2B93A`, set 2's said `#E8B33D`) |
+| `--gold-bright` | `#e8c468` | `--accent-hover` `#ffd43b` | ⚠ wrong |
+| `--ink` | `#f5f2ea` | `textPrimary` `#f5f2ea` | ✅ **exact** |
+| `--ink-dim` | `#a39d92` | `textSecondary` `#a7a7a2` | warm grey the app does not have → the app's own |
+| `--ink-faint` | `#6b665e` | `textMuted` `#70747e` / tvOS `#81858f` | ⚠ ditto, and the tvOS override still applies |
+| `--bg` | `#08080a` | `background` `#08080a` | ✅ exact |
+| `--glass`, `--glass-strong` | `rgba(16,16,18,.66)` / `rgba(12,12,14,.86)` | `TVTokens.Colour.topBarTint` `rgba(14,14,16,.86)` | tvOS-only tints → `TVTokens.Player`, with reasons |
+
+⇒ **Same rule as set 1: the brand gold comes from the CSS, never from a spec's table.** A player built on
+`#c9a227` would be a gold no other screen in the app shares.
+
+### 7.2 Its unit: there is no `--u`, and the canvas is the anchor
+
+The file mixes `%`, `rem` and absolute `px` — because a browser mock has a viewport. What it DOES fix is its own
+frame: `.tv { width:100%; height:100%; max-width:1600px; aspect-ratio:16/9 }`, i.e. a **1600 × 900 design canvas**.
+tvOS renders in a fixed 1920 × 1080 point space, so:
+
+> **`PlayerPx` = 1920 / 1600 = `1.2` pt per CSS px**, and its PERCENTAGES are relative to that same frame, so
+> **`p%` of the canvas ≡ `u * p`** (1920 pt = 100u). Every metric in `TVTokens.Player` is `px * <the number>`
+> or `u * <the percentage>`.
+
+⚠⚠ **Checked against the one value three files now have to agree on — the screen margin:** its `.topbar`
+pads by `4.2%`, and 4.2 % of 1920 is **80.64 pt = `Metric.safeMargin` (4.2u)** — the same margin set 1 fixed at
+`4.2u` and set 2's `1.26 pt/px` was derived from. Three files, one margin, and this is the number to change if a
+round shows the player too large or too small — **not one metric at a time**.
+
+### 7.3 What the api can actually honour (measured today, 2026-09-20)
+
+| His control | What exists server-side | Verdict |
+|---|---|---|
+| **Playback speed** (0.5–2×) | nothing needed — `AVPlayer.rate`, client-side | ✅ **built** (his five values = the web's `PLAYBACK_RATES`) |
+| **Picture Fit/Fill** | nothing needed — `videoGravity`, client-side | ✅ **built** (his two captions are used verbatim) |
+| **Quality** Original/1080p/720p/480p | `max_bitrate` on the stream route AND the HLS master; the web's ladder is 8 / 5 / 2.5 Mbps | ✅ **built** — ⚠ but with the **web's real bitrates**: his captions say *"4.2 Mbps"* for 1080p, an invented number |
+| **Audio Track** (his four fixed rows) | `audio_stream_index` on the HLS master (**`> 0` only**, and Jellyfin IGNORES it under `Static=true`) | ✅ **built from `playback-info`'s real tracks**, and choosing one **forces a non-direct mode** |
+| **Subtitles** Off/English/Hindi + *Search OpenSubtitles…* | `GET /api/jellyfin/playback-info` (local text tracks + `preferred_subtitle`), `GET /api/jellyfin/subtitle` (WebVTT), `GET /api/jellyfin/subtitle-search`, `POST /api/jellyfin/subtitle-select`, `POST /api/jellyfin/subtitle-disable` | ✅ **built from the server's own lists** — ⚠ *"Search OpenSubtitles…"* is drawn **only when `enabled` is true** (no key configured ⇒ the api's search half is off by design) |
+| **chapters** — the scrubber's ticks + the *"Chapter"* flag above the tooltip | **NOTHING.** `grep -rn "Chapters\|chapter" backend/api backend/services` → no chapter data anywhere in the api | ❌ **NOT built.** The ticks and the flag are drawn from a hardcoded array in his file; on the wire there is nothing to draw them from, and an invented chapter marker is a lie a viewer can check |
+| **the scrub tooltip's 150 × 84 thumbnail** | **NOTHING.** No trickplay/thumbnail endpoint exists | ❌ **NOT built** — the tooltip shows the seek TIME, which is real |
+| the keyboard hint (`↑↓←→ Navigate …`) | — | ❌ not built: a web artefact (a Siri Remote has no `Space` or `Esc`) |
+| the 16:9 "TV frame" — `border-radius:14px`, its box-shadow, `.grain`, the painted `.scene` gradient | — | ❌ not built: on a television **the device IS the screen**, and the painted "video still" is the prototype's stand-in for a film this app actually has |
+
+⚠⚠ **The two ❌ rows are the phase's honest cost**: his file draws a scrubber with chapter ticks and a
+thumbnail preview, and the app will ship the scrubber without them. That is recorded here rather than quietly
+approximated, and the fix is a backend phase (chapters + trickplay are both Jellyfin capabilities the api does not
+proxy yet) — **not** a cosmetic one.
+
+### 7.4 The things his JavaScript does that tvOS already does
+
+⚠ **Not ported, third file in a row:** its focus engine (`moveRow`/`moveItem`, `paint()`, `scrollIntoView`) is the
+same class of hand-rolled nearest-neighbour maths `RailFocus.swift` and B3's grid already paid for twice.
+**What IS taken from it is the DECISION it encodes** — *"default focus: play/pause"* (`let r = 2, i = 2`), which is
+a design choice, not an algorithm, and lives in `PlaybackRules.defaultFocusIsPlayPause`. The chrome's idle timer is
+the other: his 4000 ms vs the web's `CHROME_HIDE_MS = 2800` — **the prototype wins for this screen** (`PlaybackRules.chromeHideSeconds`), and the divergence is written down so it is not "fixed" later.
+
+---
+
+## §8 — The transcription table (`TVTokens.Player`)
+
+Every number below is `px * <his number>` or `u * <his percentage>` — no hand-converted values.
+
+| His rule | Its number | tvOS |
+|---|---|---|
+| `.topbar` / `.bottombar` padding | `4.2%` | `u * 4.2` = **80.64** (= `Metric.safeMargin`) |
+| `.ctl-btn` | `58px` | `69.6` |
+| `.ctl-btn.primary` | `74px` | `88.8` |
+| `.ctl-btn svg` / `.primary svg` | `22 / 26px` | `26.4 / 31.2` |
+| `.backbtn` | `44px` | `52.8` |
+| `.track` height, focused | `5 / 8px` | `6 / 9.6` |
+| `.playhead` | `16px` | `19.2` (**= 1u**) |
+| `.center-pulse` / its icon | `108 / 42px` | `129.6 / 50.4` |
+| `.film-title` | `2.5rem` = `40px` | `48` |
+| `.meta-row` / `.badge` / `.clock` | `.92/.72/.95rem` = `14.72/11.52/15.2px` | `17.66 / 13.82 / 18.24` |
+| `.scrub-times` | `.86rem` = `13.76px` | `16.51` |
+| `.settings-panel` width | `min(58%, 760px)` | `min(0.58 * 100u, 760 * 1.2)` = **1113.6** (cap wins) |
+| `.settings-nav` width | `230px` | `276` |
+| `.settings-nav-item` / `.seg-btn` font | `1rem / .92rem` | `19.2 / 17.66` |
+| `.settings-section-title` | `1.6rem` = `25.6px` | `30.72` |
+| `.info-panel` top / padding | `32%`, `0 4.2% 5.2%` | `u * 32`, `u * 4.2 / u * 5.2` |
+| `--focus-scale` | `1.14` | `1.14` (the app's own focus lift) |
+| `.scrim-top` / `.scrim-bottom` | `34% / 48%` | `u * 34 / u * 48` — ⚠ **kept**: they are what makes white text legible over a bright frame |
+
+---
+
+## §9 — Phases, as built (2026-09-20)
+
+| Phase | What | State |
+|---|---|---|
+| **C1** | `Core/PlaybackAuth.swift` — the cookie carrier | **BUILT** (`6919626`), merged with `dev` this session |
+| **C2** | `Core/PlaybackRules.swift` (**the decisions**), `Core/PlaybackURLs.swift` (**the URLs `AVPlayer` fetches itself**), `Core/Models/PlaybackModels.swift` (**the wire shapes**), `Core/PlaybackAPI.swift`, `Core/PlaybackStore.swift` | **BUILT** — all five in the sandbox's compiler; the first four are also **RUN** by `check-tvos-core.py` |
+| **C3** | `Player/PlayerView.swift` + `Player/PlayerControls.swift` + `Player/PlayerSettingsPanel.swift`, the `TVTokens.Player` table, `AppModel`'s `.player` phase, and the detail screen's `Play` / `Resume` control | **BUILT** — ⚠ **SwiftUI: compiled ONLY on his Mac** |
+| **C4** | his round — F1–F4 (§3) plus the screen falsifiers below | **NEXT** |
+| **C5** | the backend carrier — ⚠ **still NOT built**, still conditional on F2 | unchanged |
+
+### 9.1 The screen's own falsifiers (written before the round, again)
+
+| # | Falsifier | What disproves it |
+|---|---|---|
+| **F5** | the film **plays** — a moving picture, ≥60 s | a black screen, or a stall with no clock movement |
+| **F6** | **default focus is Play/Pause**, and every control is reachable with the remote | focus lands on the back button, or a control cannot be reached |
+| **F7** | the chrome **hides after ~4 s** of playback and never hides while paused | it never hides, or it hides on a paused film |
+| **F8** | the settings drawer opens, its **five categories** switch panes, and its Audio/Subtitles lists are **the server's own tracks** | a fixed list, a pane that never changes, or an empty list |
+| **F9** | a subtitle draws **on the frame** when one is chosen | nothing appears (then: is the choice applied server-side? does the VTT load?) |
+| **F10** | **leaving the player saves the position** — reopen and it resumes, and the position shows up in the web app's Continue Watching | it restarts at 0 (**then** read the `player: progress` log line and the `Saved/verified` toast) |
+
+⚠ **What this round CANNOT prove:** nothing about real Apple TV hardware (the simulator is not an Apple TV), and a
+`BUILD FAILED` proves nothing about any of F5–F10.

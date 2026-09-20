@@ -1,4 +1,5 @@
 import SwiftUI
+import Foundation
 // ⚠⚠ **COMBINE IS NOT RE-EXPORTED BY SWIFTUI ANY MORE** — the same thing `App/AppModel.swift`'s header
 // records for `ObservableObject`, and it cost THIS FILE the phase's first Mac round (2026-09-20):
 // `PlayerView.swift:33: error: instance method 'autoconnect()' is not available due to missing import of
@@ -31,6 +32,8 @@ struct PlayerView: View {
 
     @State private var player = AVPlayer()
     @State private var timeObserver: Any?
+    /// ⚠ The resume target, held until the item says it is ready — see `applyPendingSeekIfReady`.
+    @State private var pendingSeek: Double?
     @State private var lastInteraction = Date()
     @State private var now = Date()
     @FocusState private var drawerFocus: DrawerFocus?
@@ -111,6 +114,20 @@ struct PlayerView: View {
         // observer's job (`installTimeObserver`) — one clock each, so neither can drift the other.
         .onReceive(ticker) { date in
             now = date
+            applyPendingSeekIfReady()
+        }
+        // ⚠⚠ **`AVPlayer`'S OWN REQUESTS ARE NOT THIS APP'S REQUESTS, SO NOTHING ELSE CAN LOG THEM.** Every
+        // JSON call goes through `APIClient` (which logs and redacts); the HLS playlist and its segments are
+        // fetched by AVFoundation itself, so a `401` there is invisible unless the item's own error log is read
+        // — and that is exactly the `401` on a `…/hls/…` URL F2 is about. ⚠ `errorStatusCode` is HTTP's, so a
+        // 401 here is the answer, and no cookie/token ever appears in `uri` (the api strips `api_key`, and this
+        // app puts the credential in a HEADER).
+        .onReceive(NotificationCenter.default.publisher(for: .AVPlayerItemNewErrorLogEntry)) { note in
+            guard let item = note.object as? AVPlayerItem,
+                  let event = item.errorLog()?.events.last else { return }
+            RKMLog.error("player: AVPlayer's own request failed — status=\(event.errorStatusCode) "
+                         + "uri=\(LogRedactor.redact(text: event.uri ?? "")) "
+                         + "\(event.errorComment ?? "")", category: .net)
         }
         .onChange(of: store.url) { _, _ in attachItem(reason: "route changed") }
         .onChange(of: store.isPlaying) { _, playing in
@@ -232,13 +249,45 @@ struct PlayerView: View {
     /// look applied while nothing changed.
     private func attachItem(reason: String) {
         guard let url = store.url else { return }
-        RKMLog.info("player: attaching item (\(reason)) \(LogRedactor.redact(url: url))",
-                    category: .app)
+        // ⚠⚠ **THE LOG LINE F2 IS ANSWERED FROM.** It says which route was chosen, the position the player
+        // intends to resume at, and — the part that was missing until his round-3 report — whether a session
+        // cookie was handed to the asset.
+        let cookies = HTTPCookieStorage.shared.cookies(for: url) ?? []
+        let session = PlaybackAuth.sessionCookie(for: url, in: cookies)
+        RKMLog.info("player: attaching item (\(reason)) mode=\(store.mode.rawValue) "
+                    + "resume=\(Int(store.position))s "
+                    + "credential=\(session == nil ? "MISSING" : "handed to the asset") "
+                    + \(LogRedactor.redact(url: url)), category: .app)
         let wasPlaying = store.isPlaying
-        player.replaceCurrentItem(with: AVPlayerItem(url: url))
+        player.replaceCurrentItem(with: AVPlayerItem(asset: makeAsset(url: url, session: session)))
         player.rate = Float(store.rate)
+        // ⚠⚠ **THE SEEK IS DEFERRED UNTIL THE ITEM IS READY.** `AVPlayer.seek` issued before an item has
+        // loaded is routinely DROPPED for an HLS stream (there is no playlist to seek inside yet) — which is
+        // how "the player opens but it never resumes" happens with nothing in the log. So the target is
+        // remembered and applied by the ticker the moment `status == .readyToPlay`.
+        pendingSeek = store.position
         seekPlayer(to: store.position, resume: wasPlaying)
         installTimeObserver()
+    }
+
+    /// ⚠⚠ **THE MAC-ONLY CALL SITE `Core/PlaybackAuth.swift` HAS BEEN WAITING FOR SINCE C1.** That file decides
+    /// WHICH cookie may be handed over and what the refusal says; it deliberately does not name an AVFoundation
+    /// symbol, because it is compiled and RUN on Linux. This is the one place the credential meets `AVURLAsset`
+    /// — and until 2026-09-20 it did not exist at all: the player handed `AVPlayer` a bare URL, the api answered
+    /// `401` on its session-scoped HLS route, and the screen opened onto a film that never started.
+    ///
+    /// ⚠ **`AVURLAssetHTTPCookiesKey` IS USED AS A SYMBOL ON PURPOSE.** It is AVFoundation's documented key for
+    /// exactly this, and a wrong or missing symbol must be a COMPILE error on the Mac rather than a silent no-op
+    /// — because a silent no-op here would poison the phase's own measurement: we would conclude *"the cookie
+    /// does not reach a segment"* when in truth we never sent one.
+    private func makeAsset(url: URL, session: HTTPCookie?) -> AVURLAsset {
+        guard let session else {
+            // ⚠ A refusal, not a fallback (see `PlaybackAuth.missingSessionSentence`): an unauthenticated load
+            // does not fail cleanly — it draws a black screen, which is the least diagnosable bug a TV has.
+            store.reportPlaybackFailure(PlaybackAuth.missingSessionSentence)
+            return AVURLAsset(url: url)
+        }
+        return AVURLAsset(url: url, options: [AVURLAssetHTTPCookiesKey: [session]])
     }
 
     private func start() {
@@ -264,6 +313,14 @@ struct PlayerView: View {
                        duration: duration.isFinite ? duration : store.duration,
                        playing: player.rate > 0)
         }
+    }
+
+    /// ⚠ The deferred half of the resume: a seek is only honoured once there is a playlist to seek inside.
+    private func applyPendingSeekIfReady() {
+        guard let target = pendingSeek, player.currentItem?.status == .readyToPlay else { return }
+        pendingSeek = nil
+        RKMLog.info("player: item ready — resuming at \(PlaybackRules.fmtTime(target))", category: .app)
+        seekPlayer(to: target, resume: store.isPlaying)
     }
 
     /// Push the store's own position into the player when the app — not the viewer — moved it.

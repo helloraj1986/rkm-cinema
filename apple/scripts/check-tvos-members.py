@@ -367,7 +367,9 @@ NAMESPACES = ("HomeRules", "ProfileRules", "BrowseRules", "DetailRules", "Poster
               "LibraryAPI", "RequestURL",
               # ⚠ Phase V: the library grid's rules and its copy. Both are read from the two new views many
               # times over, and every one of those references is a hand-typed name.
-              "LibraryRules", "LibraryCopy")
+              # ⚠ Phase C: the player reads the credential rules from here, and the name it was forgetting was
+              # the whole reason his round-3 film never started.
+              "LibraryRules", "LibraryCopy", "PlaybackAuth", "PlaybackRules", "PlaybackURLs")
 
 
 def namespace_members(root: pathlib.Path, namespace: str, cache: dict) -> set[str]:
@@ -427,6 +429,13 @@ def nested_members(declaring: pathlib.Path, type_name: str) -> set[str]:
     if start is None:
         return set()
     members: set[str] = set()
+    # ⚠⚠ **SYNTHESISED MEMBERS COUNT.** `ALL_CASES` is not written anywhere: `CaseIterable` generates it, so a
+    # view's `PlaybackRules.SettingsCategory.allCases` is correct Swift that a text scan cannot see — the exact
+    # shape that would make this rule cry wolf (found by running it on the real tree, 2026-09-20, minutes after
+    # the rule grew its third segment). The conformance may sit on the declaration line or the next one.
+    header = " ".join(lines[start:start + 2])
+    if "CaseIterable" in header:
+        members.add("allCases")
     depth = 0
     opened = False
     for line in lines[start:]:
@@ -784,6 +793,20 @@ def selftest() -> int:
                             "declare, and the name a token table is most likely to get wrong")
         if any("TVTokens.Player." in problem for problem in check_namespaces(TVOS)):
             failures.append("the deep rule fires on the REAL tree, so its red above proved nothing")
+
+        # ⚠ The synthesised-member edge and the deep typo, both through a REAL namespace — `SampleRules` would
+        # not be scanned at all (the rule only looks at `NAMESPACES`), which is itself a useful thing to have
+        # found out by running it.
+        probe = scratch / "Core" / "ScratchProbe.swift"
+        probe.write_text("import Foundation\n\nlet use = PlaybackRules.SettingsCategory.allCases.count\n",
+                         encoding="utf-8")
+        if any("allCases" in problem for problem in check_namespaces(scratch)):
+            failures.append("it flags `allCases` on a CaseIterable enum — a synthesised member, not a typo")
+        probe.write_text("import Foundation\n\nlet use = TVTokens.Shelf.cardWidht\n", encoding="utf-8")
+        if not any("cardWidht" in problem for problem in check_namespaces(scratch)):
+            failures.append("it does NOT flag a genuine deep typo (`TVTokens.Shelf.cardWidht`) — the rule is "
+                            "asleep on the third segment it exists for")
+        probe.unlink()
 
         if check(TVOS):
             failures.append("it fires on the REAL tree, so its red above proved nothing")

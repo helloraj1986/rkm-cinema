@@ -138,6 +138,36 @@ because the tree moved under it while it ran (this round's changes to `DetailRul
 list). Its verdict is only meaningful on a settled tree — a run whose sources change halfway reports a STALE entry
 that is an artefact of the edit, not a rotten rule.
 
+### 🐞 ROUND 4 — THE PLAYER OPENS AND THE FILM NEVER STARTS. **C1'S CREDENTIAL WAS NEVER WIRED IN.** (2026-09-20)
+
+His words: **"this was able to see the media player but it never resumed"** — the Home hero's Play now opens the
+player (round 3's fix worked), and then nothing plays.
+
+⚠⚠ **THE CAUSE, AND IT IS THE PHASE'S OWN AUTH QUESTION ANSWERED IN THE WORST WAY.** `grep -rn "PlaybackAuth"
+apple/tvos/RKMCinemaTV --exclude=PlaybackAuth.swift` returned **nothing**: C1 built the credential carrier —
+which cookie may be handed over, and the refusal sentence when none may — and **C3 never called it.** The player
+handed `AVPlayer` a bare URL, the api answered **`401` on its session-scoped HLS route** (`backend/api/main.py`
+applies `SESSION_SCOPED` to `jellyfin_hls_routes`), and AVFoundation drew a black screen with no log line, because
+**AVPlayer's own requests are not this app's requests** — nothing in `APIClient` sees them.
+
+| What was missing | What it is now |
+|---|---|
+| the asset the player is given | `PlayerView.makeAsset(url:session:)` builds `AVURLAsset(url:options:[AVURLAssetHTTPCookiesKey: [session]])` — the Mac-only call site `Core/PlaybackAuth.swift` was written for. ⚠ The KEY IS A SYMBOL ON PURPOSE: a wrong symbol must be a COMPILE error, because a silent no-op here would poison the measurement (*"the cookie does not reach a segment"* would be recorded when the truth was that we never sent one). |
+| any way to see AVPlayer's failures | `AVPlayerItemNewErrorLogEntry` → `errorLog().events.last` (**`errorStatusCode`** is HTTP's, so a `401` is the answer) logged through `LogRedactor`. ⚠ This is the log line F2 will be read from. |
+| a resume that survives the load | ⚠⚠ **`AVPlayer.seek` before an item is READY is routinely DROPPED for HLS** — there is no playlist to seek inside yet. The target is now held (`pendingSeek`) and applied by the ticker the moment `status == .readyToPlay`, in addition to the immediate attempt. |
+
+⚠ **What this round does and does not prove.** It proves the app was sending nothing at all, which is why *nothing*
+played. It does **NOT** yet test the question the phase was ordered around — *does a cookie handed to the ASSET
+reach the media playlist and the SEGMENTS?* — because a credential was never handed over. **F2 is still open.**
+
+⚠⚠ **AND THE LESSON, WHICH IS A PROCESS ONE: A BUILT, GATED, PURE COMPONENT IS NOT A WIRED ONE.** Three defects in
+a row have had this shape — `PlaybackAuth` built and never called; the Home hero's Play left printing a
+placeholder; `PlayerToast` declared and never placed. ⚠ **A gate cannot see it: an "unused type" rule was
+prototyped and REJECTED** (37 hits on the real tree, nearly all legitimate — a `ButtonStyle` used inside its own
+file, `CaseIterable`'s synthesised `allCases`), and a gate that cries wolf is worse than none. ⇒ The defence is
+the PLAN's wiring list: every phase's handover says **which existing component the new code must CALL**, and the
+round checks the feature, not just the build.
+
 ### ▶ WHAT HIS THIRD DESIGN INPUT CANNOT GIVE THIS APP (measured, not a preference)
 
 ⚠⚠ **Two things in his file are drawn from data that does not exist on the wire**, and both are recorded in the

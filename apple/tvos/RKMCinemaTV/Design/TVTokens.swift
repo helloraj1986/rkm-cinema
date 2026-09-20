@@ -627,6 +627,12 @@ enum TVTokens {
     /// tvOS layout metrics that have no prototype line to point at.
     enum Metric {
 
+        /// ⚠ **THE CANVAS, IN THE UNIT THIS WHOLE TABLE IS WRITTEN IN.** `u` is 1 % of the screen width, so
+        /// 100u = the 1920 pt tvOS renders in. Named because a rule OUTSIDE this file now needs to say "the
+        /// width of a screen" as arithmetic rather than by writing 1920 by hand — `DetailRules.castCapacity`
+        /// is the caller, and its job is to make a row FIT.
+        static let screenWidth = u * 100
+
         /// The screens' horizontal margin.
         ///
         /// ⚠ **U6 moved this from a hand-picked 60 to the prototype's own content inset** — every band in the

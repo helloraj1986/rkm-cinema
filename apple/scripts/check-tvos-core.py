@@ -291,9 +291,16 @@ MUTATIONS = [
      '        return "\(noun): \(names.joined(separator: ", "))"',
      "two directors are Directors"),
     ("the cast rail uncapped", "DetailRules.swift",
-     "        Array((people?.actors ?? []).filter { !$0.name.isEmpty }.prefix(Cast.limit))",
+     "        Array((people?.actors ?? []).filter { !$0.name.isEmpty }.prefix(castCapacity))",
      "        Array((people?.actors ?? []).filter { !$0.name.isEmpty })",
-     "the cast rail is capped at ten"),
+     "the cast rail is capped by what FITS the page, not by a flat ten"),
+    # ⚠⚠ The cap is ARITHMETIC, and this reverts it to the flat ten that made his title screen wider than the
+    # canvas. ⚠ NOT yet exercised: his standing rule is that `--falsify` waits for him to ask (2026-09-20), so
+    # this entry is written but unproven — say so rather than implying the audit covers it.
+    ("a cast cap that does not fit the page", "DetailRules.swift",
+     "        return max(1, Int(content / (item + gap)))",
+     "        return 10",
+     "the cast row fits inside the page's content width with a gap to spare"),
     ("a partial warning on a film", "DetailRules.swift",
      "    var partialWarning: String? { episodesFailed && isSeries ? DetailCopy.partialWarning : nil }",
      "    var partialWarning: String? { episodesFailed ? DetailCopy.partialWarning : nil }",

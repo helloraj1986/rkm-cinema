@@ -1,4 +1,4 @@
-## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-20) · ✅ **PHASE C — THE PLAYER — IS BUILT ON `feat/tvos-player`: C1 + C2 + C3, and C4 IS HIS ROUND** · ✅✅ **ROUND 6 BUILT AND THE FILM RESUMED — WHICH IS F2's ANSWER — and it found TWO navigation/layout defects: the player's `Back` (FIXED + rule 9) and the title screen's order (FIXED); see the round-6 record immediately below** · ⚠ **the branch carries ONE MERGE COMMIT from `dev` (`e0eadef`, bringing Phases U and V in) and the working tree IS on it** · ⚠ **`dev` does NOT have this branch** · **nothing needs `apply`**: no file under `backend/`, `frontend/` or `nginx/` changed
+## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-20) · ✅ **PHASE C — THE PLAYER — IS BUILT ON `feat/tvos-player`: C1 + C2 + C3, and C4 IS HIS ROUND** · ✅✅ **ROUNDS 6–7: THE PLAYER WORKS (F2 GREEN, C5 RETIRED) · `Back` FIXED + rule 9 · THE TITLE SCREEN'S PAGE IS WIDER THAN THE CANVAS — the cast row is fixed and the screen now MEASURES ITSELF; the round that reads the numbers is the next one (KNOWN_ISSUES #13)** · ⚠ **the branch carries ONE MERGE COMMIT from `dev` (`e0eadef`, bringing Phases U and V in) and the working tree IS on it** · ⚠ **`dev` does NOT have this branch** · **nothing needs `apply`**: no file under `backend/`, `frontend/` or `nginx/` changed
 
 ### 🐞 HIS ROUND 5 ON THE PLAYER FAILED — ONE STRAY BACKSLASH, AND A RULE FOR THE CLASS (2026-09-20, `6e71c67`)
 
@@ -57,6 +57,49 @@ been type-checked by anything. Two things in it are worth naming before he spend
 ⚠ And the round's question is still the phase's question: **F2 — does a cookie handed to the asset reach a
 `…/hls/…` SEGMENT — remains OPEN.** The line to look for is `player: AVPlayer's own request failed — status=`,
 and a `401` in it is the answer.
+
+### 🔍 ROUND 7 — HIS CONFIRMATION, AND THE TITLE SCREEN MEASURED RATHER THAN GUESSED (2026-09-20)
+
+**His words:** *"THE RESUME IS NOW WORKING AND I CAN ALSO GO BACK TO HOME SCREEN SO THIS WORKS"* — round 6's two
+player fixes are CONFIRMED, the film resumes AND `Back` returns to the Home he left. The one defect still open is
+the title screen, now **KNOWN_ISSUES #13** with the full measurement table.
+
+⚠⚠ **THE FINDING IS A MEASUREMENT, AND IT IS WORTH STATING PLAINLY: the title screen's PAGE IS WIDER THAN THE
+1920 pt CANVAS, so its left part is drawn off-screen and cut.** From his screenshot (a 2× framebuffer of the
+1920 × 1080 pt canvas): the focused tab's label sits at x = 59.5 pt where the nav bar's own tokens put it at
+≈293 pt, the bar's profile avatar is not on screen at all, the big title's first letters are cut, and the genre
+pills and the credits start ~100–160 pt left of `marginFromPrototype`. ⚠ **Every FONT on the screen measures at
+its token size and the hero band is exactly `heroHeight` (712.8 pt), so this is NOT a UI scale or a resolution
+change — his own guess ("maybe it's a resolution issue") is the one thing the measurements rule out.**
+
+**Fixed in this session — the cast row, the only unbounded row on that screen.** `DetailView.castItem` applied
+his `.cast-item` width to the AVATAR alone (so an item was as wide as the person's name) and
+`DetailRules.castRows` capped at a flat **10**, which the plan had justified with the avatar's `110px` instead of
+his own `.cast-item { width:150px }` — **10 × 150px + 9 × 28px = 2208 pt against a 1758.7 pt content width**.
+The item now carries his width (the name truncates, as his file does) and the cap is arithmetic the gate RUNS:
+`DetailRules.castCapacity = content / (item + gap)` = **7**, i.e. 1534.7 pt of 1758.7 pt — with one gap of slack
+deliberately, because **EIGHT items overflow by 0.24 pt**. `TVTokens.Metric.screenWidth` names the canvas so a
+rule can say "the width of a screen" as arithmetic, and the flat `Cast.limit` is DELETED rather than left beside
+its replacement.
+
+⚠⚠ **AND SAID PLAINLY: NOTHING ELSE ON THAT SCREEN CAN BE SHOWN TO WIDEN A PAGE, AND THE CAST ROW MAY NOT BE
+THE WHOLE STORY.** `hero`/`artwork` are `maxWidth: .infinity` over a `.resizable()` image, the synopsis carries
+its `62ch` measure, the pills/meta line are flexible, the credits wrap, the `resumeBar`'s `GeometryReader` is
+explicitly framed — and SwiftUI CLAMPS a too-wide child instead of widening its parent. Redeclaring all of that
+is what the file already did; it cannot say WHICH element is the outlier. ⇒ **The screen now MEASURES ITSELF**:
+`DetailView.measured(_:_:)` logs `detail-size: <label> = <w>×<h> pt at x=… y=…` for `screen`, `bar`, `page`,
+`hero`, `below`, `synopsis`, `credits` and `cast`, from a `GeometryReader` in a `.background` (which cannot
+affect layout — the opposite of the reader round 3 deleted from this screen's content). ⚠ It exists to be
+deleted once the numbers are in, and it is the reason the next round is a **LOG** round.
+
+**Gates on the fixed tree:** `check-tvos-core.py` **PASS — 608 checks** (the two new cast checks RUN: the cap is
+7 and the row fits with a gap to spare; ⚠ re-measured independently: 8 items = 1758.96 pt, over by 0.24 pt) ·
+members **PASS — 35 view/type pairs, NINE rules** · typecheck **PASS** · imports **PASS — 49 files** · design
+tokens **PASS** · `check_md_links.py` **PASS — 71 files, 70 links**. ⚠ **`--falsify` was NOT run** (his standing
+rule) — so the new mutation entry ("a cast cap that does not fit the page") is **written but UNPROVEN**, and it
+says so in the table.
+
+⚠ **Nothing under `backend/`, `frontend/` or `nginx/` changed ⇒ no `apply` needed.**
 
 ### ✅ HIS ROUND 6 ON THE PLAYER BUILT AND PLAYED — F2 IS GREEN, AND TWO NAVIGATION DEFECTS CAME WITH IT (2026-09-20)
 

@@ -190,38 +190,57 @@ whichever scenario runs last, so the failing scenario MOVES.
 
 ## 13 · The title screen — *"its completely zoomed in with not able to navigate anywhere"*
 
-His words, 2026-09-20 (round 6, with a simulator screenshot of the Aladdin title screen): *"ALSO WHEN I GO TO
-INDIVIDUAL TITLE DETAILS THIS IS WHAT I SEE ON THE SCREEN ITS COMPLETELY ZOOMED IN WITH NOT ABTO NAVIGATE
-ANYWHERE"*.
+His words, 2026-09-20: round 6 *"ALSO WHEN I GO TO INDIVIDUAL TITLE DETAILS THIS IS WHAT I SEE ON THE SCREEN
+ITS COMPLETELY ZOOMED IN WITH NOT ABTO NAVIGATE ANYWHERE"*, and after round 7's fixes did not change it,
+*"THE PROBLEM IS WITH WHEN I LCIK ON DETAILS BUTTON OR ANY INDIVIDUAL TITLE EITHER FROM HOME OR LIBRARY PAGE...
+THE WHOLE PAGE IS ZOOMED IN AND I CAN ONLY SEE A PORTION OF THE PAGE..MAY BE IT'S A RESOLUTION ISSUE IN DETAILS
+PAGE NOT SURE"*.
 
-**What was measured, and what was changed** — `DetailView.below()` drew his screen's bands in the wrong ORDER:
-`credits` (director / writers / studios — a block **his `title-view.html` does not contain at all**) came
-first, then the resume bar, and only then the action row. His file runs `.hero` → `.actions`
-(`padding: 36px 64px 0`) → `.synopsis` → the shelves, and `.actions` holds the `Play` control his prototype
-*opens on*. With the credits block above it the primary verb landed at **≈1030 pt of a 1080 pt screen** — at
-the bottom edge, on a screen whose only other focusable control is the top bar's `Back`.
+**MEASURED FROM HIS SCREENSHOT (3840 × 2160 = a 1920 × 1080 pt canvas at 2×), and it is a LAYOUT fault, not a
+resolution one — every FONT on that screen measures at its token size:**
 
-⚠ **FIXED (order) IN `feat/tvos-player`** — the action row is now the first thing under the hero, with a new
-transcribed token `TVTokens.Title.actionTopPad` (`px * 36`, his `.actions` padding — it had been borrowing
-`sectionTitleGap`'s 22px), and the credits sit with the other text below the synopsis.
+| Element | Where it is | Where the tokens put it |
+|---|---|---|
+| The focused tab's label (gold pill, `Back to Home`) | x = 59.5 pt, pill 183.5 pt wide | `Bar.paddingH` (80.64) + brand + `tabSpacing` ≈ **293 pt** |
+| The bar's right-hand content (the profile avatar) | **not on screen at all** | right side, ~1699 pt |
+| The title's glyphs | begin at x = 8 pt, "Alad" **cut off** | `marginFromPrototype` = 80.64 pt |
+| The genre pills | "Family" (the 3rd pill) at 137 pt | ≈300 pt |
+| The credits | text begins at x ≤ 0 | 80.64 pt |
+| The hero's band | y 175 → 888 pt (**height exactly `heroHeight` = 712.8 pt**) | correct |
 
-⚠⚠ **What is NOT measured, and is what a round must settle:** the screenshot's own geometry is at TOKEN scale
-(the tab text ≈20 pt, the title's cap height ≈120 px at 2×, the hero band ≈713 pt = `heroHeight`, the genre
-pills at the hero's bottom, the credits at 915–992 pt) — i.e. **nothing on that screen is scaled up**, and the
-api serves a real **16:9** backdrop for this item (`GET /api/jellyfin/backdrop?id=84ff00fd…` → HTTP 200,
-1600 × 900, verified over a live session on 2026-09-20), so it is not the poster fallback either. The two
-candidate readings of *"completely zoomed in"* are therefore: **(a)** the artwork genuinely dominates the screen
-— a 16:9 backdrop fill-cropped into a 2.69:1 band, and the hero's 712.8 pt begin BELOW the 162 pt top bar,
-where his `.topbar` is `position: fixed` and floats OVER the hero; or **(b)** the screen's scale really is
-wrong and the measurement missed it. ⚠ **His file says (a): the bar floats and the hero is full-bleed — the app
-draws the bar as a sibling above the hero on every screen, which the accepted Home shares.** Changing that is a
-VISUAL decision for him, not a silent fix.
+⇒ **The page is WIDER than the canvas and shifted left** (the bar is ~233 pt off; the content ~100–160 pt), so
+its left part is off-screen and cut. ⚠ The bar's own width is its natural ~455 pt, which is what a LEADING
+child of an over-wide container looks like — the page is being widened, not the bar.
 
-**Falsifier for the next round** (ui-verifiable, no tool): with a title open, (1) does a `Resume`/`Play`
-control now sit just under the artwork and take focus on ONE press of Down? (2) does the artwork read as a wide
-film still, or as a hugely magnified image? (3) can focus move at all — down from the bar into the row, and
-back up? ⚠ If the control is reachable but the picture still reads as zoomed, it is (a) and the fix is the
-hero/top-bar layout, not the artwork.
+**FIXED (round 7): the cast row, which was the only row on that screen with NO bound on its width.**
+`DetailView.castItem` applied his `.cast-item` width to the AVATAR only, so an item was as wide as the person's
+name; and `DetailRules.castRows` capped the row at a flat **10**, justified in the plan with the AVATAR's
+`110px` rather than with his own `.cast-item { width:150px }`:
+
+    10 × 150px + 9 × 28px = 2208 pt   against a content width of 1920 − 2 × 64px = 1758.7 pt
+
+The item now carries his `150px` (name `lineLimit(1)`, truncating as his file does), and the cap is
+**arithmetic the gate RUNS**: `DetailRules.castCapacity = content / (item + gap)` = **7** items — 1534.7 pt of
+1758.7 pt, with one gap of slack, because EIGHT items would overflow by 0.24 pt. Both halves are pinned in the
+harness (`608 checks`) and in the mutation table (⚠ the new entry is written but NOT yet exercised —
+`--falsify` waits for his word).
+
+⚠⚠ **AND THE HONEST HALF: reading every other element of that screen says nothing else can widen a page.**
+`hero`/`artwork` are `maxWidth: .infinity` with a `.resizable()` image, the synopsis has its `62ch` measure, the
+pills and meta line are flexible, the credits wrap, the `resumeBar`'s `GeometryReader` is explicitly framed —
+and SwiftUI CLAMPS a too-wide child rather than widening its parent, so the cast row may not be the whole story
+either. **So the screen now MEASURES ITSELF instead of being guessed at**: `DetailView.measured(_:_:)` logs
+
+    detail-size: <label> = <w>×<h> pt at x=<global minX> y=<global minY>
+
+for `screen`, `bar`, `page`, `hero`, `below`, `synopsis`, `credits` and `cast`. ⚠ It is a `GeometryReader` in a
+`.background`, so it cannot affect layout — the opposite of the reader round 3 DELETED from this screen's
+content. ⚠ **It exists to be deleted once the numbers are in.**
+
+**Falsifier for the next round (a LOG round):** with the HUD on, open ANY title and read the `detail-size:`
+lines. What settles it: (a) `screen` = 1920 × 1080 — if it is NOT, the canvas is the fault and the whole token
+table's `u` is wrong for this device; (b) any row whose width is > `1920 − 161` or whose `x` is NEGATIVE is the
+culprit, named by its own label; (c) visually, is the left edge cut and by roughly how much.
 
 ---
 

@@ -25,8 +25,13 @@ import RKMServerKit
 /// ⚠⚠ **AND THE CAST ROW IS ONE ROW FOR THAT REASON.** The prototype's cast shelf scrolls horizontally, which
 /// on a television is *unreachable* unless something inside it can take focus (no focus, no scroll) — and
 /// making an avatar focusable would create a control whose only outcome is a press that does nothing. So the
-/// row is drawn at its own `150px` item pitch and simply fits: `DetailRules.castRows` caps at **10**, and
-/// ten items are `10 × 150px + 9 × 28px ≈ 1442px` of a `1792px` content width. ⚠ It is information, not a
+/// row is drawn at its own `150px` item pitch and has to FIT: `DetailRules.castRows` caps at
+/// **`DetailRules.castCapacity`**, which is how many of his `150px` items fit `1920 − 2 × 64px` — **seven**, and
+/// not the flat ten this line used to claim. ⚠ That claim was the defect: it took the item's width from the
+/// AVATAR (`110px`) instead of from his `.cast-item` (`150px`), so ten items came to 2208 pt of a 1758.7 pt
+/// content width, and the overflowing row made the whole PAGE wider than the canvas — every element on this
+/// screen drawn left of the screen edge and cut (KNOWN_ISSUES #13, his *"THE WHOLE PAGE IS ZOOMED IN AND I CAN
+/// ONLY SEE A PORTION OF THE PAGE"*). ⚠ It is information, not a
 /// control, and the round's falsifier **V-F6** is what checks that it reads that way.
 ///
 /// ⚠ **Every decision this screen obeys is in `DetailRules.swift`** (pure, RUN on Linux): the meta line, the
@@ -55,10 +60,10 @@ struct DetailView: View {
     let base: URL
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            topBar
+        measured("screen", VStack(alignment: .leading, spacing: 0) {
+            measured("bar", topBar)
 
-            Group {
+            measured("page", Group {
                 switch store.state {
                 case .loading:
                     loading
@@ -70,8 +75,8 @@ struct DetailView: View {
                     failure(message)
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading))
+        })
         // ⚠ `.task`, not `.onAppear`: the load is async, and the store is built per item (`AppModel`), so
         // this runs once for the item that is open.
         .task {
@@ -162,9 +167,9 @@ struct DetailView: View {
         // is a plain `VStack`, exactly like the Home's rails.
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: 0) {
-                hero(snapshot, height: TVTokens.Title.heroHeight)
+                measured("hero", hero(snapshot, height: TVTokens.Title.heroHeight))
 
-                below(snapshot)
+                measured("below", below(snapshot))
 
                 if snapshot.showsEpisodes {
                     episodes(snapshot)
@@ -318,11 +323,11 @@ struct DetailView: View {
             // ⚠ His file's order after the actions is `.synopsis` → the cast shelf; the credits lines
             // (director / writers / studios) are Jellyfin information his file does not carry, so they sit
             // with the other text, between the synopsis and the shelf, where they cannot push a control.
-            synopsis(snapshot)
+            measured("synopsis", synopsis(snapshot))
 
-            credits(snapshot)
+            measured("credits", credits(snapshot))
 
-            cast(snapshot)
+            measured("cast", cast(snapshot))
         }
         .padding(.horizontal, LibraryRules.marginFromPrototype)
     }
@@ -426,9 +431,50 @@ struct DetailView: View {
                 }
             }
             .padding(.top, TVTokens.Title.shelfTopPad)
+            .frame(width: TVTokens.Title.castItemWidth, alignment: .leading)
         }
     }
 
+    // MARK: - ⚠⚠ A MEASUREMENT, NOT A LAYOUT (added 2026-09-20 to answer his round-6 report)
+
+    /// ⚠⚠ **THIS EXISTS TO BE DELETED, AND IT ANSWERS A QUESTION NOTHING ON THIS MACHINE CAN.**
+    ///
+    /// His round-6 report: *"THE WHOLE PAGE IS ZOOMED IN AND I CAN ONLY SEE A PORTION OF THE PAGE..MAY BE IT'S
+    /// A RESOLUTION ISSUE IN DETAILS PAGE NOT SURE"*.
+    ///
+    /// Measured from the screenshot he sent (3840 × 2160 = a 1920 × 1080 pt canvas at 2×, and **every font on it
+    /// measures at its token size, so the UI itself is not scaled**): the focused tab's label sits at x = 59.5 pt
+    /// where `Bar.paddingH` + the brand + `tabSpacing` put it at ≈293 pt, and the bar's right-hand content (the
+    /// profile avatar) is not on screen at all. That is a page WIDER than the canvas and shifted left — but
+    /// every element in this file has a bound, and reading them cannot say which one is the outlier. So the
+    /// round measures it instead of guessing:
+    ///
+    ///     detail-size: <label> = <w>×<h> pt at x=<global minX> y=<global minY>
+    ///
+    /// ⚠ **IT CANNOT AFFECT LAYOUT, WHICH IS THE ONLY REASON IT IS ALLOWED ON THIS SCREEN.** A `GeometryReader`
+    /// in a `.background` is handed the view's size AFTER the view has laid out — the opposite of the reader
+    /// that was DELETED from this screen's content in round 3, which was wrapped AROUND the focusable content
+    /// so its frames were what the focus engine navigated on. Nothing measured here is focusable.
+    private func measured<Content: View>(_ label: String, _ content: Content) -> some View {
+        content.background {
+            GeometryReader { proxy in
+                Color.clear
+                    .onAppear { report(label, proxy) }
+                    .onChange(of: proxy.size) { _, _ in report(label, proxy) }
+            }
+        }
+    }
+
+    private func report(_ label: String, _ proxy: GeometryProxy) {
+        let frame = proxy.frame(in: .global)
+        RKMLog.info("detail-size: " + label + " = " + "\(Int(proxy.size.width))x\(Int(proxy.size.height)) pt"
+                    + " at x=\(Int(frame.minX)) y=\(Int(frame.minY))", category: .app)
+    }
+
+    /// ⚠⚠ **THE ITEM IS HIS WIDTH, AND THAT IS A LAYOUT RULE, NOT A DETAIL.** His `.cast-item { width:150px }`
+    /// was applied to the AVATAR only, so an item was as wide as the PERSON'S NAME — and a row of ten
+    /// unbounded names is what made the whole page wider than the screen (see `DetailRules.castCapacity`).
+    /// The name truncates inside the item (`lineLimit(1)`) exactly as his file does, instead of widening it.
     private func castItem(_ person: DetailPerson) -> some View {
         VStack(spacing: 0) {
             Text(ProfileRules.initials(person.name))
@@ -439,6 +485,7 @@ struct DetailView: View {
                 .padding(.bottom, TVTokens.Title.avatarGapBottom)
 
             Text(person.name)
+                .lineLimit(1)
                 .font(.system(size: TVTokens.Title.castNameSize, weight: .semibold))
                 .foregroundStyle(RKMColour.primary)
                 .lineLimit(1)

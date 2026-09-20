@@ -256,12 +256,36 @@ enum DetailRules {
     /// ⚠ Drops an empty name (Jellyfin can send one) — a card with nothing on it is worse than a shorter
     /// rail — and then caps, in the web's order.
     static func castRows(_ people: DetailPeople?) -> [DetailPerson] {
-        Array((people?.actors ?? []).filter { !$0.name.isEmpty }.prefix(Cast.limit))
+        Array((people?.actors ?? []).filter { !$0.name.isEmpty }.prefix(castCapacity))
     }
 
-    enum Cast {
-        /// `ItemDetail.tsx::people.actors.slice(0, 10)`.
-        static let limit = 10
+    /// ⚠⚠ **HOW MANY CAST ITEMS FIT ONE PAGE — ARITHMETIC, NOT A COUNT, AND IT IS HIS ROUND-6 REPORT.**
+    ///
+    /// `DetailView` draws ONE NON-SCROLLING row. His own `.cast-track` scrolls, but on a television a
+    /// scroller with nothing focusable inside it is *unreachable* (no focus, no scroll), so the app draws a
+    /// single row — and a single row has to FIT.
+    ///
+    /// ⚠⚠ **The flat `10` it used to carry was never measured against the item it draws.** The plan justified
+    /// it with the AVATAR's `110px`, but an item's width is his `.cast-item`'s own **`150px`** (applied on the
+    /// avatar alone until 2026-09-20, which is its own divergence — `DetailView.castItem` now carries it):
+    ///
+    ///     10 × 150px + 9 × 28px = 2208 pt  against a content width of 1920 − 2 × 64px = **1758.7 pt**
+    ///
+    /// and a row that does not fit does something worse than overflow: it makes the whole PAGE wider than the
+    /// canvas, so every element on the title screen — the top bar's brand, the title's first letters, the
+    /// genre pills — is drawn left of the screen edge and CUT. His words: *"THE WHOLE PAGE IS ZOOMED IN AND I
+    /// CAN ONLY SEE A PORTION OF THE PAGE"* (KNOWN_ISSUES #13).
+    ///
+    /// ⚠ `content / (item + gap)`, and the subtraction is the point: `n` items need `n × item + (n − 1) × gap`,
+    /// which is `≤ content` exactly when `n ≤ (content + gap) / (item + gap)` — and dividing by `(item + gap)`
+    /// instead of `item` leaves ONE GAP of slack, deliberately. A row that fits by 0.2 pt (eight items do) is
+    /// a row that overflows the moment a token moves, which is the same lesson the profile-row fit was pinned
+    /// with.
+    static var castCapacity: Int {
+        let item = TVTokens.Title.castItemWidth
+        let gap = TVTokens.Title.trackGap
+        let content = TVTokens.Metric.screenWidth - 2 * LibraryRules.marginFromPrototype
+        return max(1, Int(content / (item + gap)))
     }
 
     /// The hue of a cast avatar — **DERIVED from the person, never sent.**

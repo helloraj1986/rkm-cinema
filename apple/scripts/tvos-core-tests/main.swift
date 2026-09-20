@@ -1035,10 +1035,20 @@ checkEqual(partial.primaryVerb, "Play", "…and does not invent an episode to re
 
 checkEqual(DetailRules.castRows(detail(movieDetailJSON)!.people).count, 2, "the cast is the actors")
 checkEqual(DetailRules.castRows(nil).count, 0, "no people is no cast")
-// ⚠ The cap is the web's `slice(0, 10)`, and a rail that decides for itself is a rail nobody scrolls.
+// ⚠⚠ **THE CAST RAIL IS CAPPED BY WHAT FITS THE PAGE, NOT BY A FLAT TEN — and getting that wrong is
+// KNOWN_ISSUES #13.** `DetailView` draws ONE NON-SCROLLING row (his `.cast-track` scrolls, but on a television
+// a scroller with nothing focusable inside it is unreachable), so the row has to FIT. The old `10` took the
+// item's width from the AVATAR (`110px`) instead of from his `.cast-item` (`150px`): ten items are 2208 pt of a
+// 1758.7 pt content width, and a row that does not fit does something worse than overflow — it makes the whole
+// PAGE wider than the canvas, so every element on the screen is drawn left of the edge and cut.
 let manyPeople = (1...15).map { _ in DetailPerson(id: "p", name: "N", role: "r", hasImage: false) }
-checkEqual(DetailRules.castRows(DetailPeople(actors: manyPeople, directors: [], writers: [])).count, 10,
-           "the cast rail is capped at ten")
+let castCount = DetailRules.castRows(DetailPeople(actors: manyPeople, directors: [], writers: [])).count
+checkEqual(castCount, 7, "the cast rail is capped by what FITS the page, not by a flat ten")
+let castRowWidth = CGFloat(castCount) * TVTokens.Title.castItemWidth
+    + CGFloat(castCount - 1) * TVTokens.Title.trackGap
+let castContentWidth = TVTokens.Metric.screenWidth - 2 * LibraryRules.marginFromPrototype
+check(castRowWidth <= castContentWidth - TVTokens.Title.trackGap,
+      "the cast row fits inside the page's content width with a gap to spare")
 checkEqual(DetailRules.castRows(DetailPeople(actors: [DetailPerson(id: "p", name: "", role: "r",
                                                                    hasImage: false)],
                                              directors: [], writers: [])).count, 0,

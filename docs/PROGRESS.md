@@ -1,4 +1,62 @@
-## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-20) · ✅ **PHASE C — THE PLAYER — IS BUILT ON `feat/tvos-player`: C1 + C2 + C3, and C4 IS HIS ROUND** · ⚠ **the branch carries ONE MERGE COMMIT from `dev` (`e0eadef`, bringing Phases U and V in) and the working tree IS on it** · ⚠ **`dev` does NOT have this branch** · **nothing needs `apply`**: no file under `backend/`, `frontend/` or `nginx/` changed
+## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-20) · ✅ **PHASE C — THE PLAYER — IS BUILT ON `feat/tvos-player`: C1 + C2 + C3, and C4 IS HIS ROUND** · ⚠⚠ **ROUND 5 WAS A BUILD ROUND — FIXED IN `6e71c67` (ONE STRAY BACKSLASH), AND THE NEXT ROUND IS THE FIRST TYPE-CHECK ROUND-4's CODE HAS EVER HAD** · ⚠ **the branch carries ONE MERGE COMMIT from `dev` (`e0eadef`, bringing Phases U and V in) and the working tree IS on it** · ⚠ **`dev` does NOT have this branch** · **nothing needs `apply`**: no file under `backend/`, `frontend/` or `nginx/` changed
+
+### 🐞 HIS ROUND 5 ON THE PLAYER FAILED — ONE STRAY BACKSLASH, AND A RULE FOR THE CLASS (2026-09-20, `6e71c67`)
+
+```
+Player/PlayerView.swift:260:21: error: binary operator '+' cannot be applied to operands of type 'String'
+                             and 'WritableKeyPath<_, _> & Sendable'
+Player/PlayerView.swift:260:37: error: string interpolation can only appear inside a string literal
+```
+
+⚠⚠ **THIS IS A BUILD ROUND: F1–F10 WERE NEVER ATTEMPTED, and it did not change what F2 knows.** The line read
+`+ \(LogRedactor.redact(url: url)), category: .app)` — a `\(…)` interpolation left on a CONCATENATION line after
+the quotes it belonged to moved to the line above, so Swift parsed `\LogRedactor.redact` as a KEY PATH and
+refused to add it to a `String`. **Two errors, one backslash.** The operand is now the plain
+`LogRedactor.redact(url: url)` call.
+
+⚠⚠ **AND THE SWEEP FOUND THE CLASS'S SILENT HALF — in files that DO compile, which is why nothing here ever
+noticed.** `App/AppModel.swift:314` (twice) and `Core/APIClient.swift:163` each carried a **DOUBLED** escape
+(`\\(path)`): legal Swift that prints its own source into the LOG instead of the value. That is not cosmetic in
+this phase — **`RKMLog` output is what F2 and F5–F10 are read from**, and a line that says `\(path)` where the
+path should be is a measurement poisoned before it is taken. Both fixed in the same commit.
+
+**The gate:** `check-tvos-members.py` grew **RULE 8 — *an escape that has leaked out of its string literal***,
+three shapes: an interpolation with no string open`, a backslash straight after a binary operator, and a
+doubled escape inside a string. ⚠⚠ **IT LEXES** — string-literal and interpolation frames, nested literals
+included — because the cheap version cries wolf: `SessionStore`'s own
+`RKMLog.error("… \((error as? APIError)?… ?? "\(error)")")` is CORRECT Swift and a quote count reads the nested
+literal as code.
+
+⚠ **Proved against the REAL corpus, not a synthetic probe:** the three pre-fix files were pulled out of `git
+show HEAD:<path>` into a scratch tree and rule 8 reported **all four escapes** (the leak + the three doubled)
+and is **silent on the current tree and on `SessionStore`'s correct nesting**. The gate's `--selftest` carries
+the same three cases (leak fires · doubled fires · correct nesting silent) — and its first draft was WRONG in a
+way worth recording: the doubled probe had been written with ONE backslash, so it tested the correct form and
+"failed" until it was fixed. **A probe is code; a probe that cannot fail is not evidence.**
+
+**Gates, read live on the fixed tree:** members **PASS — 35 view/type pairs, 36 types, 8 rules** · core
+**PASS — 607 checks** · `check-apple-typecheck.sh` **PASS** (AppModel, APIClient and SessionStore all typecheck)
+· imports **PASS — 49 files, no missing framework import** · `check_md_links.py` **71 files, 70 links, all
+resolve**. ⚠ `--falsify` was **NOT** run: his standing rule (dev + unit tests, then his round), and rule 8's
+evidence is the pre-fix corpus above plus its selftest — not a falsification audit.
+
+⚠⚠ **WHAT THE NEXT ROUND IS, SAID HONESTLY: IT IS THE FIRST TYPE-CHECK `PlayerView.swift` HAS EVER HAD.** The
+failure above was a **PARSE** error, and Swift abandons a file's semantic analysis once parsing fails — so
+round 4's C5 code (the `AVPlayerItem` error-log observer, the `AVURLAssetHTTPCookiesKey` asset path) has never
+been type-checked by anything. Two things in it are worth naming before he spends a round on them:
+1. `.AVPlayerItemNewErrorLogEntry` / `.AVPlayerItemFailedToPlayToEndTime` are the LEGACY spellings; the SDK 26
+   names are `AVPlayerItem.newErrorLogEntryNotification` / `.failedToPlayToEndTimeNotification`. Deprecated
+   spellings are a WARNING under `-swift-version 5` (his build's flag), not an error — left alone rather than
+   gambled on, since no SDK exists here to check them. **If the round fails there, it is one line each and
+   Xcode prints the replacement.**
+2. `start()` still hands `AVPlayer` a BARE `AVPlayerItem(url:)` when `store.url` is already set. Unreachable
+   today (`url` is only ever set by `load()`/`recomputeRoute`, so it is nil when the view first appears and the
+   cookie-carrying `attachItem` takes the change) — but it is the phase's own black-screen shape if the store
+   is ever reused across a view rebuild. **Not changed: it is a claim nothing here can measure.**
+
+⚠ And the round's question is still the phase's question: **F2 — does a cookie handed to the asset reach a
+`…/hls/…` SEGMENT — remains OPEN.** The line to look for is `player: AVPlayer's own request failed — status=`,
+and a `401` in it is the answer.
 
 ### ▶ PHASE C, AS IT ACTUALLY STANDS (2026-09-20) — read this before anything below
 

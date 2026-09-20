@@ -5,7 +5,10 @@ embedding one), so there is no shell shortcut here — the UI is written for the
 [`../../docs/APPLE_CLIENTS_PLAN.md`](../../docs/APPLE_CLIENTS_PLAN.md) §4.
 
 **Status: PHASE C (THE PLAYER) IS BUILT on `feat/tvos-player` (2026-09-20) — C1 + C2 + C3 — and HIS ROUND is the
-next thing that happens.** The branch carries one merge from `dev` (Phases U and V), so it is the newest tree
+next thing that happens.** ⚠⚠ **Round 5 (`6e71c67`) was a BUILD round**: ONE stray backslash
+(`+ \(LogRedactor.redact(url: url))` on `PlayerView.swift:260`) that Swift read as a key path. It is fixed, and
+its class is now **rule 8** of the members gate — see the note below, and ⚠ **the next round is the first
+TYPE-CHECK the player's own views have ever had**, because a parse error abandons a file's semantic analysis. The branch carries one merge from `dev` (Phases U and V), so it is the newest tree
 here. ⚠ **`dev` does not have it yet.** Phases U (U1–U7b) and V are MERGED to `dev` (`b78c210`) with both of the
 defects their round found closed and confirmed on his UI. ⚠ **V redesigned the Library and Title screens to his second prototype**
 (`tvos_ux/2. LibraryViewandItemDetailsView/`): a fixed 6-column grid of 2:3 posters whose caption appears only
@@ -29,12 +32,13 @@ RESUME-HERE block at the top of [`../../docs/PROGRESS.md`](../../docs/PROGRESS.m
 ⚠⚠ **THE tvOS DEPLOYMENT TARGET IS NOW `26.0`** (his decision, 2026-09-19 — one code path and Liquid Glass,
 at the cost of not installing on tvOS 17–25). See §1's build-settings table.
 
-⚠⚠ **Until his round, no SwiftUI view had ever been compiled anywhere — his round changed that: it built and
-RAN the app on the Mac** (two `BUILD FAILED`s came first, each of them one line: a member that did not exist,
-then a nested `struct Body`). ⚠ **What is still true, and is the part that matters: nothing on the Linux side
-can compile a view.** The pure rules are compiled and RUN there — **467 checks** (⚠ read that count live; it
-moves with every pinned rule, and older notes say 466) and 102 falsified mutations — and that is type-and-rule
-evidence only, never evidence that a screen works.
+⚠⚠ **Phase U and V's rounds built and RAN the app on the Mac** (phase U lost two `BUILD FAILED`s first, each
+one line: a member that did not exist, then a nested `struct Body`) — **⚠ but the player's own views have NOT
+yet: rounds 1, 2 and 5 on Phase C all failed to build, each on one line, and no round has type-checked
+`PlayerView.swift` at all.** ⚠ **What is true throughout: nothing on the Linux side can compile a view.** The
+pure rules are compiled and RUN there — **607 checks** (⚠ read that count live: it moves with every pinned rule,
+and this file said 467 until 2026-09-20) and **151/151 falsified mutations as recorded at `46443ff`** — and that
+is type-and-rule evidence only, never evidence that a screen works.
 
 The round, on the **MacBook Pro** — against `feat/tvos-player`, which is where the player is. ⚠ **Pick the HUD flag
 by the round's QUESTION**: a SCREEN round (does it look like his file, does the film play) runs **without**
@@ -49,7 +53,12 @@ surfacing a deprecation the 17.6 floor was hiding, and SwiftUI that no gate on L
 (`Home/{TopBar,HeroBand,HomeView,PosterCard,RailView}.swift`, `Auth/ProfilesView.swift`, `App/AppModel.swift`,
 `Browse/{BrowseView,LibraryGridCard,FilterChip}.swift`, `Detail/DetailView.swift` and the Core rules/stores they
 read). ⚠ Two rounds of Phase U were lost to exactly one line each — a member that did not exist and a nested
-`struct Body` — and `apple/scripts/check-tvos-members.py` now covers both classes before a round is spent.
+`struct Body` — and `apple/scripts/check-tvos-members.py` now covers **EIGHT classes** before a round is spent
+(1 a member a view names · 2 a call label · 3 a static-namespace name · 4 a nested `struct Body` · 5 chrome on a
+styled `Button` · 6 a passed `FocusState` binding used as a wrapper · 7 an unawaited `async` store call ·
+**8 an escape that leaked out of its string literal**, added 2026-09-20 after round 5's stray backslash — it
+lexes string/interpolation nesting, and it found the same class's SILENT half in `AppModel.swift` and
+`APIClient.swift` as DOUBLED escapes that logged their own source instead of the value).
 §1's one-time Xcode step is DONE: the project, `INFOPLIST_FILE`, the shared scheme and the local package are
 all committed.
 

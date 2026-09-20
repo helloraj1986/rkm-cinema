@@ -25,7 +25,7 @@ RESUME-HERE block at the top of [`../../docs/PROGRESS.md`](../../docs/PROGRESS.m
 at the cost of not installing on tvOS 17–25). See §1's build-settings table.
 
 ⚠⚠ **No SwiftUI view on this branch has ever been compiled anywhere.** The pure rules are compiled and RUN
-here on Linux (465 checks, 102 falsified mutations), but every view is written and unbuilt — so the round
+here on Linux (466 checks, 102 falsified mutations), but every view is written and unbuilt — so the round
 below is not a formality, it is the first build. Its falsifiers are written down in `docs/PROGRESS.md`,
 `docs/TVOS_UX_PLAN.md` §U5 and `docs/TVOS_LIBRARY_UI_PLAN.md` §7, **before** it runs.
 

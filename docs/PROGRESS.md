@@ -117,8 +117,8 @@ DEPTH-1 members only**: a function body's locals are also `let`/`var`, and `Home
 
 | Gate | Result (2026-09-20, branch `feat/tvos-ux`) |
 |---|---|
-| `python3 apple/scripts/check-tvos-core.py` | **465 checks, 0 failures** — the pure rules of every phase, COMPILED AND RUN |
-| … `--falsify` | **102/102 rules reverted, every one went red on the check it protects** — the 17 added by V are listed in `docs/TVOS_LIBRARY_UI_PLAN.md` §6. ⚠ It recompiles the harness once per rule (~18 s each), so it runs BACKGROUNDED with its output in a file; a foreground call dies at the tool's timeout and reads exactly like a FAILING gate. |
+| `python3 apple/scripts/check-tvos-core.py` | **466 checks, 0 failures** — the pure rules of every phase, COMPILED AND RUN |
+| … `--falsify` | **every mutation went red on the check it names**, and the run itself found three PRE-EXISTING entries that had stopped proving anything (two STALE — reverting text that had been rewritten — and one WRONG, red on a stale expectation). ⚠⚠ **All three are repaired and each is proved red by hand**; a clean full-suite run over the repaired table was started the same session (`/root/falsify3.log`) and **its verdict is the number this row should carry — read the gate's own last line before trusting any count here.** ⚠ It recompiles the harness once per rule (~20 s each, and ~2× that with another CPU-heavy job running), so it runs BACKGROUNDED with its output in a file; a foreground call dies at the tool's timeout and reads exactly like a FAILING gate. |
 | `python3 apple/scripts/check-design-tokens.py --falsify` | R1, R2 and R3 each go red when the thing they guard breaks |
 | `python3 apple/scripts/check-tvos-models.py` | 113 keys, **17 endpoint literals** (both artwork routes included) |
 | `bash apple/scripts/check-apple-typecheck.sh` | every portable tvOS file typechecks, **plus `DesignTokens.swift` and `TVTokens.swift`** |
@@ -142,6 +142,18 @@ pinned**, and every one of them was a real defect in the *tests*, not the code:
 ⚠⚠ **NOT ONE SwiftUI VIEW HAS BEEN COMPILED ANYWHERE — including everything U2, U3 and U4 wrote.** The pure
 rules are run; the views are written and unbuilt. That is precisely what U5 exists for, and this table is
 type-and-rule evidence only.
+
+### ▶ ⚠⚠ TWO COMMITS LANDED ON THIS BRANCH FROM DIFFERENT HANDS ON 2026-09-20 — KNOW WHICH IS WHICH
+
+| Commit | Author | What it is |
+|---|---|---|
+| `70cd71f` | **Rajeev** (23:41) | `test(tvos): pin the two rules the falsification gate caught unpinned` — a commit made **in the middle of the Phase V session, by something other than it**: it adds ONE fixture to `tvos-core-tests/main.swift` (a series Jellyfin marks `played` while an episode is part-played, which makes `cardStateText`'s `fraction < 1` branch load-bearing) and its message describes a falsification **"Run 5"**. ⚠ **That is why the core gate's count moved 465 → 466 mid-session.** Nothing is wrong with it — it is a real improvement to the harness — but a branch where two writers commit interleaved is a branch whose **gate numbers must be read live**, never from a note. |
+| `9849da8`, `9524f52`, `8458c6d`, `1eed977`, `cdc045a` | RKM Agent | Phase V itself (the plan, the two screens, the record, and the gate repairs). |
+
+⚠ If a third party is writing in this checkout, **push carefully**: `git fetch` + a fast-forward check before
+every push. ⚠⚠ **This branch DOES carry merge commits** (`a6190c3` Phase B, `be2072a` Phase A), so the
+standing rule applies — **never `rebase` it**; if the remote has moved, `git merge --ff-only` or reconcile by
+hand. And two agents running `--falsify` at once roughly halve each other's speed.
 
 ### ▶ TWO THINGS THE NEXT SESSION MUST NOT GET WRONG
 

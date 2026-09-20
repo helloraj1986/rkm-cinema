@@ -381,17 +381,22 @@ MUTATIONS = [
      "        return min(100, Int((Double(position) / Double(runtime) * 100).rounded()))",
      "        return min(100, Int((Double(position) / Double(runtime) * 100)))",
      "the hero's percentage is rounded (620 of 7200 is 9%)"),
-    ("a countdown on a finished film", "HomeRails.swift",
-     "              position > 0 else { return \"\" }",
-     "              position >= 0 else { return \"\" }",
-     # ⚠ This replaced a mutation on a `runtime > position` clause that was DELETED from the source the moment
-     # the falsification pass showed it could not be told from its absence (`runtimeText` clamps a negative
-     # remainder already). What is pinned now is the clause that DOES change the answer: an unstarted film.
-     "an unstarted film has no countdown"),
+    # ⚠⚠ REPAIRED IN PHASE V (2026-09-20) — STALE, and BOTH halves of it. The line had been rewritten
+    # (`position > 0, runtime > position`), so there was nothing left to revert; and the check it named
+    # ("an unstarted film has no countdown") is not a label any check carries. Repointed at the clause that
+    # actually changes an answer — `position > 0`, i.e. an unstarted title — and at the check that asks for it.
+    ("an unstarted film's countdown", "HomeRails.swift",
+     "              position > 0, runtime > position else { return \"\" }",
+     "              position >= 0, runtime > position else { return \"\" }",
+     "an unstarted title has nothing left to lose"),
+    # ⚠⚠ REPAIRED IN PHASE V (2026-09-20) — STALE for the same reason: the guard lost its episode clause
+    # (episodes DO get a countdown on the card, deliberately), so the text to revert no longer exists, and the
+    # check it named ("a series measures episodes, not minutes") is not a label either. Reverting the guard
+    # outright is what pins the rule now.
     ("a countdown on a series", "HomeRails.swift",
-     "        guard !isSeries(item), !isEpisodeItem(item) else { return \"\" }",
      "        guard !isSeries(item) else { return \"\" }",
-     "a series measures episodes, not minutes"),
+     "        guard true else { return \"\" }",
+     "a SERIES has no countdown"),
     ("a failed tab row going unnamed", "HomeRails.swift",
      "        if nav.failedMessage != nil { out.append(Self.tabsLabel) }",
      "        if false { out.append(Self.tabsLabel) }",
@@ -404,7 +409,11 @@ MUTATIONS = [
     ("the profile row outgrowing the screen", "TVTokens.swift",
      "        static let rowWidthUnits: CGFloat = 5 * 13 + 4 * 2.6",
      "        static let rowWidthUnits: CGFloat = 5 * 15 + 4 * 3.2",
-     "the profile row fits the screen with a whole margin to spare"),
+     # ⚠ REPAIRED IN PHASE V (2026-09-20): the check's own label gained its `(6u)` when U7b turned the fit
+     # into arithmetic, so the old expectation stopped matching — and the gate reported a mutation that WAS
+     # red as "WRONG … went red, but not on …", which reads as a survivor. The expectation is now a prefix of
+     # the real label, and it is deliberately the SHORT prefix: it survives the label gaining a clause again.
+     "the profile row fits the screen with a whole margin"),
 
     # ---- U6's premium card: the facts line, the countdown and the state chip
     ("the card losing its duration", "HomeRails.swift",

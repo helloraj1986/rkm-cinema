@@ -36,6 +36,49 @@ audit, and almost nothing else — no Docker, no deploy, and `backend/` is untou
 player arrives with no server change at all; if it fails, C5 is a small, already-designed change to ONE function
 plus the HLS proxy's URI rewrite.
 
+### 🐞 HIS ROUND 1 ON THE PLAYER FAILED — ONE LINE, AND A GATE NOW CATCHES IT (2026-09-20)
+
+```
+== 4. result
+BUILD FAILED (exit 65) — the errors:
+Player/PlayerView.swift:33:76: error: instance method 'autoconnect()' is not available due to missing
+import of defining module 'Combine'
+```
+
+⚠⚠ **THIS IS A BUILD ROUND: F1–F10 WERE NEVER ATTEMPTED.** ⚠ And it is the class of error this repo has
+already written down once — `App/AppModel.swift`'s header records *"SwiftUI no longer re-exports Combine (iOS 26
+SDK)"* for `ObservableObject`.
+
+⚠⚠ **The gate that exists for exactly this could not see it**, and the reason is structural: the module was
+carried by a **METHOD** (`autoconnect()`) on a **FOUNDATION** type (`Timer`). `check-imports.py`'s `RULES`
+matches the TYPES (`ObservableObject`, `@Published`, `AnyCancellable`) and `MEMBER_RULES` covers unprefixed
+members of WebKit/UIKit/Network — so `Timer.publish(...).autoconnect()` and
+`NotificationCenter.default.publisher(for:)` were invisible to both.
+
+**Fixed by fixing the GATE, in the same session** (this repo's rule for a round's blind spot):
+`check-imports.py` grew **`PATTERN_RULES`** — six call-shaped Combine patterns (`autoconnect(`,
+`Timer.publish(`, `publisher(for:`, `sink(`, `receive(on:`, `assign(to:`), **deliberately PATTERNS and not bare
+names**, because `sink`, `receive` and `assign` are ordinary English words and a rule that fires on prose forces
+a wrong import into a file that must stay Foundation-only (the `isHTTPOnly` lesson, third time).
+
+⚠ **Proved BOTH ways, which is the only way a gate is evidence:**
+* it **fires** on the unfixed `PlayerView.swift` (`MISSING import Combine`) and is **silent** on the fixed tree;
+* `--selftest` went **6 → 9 snippets**, including the two new edges: the method shape, and prose/ordinary code
+  containing the same words (which must NOT demand an import).
+
+⚠ **And the shape was grepped, not patched once** — the rule that cost two earlier rounds: every tvOS file
+containing a Combine call was listed, and each either imports it or does not use it (`DebugHUD.swift` was the
+only other, and already had the import).
+
+⚠ One more construct was removed while this was being fixed, because it is in the same "no compiler here" class:
+the screen's error branch pattern-matched inside a `ViewBuilder` (`else if case .failed(let sentence) = …`).
+`PlaybackStore.failureSentence` now reduces both failure sources to one `String?`, so the view never has to.
+
+⚠⚠ **THE GOOD NEWS IN THE SAME LOG:** every file the sandbox can compile **compiled on the Mac** —
+`PlaybackRules`, `PlaybackURLs`, `PlaybackModels`, `PlaybackAPI`, `PlaybackStore`, `TVTokens`, `DesignColours`
+and `PlaybackAuth` all appear as successful `SwiftCompile` jobs in `apple/logs/build-tvos-20260920-124924.log`.
+The failure was in the ONE file no gate on this machine can compile, which is exactly what the round is for.
+
 ### ▶ WHAT HIS THIRD DESIGN INPUT CANNOT GIVE THIS APP (measured, not a preference)
 
 ⚠⚠ **Two things in his file are drawn from data that does not exist on the wire**, and both are recorded in the

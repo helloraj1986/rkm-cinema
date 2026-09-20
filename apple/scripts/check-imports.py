@@ -125,6 +125,28 @@ MEMBER_RULES = {
     ],
 }
 
+#: ⚠⚠ **A FOURTH WAY A MISS HAPPENS — AND IT COST PHASE C'S FIRST MAC ROUND (2026-09-20).** The module can be
+#: carried by a **METHOD**, not by a type: `Timer.publish(every:on:in:).autoconnect()` names `Timer`
+#: (Foundation) and `autoconnect()` (**Combine**), so neither `RULES` nor `MEMBER_RULES` fires and the file
+#: compiles right up until:
+#:
+#:     PlayerView.swift:33: error: instance method 'autoconnect()' is not available due to missing import of
+#:     defining module 'Combine'
+#:
+#: ⚠⚠ **DELIBERATELY PATTERNS, NOT BARE MEMBER NAMES** — `sink`, `receive` and `assign` are ordinary English
+#: words, and a rule that fires on a comment or a variable name forces a wrong import into a file that must
+#: stay Foundation-only (the `isHTTPOnly` lesson, third time). Each pattern below requires the CALL shape.
+PATTERN_RULES = {
+    "Combine": [
+        r"\.autoconnect\(",
+        r"\bTimer\.publish\(",
+        r"\.publisher\(for:",
+        r"\.sink\(",
+        r"\.receive\(on:",
+        r"\.assign\(to:",
+    ],
+}
+
 # ⚠ A third way a miss happens, caught by neither table above: a type the app defines ITSELF whose name
 # collides with a module-namespaced pattern. `OfflineDownloads` starts with "Offline", so nothing here
 # fires — but if a future type starts with `UI` or `WK` it will be reported as a missing import, and the
@@ -152,6 +174,18 @@ SELFTEST = [
     ("an unimported Combine symbol",
      'import SwiftUI\n\nfinal class M: ObservableObject {}',
      {"Combine"}),
+    # ⚠⚠ The shape THIS table was blind to until Phase C's first Mac round: a Combine METHOD on a
+    # Foundation type. The file below is `PlayerView.swift`'s ticker, reduced.
+    ("an unimported Combine METHOD on a Foundation type",
+     'import SwiftUI\n\nlet ticker = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()',
+     {"Combine"}),
+    ("a Combine subscription with no import",
+     'import SwiftUI\n\nlet sub = NotificationCenter.default.publisher(for: Notification.Name("x"))',
+     {"Combine"}),
+    # ⚠ And the OTHER edge: the same words as ordinary code must NOT demand the import.
+    ("the word `sink` in prose, and `assign` as a plain function",
+     'import SwiftUI\n\n// the kitchen sink\nfunc assign(_ x: Int) -> Int { x }',
+     set()),
     ("an unimported UIKit type",
      'import SwiftUI\n\nlet label = UILabel()',
      {"UIKit"}),
@@ -178,6 +212,9 @@ def missing_for(code: str, imported: set) -> dict:
         for member in MEMBER_RULES.get(framework, []):
             if re.search(rf"\b{re.escape(member)}\b", code):
                 hits.add(member)
+        for pattern in PATTERN_RULES.get(framework, []):
+            for hit in re.findall(pattern, code):
+                hits.add(hit)
         if hits:
             missing[framework] = sorted(hits)
     return missing

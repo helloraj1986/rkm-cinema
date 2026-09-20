@@ -152,9 +152,19 @@ final class PlaybackStore: ObservableObject {
 
     /// ⚠ True when the item's facts could not be read at all — the screen's ONE question about the load state
     /// (a view comparing against `.failed("")` would be inventing a sentence to test against).
-    var hasFailed: Bool {
-        if case .failed = load { return true }
-        return false
+    var hasFailed: Bool { failureSentence != nil }
+
+    /// **The one sentence that says why nothing is playing**, from either source: a stream that died
+    /// mid-film (`playbackFailure`) or facts that could not be read at all (`load == .failed`).
+    ///
+    /// ⚠⚠ **IT EXISTS SO THE VIEW DOES NOT HAVE TO PATTERN-MATCH.** The first draft asked the screen to write
+    /// `else if case .failed(let sentence) = store.load` inside a `ViewBuilder` — a construct with its own
+    /// rules about what an `if` may look like in a result builder, in a file no compiler here can check. The
+    /// store owns the enum, so the store reduces it to a `String?` and the screen only asks for it.
+    var failureSentence: String? {
+        if let playbackFailure, !playbackFailure.isEmpty { return playbackFailure }
+        if case .failed(let sentence) = load { return sentence }
+        return nil
     }
 
     /// The way out's own words. ⚠ It names the destination, because a bare chevron on a screen that fills a

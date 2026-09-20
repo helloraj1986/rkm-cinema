@@ -1,4 +1,11 @@
 import SwiftUI
+// ⚠⚠ **COMBINE IS NOT RE-EXPORTED BY SWIFTUI ANY MORE** — the same thing `App/AppModel.swift`'s header
+// records for `ObservableObject`, and it cost THIS FILE the phase's first Mac round (2026-09-20):
+// `PlayerView.swift:33: error: instance method 'autoconnect()' is not available due to missing import of
+// defining module 'Combine'`. The `Timer.publish(...).autoconnect()` ticker below is the Combine API; the
+// `.publisher(for:)` subscription is the second. ⚠ The sandbox gate could not see it — see
+// `apple/scripts/check-imports.py`'s PATTERN_RULES, which now can.
+import Combine
 import AVFoundation
 import UIKit
 import RKMServerKit
@@ -55,9 +62,8 @@ struct PlayerView: View {
 
             overlayPanels
 
-            if let failure = store.playbackFailure {
-                failureNotice(failure)
-            } else if case .failed(let sentence) = store.load {
+            // ⚠ One source for "why is this not playing", from the store — see `failureSentence`.
+            if let sentence = store.failureSentence {
                 failureNotice(sentence)
             } else if store.load == .loading {
                 loadingNotice
@@ -302,7 +308,7 @@ struct PlayerView: View {
         !PlaybackRules.shouldHideChrome(
             playing: store.isPlaying,
             switching: store.isSwitching,
-            failed: store.playbackFailure != nil || store.hasFailed,
+            failed: store.hasFailed,
             hoveringChrome: false,
             panelOpen: store.panel != .none || isAnythingFocused,
             idleSeconds: now.timeIntervalSince(lastInteraction))

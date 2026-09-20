@@ -884,6 +884,46 @@ MUTATIONS = [
      '        case itemID = "item_id"\n        case positionTicks = "position_ticks"',
      '        case itemID = "id"\n        case positionTicks = "position_ticks"',
      "the progress body carries the contract's six keys and nothing else"),
+
+    # ⚠⚠ ---- P3: THE SUBTITLES PANE, WHICH COULD GROW THE DRAWER OFF THE SCREEN. His round: *"i click on
+    # subtitles all the other control vanishes.. i only see"* — nineteen OpenSubtitles release names, a panel
+    # 1875.2 pt tall on a 1080 pt screen, and its header plus all five rail items drawn ABOVE the top edge.
+    # ⚠ Seven of these revert `PlaybackRules` and one reverts the CEILING TOKEN — because a bound that lives in
+    # the file whose job is to be executed is only a bound if the arithmetic the screen draws with is the
+    # arithmetic the harness measures (W3's lesson: a budget in a pure file and a view that decides what the
+    # budget is about are two halves no gate joins).
+    ("the pane's cap on the list region", "PlaybackRules.swift",
+     "        min(paneListUnboundedHeight(rowCount: rowCount),\n            TVTokens.Player.subtitleListMaxHeight)",
+     "        paneListUnboundedHeight(rowCount: rowCount)",
+     "WITH THE LIST BOUNDED the same nineteen results fit"),
+    ("the list region's ceiling token", "TVTokens.swift",
+     "        static let subtitleListMaxHeight = u * 33",
+     "        static let subtitleListMaxHeight = u * 60",
+     "WITH THE LIST BOUNDED the same nineteen results fit"),
+    ("the row's own vertical padding", "PlaybackRules.swift",
+     "            + 2 * TVTokens.Player.listItemPaddingV",
+     "            + 0 * TVTokens.Player.listItemPaddingV",
+     "the bounded region shows eight two-line rows"),
+    ("the rows-that-fit rounding", "PlaybackRules.swift",
+     "        return max(1, Int((usable / step).rounded(.down)))",
+     "        return max(1, Int((usable / step).rounded(.up)))",
+     "the bounded region shows eight two-line rows"),
+    ("the remote results shown before he asks", "PlaybackRules.swift",
+     "        guard hasSearched else { return [] }",
+     "        guard hasSearched else { return Array(rows.prefix(max(0, limit))) }",
+     "BEFORE HE SEARCHES the pane shows NO remote results"),
+    ("the guard limit on a provider's answer", "PlaybackRules.swift",
+     "        return Array(rows.prefix(max(0, limit)))",
+     "        return rows",
+     "a provider answering with hundreds is held to the guard limit"),
+    ("the hearing-impaired flag", "PlaybackRules.swift",
+     '        if row.hearingImpaired { parts.append("HI") }',
+     '        if row.hearingImpaired { parts.append("") }',
+     "a hearing-impaired track is visible for the rest of the film"),
+    ("the shown-of-total line's own edge", "PlaybackRules.swift",
+     "        guard total > shown, shown >= 0 else { return nil }",
+     "        guard total >= shown, shown >= 0 else { return nil }",
+     "nothing is claimed when nothing was held back"),
 ]
 
 

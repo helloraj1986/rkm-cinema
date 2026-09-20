@@ -150,33 +150,70 @@ struct PlayerSettingsPanel: View {
     }
 
     /// Audio Track / Subtitles — the item's own tracks, and (for subtitles) the api's own actions.
+    ///
+    /// ⚠⚠ **THE LIST IS BOUNDED AND IT SCROLLS, AND THAT IS THE FIX FOR HIS ROUND.** It used to be a bare
+    /// `VStack` of every row it had, so **19 OpenSubtitles results grew the whole drawer to 1875.2 pt on a
+    /// 1080 pt screen** — and a child taller than its container overflows BOTH ways, so the panel's header and
+    /// all five rail items were drawn ABOVE the top edge. His words: *"i click on subtitles all the other
+    /// control vanishes"*. ⚠ The region's ceiling is `PlaybackRules.paneListHeight`, which is arithmetic against
+    /// `Metric.screenHeight` (`settingsPanelFits`), not a taste.
+    ///
+    /// ⚠ On tvOS a `ScrollView` scrolls when focus moves onto something INSIDE it (the app's own recorded rule,
+    /// and the reason the title screen has none) — every row here is a focusable `Button`, so it scrolls.
     @ViewBuilder
     private var listPane: some View {
         Text(store.category.title)
             .font(.system(size: TVTokens.Player.paneTitleSize, weight: .regular, design: .serif))
             .foregroundStyle(RKMColour.primary)
 
-        VStack(alignment: .leading, spacing: TVTokens.Player.listGap) {
-            ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
-                Button {
-                    row.apply()
-                } label: {
-                    HStack {
-                        Text(row.title)
-                        Spacer(minLength: 0)
-                        if row.isSelected {
-                            Image(systemName: "checkmark")
-                                .font(.system(size: TVTokens.Player.checkSize, weight: .bold))
+        ScrollView {
+            VStack(alignment: .leading, spacing: TVTokens.Player.listGap) {
+                ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
+                    Button {
+                        row.apply()
+                    } label: {
+                        HStack(alignment: .center, spacing: TVTokens.Player.contentGap) {
+                            VStack(alignment: .leading, spacing: TVTokens.Player.subtitleRowGap) {
+                                Text(row.title)
+                                    .lineLimit(1)
+                                    // ⚠ Truncating from the MIDDLE: a subtitle release name's tail
+                                    // (`.1080p.BluRay.x264-AC3`) is what tells two results apart, and the head is
+                                    // the film's own title, which is on every row.
+                                    .truncationMode(.middle)
+                                // ⚠ The second line only exists for a row that HAS a second fact — `Off`, a
+                                // local track and the search action are one-liners, so they stay one line.
+                                if let detail = row.detail {
+                                    Text(detail)
+                                        .font(.system(size: TVTokens.Player.subtitleDetailSize))
+                                        .foregroundStyle(RKMColour.muted)
+                                        .lineLimit(1)
+                                }
+                            }
+                            Spacer(minLength: 0)
+                            if row.isSelected {
+                                Image(systemName: "checkmark")
+                                    .font(.system(size: TVTokens.Player.checkSize, weight: .bold))
+                            }
                         }
                     }
+                    .buttonStyle(DrawerListStyle(isSelected: row.isSelected, isAction: row.isAction))
+                    .focused(focus, equals: .row(index))
                 }
-                .buttonStyle(DrawerListStyle(isSelected: row.isSelected, isAction: row.isAction))
-                .focused(focus, equals: .row(index))
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
+        // ⚠ The bound. `rows.count` drives it, and the rule caps it — so a pane can never outgrow the drawer.
+        .frame(maxHeight: PlaybackRules.paneListHeight(rowCount: rows.count))
 
         if store.category == .subtitles, store.isSearchingSubtitles {
             Text("Searching…")
+                .font(.system(size: TVTokens.Player.paneDescSize))
+                .foregroundStyle(RKMColour.muted)
+        }
+        // ⚠⚠ **AND WHEN THE LIST IS HELD BACK, IT SAYS SO** — `Showing 8 of 19 results`. A capped list that says
+        // nothing is a truncation the viewer cannot see, which is the defect this line exists to prevent.
+        if store.category == .subtitles, let shown = store.subtitleShownLine {
+            Text(shown)
                 .font(.system(size: TVTokens.Player.paneDescSize))
                 .foregroundStyle(RKMColour.muted)
         }
@@ -262,6 +299,14 @@ struct PlayerSettingsPanel: View {
     /// One row in a list pane.
     private struct Row {
         let title: String
+        /// ⚠⚠ **THE ROW'S SECOND LINE — `EN · srt · opensubtitles`, or `nil` for a row that has only one fact.**
+        ///
+        /// ⚠ It exists because a remote result's *title* is its release filename
+        /// (`.The.Mummy.1999.1080p.BluRay.x264.AC3-ETRG`), which is nineteen near-identical strings to a viewer
+        /// and tells him nothing he needs: **his own round's screenshot is exactly that list.** The language,
+        /// the format and the provider are the fields that separate one result from another, and all three are
+        /// on the wire. ⚠ Built by `PlaybackRules.subtitleRowDetail`, so the line cannot invent a fact.
+        var detail: String? = nil
         let isSelected: Bool
         let isAction: Bool
         let apply: () -> Void
@@ -296,8 +341,13 @@ struct PlayerSettingsPanel: View {
                     Task { await store.searchSubtitles() }
                 })
             }
+            // ⚠⚠ **ONE ROW PER RESULT, TWO LINES EACH, AND ONLY AFTER HE ASKED.** `store.remoteSubtitleRows`
+            // is empty until `searchSubtitles()` — so this list starts as the two rows that matter (`Off`, the
+            // film's own tracks) and grows only on the viewer's own action.
             rows += store.remoteSubtitleRows.map { row in
-                Row(title: "\(row.displayTitle) · \(row.language.uppercased())",
+                Row(title: row.displayTitle,
+                    // ⚠ The facts that separate two release names: language, format, provider, HI.
+                    detail: PlaybackRules.subtitleRowDetail(row),
                     isSelected: false, isAction: false) {
                     Task { await store.chooseRemoteSubtitle(row) }
                 }

@@ -492,6 +492,145 @@ enum PlaybackRules {
         "\(DetailRules.episodeCode(season: season, episode: episode)) · \(name)"
     }
 
+    // MARK: - The subtitles pane (his round: "i click on subtitles all the other control vanishes")
+
+    /// ⚠⚠ **HOW MANY REMOTE RESULTS THE PANE HOLDS — AND IT IS A GUARD, NOT THE DISPLAY LIMIT.**
+    ///
+    /// His report, with the screenshot: *"i click on subtitles all the other control vanishes.. i only see"* —
+    /// followed by **nineteen** rows of OpenSubtitles release names (`.The.Mummy.1999.1080p.BluRay.x264.AC3-ETRG
+    /// · EN`, …). ⚠ `subtitle-search` had been fetched on LOAD with no language filter, so every result the
+    /// provider had was already in the pane before the viewer asked for anything, and the pane drew all of them.
+    ///
+    /// ⚠⚠ **WHAT THE LIST MAY NOT DO IS DECIDE THE PANEL'S HEIGHT** — see `settingsPanelFits`, which puts the
+    /// defect on the record as arithmetic: **19 rows was 1875.2 pt of panel on a 1080 pt screen.**
+    /// ⇒ The VIEWPORT is bounded (and scrolls), which is what makes the panel fit at ANY count; this constant
+    /// is the second line of defence, against a provider answering with hundreds.
+    static let subtitleResultLimit = 20
+
+    /// ⚠⚠ **THE REMOTE RESULTS ARE NOT SHOWN UNTIL THE VIEWER ASKS FOR THEM.**
+    ///
+    /// His prototype's Subtitles pane is *`Off` · the item's own tracks · "Search OpenSubtitles…"* — a list of
+    /// the tracks the film HAS, plus an ACTION. It has no results in it, because a search has not been run.
+    /// ⚠ The app fetched and drew them anyway, which is why a viewer who opened the drawer to turn subtitles
+    /// OFF was met with nineteen release names instead of the one row he wanted.
+    ///
+    /// ⚠ `hasSearched` is the store's, and it is set by `searchSubtitles()` — the ACTION — and by nothing else.
+    static func subtitleRemoteRows(_ rows: [SubtitleRow], hasSearched: Bool,
+                                   limit: Int = subtitleResultLimit) -> [SubtitleRow] {
+        guard hasSearched else { return [] }
+        return Array(rows.prefix(max(0, limit)))
+    }
+
+    /// The remote row's SECOND line: the facts that tell two results apart when the first line is a release
+    /// name. ⚠ Every part is a field the server sent (`SubtitleRow`), and an absent one is left out rather
+    /// than rendered blank.
+    static func subtitleRowDetail(_ row: SubtitleRow) -> String {
+        var parts: [String] = []
+        let language = row.language.trimmingCharacters(in: .whitespaces).uppercased()
+        if !language.isEmpty { parts.append(language) }
+        let format = row.format.trimmingCharacters(in: .whitespaces).lowercased()
+        if !format.isEmpty { parts.append(format) }
+        let provider = row.provider.trimmingCharacters(in: .whitespaces)
+        if !provider.isEmpty { parts.append(provider) }
+        // ⚠ His file's own convention for "this one is a hearing-impaired track" — a real field, and the one
+        // fact a viewer needs BEFORE choosing, because the wrong one is visible for the rest of the film.
+        if row.hearingImpaired { parts.append("HI") }
+        return parts.joined(separator: " · ")
+    }
+
+    /// `Showing 8 of 19` — or `nil` when nothing was held back, because a line that says "Showing 8 of 8" is
+    /// noise. ⚠ It is what stops a capped list from being a SILENT truncation.
+    static func subtitleShownLine(shown: Int, total: Int) -> String? {
+        guard total > shown, shown >= 0 else { return nil }
+        return "Showing \(shown) of \(total) results"
+    }
+
+    /// The height a two-line result row draws at. ⚠ Both line boxes are charged
+    /// `Metric.lineHeightRatio`, the same ratio every page budget uses.
+    static func subtitleRowHeight() -> CGFloat {
+        TVTokens.Player.listItemSize * TVTokens.Metric.lineHeightRatio
+            + TVTokens.Player.subtitleRowGap
+            + TVTokens.Player.subtitleDetailSize * TVTokens.Metric.lineHeightRatio
+            + 2 * TVTokens.Player.listItemPaddingV
+    }
+
+    /// The list region's height — **capped**, which is the whole point: the list is what varies, and it is the
+    /// only term that may not push the panel off the screen.
+    /// ⚠ It serves BOTH list panes (Subtitles and Audio Track): its rows are measured at the TWO-LINE worst
+    /// case, so an audio pane's shorter rows simply leave air rather than overrunning the bound.
+    static func paneListHeight(rowCount: Int) -> CGFloat {
+        min(paneListUnboundedHeight(rowCount: rowCount),
+            TVTokens.Player.subtitleListMaxHeight)
+    }
+
+    /// ⚠ The SAME list with nothing holding it back — the term that made his panel 1875.2 pt. ⚠ It is a
+    /// separate function rather than a flag, so the drawing path has no way to reach it by accident.
+    static func paneListUnboundedHeight(rowCount: Int) -> CGFloat {
+        guard rowCount > 0 else { return 0 }
+        return CGFloat(rowCount) * subtitleRowHeight()
+            + CGFloat(rowCount - 1) * TVTokens.Player.listGap
+    }
+
+    /// How many result rows the bounded region can show — ⚠ derived from the tokens, so the ceiling and the
+    /// drawn width cannot drift apart.
+    static func paneRowsThatFit() -> Int {
+        let step = subtitleRowHeight() + TVTokens.Player.listGap
+        guard step > 0 else { return 1 }
+        let usable = TVTokens.Player.subtitleListMaxHeight + TVTokens.Player.listGap
+        return max(1, Int((usable / step).rounded(.down)))
+    }
+
+    /// **The drawer's whole height, with the list BOUNDED** — which is how the panel is drawn now.
+    ///
+    /// ⚠ `paneListHeight` caps the list, so this function can no longer exceed the screen at any row count.
+    /// ⚠⚠ **That is exactly why the defect needs its own function below** — a budget that can never fail cannot
+    /// report the failure it was written to prevent.
+    static func settingsPanelHeight(listRows: Int) -> CGFloat {
+        fixedHeight() + paneListHeight(rowCount: listRows)
+    }
+
+    /// ⚠⚠ **THE HEIGHT THE PANEL WAS — WITH THE LIST UNBOUNDED, WHICH IS THE DEFECT ITSELF.**
+    ///
+    /// **His round: *"i click on subtitles all the other control vanishes.. i only see"* nineteen rows.** With
+    /// nothing bounding the list, the panel came to **1875.2 pt on a 1080 pt screen** — and because a child
+    /// taller than its container overflows in BOTH directions, **~398 pt of the panel was drawn ABOVE the top
+    /// edge**: the "PLAYER SETTINGS" header, the pane's title, the first rows, and **all five rail items**. He
+    /// was stranded in Subtitles with no way back, and that is what the screenshot shows.
+    ///
+    /// ⚠ Eight result rows fitted (**1033.4 pt**); **nine did not (1109.9)**. The threshold is 8, and the pane
+    /// drew 19 — which is why the same drawer looked correct in every other pane and in this one did not.
+    static func settingsPanelUnboundedHeight(listRows: Int) -> CGFloat {
+        fixedHeight() + paneListUnboundedHeight(rowCount: listRows)
+    }
+
+    static func settingsPanelFits(listRows: Int) -> Bool {
+        settingsPanelHeight(listRows: listRows) <= TVTokens.Metric.screenHeight
+    }
+
+    /// ⚠ The converse: what the panel would have been without the bound. **The falsifier this whole fix is
+    /// measured against** — `settingsPanelFitsUnbounded(listRows: 19)` must be FALSE, and today it is.
+    static func settingsPanelFitsUnbounded(listRows: Int) -> Bool {
+        settingsPanelUnboundedHeight(listRows: listRows) <= TVTokens.Metric.screenHeight
+    }
+
+    /// ⚠⚠ **EVERY TERM OF THE PANEL THAT IS NOT THE LIST, IN ONE PLACE.** Both heights above are this plus their
+    /// own list term, so the two cannot drift apart — and W3's lesson (`PROGRESS.md`, round 10: *"a budget that
+    /// lives in a pure file and a view that decides what the budget is about are two halves no gate joins"*) is
+    /// why every term here is a TOKEN the view also draws with, not a number copied into a test.
+    static func fixedHeight() -> CGFloat {
+        let padding = TVTokens.Player.settingsTopPad + TVTokens.Player.settingsBottomPad
+        let header = TVTokens.Player.settingsHeaderTop
+            + TVTokens.Player.settingsHeaderSize * TVTokens.Metric.lineHeightRatio
+        let paneTitle = TVTokens.Player.paneTitleSize * TVTokens.Metric.lineHeightRatio
+            + TVTokens.Player.contentGap
+        // ⚠ The footer at its WORST — three lines: the badge row, a save line and a subtitle warning. Budgeting
+        // its best case would under-count by two lines and let the panel overflow in exactly the state he hit.
+        let footer = TVTokens.Player.footerTopPad
+            + 3 * TVTokens.Player.footerSize * TVTokens.Metric.lineHeightRatio
+            + TVTokens.Player.contentGap
+        return padding + header + paneTitle + footer
+    }
+
     // MARK: - Tracks and subtitles (ported from the web's matcher)
 
     /// ISO-639-2/B → 639-1 exceptions. ⚠ Needed because the subtitle store holds `en` while a stream

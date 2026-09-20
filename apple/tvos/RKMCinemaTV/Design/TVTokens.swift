@@ -714,6 +714,29 @@ enum TVTokens {
         static let footerTopPad = playerPx * 13.2      // …`padding-top:1.1em`
         static let checkSize = playerPx * 14           // the `✓` on a selected row
 
+        // ---- PHASE P3 (his round): the SUBTITLES pane, which could grow the panel off the screen.
+        //
+        // ⚠⚠ **HIS REPORT: *"i click on subtitles all the other control vanishes.. i only see"* [19 rows of
+        // OpenSubtitles release names].** The pane drew EVERY remote result it had, unconditionally, so with 19
+        // of them the panel grew to 1875.2 pt on a 1080 pt screen — and a child taller than its container
+        // overflows BOTH WAYS, so the header and all five rail items were drawn above the top edge and he was
+        // stranded in a pane he could not leave.
+        //
+        // ⚠ The list is therefore BOUNDED and scrollable, and the bound is arithmetic (`PlaybackRules`):
+        // `subtitleListMaxHeight` is what is LEFT of the 1080 pt screen after the panel's padding, its header,
+        // the pane's title and the footer — every term a token, so the budget cannot drift from the drawing.
+
+        /// The scrollable list region's ceiling. ⚠ `u * 33` = 633.6 pt, and it is a REMAINDER, not a taste: the
+        /// panel's padding, header, pane title and footer come to **426.9 pt** of the 1080 pt screen, so 653.1 pt
+        /// is what is left. ⚠ `u * 34` (652.8) would fit — **by 0.33 pt**, which is no margin at all against a
+        /// line-box estimate, so the ceiling is set a whole step below it and keeps ~19.5 pt of air.
+        /// `PlaybackRules.settingsPanelFits` is what holds the two together.
+        static let subtitleListMaxHeight = u * 33
+        /// The remote result's second line (`.78rem`, the same "quiet line" size as the drawer's eyebrow).
+        static let subtitleDetailSize = playerPx * 12.48
+        /// The gap between a row's title and its detail line — `gap:.15em` at the row's own `1rem`.
+        static let subtitleRowGap = playerPx * 2.4
+
         // ---- the toast (`.toast`)
         static let toastBottom = u * 6
         static let toastRadius = playerPx * 24

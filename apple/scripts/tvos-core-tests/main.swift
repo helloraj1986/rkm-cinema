@@ -2445,6 +2445,107 @@ checkEqual(PlaybackRules.playerRate(isPlaying: false, rate: 1.5), 0,
 check(PlaybackRules.playerRate(isPlaying: true, rate: PlaybackRules.defaultRate) > 0,
       "⚠ THE INITIAL STATE OF THE SCREEN IS PLAYING: `isPlaying` starts true, so the rate it is given is > 0 and the film starts — which is what the `Play` / `Resume` verb that opened this screen promised")
 
+// ⚠⚠ ---- PHASE P3 (HIS ROUND, SECOND REPORT): THE SUBTITLES PANE.
+//
+// *"i click on subtitles all the other control vanishes.. i only see"* — nineteen OpenSubtitles release names.
+// The pane drew every remote result it had, the drawer grew to 1875.2 pt on a 1080 pt screen, and because a
+// child taller than its container overflows BOTH WAYS the header and all five rail items were drawn ABOVE the
+// top edge. ⚠ The defect is pinned here as arithmetic, and so is the fix, because a budget that can only
+// succeed cannot report the failure it was written to prevent.
+
+/// ⚠ Built by DECODING, so each fixture is the WIRE SHAPE (`subtitle_id`, `hearing_impaired`) — the same rule
+/// as `ep()` above, and the reason the rule under test is fed what the api actually sends.
+func sub(_ id: String, language: String, format: String, provider: String,
+         displayTitle: String, hi: Bool = false, local: Bool) -> SubtitleRow {
+    let object: [String: Any] = [
+        "subtitle_id": id,
+        "file_id": local ? NSNull() : 1,
+        "provider": provider,
+        "language": language,
+        "display_title": displayTitle,
+        "index": local ? 4 : NSNull(),
+        "used_count": 0,
+        "last_used": "",
+        "download_count": 12,
+        "hearing_impaired": hi,
+        "format": format,
+        "vendor_format": format,
+        "year": 1999,
+        "active": false,
+        "local": local,
+    ]
+    let data = try! JSONSerialization.data(withJSONObject: object)
+    return try! JSONDecoder().decode(SubtitleRow.self, from: data)
+}
+
+let remoteSub1 = sub("os:1", language: "en", format: "srt", provider: "opensubtitles",
+                     displayTitle: "The.Mummy.1999.1080p.BluRay.x264.AC3-ETRG", local: false)
+let remoteSub2 = sub("os:2", language: "en", format: "srt", provider: "opensubtitles",
+                     displayTitle: "The.Mummy.1999.720p.BRRip.x264.YIFY", local: false)
+let remoteHi = sub("os:3", language: "en", format: "srt", provider: "opensubtitles",
+                   displayTitle: "The Mummy (1999)", hi: true, local: false)
+let localSub = sub("local:1", language: "en", format: "ass", provider: "local",
+                   displayTitle: "English", local: true)
+
+section("the subtitles pane, and the drawer that grew off the screen")
+
+check(!PlaybackRules.settingsPanelFitsUnbounded(listRows: 19),
+      "⚠⚠ NINETEEN results do NOT fit an unbounded pane — 1875.2 pt of drawer on a 1080 pt screen, which is the state his round was stranded in",
+      "got \(PlaybackRules.settingsPanelUnboundedHeight(listRows: 19)) pt of \(TVTokens.Metric.screenHeight)")
+
+check(PlaybackRules.settingsPanelFitsUnbounded(listRows: 8),
+      "⚠ EIGHT results was the last count that DID fit — which is why the same drawer looked right in every other pane",
+      "got \(PlaybackRules.settingsPanelUnboundedHeight(listRows: 8)) pt")
+
+check(!PlaybackRules.settingsPanelFitsUnbounded(listRows: 9),
+      "…and NINE is where it broke, so the threshold is 8 and the pane drew 19",
+      "got \(PlaybackRules.settingsPanelUnboundedHeight(listRows: 9)) pt")
+
+check(PlaybackRules.settingsPanelFits(listRows: 19),
+      "⚠⚠ WITH THE LIST BOUNDED the same nineteen results fit — the fix, measured against the defect above",
+      "got \(PlaybackRules.settingsPanelHeight(listRows: 19)) pt")
+
+check(PlaybackRules.settingsPanelFits(listRows: 2000),
+      "⚠ and it fits at any count at all — the bound is what makes the drawer's height independent of its content",
+      "got \(PlaybackRules.settingsPanelHeight(listRows: 2000)) pt")
+
+checkEqual(PlaybackRules.paneRowsThatFit(), 8,
+           "the bounded region shows eight two-line rows — derived from the tokens, not picked")
+
+check(PlaybackRules.settingsPanelFits(listRows: PlaybackRules.paneRowsThatFit()),
+      "…and those eight fit, so the ceiling and the drawn list agree")
+
+check(PlaybackRules.settingsPanelHeight(listRows: 4) < TVTokens.Metric.screenHeight,
+      "a short list is not capped at all — the bound only engages when the list would overrun",
+      "got \(PlaybackRules.settingsPanelHeight(listRows: 4)) pt")
+
+section("the subtitles pane's own rows (his round: nineteen release names and nothing to choose by)")
+
+checkEqual(PlaybackRules.subtitleRemoteRows([remoteSub1, remoteSub2], hasSearched: false), [],
+           "⚠⚠ BEFORE HE SEARCHES the pane shows NO remote results — the flooding, at its root")
+checkEqual(PlaybackRules.subtitleRemoteRows([remoteSub1, remoteSub2], hasSearched: true).count, 2,
+           "…and after he asks, they are there")
+checkEqual(PlaybackRules.subtitleRemoteRows(Array(repeating: remoteSub1, count: 50), hasSearched: true).count,
+           PlaybackRules.subtitleResultLimit,
+           "a provider answering with hundreds is held to the guard limit")
+checkEqual(PlaybackRules.subtitleRemoteRows(Array(repeating: remoteSub1, count: 50),
+                                            hasSearched: true, limit: 3).count, 3,
+           "…and the limit is a parameter, so a round can prove the cap without a fake provider")
+
+checkEqual(PlaybackRules.subtitleRowDetail(remoteSub1), "EN · srt · opensubtitles",
+           "a result's second line is the facts that tell two release names apart")
+checkEqual(PlaybackRules.subtitleRowDetail(remoteHi), "EN · srt · opensubtitles · HI",
+           "⚠ including the one a viewer must know BEFORE choosing — a hearing-impaired track is visible for the rest of the film")
+checkEqual(PlaybackRules.subtitleRowDetail(localSub), "EN · ass · local",
+           "a LOCAL track reads the same way, so the two kinds of row are comparable")
+
+checkEqual(PlaybackRules.subtitleShownLine(shown: 8, total: 19), "Showing 8 of 19 results",
+           "⚠ a held-back list SAYS SO — a silent truncation is what this line exists to prevent")
+check(PlaybackRules.subtitleShownLine(shown: 19, total: 19) == nil,
+      "…and nothing is claimed when nothing was held back")
+check(PlaybackRules.subtitleShownLine(shown: 0, total: 0) == nil,
+      "…or when there is no list at all")
+
 // MARK: - Report
 print("")
 if failures.isEmpty {

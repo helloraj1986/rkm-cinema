@@ -349,9 +349,22 @@ struct PlayerView: View {
             .ignoresSafeArea()
             .transition(.opacity)
         case .settings:
-            HStack(spacing: 0) {
+            // ⚠⚠ **`alignment: .top` IS NOT COSMETIC — IT IS THE OTHER HALF OF HIS BUG 4.**
+            //
+            // `HStack`'s default alignment is `.center`. A child TALLER than its container therefore overflows
+            // **equally at the top and the bottom** — and the top of this panel is the "PLAYER SETTINGS" header
+            // and all five rail items. His 19-result pane was 1875.2 pt on a 1080 pt screen, so ≈398 pt was
+            // drawn ABOVE the top edge: *"i click on subtitles all the other control vanishes"*, exactly.
+            //
+            // ⚠ `.top` means an overflow can only ever go DOWNWARD, so the drawer's own controls are never the
+            // part that is lost. ⚠ It is a second line of defence, not the fix — the list is bounded now
+            // (`PlaybackRules.paneListHeight`) so that nothing overflows at all — but a layout that loses its
+            // navigation when its content grows is the defect, not the symptom.
+            HStack(alignment: .top, spacing: 0) {
                 Spacer(minLength: 0)
                 PlayerSettingsPanel(store: store, focus: $drawerFocus) { closePanel() }
+                    // ⚠ …and the panel is pinned inside its own slot for the same reason.
+                    .frame(maxHeight: .infinity, alignment: .top)
             }
             .ignoresSafeArea()
         }

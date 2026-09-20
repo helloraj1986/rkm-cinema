@@ -1,3 +1,35 @@
+## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-21, session 3 continued) · 🔧🔧 **PHASE P3 IS BUILT — HIS SECOND REPORT IN THE SAME ROUND: *"i click on subtitles all the other control vanishes.. i only see"*** [nineteen OpenSubtitles release names] ⇒ **TWO MECHANISMS, AND ONLY ONE WAS A LAYOUT BUG**: **(a)** the Subtitles pane was a bare `VStack` of every row it had, so **19 rows = 1875.2 pt of panel on a 1080 pt screen**, and a child taller than its container overflows **BOTH** ways — **≈398 pt of the panel was drawn ABOVE the top edge** (the "PLAYER SETTINGS" header, the pane title, `Off`, the film's own tracks, the `Search` action **and all five rail items**); **(b)** and the pane **had no business drawing those rows at all** — `subtitle-search` was fetched on LOAD and drawn immediately, in a pane whose prototype is *`Off` · the film's own tracks · an ACTION*. Full record: **`docs/TVOS_PLAYER_POLISH_PLAN.md` §8** · ⚠⚠ **NO deploy and nothing needs `apply`: no file under `backend/`, `frontend/` or `nginx/` changed** · ⚠ **not one SwiftUI view compiles here** — whether the pane *scrolls under the ring* is P3-F3, and only his round can answer it.
+
+### 🔧 PHASE P3 — HIS SECOND REPORT: THE SUBTITLES PANE (2026-09-21)
+
+⚠⚠ **THE LIST DECIDED THE PANEL'S HEIGHT, AND THE PANEL'S HEIGHT TOOK THE NAVIGATION WITH IT.** `PlayerSettingsPanel`'s
+list pane was a bare `VStack` of every row it had. ⚠ **The threshold is 8 two-line rows** — 8 fits
+(**1033.4 pt**), 9 does not (**1109.9**), and the pane drew **19** — which is exactly why *every other pane looked
+right* and only Subtitles broke. ⇒ the region is now a **`ScrollView` bounded by
+`PlaybackRules.paneListHeight(rowCount:)`**, and the ceiling is **a REMAINDER, not a taste**:
+`TVTokens.Player.subtitleListMaxHeight = u * 33` = **633.6 pt**, because the panel's padding, header, pane title
+and footer come to **426.9 pt** of the 1080 pt screen — **653.1 pt** left. ⚠ `u * 34` (652.8) would fit **by 0.33 pt**,
+which is no margin against a line-box estimate, so the ceiling sits a whole step below it. `fixedHeight()` holds
+every non-list term in ONE place, and `settingsPanelFits` / `settingsPanelFitsUnbounded` are the fit and **the
+defect**, so a budget that can only succeed cannot hide the failure it was written to prevent.
+
+⚠⚠ **AND THE SECOND HALF IS A UX RULE, NOT A LAYOUT FIX — AND IT IS HIS PROTOTYPE'S OWN.** The pane drew the
+provider's catalogue **before he asked for anything**: `hasSearched` (set by `searchSubtitles()` and by nothing
+else) now gates it, `PlaybackRules.subtitleRemoteRows` applies a **20-result guard limit** on top, and a capped
+list **SAYS SO** — `Showing 8 of 19 results` (`subtitleShownLine`, `nil` when nothing was held back). ⚠ Each
+result row also grew **the second line that makes two release names distinguishable** — `EN · srt ·
+opensubtitles · HI`, every part a field the server sent (`subtitleRowDetail`), because a row whose title is
+`.The.Mummy.1999.1080p.BluRay.x264.AC3-ETRG` told him nothing he needed. Rows truncate from the **middle** (a
+release name's tail is what separates two results). ⚠ **And `HStack(alignment: .top)` on the drawer's row is a
+SECOND line of defence, not the fix** — with `.center`, an overflow goes both ways, and the top of that panel is
+where its navigation lives.
+
+| | |
+|---|---|
+| **Gates** | core **730 checks / 0 failures** (was 712) · members **36 pairs** · models **180 keys, 25 endpoints** · imports **51 files** · selftest **12/12** · design tokens PASS · typecheck PASS · md-links **79 files** · mac-round stub **10/10** |
+| **Mutations** | **8 new — ALL 8 EXERCISED** (applied to the real sources, compiled, RED on the named check): the pane's cap · the ceiling **TOKEN** · the row's own padding · the rows-that-fit rounding · the *shown before he asks* guard · the guard limit · the HI flag · the *Showing* line's own edge. ⚠ **NOT `--falsify`** — his standing rule |
+| **⚠ NOT verified** | **no SwiftUI view compiles on this machine.** The bound is arithmetic the harness MEASURES; whether the pane scrolls under the ring (**P3-F3**) and whether the *Showing* line appears at all (**P3-F4**) are his round's questions |
+
 ## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-20, session 3) · 🔧🔧 **PHASE P2 IS BUILT — HIS ROUND ON P FOUND FOUR DEFECTS, AND THREE OF THEM WERE IN CODE NO PHASE HAD TOUCHED**: *"when i resume any title, i can see play button icon … while its playing"* · *"the controls never auto hide and always on the screen"* · *"i cant use touch control … to move forward or backward wherever i want"* · *"where is the other control which was there in the html file"* ⇒ **two of the four share ONE root cause** (`PlaybackStore.isPlaying` started `false` while `attachItem` started the film with `player.rate = 1` — **`rate = 1` IS `play()`**), **one was INTRODUCED BY PHASE P** (`isAnythingFocused` as `panelOpen` — on a TV something is ALWAYS focused), and **one is six dead tokens plus a missing focus claim** (the settings drawer was built and never finished). Full diagnosis, the dead-token table and the six falsifiers: **`docs/TVOS_PLAYER_POLISH_PLAN.md` §6–§7** · ⚠⚠ **NO `apply` and nothing deployed: no file under `backend/`, `frontend/` or `nginx/` changed** · ⚠ **not one SwiftUI view compiles here** — the four focus changes are HYPOTHESES (P2-F3/P2-F4)
 
 ### 🔧🔧 PHASE P2 — HIS ROUND ON P: FOUR DEFECTS, TWO OF THEM PHASE P'S OWN (2026-09-20)

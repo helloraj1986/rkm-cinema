@@ -140,6 +140,16 @@ final class PlaybackStore: ObservableObject {
     @Published private(set) var subtitleRows: [SubtitleRow] = []
     @Published private(set) var subtitleSearchEnabled: Bool = false
     @Published private(set) var subtitleWarning: String = ""
+    /// ⚠⚠ **WHETHER THE VIEWER HAS ASKED FOR REMOTE RESULTS — and until they have, the pane shows none.**
+    ///
+    /// His report: *"i click on subtitles all the other control vanishes.. i only see"* nineteen OpenSubtitles
+    /// release names. ⚠ The search was fetched on LOAD and DRAWN immediately, so a viewer who opened the drawer
+    /// to turn subtitles **off** was met with a results list instead of the two rows that matter.
+    ///
+    /// ⚠ His prototype's Subtitles pane has no results in it at all — it is the item's own tracks plus
+    /// *"Search OpenSubtitles…"*, an ACTION. So this flag is set by `searchSubtitles()` and by nothing else,
+    /// and `PlaybackRules.subtitleRemoteRows` is what reads it.
+    @Published private(set) var hasSearchedSubtitles = false
     @Published private(set) var remainingDownloads: Int?
     @Published private(set) var isSearchingSubtitles: Bool = false
     private var cues: [PlaybackRules.Cue] = []
@@ -419,8 +429,25 @@ final class PlaybackStore: ObservableObject {
     /// a subtitle that cannot render.
     var localSubtitleRows: [PlaybackTrack] { info?.subtitles ?? [] }
 
-    /// OpenSubtitles results, when the server's search half is enabled.
-    var remoteSubtitleRows: [SubtitleRow] { subtitleRows.filter { !$0.local } }
+    /// OpenSubtitles results — **⚠⚠ EMPTY UNTIL THE VIEWER PRESSES SEARCH, WHICH IS THE FIX FOR HIS ROUND.**
+    ///
+    /// The list itself is fetched on load (it is the one call that says whether the server's search half is
+    /// even enabled, and how many downloads are left today), but **drawing it is a separate decision**, and that
+    /// decision is `PlaybackRules.subtitleRemoteRows`'s. ⚠ Before it, the pane grew by nineteen rows he had not
+    /// asked for — and a list that decides the panel's height takes the rail off the screen with it.
+    var remoteSubtitleRows: [SubtitleRow] {
+        PlaybackRules.subtitleRemoteRows(subtitleRows.filter { !$0.local },
+                                         hasSearched: hasSearchedSubtitles)
+    }
+
+    /// How many remote results the server actually holds — the OTHER half of the "Showing 8 of 19" line, and
+    /// the reason a capped list is never a SILENT truncation.
+    var remoteSubtitleCount: Int { subtitleRows.filter { !$0.local }.count }
+
+    /// ⚠ `Showing 8 of 19 results`, or `nil` when nothing was held back (see the rule).
+    var subtitleShownLine: String? {
+        PlaybackRules.subtitleShownLine(shown: remoteSubtitleRows.count, total: remoteSubtitleCount)
+    }
 
     // MARK: - Load
 
@@ -872,7 +899,13 @@ final class PlaybackStore: ObservableObject {
         }
     }
 
+    /// **The ACTION that reveals remote results — and the only thing that does.**
+    ///
+    /// ⚠ `hasSearchedSubtitles` is set here and nowhere else, so what the viewer sees in the Subtitles pane is
+    /// always the answer to a question they asked. ⚠ It is set BEFORE the await, so the pane shows "Searching…"
+    /// against the results it is about to receive rather than flickering empty.
     func searchSubtitles(language: String = "") async {
+        hasSearchedSubtitles = true
         isSearchingSubtitles = true
         defer { isSearchingSubtitles = false }
         await loadSubtitleChoices()

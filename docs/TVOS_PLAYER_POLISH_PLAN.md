@@ -297,3 +297,57 @@ bisected by commit — the four boundaries are named in `PROGRESS.md`.
 | **Gates** | `check-tvos-core.py` **712 / 0** (was 687) · members **36 pairs** · models · imports **51 files** · selftest 12/12 · tokens · typecheck · md-links |
 | **Mutations** | **6 new** (1 re-pointed, because `jogTarget`'s signature moved its anchor) — **all exercised**: applied, compiled, RED on the named line |
 | **⚠ NOT verified** | the same as §5 — **no SwiftUI view compiles here**. The four focus changes (one section around track + transport; two sections plus a focus claim in the drawer) are **hypotheses** with falsifiers P2-F3 / P2-F4, and no gate on this machine can run a focus engine |
+
+---
+
+## §8 — PHASE P3: HIS SECOND REPORT — *"i click on subtitles all the other control vanishes"* (2026-09-21)
+
+⚠ **It arrived as point 4 of the same round as §6** — the four fixes above had just been pushed — and it is a
+defect in code §6 had *just finished touching*, so it is recorded separately rather than folded in.
+
+> *"4. press the headphone button: the subtitles section needs better ux... i click on subtitles all the other
+> control vanishes.. i only see"* — then a screenshot: **nineteen** OpenSubtitles release names
+> (`.The.Mummy.1999.1080p.BluRay.x264.AC3-ETRG`, `.720p.BRRip.x264.YIFY`, …) and **nothing else**.
+
+### 8.1 · TWO MECHANISMS, AND ONLY ONE OF THEM WAS A LAYOUT BUG
+
+⚠⚠ **(a) THE LIST DECIDED THE PANEL'S HEIGHT.** The pane was a bare `VStack` of every row it had. Nineteen
+two-line rows measure **1875.2 pt on a 1080 pt screen** — and because a child taller than its container
+overflows in **BOTH** directions, **≈398 pt of the panel was drawn ABOVE the top edge**: the "PLAYER SETTINGS"
+header, the pane's title, `Off`, the film's own `English`/`Hindi` tracks, the `Search` action — **and all five
+rail items**. That is his sentence, exactly: the controls did not close, they were drawn off the screen.
+⚠ The threshold is **8 rows** (1033.4 pt fits; 9 rows is 1109.9 pt and does not), which is why *every other pane
+looked right* — the drawer only broke for the one pane whose list was long.
+
+⚠⚠ **(b) AND THE PANE HAD NO BUSINESS SHOWING THOSE ROWS AT ALL.** `subtitle-search` was fetched **on load**
+with no language filter and **drawn immediately** — so nineteen release names were in the pane *before the
+viewer asked for anything*, in a pane whose own prototype is *`Off` · the item's own tracks · "Search
+OpenSubtitles…"* — a list of the tracks the film HAS, plus an ACTION. A viewer who opened the drawer **to turn
+subtitles off** met a provider's catalogue instead of the row he wanted.
+
+### 8.2 · What was built
+
+| | |
+|---|---|
+| **Rules** | `subtitleRemoteRows(_:hasSearched:limit:)` — **nothing is shown until the viewer asks** (`hasSearched` is `searchSubtitles()`'s flag and nowhere else's), and a provider answering with hundreds is held to `subtitleResultLimit` (20) · `subtitleRowDetail(_:)` — the second line (*`EN · srt · opensubtitles · HI`*), every part a field the server sent and an absent one left out rather than rendered blank · `subtitleShownLine(shown:total:)` — *`Showing 8 of 19 results`*, or `nil` when nothing was held back (a line that says *"Showing 19 of 19"* is noise; **a capped list that says NOTHING is a truncation the viewer cannot see**) · `paneListHeight(rowCount:)` — the **bound**, `min(unbounded, ceiling)` · `paneListUnboundedHeight` · `paneRowsThatFit()` · `settingsPanelHeight` / `settingsPanelUnboundedHeight` / `settingsPanelFits` / `settingsPanelFitsUnbounded` · `fixedHeight()` — **every non-list term of the panel in ONE place**, so the bounded and unbounded heights cannot drift |
+| **Tokens** | `subtitleListMaxHeight = u * 33` (633.6 pt) — ⚠ **a REMAINDER, not a taste**: the panel's padding, header, pane title and footer come to **426.9 pt** of the 1080 pt screen, so **653.1 pt** is what is left. ⚠ `u * 34` (652.8) *would* fit — **by 0.33 pt**, which is no margin at all against a line-box estimate, so the ceiling is a whole step below it (~19.5 pt of air) · `subtitleDetailSize` (`.78rem`) · `subtitleRowGap` (`.15em`) |
+| **The store** | `hasSearchedSubtitles` (published, set in `searchSubtitles()` **before** the await, so the pane shows *Searching…* against the list it is about to receive rather than flickering empty) · `remoteSubtitleRows` now goes through the rule · `remoteSubtitleCount` (the other half of the *Showing* line) · `subtitleShownLine` |
+| **The view** | the pane is a `ScrollView` with `.frame(maxHeight: PlaybackRules.paneListHeight(rowCount:))` — a bounded, scrolling region ⚠ (on tvOS a `ScrollView` scrolls when focus moves onto something inside it, and every row here is a focusable `Button`) · rows grow a second line, truncate from the **middle** (a release name's *tail* is what separates two results) · the *Showing* line · ⚠⚠ **and `HStack(alignment: .top)`** on the drawer's row — a **second line of defence, not the fix**: with `.center` an overflow goes both ways, and the top of this panel is where its navigation lives |
+| **Gates** | `check-tvos-core.py` **730 checks / 0 failures** (was 712) · members **36 pairs** · models **180 keys, 25 endpoints** · imports **51 files** · selftest **12/12** · design tokens PASS · typecheck PASS · md links **79 files** · mac-round stub **10/10** |
+| **Mutations** | **8 new — all 8 EXERCISED** (applied to the real sources, compiled, RED on the named check): the pane's cap, the ceiling **token**, the row's own padding, the rows-that-fit rounding, the *shown before he asks* guard, the guard limit, the HI flag, and the *Showing* line's own edge. ⚠ `--falsify` **not** run — his standing rule |
+| **⚠ NOT verified** | as always — **no SwiftUI view compiles here**. The bound is arithmetic the harness measures; whether the pane *scrolls under the ring* is his round's question |
+
+### 8.3 · His round, on P3
+
+| # | Falsifier | What disproves it |
+|---|---|---|
+| **P3-F1** | **the drawer opens on Subtitles showing `Off` and the film's own tracks — and NO release names** — with the "PLAYER SETTINGS" header and **all five rail items on screen** | release names there before he searched (8.1b survived), or the header/rail missing again (8.1a survived) |
+| **P3-F2** | **pressing *Search OpenSubtitles…* makes results appear**, each with a second line naming language · format · provider | the action does nothing, or a row arrives with no way to tell two release names apart |
+| **P3-F3** | **with a long list the pane scrolls** — the ring moving down past the eighth row brings the rest in, and the header and the rail stay exactly where they were | the drawer grows over the screen again |
+| **P3-F4** | **if the provider answers with more than 20, a `Showing 20 of N results` line appears** — and **no line at all** when nothing was held back | a silently truncated list (no line, but fewer rows than the provider sent) |
+| **P3-F5** | **MENU still leaves the player** with the drawer open | any state where MENU does nothing |
+
+⚠ **What this round cannot prove:** nothing about real Apple TV hardware; a `BUILD FAILED` proves nothing about
+P3-F1…P3-F5; and **a nineteen-row list is not something this machine can produce** — P3-F3/P3-F4 need the
+sandbox's own arithmetic to hold on the device, which is what §8.2's gates measure.
+

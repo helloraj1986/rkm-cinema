@@ -74,6 +74,23 @@ ring still on the transport button behind it. ⚠ Full diagnosis and the six fal
 `docs/TVOS_PLAYER_POLISH_PLAN.md` §6–§7. ⚠ **Gates: core 712 checks / 0 failures · members 36 pairs · 6 new
 mutations exercised. None of it verified on a screen.**
 
+⚠⚠ **AND PHASE P3 — HIS SECOND REPORT IN THE SAME ROUND — IS BUILT (2026-09-21).** *"press the headphone
+button: the subtitles section needs better ux… i click on subtitles all the other control vanishes.. i only
+see"* — then a screenshot of **nineteen OpenSubtitles release names** and nothing else. ⇒ **Two mechanisms, and
+only one of them was a layout bug.** **(a)** the pane was a bare `VStack` of every row it had, so **19 rows =
+1875.2 pt of panel on a 1080 pt screen** — and a child taller than its container overflows **BOTH** ways, so
+**≈398 pt of the panel was drawn ABOVE the top edge**: the "PLAYER SETTINGS" header, the pane's title, `Off`, the
+film's own tracks, the `Search` action **and all five rail items**. ⚠ **The threshold is 8 rows** (8 = 1033.4 pt
+fits, 9 = 1109.9 does not), which is exactly why every *other* pane looked right. The list region is now a
+`ScrollView` bounded by `PlaybackRules.paneListHeight`, with the ceiling **`u * 33` = 633.6 pt** — a REMAINDER
+(the panel's other terms are 426.9 pt of the 1080 screen), not a taste. **(b)** and the pane **had no business
+drawing those rows at all**: `subtitle-search` was fetched on LOAD and drawn immediately, in a pane whose
+prototype is *`Off` · the film's own tracks · an ACTION*. Now nothing remote appears until the viewer asks
+(`hasSearched`), a provider answering with hundreds is held to 20, a capped list **says so** (`Showing 8 of 19
+results`), and each result grew the second line that makes two release names tellable apart — `EN · srt ·
+opensubtitles · HI`. ⚠ Full record: `docs/TVOS_PLAYER_POLISH_PLAN.md` §8. ⚠ **Gates: core 730 checks / 0
+failures · 8 new mutations, all 8 exercised. None of it verified on a screen.**
+
 ⚠⚠ **AND ROUND 10 REVERTED W3's STRUCTURAL GUESS, ON ARITHMETIC.** His report after W3 shipped: *"still stuck on
 back to browse cannot come down using keyboard"* — so the bar-inside-the-scroller shape fails exactly as the
 bar-as-a-sibling shape did, and `KNOWN_ISSUES` **#15 is open again**. What W3 cost, measurably: the bar became a
@@ -120,10 +137,10 @@ at the cost of not installing on tvOS 17–25). See §1's build-settings table.
 one line: a member that did not exist, then a nested `struct Body`) — **⚠ but the player's own views have NOT
 yet: rounds 1, 2 and 5 on Phase C all failed to build, each on one line, and no round has type-checked
 `PlayerView.swift` at all.** ⚠ **What is true throughout: nothing on the Linux side can compile a view.** The
-pure rules are compiled and RUN there — **712 checks** (⚠ read that count live: it moves with every pinned rule,
-and this file said 467 until 2026-09-20, then 607, then 687) and **151/151 falsified mutations as recorded at
-`46443ff`, plus Phase P's eleven and Phase P2's six, each exercised individually in its own phase** — and that
-is type-and-rule evidence only, never evidence that a screen works.
+pure rules are compiled and RUN there — **730 checks** (⚠ read that count live: it moves with every pinned rule,
+and this file said 467 until 2026-09-20, then 607, then 687, then 712) and **151/151 falsified mutations as recorded at
+`46443ff`, plus Phase P's eleven, Phase P2's six and Phase P3's eight, each exercised individually in its own
+phase** — and that is type-and-rule evidence only, never evidence that a screen works.
 
 The round, on the **MacBook Pro** — against `feat/tvos-player`, which is where the player is. ⚠ **Pick the HUD flag
 by the round's QUESTION**: a SCREEN round (does it look like his file, does the film play) runs **without**

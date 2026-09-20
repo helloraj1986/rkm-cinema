@@ -1,4 +1,4 @@
-## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-20, SECOND UPDATE — his UI confirmation) · ✅ **PHASES U (U1–U7b) AND V ARE BUILT ON `feat/tvos-ux`, HIS ROUND HAS RUN, AND BOTH DEFECTS IT FOUND ARE CLOSED — he verified them ON THE UI on 2026-09-20 (#10 the focused card's ring and its black bottom corners · #11 Down into a FILTERED grid)** · ⚠ **what is left is HIS CALL, not mine: the merge of `feat/tvos-ux` into `dev`, and then Phase C (the player), parked on `feat/tvos-player` with only C1 built** · **the Profile Switcher + Home redesign (U), then the Library and Title screens (V) of the tvOS app** · **V was asked for and built on 2026-09-20: the two screens of his SECOND design input, the Library grid and the Title detail** · **the working tree is on `feat/tvos-ux`** (⚠ this tree IS his Windows checkout, so the branch left checked out is the branch HE builds) · ⚠ **`feat/tvos-player` is still parked** (C1 built and pushed, C2–C5 not started) and **`dev` has neither branch** · **nothing needs `apply`**: no file under `backend/`, `frontend/` or `nginx/` changed, so there is no generated artefact and nothing to deploy
+## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-20, SECOND UPDATE — his UI confirmation) · ✅ **PHASES U (U1–U7b) AND V ARE BUILT ON `feat/tvos-ux`, HIS ROUND HAS RUN, AND BOTH DEFECTS IT FOUND ARE CLOSED — he verified them ON THE UI on 2026-09-20 (#10 the focused card's ring and its black bottom corners · #11 Down into a FILTERED grid)** · ✅ **MERGED TO `dev` ON HIS WORD (`b78c210`, 2026-09-20) — the working tree is back on `dev`, and `feat/tvos-ux` is left in place, not deleted** · ⚠ **what is left is PHASE C, THE PLAYER: C1 is built and parked on `feat/tvos-player`, C2–C5 are not started** · **the Profile Switcher + Home redesign (U), then the Library and Title screens (V) of the tvOS app** · **V was asked for and built on 2026-09-20: the two screens of his SECOND design input, the Library grid and the Title detail** · **the working tree is on `dev` NOW** — ⚠ **this tree IS his Windows checkout, so the branch left checked out is the branch HE builds, and the merge moved it from `feat/tvos-ux` to `dev`** · **`dev` now carries Phases A, B, U and V** and **`feat/tvos-player` is still parked** (C1 built and pushed, C2–C5 not started) · **nothing needs `apply`**: no file under `backend/`, `frontend/` or `nginx/` changed, so there is no generated artefact and nothing to deploy
 
 ### ▶ THE PHASES, AND WHERE THEY ACTUALLY ARE
 
@@ -117,7 +117,7 @@ DEPTH-1 members only**: a function body's locals are also `let`/`var`, and `Home
 
 | Gate | Result (2026-09-20, branch `feat/tvos-ux`) |
 |---|---|
-| `python3 apple/scripts/check-tvos-core.py` | **466 checks, 0 failures** — the pure rules of every phase, COMPILED AND RUN |
+| `python3 apple/scripts/check-tvos-core.py` | **467 checks, 0 failures** — the pure rules of every phase, COMPILED AND RUN. ⚠ Read live on `dev` 2026-09-20; several older notes say **466** because `accda68` pinned one more rule after they were written |
 | … `--falsify` | ✅ **PASS — 102/102 rules reverted, every one went red on the check it protects** (`GATE EXIT: 0`, `feat/tvos-ux`, 2026-09-20). ⚠ Getting there took THREE runs and the gate found four rotten entries of its own on the way — two STALE (reverting lines that had been rewritten) and one WRONG (red, but on a stale expectation) — all repaired and each proved red by hand; the third run is the one that says 102/102. ⚠ It recompiles the harness once per rule (~20 s each, and ~2× that with another CPU-heavy job running), so it runs BACKGROUNDED with its output in a file: a foreground call dies at the tool's timeout and reads exactly like a FAILING gate. |
 | `python3 apple/scripts/check-design-tokens.py --falsify` | R1, R2 and R3 each go red when the thing they guard breaks |
 | `python3 apple/scripts/check-tvos-models.py` | 113 keys, **17 endpoint literals** (both artwork routes included) |
@@ -176,6 +176,48 @@ corners (**#10**), and reaching the titles with Down after picking a genre (**#1
 
 **What is next is HIS CALL, not a build:** merge `feat/tvos-ux` into `dev` if he wants it, and then Phase C — the
 player — parked on `feat/tvos-player` (state: `docs/TVOS_PLAYER_PLAN.md` §3).
+
+### ✅ MERGED: `feat/tvos-ux` → `dev` (`b78c210`, 2026-09-20)
+
+A real `--no-ff` merge, on his word. **Verified by TREE EQUALITY, not by sight:** `dev^{tree}` and
+`feat/tvos-ux^{tree}` are both `bb034f1…`, so the merged tree IS the branch tip — nothing was dropped and no
+conflict was auto-resolved. It touches **only `apple/` and `docs/`** — ⚠ **but note what came with it:**
+`tvos_ux/1. UserProfileSelection_HomePage/` (his FIRST design input) was a COMMITTED artefact and rode the merge
+into `dev`; set 2 is still untracked. `feat/tvos-ux` is left in place, not deleted. **Nothing needs `apply`** — no
+`backend/`, `frontend/` or `nginx/` file changed, so there is no generated artefact.
+
+**The gates were re-run ON `dev` after the merge** (these are the numbers to trust; the table further down is the
+branch's own, same results):
+
+| Gate | Result on `dev`, 2026-09-20 |
+|---|---|
+| `check-tvos-core.py` | **467 checks, 0 failures** |
+| `check-tvos-models.py` | 3 model files, **113 keys, 17 endpoint literals**, 0 unchecked wire types |
+| `check-tvos-members.py` | **PASS** — 31 view/type pairs, 22 app view/type names, all five rules |
+| `check-design-tokens.py` | **PASS** — R1 no drift, R2 the tvOS muted grey, R3 no scatter |
+| `check-apple-typecheck.sh` | **PASS** — every portable file typechecks (2 Darwin-only API errors filtered by name) |
+| `check-imports.py apple/tvos/RKMCinemaTV` | 40 files, no missing framework imports |
+| `check_md_links.py` | 70 files, 70 relative links, all resolve |
+
+⚠ **`--falsify` was NOT re-run on `dev`, and this record says so rather than implying a fresh audit:** it reached
+**PASS — 102/102** on this same tree at `b4aff96`, three commits earlier, and nothing the merge brought changed a
+source file. ⚠ The merge also carries a **deleted** pair of files in his worktree (`RKM-CINEMA_NEW_UX/…`) that
+**were not committed** — his working material, deliberately left alone.
+
+⚠⚠ **THE MERGE RE-STALED TWO DOCUMENTS, AND THE PLAN ASKED WHOEVER MERGED TO CHECK EXACTLY THIS.** Both were
+fixed in the same session as this record:
+
+1. **`apple/tvos/README.md`'s STATUS PARAGRAPH** — it still read *"`feat/tvos-ux` … is NOT merged and is NOT on
+   `dev`"*, plus *"no SwiftUI view on this branch has ever been compiled anywhere"* and *"466 checks"*. All three
+   are now false and are corrected, including the round command, which now checks out `dev`.
+2. **`apple/tvos/README.md` §8 "What comes next"** — it still listed **Phase B** as next and described **Phase C
+   as "backend first"**. Amended: the carrier (C5) is **not** built up front, and the round measures the cookie
+   question instead. **`docs/APPLE_CLIENTS_PLAN.md` §4.4** gets the matching pointer, because that is where the
+   "backend first" wording actually lives.
+
+⚠⚠ **The live lesson, since this is the THIRD time in this repo:** *"the resume block lives in two places, and
+its headline goes stale first."* A merge is exactly the event that re-stales it — so a merge handover must
+reconcile `PROGRESS.md` line 1 **and** `apple/tvos/README.md`'s status paragraph in the SAME session.
 
 ### ▶ ⚠⚠ TWO COMMITS LANDED ON THIS BRANCH FROM DIFFERENT HANDS ON 2026-09-20 — KNOW WHICH IS WHICH
 

@@ -2261,8 +2261,111 @@ checkEqual(progressKeys, ["item_id", "position_ticks", "is_paused", "event", "pl
 checkEqual(PlaybackRules.playMethod(.remux), "DirectStream",
            "and its play_method comes from the mode, not from a constant")
 
-// MARK: - Report
+// MARK: - Phase P1: the scrub row's jog, the escalation ladder, and the failure that is not a notification
+//
+// ⚠⚠ Every rule below was DEAD CODE before this phase, and that is the point of pinning them HERE rather than
+// trusting the screen: `jogSeconds` was read by no file, `hlsLadder`/`nextHLSMode` were called by nothing, and
+// the tooltip's time was a literal `0`. A rule the harness can run is a rule that cannot quietly stop being
+// true.
 
+section("the scrub row's jog — the verb the prototype has and the app did not")
+
+// ⚠ His file's `moveItem`, row 1: `cur + dir*30`.
+checkEqual(PlaybackRules.jogTarget(from: 600, direction: 1, total: 7200), 630,
+           "a right press from 10:00 jogs forward the prototype's own 30 seconds")
+checkEqual(PlaybackRules.jogTarget(from: 600, direction: -1, total: 7200), 570,
+           "…and a left press jogs back the same amount")
+checkEqual(PlaybackRules.jogSeconds, 30,
+           "the jog's distance is the prototype's 30 s and not the transport's 10")
+check(PlaybackRules.jogSeconds != PlaybackRules.skipSeconds,
+      "⚠ the jog and the ±10 s buttons are DIFFERENT distances on purpose — one constant for both would "
+      + "silently make the track's swipe and the button the same control")
+checkEqual(PlaybackRules.jogTarget(from: 10, direction: -1, total: 7200), 0,
+           "a left press inside the first 30 s lands on 0, not on a negative position")
+checkEqual(PlaybackRules.jogTarget(from: 7195, direction: 1, total: 7200), 7200,
+           "…and a right press at the end stops at the runtime")
+checkEqual(PlaybackRules.jogTarget(from: 600, direction: 1, total: 0), 630,
+           "with an unknown runtime the jog still MOVES — clamping to a zero total would pin the playhead at 0")
+
+section("the escalation ladder's own arithmetic, and what a viewer is told")
+
+checkEqual(PlaybackRules.ladderStep(.direct), 0,
+           "a direct play is NOT on the ladder — it is where every session starts")
+checkEqual(PlaybackRules.ladderStep(.remux), 1, "remux is the ladder's first rung")
+checkEqual(PlaybackRules.ladderStep(.transcodeAudio), 2, "…the audio transcode the second")
+checkEqual(PlaybackRules.ladderStep(.transcode), 3, "…and the full transcode the last")
+checkEqual(PlaybackRules.ladderLength, 3, "the ladder is three rungs, counted from the ladder itself")
+// ⚠⚠ PINNED AGAINST THE LITERAL WORDS, not against `ladderStep`/`ladderLength` — a check written in terms of
+// the constants the mutation moves is a TAUTOLOGY, and this repo has bought that lesson twice.
+checkEqual(PlaybackRules.attemptSentence(.remux), "Trying Remux (1 of 3)…",
+           "the escalation says where it is on the ladder, in words a viewer can read")
+checkEqual(PlaybackRules.attemptSentence(.transcode), "Trying Transcode (3 of 3)…",
+           "…including at the last rung, where there is nothing left to try")
+checkEqual(PlaybackRules.failedToStartSentence,
+           "This stream would not start. The server refused every mode this app can ask for.",
+           "the sentence for a stream that never began is one string, not a second story about a black screen")
+check(PlaybackRules.nextHLSMode(after: .transcode) == nil,
+      "the ladder TERMINATES — which is what stops an escalation loop from retrying a broken stream forever")
+
+section("Up Next — the next episode, by position in the server's own list")
+
+let seasonOne = [ep(1, 1), ep(1, 2), ep(1, 3), ep(1, 4)]
+let twoSeasons = [ep(1, 9), ep(1, 10), ep(2, 1), ep(2, 2)]
+
+checkEqual(PlaybackRules.nextEpisode(after: "ep-S1E1", in: seasonOne)?.id, "ep-S1E2",
+           "mid-season, the next episode is the next element of the list")
+check(PlaybackRules.nextEpisode(after: "ep-S1E4", in: seasonOne) == nil,
+      "⚠⚠ THE LAST EPISODE HAS NO NEXT — and this is falsifier P-F9: the card must be absent rather than "
+      + "offer an episode that does not exist")
+check(PlaybackRules.nextEpisode(after: "ep-S1E7", in: seasonOne) == nil,
+      "an episode the list does not contain yields NO next episode — the app cannot name what it was not sent")
+check(PlaybackRules.nextEpisode(after: "ep-S1E1", in: []) == nil, "an empty list has no next episode")
+// ⚠⚠ THE CASE ARITHMETIC GETS WRONG: `episode + 1` would ask for `S1E11`, which does not exist, and the season
+// boundary would be lost entirely. The list says what comes next; the app only steps.
+checkEqual(PlaybackRules.nextEpisode(after: "ep-S1E10", in: twoSeasons)?.id, "ep-S2E1",
+           "across a season boundary the next episode is S2E1 — which `episode + 1` can never produce")
+checkEqual(PlaybackRules.nextEpisode(after: "ep-S1E10", in: twoSeasons)?.season, 2,
+           "…and it brings its own season with it, from the payload rather than from a counter")
+
+checkEqual(PlaybackRules.upNextLabel(season: 2, episode: 5, name: "The Reckoning"),
+           "S2E5 · The Reckoning",
+           "the card's caption borrows `DetailRules.episodeCode` rather than spelling S/E a second time")
+checkEqual(PlaybackRules.upNextLabel(season: 2, episode: 5, name: "The Reckoning"),
+           "\(DetailRules.episodeCode(season: 2, episode: 5)) · The Reckoning",
+           "…and the two really are the same code, so the card and the title screen cannot drift")
+
+section("the Up Next countdown")
+
+checkEqual(PlaybackRules.upNextSeconds, 15,
+           "the countdown is the app's own 15 s — his prototype has no Up Next to transcribe")
+checkEqual(PlaybackRules.upNextRemaining(deadline: 100, now: 100), 0,
+           "at the deadline the countdown is over")
+checkEqual(PlaybackRules.upNextRemaining(deadline: 100, now: 101), 0,
+           "…and it never counts negative")
+checkEqual(PlaybackRules.upNextRemaining(deadline: 100, now: 99.4), 1,
+           "⚠ a quarter-second left reads 1, not 0 — a card showing 0 that has not acted looks broken")
+checkEqual(PlaybackRules.upNextRemaining(deadline: 100, now: 85), 15,
+           "a full countdown reads the token's own number of seconds")
+
+// ⚠⚠ ---- PHASE P: THE TWO NEW SURFACES ARE PLACEMENT ARITHMETIC, SO THEY ARE MEASURED LIKE EVERY OTHER FIT
+// IN THIS APP. Neither of them has a prototype line to transcribe, which is exactly why the numbers are
+// pinned here rather than trusted: a card that covered the screen would stop being a card, and a notice whose
+// sentence could run the full width of a television is a notice nobody reads from a couch.
+section("the phase's own two surfaces, measured")
+
+check(TVTokens.Player.upNextWidth + TVTokens.Player.upNextTrailing <= TVTokens.Metric.screenWidth,
+      "the Up Next card fits inside the screen at the design's own margin",
+      "\(TVTokens.Player.upNextWidth) + \(TVTokens.Player.upNextTrailing) of \(TVTokens.Metric.screenWidth)")
+
+check(TVTokens.Player.upNextWidth <= TVTokens.Metric.screenWidth / 2,
+      "…and covers at most half of it, so the FILM is still the thing being watched",
+      "the card is \(TVTokens.Player.upNextWidth) of \(TVTokens.Metric.screenWidth)")
+
+check(TVTokens.Player.noticeMeasure + TVTokens.Player.noticePadding * 2 <= TVTokens.Metric.screenWidth,
+      "the failure notice's sentence wraps well inside the screen, padding included",
+      "\(TVTokens.Player.noticeMeasure) + 2×\(TVTokens.Player.noticePadding) of \(TVTokens.Metric.screenWidth)")
+
+// MARK: - Report
 print("")
 if failures.isEmpty {
     print("PASS — \(checks) checks, 0 failures")

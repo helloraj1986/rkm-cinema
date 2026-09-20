@@ -109,6 +109,11 @@ USES = [
     ("Player/PlayerView.swift", "store", "PlaybackStore"),
     ("Player/PlayerView.swift", "app", "AppModel"),
     ("Player/PlayerChrome.swift", "store", "PlaybackStore"),
+    # ⚠⚠ Phase P: the Up Next card unwraps the next episode out of the store and then reads it, so the
+    # unwrapped value is a second (variable, type) pair in the SAME file — and it is the one the card's
+    # artwork request is built from (`next.id`), which is exactly the kind of member a compile round is
+    # expensive for.
+    ("Player/PlayerChrome.swift", "next", "EpisodeItem"),
     ("Player/PlayerSettingsPanel.swift", "store", "PlaybackStore"),
     ("Auth/ProfilesView.swift", "session", "SessionStore"),
     ("Auth/ProfilesView.swift", "profile", "ProfileUser"),

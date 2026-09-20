@@ -146,7 +146,15 @@ struct AppRootView: View {
             // store here is unreachable — and if it ever were reachable, the honest answer is the way BACK
             // rather than a spinner over a black frame.
             if let playback = app.playback {
+                // ⚠⚠ **THE PLAYER IS IDENTIFIED BY THE ITEM IT IS PLAYING (Phase P).** Up Next swaps the store
+                // IN PLACE — `openPlayer` builds a new one and publishes it on the same model — and without an
+                // identity here SwiftUI would REUSE this view: `@ObservedObject var store` re-subscribes, so
+                // SwiftUI sees no reason to rebuild, `onAppear` never runs again, and the new store's `load()`
+                // is never called. The visible result is a frozen "Preparing…" over a black frame — the least
+                // diagnosable bug a television can produce. `.id` is the one line that says "this is a
+                // different film", and it is also what lets the old `AVPlayer` be torn down properly.
                 PlayerView(store: playback, app: app)
+                    .id(playback.itemID)
             } else {
                 Color.black.ignoresSafeArea()
             }

@@ -723,6 +723,56 @@ enum TVTokens {
         static let cueSize = playerPx * 20
         static let cueMeasure = u * 70
 
+        // ---- PHASE P: the series eyebrow, the stall, the failure notice and Up Next.
+        //
+        // ⚠⚠ **NONE OF THESE HAS A LINE IN HIS PROTOTYPE, AND THAT IS STATED RATHER THAN IMPLIED.** His file
+        // draws no Up Next, no failure state and no buffering indicator — so unlike every number above, these
+        // are the APP'S OWN. They live here for this file's own reason: a number inside a view is a number no
+        // gate can see, and `check-tvos-core.py` executes this file.
+
+        /// The series line above an episode's title. ⚠ `playerPx * 13.12` is `.82rem` — the SAME size the
+        /// drawer's footer already uses for its small print, so the player has one "quiet line" size.
+        static let eyebrowSize = playerPx * 13.12
+
+        /// A stall must be visible from a couch three metres away — and it uses the PLATFORM's spinner at
+        /// `.controlSize(.large)` rather than a scaled-up default, so there is no size token here to drift.
+        /// ⚠ (One existed for a phase; it was deleted rather than left as a number nothing reads.)
+
+        /// ⚠ The failure notice's sentence wraps inside this, so a server's own long sentence cannot run the
+        /// width of a television. The same measure the info panel's body uses, for the same reason.
+        static let noticeMeasure = playerPx * 560
+        static let noticeGap = playerPx * 18
+        static let noticePadding = playerPx * 40
+        static let noticeRadius = playerPx * 14
+        /// The notice's one control, sized so its FOCUS RING has room on every side.
+        static let noticeButtonPaddingH = playerPx * 26
+        static let noticeButtonPaddingV = playerPx * 13
+        static let noticeButtonRadius = playerPx * 10
+
+        /// ⚠⚠ **THE UP NEXT CARD SITS ON THE RIGHT EDGE, VERTICALLY CENTRED — AND THE POSITION IS
+        /// ARITHMETIC, NOT TASTE.** The top bar occupies the top band and the scrubber + transport occupy the
+        /// bottom one; the card must not overlap either, and the only band that is free on every screen is the
+        /// middle. ⚠ It is `u * 40` wide (768 pt) at the design's own `4.2u` margin, so it covers the right
+        /// 884 pt of 1920 and leaves the film readable on the left — which is the point of it being a card and
+        /// not a takeover.
+        static let upNextWidth = u * 40
+        static let upNextTrailing = u * 4.2
+        static let upNextRadius = playerPx * 12
+        static let upNextPadding = playerPx * 16
+        static let upNextGap = playerPx * 12
+        /// The episode's own 16:9 still, at the size the row above the card would draw it (`Shelf.cardWidth`
+        /// is `19u` for a 16:9 card; this is the smaller, secondary one).
+        static let upNextThumbWidth = u * 12
+        static let upNextThumbHeight = u * 6.75
+        static let upNextThumbRadius = playerPx * 8
+        static let upNextEyebrowSize = playerPx * 12.48   // "Up Next" — `.78rem`, the bar's tab size
+        static let upNextTitleSize = playerPx * 17.6      // `.92rem`, the meta row's size one step up
+        static let upNextBodySize = playerPx * 13.6       // `.85rem`, the drawer's description size
+        static let upNextButtonPaddingH = playerPx * 20
+        static let upNextButtonPaddingV = playerPx * 11
+        static let upNextButtonRadius = playerPx * 9
+        static let upNextButtonGap = playerPx * 8.6       // `.6em` at the `.92rem` the buttons draw at
+
         /// tvOS-only tints for the player's glass. ⚠ Same status as `Colour.topBarTint`: the blur itself is the
         /// platform's material, these are only the tints under it, transcribed from his `--glass` /
         /// `--glass-strong` — and kept OUT of the generated table so they cannot become a brand change.

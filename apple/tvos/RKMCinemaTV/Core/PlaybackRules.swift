@@ -87,6 +87,20 @@ enum PlaybackRules {
         clampSeek(position + delta, total: total)
     }
 
+    /// ⚠⚠ **THE SCRUB ROW'S OWN VERB — and until Phase P it had none.** His prototype's row 1 is the whole
+    /// track, and a left/right press INSIDE it does not move focus: `moveItem` jogs time
+    /// (`rkm-cinema-tvos-player.html:573`: `cur + dir*30`), which is why the row is one focusable control
+    /// rather than seven. ⚠ The screen's comment claimed *"left/right JOG the position … which the screen
+    /// wires up"* and **nothing wired it**: `jogSeconds` was read by no file, the track's `Button` had an
+    /// empty action, and a left/right press on a focused track fell through to the focus engine, which found
+    /// no neighbour and did nothing. This is the rule that was missing.
+    ///
+    /// ⚠ It COMPOSES `skipTarget` rather than repeating the clamp — one clamp, two callers, which is the
+    /// difference between naming a verb and growing a second copy of a rule.
+    static func jogTarget(from position: Double, direction: Int, total: Double) -> Double {
+        skipTarget(from: position, by: Double(direction) * jogSeconds, total: total)
+    }
+
     /// One second of playhead for one second of media — the progress bar's own arithmetic, extracted
     /// because BOTH the scrubber's fill and its tooltip position need it and they must not drift.
     /// ⚠ Returns `0` for an unknown total rather than a division by zero.
@@ -245,6 +259,33 @@ enum PlaybackRules {
         return index < hlsLadder.count - 1 ? hlsLadder[index + 1] : nil
     }
 
+    /// The ladder's length — ⚠ the number in the sentence below is DERIVED from it, never typed twice.
+    static let ladderLength = hlsLadder.count
+
+    /// ⚠⚠ **WHOSE FAULT AN ESCALATION IS, AND THE ONE MODE THAT IS NOT ON THE LADDER.** `direct` is not a
+    /// rung: it is where every session starts, and a direct play that fails escalates to `hlsLadder.first`
+    /// (`nextHLSMode`'s first line). So `direct` is step **0** — *"before the ladder"* — and the three HLS
+    /// modes are steps 1…3. ⚠ Written as a rule rather than as a `+ 1` in a view because the step is what the
+    /// viewer is told, and an off-by-one in a progress sentence is the kind of thing that reads as a bug.
+    static func ladderStep(_ mode: StreamMode) -> Int {
+        guard let index = hlsLadder.firstIndex(of: mode) else { return 0 }
+        return index + 1
+    }
+
+    /// The sentence an escalation shows. ⚠ It names **where the session now is on the ladder**, because a
+    /// viewer who sees a stream fail twice deserves to know the app is changing something and not just
+    /// retrying the same request — and a silent retry loop is indistinguishable from a broken app.
+    static func attemptSentence(_ mode: StreamMode) -> String {
+        let step = ladderStep(mode)
+        return "Trying \(streamModeLabel(mode)) (\(step) of \(ladderLength))…"
+    }
+
+    /// ⚠ **THE SENTENCE FOR AN ITEM THAT NEVER STARTED** — `AVPlayerItem.status == .failed`. It is one string
+    /// in one place so the notification path (a stream that died mid-film) and the status path (a stream that
+    /// never began) cannot end up telling the viewer two different stories about the same black screen.
+    static let failedToStartSentence =
+        "This stream would not start. The server refused every mode this app can ask for."
+
     // MARK: - Quality
 
     /// A quality choice: a LABEL (what the viewer sees) and a bitrate (what the api is told), or `nil`
@@ -354,9 +395,49 @@ enum PlaybackRules {
         elapsedSinceLastReport >= progressReportInterval
     }
 
-    /// How long a position is held before the save is considered failed on screen. ⚠ The screen's own
-    /// threshold, not a server fact; it exists so a stalled write is visible rather than silent.
-    static let saveHintDelay: Double = 2.5
+    // MARK: - Up Next (the next episode of a series)
+
+    /// How long the Up Next card counts down before it plays.
+    ///
+    /// ⚠⚠ **A NUMBER THE APP CHOSE, SAID SO OUT LOUD — his prototype has no Up Next at all.** The platform's
+    /// own apps sit in the 10–20 s band; 15 s is long enough to read a card and reach the remote, short enough
+    /// that a viewer who wants the next episode is not made to wait. ⚠ It is ONE token on purpose: if his
+    /// round says it feels wrong, the answer is this number and not the card's layout.
+    static let upNextSeconds: Double = 15
+
+    /// ⚠ The card's remaining seconds, **rounded UP**, so the last second reads `1` rather than `0` while the
+    /// countdown is still running — a card that shows `0` and does not act is a card that looks broken.
+    static func upNextRemaining(deadline: Double, now: Double) -> Int {
+        let left = deadline - now
+        if left <= 0 { return 0 }
+        return Int(left.rounded(.up))
+    }
+
+    /// **The next episode, BY POSITION IN THE SERVER'S OWN LIST.**
+    ///
+    /// ⚠⚠ **WHY NOT `episode + 1`, AND THIS IS THE WHOLE RULE.** A season boundary (`S1E10` → `S2E1`), a
+    /// special slotted mid-season, a gap in Jellyfin's numbering, and a multi-season list all break
+    /// arithmetic — and the list is already in hand, so there is nothing to guess. The server's order is the
+    /// authority on what comes next; the app's job is to find ONE element in it and step to the next.
+    ///
+    /// ⚠ Three separate answers, and the screen needs all three: the current episode is not in the list
+    /// (`nil` — the app cannot say what follows), it is the LAST one (`nil` — **this is P-F9**, and it is why
+    /// this returns an optional rather than a wrapped index), or there is a next one.
+    static func nextEpisode(after episodeID: String, in episodes: [EpisodeItem]) -> EpisodeItem? {
+        guard let index = episodes.firstIndex(where: { $0.id == episodeID }) else { return nil }
+        let next = index + 1
+        return next < episodes.count ? episodes[next] : nil
+    }
+
+    /// The card's caption: `S2E5 · The Reckoning`.
+    ///
+    /// ⚠⚠ **IT CALLS `DetailRules.episodeCode` — IT DOES NOT SPELL `"S\(season)E\(episode)"` AGAIN.** The title
+    /// screen already has that rule, already pinned, and a second copy of one small string is precisely the
+    /// defect this repo keeps paying for (`ARCHITECTURE.md` §0's first rule). What is new here is only the
+    /// caption's SHAPE; the code itself is borrowed.
+    static func upNextLabel(season: Int, episode: Int, name: String) -> String {
+        "\(DetailRules.episodeCode(season: season, episode: episode)) · \(name)"
+    }
 
     // MARK: - Tracks and subtitles (ported from the web's matcher)
 

@@ -55,6 +55,12 @@ RULES = {
     # SwiftUI's own representable protocols start with "UI" but live in SwiftUI.
     "UIKit": r"\b(?!UIViewRepresentable\b|UIViewControllerRepresentable\b|UIHostingController\b)UI[A-Z]\w*",
     "AVFoundation": r"\bAV[A-Z]\w*",
+    # ⚠⚠ **PHASE P (2026-09-20) — `MediaPlayer`, AND IT IS THE `RKMServerKit` LESSON A THIRD TIME.** The player
+    # publishes what it is showing to the system's now-playing panel (`MPNowPlayingInfoCenter`), and **no rule
+    # here named `MP`** — so a file using it without the import would have compiled right up to the Mac, which
+    # is the most expensive place in this workflow to find out. ⚠ `MP` is added as a PREFIX and that is safe
+    # here, unlike `RKM`: nothing in this app defines a type starting with `MP`.
+    "MediaPlayer": r"\bMP[A-Z]\w*",
     # Phase B3's loopback server and the probe's client both speak Network.framework. ⚠ It is easy to miss
     # because every type it contributes is `NW`-prefixed but the file often looks Foundation-only.
     "Network": r"\bNW[A-Z]\w*",
@@ -189,6 +195,19 @@ SELFTEST = [
     ("an unimported UIKit type",
      'import SwiftUI\n\nlet label = UILabel()',
      {"UIKit"}),
+    # ⚠⚠ Phase P's own rule, and both of its edges. The POSITIVE case is the real shape (`PlayerView`'s
+    # now-playing publish); the negative case pins that the `MP` prefix does not demand an import for a word
+    # that merely starts that way in prose — the false-positive class that would force a wrong import.
+    ("an unimported MediaPlayer symbol",
+     'import SwiftUI\n\nfunc publish(_ title: String) {\n'
+     '    MPNowPlayingInfoCenter.default().nowPlayingInfo = [MPMediaItemPropertyTitle: title]\n}',
+     {"MediaPlayer"}),
+    ("a MediaPlayer symbol WITH its import",
+     'import SwiftUI\nimport MediaPlayer\n\nlet centre = MPNowPlayingInfoCenter.default()',
+     set()),
+    ("the letters `MP` inside a word in prose",
+     'import SwiftUI\n\n// the MP4 container is not a MediaPlayer symbol\nlet x = 1',
+     set()),
 ]
 
 

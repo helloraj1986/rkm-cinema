@@ -78,6 +78,16 @@ final class PlaybackStore: ObservableObject {
                           runtimeSeconds: Double(item.runtime ?? 0),
                           resumeSeconds: Double(item.playbackPosition ?? 0))
         }
+
+        /// ⚠⚠ **FROM AN EPISODE, WHICH IS WHAT UP NEXT HANDS OVER** — and it is a second initialiser rather
+        /// than a generalised one because the two rows are different types with different key spellings
+        /// (`MediaItem.playbackPosition` comes off a library row; `EpisodeItem.playbackPosition` off the
+        /// episode list). A protocol to unify them would be one more thing to keep true for four fields.
+        static func from(_ episode: EpisodeItem) -> PlaybackFacts {
+            PlaybackFacts(title: episode.name,
+                          runtimeSeconds: Double(episode.runtime),
+                          resumeSeconds: Double(episode.playbackPosition))
+        }
     }
 
     /// The row's facts, kept so a failed detail fetch still leaves a titled, resumable player.
@@ -126,8 +136,52 @@ final class PlaybackStore: ObservableObject {
     /// outcome this app refuses to ship.
     @Published private(set) var playbackFailure: String?
 
+    /// ⚠⚠ **HOW FAR UP THE MODE LADDER THIS SESSION HAS CLIMBED** (`PlaybackRules.hlsLadder`). 0 means no
+    /// escalation has happened. It exists so the notice can say *"Tried 3 of 3"* rather than the same
+    /// sentence twice — and so a round can read the escalation off the HUD without guessing which mode failed.
+    @Published private(set) var escalationAttempt: Int = 0
+
+    /// ⚠⚠ **A TOKEN THE VIEW WATCHES TO RE-REQUEST THE SAME URL.** `url` is `Equatable` and re-assigning an
+    /// equal value fires no `onChange`, so without this a *Try again* on a transient network failure would
+    /// return a promise of an action and do exactly nothing — the worst kind of control on a TV.
+    @Published private(set) var reloadToken: Int = 0
+
+    // MARK: - Up Next (the next episode)
+
+    /// The series' own episode list, fetched ONCE, and only for an episode. ⚠ Soft: a failure here means no
+    /// Up Next card and a film that plays normally.
+    @Published private(set) var episodes: [EpisodeItem] = []
+    /// The episode after this one, from the server's own order (`PlaybackRules.nextEpisode`). `nil` for a
+    /// film, for the last episode of a series, and for an item the list does not contain.
+    @Published private(set) var nextEpisode: EpisodeItem?
+    /// ⚠ The countdown, in whole seconds, or `nil` while there is no card. **Published**, not computed: a
+    /// computed property reading `Date()` changes without telling SwiftUI, so a card built on one would tick
+    /// only when something else happened to redraw the screen.
+    @Published private(set) var upNextSecondsLeft: Int?
+    /// ⚠ The episode to hand to `AppModel`, set once the countdown expires or *Play now* is pressed. ⚠⚠ **The
+    /// store CANNOT open the player itself** — it has no `AppModel` and must not grow one — so it publishes
+    /// the intent and the VIEW performs it. That is also what keeps the position write and the hand-off in a
+    /// defined order.
+    @Published private(set) var upNextHandoff: EpisodeItem?
+
+    private var upNextDeadline: Date?
+    /// ⚠ A viewer who pressed *Cancel* is not asked again — the trigger is the POSITION, which stays past
+    /// `finishFraction` for the rest of the film, so without this the card would reappear on the next tick.
+    private var upNextDeclined = false
+    /// ⚠⚠ **AND THE SAME IS TRUE OF ONE THAT HAS ALREADY BEEN HANDED OVER.** `clearUpNextHandoff()` is called
+    /// by the view when it has performed the hand-off, and clearing only the published value would leave the
+    /// deadline nil and `hasFinished` true — so the very next tick would start the countdown again and the
+    /// tick after that would hand the same episode over a second time. ⚠ In practice the old screen is
+    /// re-identified away first (`.id(playback.itemID)` in `AppRootView`), which is exactly why this is a
+    /// guard and not a load-bearing line: a state machine whose correctness depends on the view being torn
+    /// down in time is a state machine that is wrong somewhere else too.
+    private var upNextHandedOff = false
+
     private var lastReportAt: Date?
     private var toastTask: Task<Void, Never>?
+    /// ⚠ **D6 — the stop write happens ONCE.** Two callers fire it (`Back`, and the screen's `onDisappear`) and
+    /// the platform does not promise which is first, so the guard belongs here rather than at either call site.
+    private var didFinish = false
 
     // MARK: - Init
 
@@ -208,6 +262,53 @@ final class PlaybackStore: ObservableObject {
     /// The way out's own words. ⚠ It names the destination, because a bare chevron on a screen that fills a
     /// television does not say where it goes.
     var backLabel: String { "Back to \(detail?.name ?? "the title")" }
+
+    /// ⚠ The origin the player's ARTWORK is fetched from — the Up Next card's own still (P7).
+    ///
+    /// ⚠ It is exposed rather than threaded through the view hierarchy because it is **the same address every
+    /// playback URL is already built against** (`recomputeRoute`), and it is not a secret: artwork rides the
+    /// API's poster proxy, which is exactly the rule `ARCHITECTURE.md` §2's third principle exists for — no
+    /// media-server URL and no credential ever reaches a client.
+    var baseURL: URL { client.address.url }
+
+    /// The series an episode belongs to — **P8's eyebrow**, and `nil` for a film.
+    ///
+    /// ⚠ It exists because `"Chapter 4"` is the whole top bar for an episode otherwise: the item's own name
+    /// names nothing a viewer browsing a series recognises. The name is already decoded in the same
+    /// `ItemDetail` (`detail.series.name`) and this screen simply never read it.
+    var seriesName: String? {
+        guard let name = detail?.series?.name, !name.isEmpty else { return nil }
+        return name
+    }
+
+    /// `S2E5` for an episode, `nil` for a film — ⚠ through `DetailRules.episodeCode`, the app's ONE episode
+    /// code, so the top bar and the title screen cannot spell it two ways.
+    var episodeCode: String? {
+        guard let season = detail?.season, let episode = detail?.episode else { return nil }
+        return DetailRules.episodeCode(season: season, episode: episode)
+    }
+
+    /// ⚠ **TRUE WHEN THE SERVER'S OWN THRESHOLD SAYS THIS TITLE IS FINISHED** — the same `finishFraction`
+    /// (0.95) the server uses to mark it played, read from the same constant rather than restated here.
+    var hasFinished: Bool {
+        PlaybackRules.finished(positionTicks: PlaybackRules.ticks(fromSeconds: position),
+                               runtimeTicks: PlaybackRules.ticks(fromSeconds: duration))
+    }
+
+    /// The Up Next card's caption: `S2E5 · The Reckoning`. ⚠ `nil` when there is no card to draw.
+    var upNextLabel: String? {
+        guard let nextEpisode else { return nil }
+        return PlaybackRules.upNextLabel(season: nextEpisode.season,
+                                         episode: nextEpisode.episode,
+                                         name: nextEpisode.name)
+    }
+
+    /// The card's own countdown line. ⚠ It reads the PUBLISHED seconds, so the number on screen and the
+    /// number the rule computed are the same number.
+    var upNextCountdownLabel: String? {
+        guard let upNextSecondsLeft else { return nil }
+        return "Playing in \(upNextSecondsLeft)s"
+    }
 
     /// The top bar's meta row, as PARTS so each one can be separated by a dot.
     ///
@@ -343,6 +444,10 @@ final class PlaybackStore: ObservableObject {
                         category: .app, correlation: correlation)
             await loadSubtitleTextIfChosen()
             await loadSubtitleChoices()
+            // ⚠⚠ **AFTER THE FILM IS PLAYABLE, NEVER BEFORE** — Up Next is a courtesy at the END of an
+            // episode, so nothing about it may stand between the viewer and the first frame. A failure here
+            // is soft by construction (`loadNextEpisode` catches): no card, and the episode plays anyway.
+            await loadNextEpisode()
         } catch let error as APIError {
             load = .failed(error.errorDescription ?? "This title cannot be played right now.")
             RKMLog.error("player: playback-info failed — \(error.errorDescription ?? "")",
@@ -392,13 +497,23 @@ final class PlaybackStore: ObservableObject {
                 Task { await report(.timeupdate) }
             }
         }
+        // ⚠⚠ **THE UP NEXT CLOCK IS DRIVEN BY THE VIEW'S ALWAYS-ON TICKER, NOT FROM HERE.** `AVPlayer`'s
+        // periodic observer STOPS FIRING when playback pauses or reaches the end — and the end of the film is
+        // exactly when Up Next must count down. So the countdown hangs off the 0.5 s `Timer` instead
+        // (`tickUpNext()`), and this method stays only what it says: the position and the progress write.
     }
 
-    /// ⚠ **The BUFFERING signal, and it is real rather than decorative**: `PlaybackRules.shouldHideChrome`
+    /// ⚠ **The buffering signal, and it is real rather than decorative**: `PlaybackRules.shouldHideChrome`
     /// keeps the controls on screen while a stream is switching, and the view reports the player's own
     /// `timeControlStatus`. Without a setter this was a flag nothing ever set — a rule reading a constant.
     func setSwitching(_ value: Bool) {
         if isSwitching != value { isSwitching = value }
+    }
+
+    /// ⚠ Called by the view when `AVPlayerItem.status` becomes `.failed` — **the one failure that produces a
+    /// silent black screen**, and the reason it goes through the same funnel as the notification.
+    func reportItemFailed() {
+        reportPlaybackFailure(PlaybackRules.failedToStartSentence)
     }
 
     func play() {
@@ -418,6 +533,14 @@ final class PlaybackStore: ObservableObject {
     }
 
     func skip(by delta: Double) { seek(to: PlaybackRules.skipTarget(from: position, by: delta, total: duration)) }
+
+    /// ⚠⚠ **D2 — the scrub row's own verb, which existed only as a comment until Phase P.** A left/right press
+    /// with the track focused jogs the playhead instead of moving focus, exactly as his prototype's `moveItem`
+    /// does on row 1. ⚠ It goes through the SAME `seek` as the scrubber and the ±10 s buttons, so the bar, the
+    /// store's position and the player cannot disagree about where the playhead is.
+    func jog(direction: Int) {
+        seek(to: PlaybackRules.jogTarget(from: position, direction: direction, total: duration))
+    }
 
     func setRate(_ newRate: Double) {
         rate = newRate
@@ -448,23 +571,59 @@ final class PlaybackStore: ObservableObject {
     /// The mode ladder's next step, for a stream that fails to play. ⚠ The web's own order
     /// (`PlaybackRules.hlsLadder`) — audio-aware, so an EAC3 title that came out of a copy-copy remux
     /// goes to `transcode_audio` rather than retrying the same thing.
-    func escalateMode() {
-        guard let next = PlaybackRules.nextHLSMode(after: mode) else {
-            playbackFailure = "This title could not be played. The server refused every mode this app can ask for."
-            return
-        }
+    ///
+    /// ⚠⚠ **THIS FUNCTION HAD NO CALLER UNTIL PHASE P (D3).** The ladder, its order and its audio-awareness
+    /// were built, pinned and documented in `TVOS_PLAYER_PLAN.md` §C2 — and nothing invoked it, so a failed
+    /// direct play reported a sentence and stopped. It is now the funnel through `reportPlaybackFailure`.
+    ///
+    /// ⚠ Returns **whether it climbed**, so the caller decides what to say: `false` means the ladder is
+    /// exhausted and the failure is real, not transient.
+    @discardableResult
+    func escalateMode() -> Bool {
+        guard let next = PlaybackRules.nextHLSMode(after: mode) else { return false }
         quality = PlaybackRules.defaultQualityLabel  // ⚠ a quality cap already forces `transcode`.
         mode = next
+        escalationAttempt = PlaybackRules.ladderStep(next)
+        // ⚠ The failure is cleared BEFORE the new item is attached: a notice left on screen while a stream is
+        // being retried tells the viewer the retry already failed.
+        playbackFailure = nil
         url = PlaybackURLs.playbackURL(base: client.address.url, itemID: itemID, mode: next,
                                       audioIndex: audioIndex,
                                       maxBitrate: PlaybackRules.maxBitrate(for: quality))
-        RKMLog.error("player: streaming failed — escalating to \(next.rawValue)",
+        RKMLog.error("player: streaming failed — escalating to \(next.rawValue) "
+                     + "(attempt \(escalationAttempt) of \(PlaybackRules.ladderLength))",
                      category: .app, correlation: correlation)
-        showToast("Trying \(PlaybackRules.streamModeLabel(next))…")
+        showToast(PlaybackRules.attemptSentence(next))
+        return true
     }
 
+    /// **P1 — *Try again* on the failure notice, and it is the only control on it.**
+    ///
+    /// ⚠ It climbs the ladder when there is a rung left, and otherwise re-requests **the same URL** — the
+    /// common cause of a mid-film failure is a transient network drop, where the same request is exactly the
+    /// right thing to send again. ⚠⚠ The reload token is what makes that second case real: `url` is
+    /// `Equatable`, so re-assigning an identical value fires no `onChange` in the view and a "retry" that
+    /// changed nothing would look identical to a broken button.
+    func retryPlayback() {
+        playbackFailure = nil
+        if escalateMode() { return }
+        reloadToken &+= 1
+        showToast("Trying again…")
+    }
+
+    /// ⚠⚠ **THE ONE FUNNEL FOR "THIS STREAM IS NOT PLAYING", AND IT ESCALATES BEFORE IT REPORTS.**
+    ///
+    /// Every failure path lands here — the `AVPlayerItemFailedToPlayToEndTime` notification (a stream that
+    /// died mid-film) and `reportItemFailed()` (a stream whose item status went `.failed`, i.e. the black
+    /// screen) — so the two cannot disagree about whether the app has tried everything it can.
+    ///
+    /// ⚠ It TERMINATES: `nextHLSMode` returns `nil` at the last rung, so the app can climb at most three times
+    /// and then says so rather than looping.
     func reportPlaybackFailure(_ sentence: String) {
+        if escalateMode() { return }
         playbackFailure = sentence
+        RKMLog.error("player: giving up after \(escalationAttempt) escalation(s) — \(sentence)",
+                     category: .app, correlation: correlation)
     }
 
     // MARK: - Progress writes (and the re-read that makes them evidence)
@@ -527,14 +686,109 @@ final class PlaybackStore: ObservableObject {
     /// ⚠ **Called when the screen is left.** One report, one check — and it is fired by the view's
     /// `onDisappear` as well as by `Back`, because a viewer who presses the remote's Home button instead
     /// of Back must not lose their place in a three-hour film.
+    ///
+    /// ⚠⚠ **D6 — IDEMPOTENT, AND THIS IS WHERE THE GUARD BELONGS.** Both callers are legitimate: `Back` runs
+    /// before the screen tears down, and `onDisappear` runs after, and tvOS does not promise which order they
+    /// arrive in. Before this guard, one press of `Back` sent two `stopped` reports and two verification reads,
+    /// and the two save toasts raced each other. A guard at either CALL SITE would be wrong the moment the
+    /// other one fires first.
     func finish() async {
+        guard !didFinish else { return }
+        didFinish = true
         isPlaying = false
         await report(.stopped)
     }
 
+    /// ⚠ The viewer's own re-try of the position write, from the drawer's footer — deliberately NOT guarded by
+    /// `didFinish`: this exists precisely because the automatic write did not land, so running it again is the
+    /// whole point of the control.
     func retrySave() async {
         await report(.stopped)
     }
+
+    // MARK: - Up Next
+
+    /// Fetch the series' episode list — **once, and only when this item IS an episode.**
+    ///
+    /// ⚠⚠ **A FILM ASKS FOR NOTHING.** `detail.series` is present only on an Episode (`ItemDetail`), so a film
+    /// costs no request at all — and a series' own detail page (which is what the title screen shows for a
+    /// series) never reaches the player in the first place.
+    ///
+    /// ⚠ **SOFT BY CONSTRUCTION**: any failure here means no Up Next card. A courtesy at the end of an episode
+    /// must never be able to stop the episode.
+    private func loadNextEpisode() async {
+        guard let seriesID = detail?.series?.id, !seriesID.isEmpty else { return }
+        do {
+            let list = try await client.seriesEpisodes(seriesID: seriesID,
+                                                      correlation: correlation).episodes
+            episodes = list
+            nextEpisode = PlaybackRules.nextEpisode(after: itemID, in: list)
+            RKMLog.info("player: Up Next — \(list.count) episode(s) reported; next is "
+                        + (nextEpisode.map { "\($0.name) (\($0.id.prefix(8)))" } ?? "none (this is the last)"),
+                        category: .app, correlation: correlation)
+        } catch let error as APIError {
+            nextEpisode = nil
+            RKMLog.info("player: episode list unavailable — \(error.errorDescription ?? "")",
+                        category: .app, correlation: correlation)
+        } catch {
+            nextEpisode = nil
+        }
+    }
+
+    /// ⚠⚠ **THE COUNTDOWN'S WHOLE STATE MACHINE, IN ONE PLACE, DRIVEN BY THE VIEW'S ALWAYS-ON TICKER.**
+    /// Three states and no fourth: no card · a card counting down · a hand-off on its way.
+    ///
+    /// ⚠ It is called from the 0.5 s `Timer` and NOT from the time observer, because `AVPlayer`'s periodic
+    /// observer stops firing when playback ends — which is exactly when this must start.
+    func tickUpNext() {
+        guard !upNextDeclined, !upNextHandedOff, upNextHandoff == nil, nextEpisode != nil else { return }
+
+        if upNextDeadline == nil {
+            // ⚠ `duration > 0` as well as `hasFinished`: with an unknown runtime the finish fraction is not a
+            // statement about anything (`PlaybackRules.finished` returns false for one, and this is the belt
+            // to that braces).
+            guard hasFinished, duration > 0 else { return }
+            upNextDeadline = Date().addingTimeInterval(PlaybackRules.upNextSeconds)
+            RKMLog.info("player: Up Next — this episode is finished; counting "
+                        + "\(Int(PlaybackRules.upNextSeconds))s before \(nextEpisode?.name ?? "")",
+                        category: .app, correlation: correlation)
+        }
+        guard let deadline = upNextDeadline else { return }
+        let left = PlaybackRules.upNextRemaining(deadline: deadline.timeIntervalSinceReferenceDate,
+                                                now: Date().timeIntervalSinceReferenceDate)
+        if upNextSecondsLeft != left { upNextSecondsLeft = left }
+        if left == 0 { requestNextEpisode() }
+    }
+
+    /// ⚠⚠ **THE HAND-OFF ITSELF — AND SETTING THE PUBLISHED EPISODE IS THE WHOLE ACTION.** The store has no
+    /// `AppModel` and must not grow one: the VIEW performs the hand-off, which is also what keeps the order
+    /// (this episode's `stopped` write, then the next episode's screen) in a place that can be read.
+    private func requestNextEpisode() {
+        guard let next = nextEpisode, !upNextHandedOff else { return }
+        upNextSecondsLeft = nil
+        upNextDeadline = nil
+        upNextHandedOff = true
+        upNextHandoff = next
+        RKMLog.info("player: Up Next — handing over to \(next.name) (\(next.id.prefix(8)))",
+                    category: .app, correlation: correlation)
+    }
+
+    /// *Play now* — the countdown's own action, and where focus lands when the card appears.
+    func playNextNow() { requestNextEpisode() }
+
+    /// *Cancel* — and ⚠⚠ **IT IS REMEMBERED, WHICH IS THE WHOLE POINT.** The trigger is the POSITION, and the
+    /// position stays past `finishFraction` for the rest of the film, so a dismissal that only cleared the
+    /// countdown would see the card return on the very next tick — a control that visibly does not work.
+    func cancelUpNext() {
+        upNextDeclined = true
+        upNextDeadline = nil
+        upNextSecondsLeft = nil
+        upNextHandoff = nil
+        RKMLog.info("player: Up Next — cancelled by the viewer", category: .app, correlation: correlation)
+    }
+
+    /// Called by the view once it has really handed the episode over, so a redraw cannot hand it over twice.
+    func clearUpNextHandoff() { upNextHandoff = nil }
 
     // MARK: - Subtitles
 

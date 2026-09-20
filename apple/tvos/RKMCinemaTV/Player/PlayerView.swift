@@ -9,6 +9,11 @@ import Foundation
 import Combine
 import AVFoundation
 import UIKit
+// ⚠⚠ **PHASE P: `MPNowPlayingInfoCenter` (P5).** The system's own "what's playing", the Siri Remote's
+// play/pause when this app is not frontmost, and *"Hey Siri, pause"* all read from it — and a native tvOS
+// player is expected to publish it. ⚠ `MediaPlayer` is now a rule in `apple/scripts/check-imports.py`, added
+// in the same commit, because a framework the app uses and no gate watches is a blind spot by construction.
+import MediaPlayer
 import RKMServerKit
 
 /// **The player screen.**
@@ -40,6 +45,13 @@ struct PlayerView: View {
     @State private var pulseCounter = 0
     @FocusState private var focus: PlayerFocus?
 
+    /// ⚠⚠ **P4 — THE SCREEN'S OWN LIFECYCLE.** Before Phase P the app read `scenePhase` only to write a log
+    /// line, so pressing HOME on the Siri Remote left the film **playing behind the tvOS Home screen** — audio
+    /// included.
+    @Environment(\.scenePhase) private var scenePhase
+    /// ⚠ P3 — the pulse is the screen's one large animation, and it is the one reduced motion must remove.
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     private let ticker = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
 
     var body: some View {
@@ -62,8 +74,35 @@ struct PlayerView: View {
             chrome
                 .opacity(chromeVisible ? 1 : 0)
                 .animation(.timingCurve(0.22, 0.61, 0.36, 1, duration: 0.35), value: chromeVisible)
+                // ⚠⚠ **AND WHILE THE NOTICE IS UP THE CHROME IS OUT OF THE FOCUS CHAIN — that is the
+                // `ProfilesView` #17 lesson, applied before it can happen here.** The notice fills the screen,
+                // so a ring that could still move onto the transport *behind* it would be a control the viewer
+                // cannot see standing on a control they can — with the notice's own `Try again` one random
+                // direction away. ⚠ `.disabled` rather than hiding the chrome: the transport stays readable
+                // under the dim, which is what tells the viewer their film is still there.
+                .disabled(store.hasFailed)
 
             overlayPanels
+                // ⚠ The same rule as the chrome above: a drawer left open over the notice would keep its own
+                // rows in the focus chain, behind a surface the viewer is now looking at.
+                .disabled(store.hasFailed)
+
+            // ⚠⚠ **P7 — UP NEXT, ON THE RIGHT EDGE, BECAUSE THE BAR AND THE TRANSPORT OWN THE OTHER TWO
+            // BANDS.** Vertically centred: a `ZStack` with `.trailing` alignment would put the card at the
+            // top-right corner, under the top bar, so the placement is the middle band and nothing else.
+            if store.upNextSecondsLeft != nil, !store.hasFailed {
+                HStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    PlayerUpNextCard(store: store, focus: $focus, base: store.baseURL,
+                                     onPlayNow: { store.playNextNow() },
+                                     onCancel: {
+                                         store.cancelUpNext()
+                                         focus = .play
+                                     })
+                        .padding(.trailing, TVTokens.Player.upNextTrailing)
+                }
+                .transition(.move(edge: .trailing).combined(with: .opacity))
+            }
 
             // ⚠ One source for "why is this not playing", from the store — see `failureSentence`.
             // ⚠⚠ **THE TOAST IS PLACED HERE, AND IT WAS DECLARED AND FORGOTTEN UNTIL ROUND 2** — the store's
@@ -79,8 +118,21 @@ struct PlayerView: View {
                 .transition(.opacity)
             }
 
-            if let sentence = store.failureSentence {
-                failureNotice(sentence)
+            // ⚠⚠ **P2 — A STALL SAYS SO.** It is drawn UNDER the notice and only when the film is otherwise
+            // fine: a stall during an escalation would otherwise hide the toast that says which mode is
+            // being tried, and a stall after a failure would be a second explanation of the first one.
+            if store.isSwitching, !store.hasFailed, store.load == .ready {
+                PlayerStallIndicator()
+                    .transition(.opacity)
+            }
+
+            if store.failureSentence != nil {
+                // ⚠⚠ **P1 — THE NOTICE IS A CONTROL SURFACE NOW**, not two `Text`s: `Try again` retries the
+                // stream (climbing the ladder when there is a rung left), and the notice says where the ring
+                // is and that MENU leaves. A failure state with nothing focusable is a dead end, which is the
+                // one thing this app's own architecture ranks above any cosmetic rule.
+                PlayerFailureNotice(store: store, focus: $focus) { store.retryPlayback() }
+                    .background(RKMColour.background.opacity(0.72))
             } else if store.load == .loading {
                 loadingNotice
             }
@@ -89,8 +141,10 @@ struct PlayerView: View {
         }
         // ⚠⚠ **THE DEFAULT FOCUS, AND IT IS THE PROTOTYPE'S OWN DECISION** — *"let r = 2, i = 2; // default
         // focus: play/pause"*. `.defaultFocus` is the PLATFORM's way to say it (the focus engine then owns
-        // every move from there); nothing here computes a neighbour.
-        .defaultFocus($focus, .play)
+        // every move from there); nothing here computes a neighbour. ⚠⚠ **And since Phase P it READS the rule
+        // instead of restating it**: `PlaybackRules.defaultFocusIsPlayPause` was a constant nothing consumed,
+        // so the rule and the screen could have disagreed without a single gate noticing.
+        .defaultFocus($focus, PlaybackRules.defaultFocusIsPlayPause ? .play : .back)
         .onAppear { start() }
         .onDisappear {
             // ⚠ The time observer is REMOVED here, and that is not tidiness: an observer added to the player
@@ -98,6 +152,14 @@ struct PlayerView: View {
             // film's worth of those is a leak nobody sees on a simulator round.
             if let timeObserver { player.removeTimeObserver(timeObserver) }
             timeObserver = nil
+            // ⚠⚠ **D7 — THE PLAYER IS STOPPED, NOT MERELY UNOBSERVED.** Removing the observer used to leave
+            // the item attached and the `AVPlayer` decoding: audio kept playing behind whatever screen came
+            // next, and the item held the player alive. One `pause()` and one `replaceCurrentItem(with: nil)`
+            // is the whole fix — tvOS has no `AVPlayerViewController` here to do it for us.
+            player.pause()
+            player.replaceCurrentItem(with: nil)
+            // ⚠ P5 — and the system's now-playing panel must not go on advertising a film this app has left.
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
             Task { await store.finish() }
         }
         // ⚠ A stream that dies mid-film has to say so — the visible failure mode this phase chose. As a
@@ -115,6 +177,59 @@ struct PlayerView: View {
         .onReceive(ticker) { date in
             now = date
             applyPendingSeekIfReady()
+            // ⚠⚠ **P4 — THE ONE PLACE A STREAM THAT NEVER STARTED IS CAUGHT.** `AVPlayerItemFailedToPlayToEndTime`
+            // (below) is a stream that died MID-FILM; an item whose `status` went `.failed` is the classic
+            // **silent black screen**, and it fires no notification this screen can subscribe to. So it is
+            // POLLED — on the clock that already runs — and reported through the same store funnel.
+            // ⚠ The `!store.hasFailed` guard is what stops a report every half-second once the app has given up.
+            if player.currentItem?.status == .failed, !store.hasFailed {
+                RKMLog.error("player: item status failed — the stream never started", category: .app)
+                store.reportItemFailed()
+            }
+            // ⚠⚠ **P7 — THE UP NEXT COUNTDOWN HANGS OFF THIS TIMER, NOT OFF THE TIME OBSERVER.** `AVPlayer`'s
+            // periodic observer stops firing when playback ends, which is precisely when the countdown starts.
+            store.tickUpNext()
+            // ⚠ P5 — the system's own now-playing panel, kept honest on the same clock as everything else.
+            publishNowPlaying()
+        }
+        // ⚠⚠ **P1 — A RETRY THAT RE-REQUESTS THE SAME URL IS INVISIBLE TO `onChange(of: store.url)`**, because
+        // the URL is unchanged. The store's reload token is the second signal, and it is the only reason the
+        // notice's `Try again` works for a transient failure rather than appearing to do nothing.
+        .onChange(of: store.reloadToken) { _, _ in attachItem(reason: "retry") }
+        // ⚠⚠ **P7 — THE HAND-OFF, AND IT IS THE VIEW'S JOB BECAUSE THE STORE HAS NO `AppModel`.** The order is
+        // deliberate: the CURRENT episode's position write is started first (it is the one thing that must not
+        // be lost), then the next episode's screen replaces this one — and `.id(playback.itemID)` on the
+        // routing view is what makes that a real re-entry rather than a silent store swap.
+        .onChange(of: store.upNextHandoff) { _, item in
+            guard let item else { return }
+            store.clearUpNextHandoff()
+            handOff(to: item)
+        }
+        // ⚠⚠ **P1 — THE RING MOVES ONTO THE NOTICE WHEN IT APPEARS.** Without this the notice is focusable but
+        // nobody is standing on it: the screen's focus would be wherever it was, and the one control that can
+        // fix the failure would be a press away with no indication which way.
+        .onChange(of: store.hasFailed) { _, failed in
+            if failed {
+                // ⚠ And the drawer is CLOSED, not merely disabled: the notice is what this screen is about
+                // until the viewer answers it, and the audio/subtitle rows are reachable again the moment the
+                // stream plays.
+                store.closePanel()
+                focus = .noticeRetry
+            }
+        }
+        // ⚠ **P7 — AND ONTO *Play now* WHEN THE CARD APPEARS.** The platform's own behaviour for a
+        // time-limited control, and the only sane default on one that expires. ⚠ Only on the TRANSITION, so a
+        // viewer who has moved to *Cancel* is not dragged back every half-second.
+        .onChange(of: store.upNextSecondsLeft) { old, new in
+            if old == nil, new != nil { focus = .upNextPlay }
+        }
+        // ⚠⚠ **P4 — LEAVING THE FOREGROUND PAUSES THE FILM.** The `pause()` goes through the store, so the
+        // `onChange(of: store.isPlaying)` below is what actually stops the player — one path, not two.
+        .onChange(of: scenePhase) { _, phase in
+            guard phase != .active else { return }
+            guard store.isPlaying else { return }
+            RKMLog.info("player: leaving the foreground — pausing", category: .app)
+            store.pause()
         }
         // ⚠⚠ **`AVPlayer`'S OWN REQUESTS ARE NOT THIS APP'S REQUESTS, SO NOTHING ELSE CAN LOG THEM.** Every
         // JSON call goes through `APIClient` (which logs and redacts); the HLS playlist and its segments are
@@ -161,7 +276,11 @@ struct PlayerView: View {
             PlayerTopBar(store: store, focus: $focus) { leave() }
             Spacer(minLength: 0)
             VStack(spacing: TVTokens.Player.paneGap) {
-                PlayerScrubber(store: store, focus: $focus) { target in seek(target) }
+                // ⚠⚠ **D2 — THE JOG IS WIRED HERE, WHICH IS THE LINE THE OLD COMMENT CLAIMED AND NO CODE DID.**
+                // A left/right press with the track focused now moves the playhead by `PlaybackRules.jogSeconds`
+                // through the store, and the player follows it in `jog(_:)` below — one path, so the bar and the
+                // film cannot disagree about where the playhead is.
+                PlayerScrubber(store: store, focus: $focus) { direction in jog(direction) }
                 PlayerControlsRow(store: store,
                                   focus: $focus,
                                   onTogglePlay: { togglePlay() },
@@ -202,26 +321,14 @@ struct PlayerView: View {
                     .frame(width: TVTokens.Player.pulseSize, height: TVTokens.Player.pulseSize)
                     .background(Circle().fill(RKMColour.background.opacity(0.55)))
                     .id(pulseCounter)
-                    .transition(.scale(scale: 0.72).combined(with: .opacity))
+                    // ⚠ P3 — the screen's one large animation: under reduced motion the glyph still appears and
+                    // still changes shape, it simply does not spring into place.
+                    .transition(reduceMotion ? .opacity
+                                             : .scale(scale: 0.72).combined(with: .opacity))
                     .allowsHitTesting(false)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    private func failureNotice(_ sentence: String) -> some View {
-        VStack(spacing: TVTokens.Player.paneGap) {
-            Text(sentence)
-                .font(.system(size: TVTokens.Player.infoBodySize, weight: .semibold))
-                .multilineTextAlignment(.center)
-                .foregroundStyle(RKMColour.primary)
-                .frame(maxWidth: TVTokens.Player.infoMeasure)
-            Text("Press Back to return.")
-                .font(.system(size: TVTokens.Player.paneDescSize))
-                .foregroundStyle(RKMColour.secondary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(RKMColour.background.opacity(0.72))
     }
 
     private var loadingNotice: some View {
@@ -290,13 +397,17 @@ struct PlayerView: View {
         return AVURLAsset(url: url, options: [AVURLAssetHTTPCookiesKey: [session]])
     }
 
+    /// ⚠⚠ **D5 — `start()` NO LONGER ATTACHES AN ITEM ITSELF, AND THAT IS THE FIX.** It used to call
+    /// `player.replaceCurrentItem(with: AVPlayerItem(url: url))` — a bare URL, evaluated before the
+    /// credential-bearing `makeAsset(url:session:)` path exists. That is **round 4's defect class kept alive as
+    /// a second attach path**, and it was inert only by luck (`store.url` is `nil` at `onAppear`, because the
+    /// load that produces it has not run). One attach path means the credential cannot be forgotten by one of
+    /// two.
+    ///
+    /// ⚠ What is left is exactly the three things a television needs: make the clock, start the load, and let
+    /// the URL's own `onChange` attach the item when it exists.
     private func start() {
-        if let url = store.url {
-            RKMLog.info("player: opening \(store.title)", category: .app)
-            player.replaceCurrentItem(with: AVPlayerItem(url: url))
-            player.rate = Float(store.rate)
-            seekPlayer(to: store.position, resume: store.isPlaying)
-        }
+        RKMLog.info("player: opening \(store.title) — \(store.itemID.prefix(8))", category: .app)
         installTimeObserver()
         Task { await store.load() }
     }
@@ -353,10 +464,13 @@ struct PlayerView: View {
         lastInteraction = Date()
     }
 
-    /// ⚠ A scrub is BOTH a store change (the bar redraws immediately) and a player seek — one function, so the
-    /// two cannot disagree about where the playhead is.
-    private func seek(_ seconds: Double) {
-        store.seek(to: seconds)
+    /// ⚠⚠ **D2 — THE SCRUB ROW'S JOG, AND IT IS BOTH A STORE CHANGE AND A PLAYER SEEK.** The store's position
+    /// moves first (so the bar, the tooltip and the elapsed readout redraw immediately), then the player is
+    /// seeked to the position the store now holds — one function, so the two cannot disagree about where the
+    /// playhead is. ⚠ The distance is NOT here: `PlaybackRules.jogSeconds` owns it, and the view passes a
+    /// direction.
+    private func jog(_ direction: Int) {
+        store.jog(direction: direction)
         seekPlayer(to: store.position)
         lastInteraction = Date()
     }
@@ -366,12 +480,53 @@ struct PlayerView: View {
         focus = .play
     }
 
+    /// ⚠⚠ **P7 — UP NEXT'S HAND-OFF, AND THE ORDER IS THE WHOLE OF IT.** The current episode's position write
+    /// is started FIRST (`finish()` is idempotent, so the `onDisappear` that is about to fire will not repeat
+    /// it), and the next episode's screen is entered second. ⚠ `detail: nil` is deliberate: the new store
+    /// refines its own facts from `GET /jellyfin/detail` on load, which is where the exact `resumeTicks` live —
+    /// exactly the path the Home's hero already uses.
+    private func handOff(to episode: EpisodeItem) {
+        RKMLog.info("player: Up Next — opening \(episode.name) (\(episode.id.prefix(8)))", category: .app)
+        let leaving = store
+        app.openPlayer(itemID: episode.id,
+                       detail: nil,
+                       facts: PlaybackStore.PlaybackFacts.from(episode))
+        Task { await leaving.finish() }
+    }
+
     private func leave() {
         // ⚠ The position write is fired and awaited by the store's `finish()`; the SCREEN closes at once so a
-        // slow network cannot trap a viewer on a black frame.
+        // slow network cannot trap a viewer on a black frame. ⚠ `finish()` is IDEMPOTENT (D6), so the
+        // `onDisappear` that follows this does not send a second `stopped` report for the same exit.
         let leaving = store
         app.closePlayer()
         Task { await leaving.finish() }
+    }
+
+    // MARK: - Now Playing (⚠ P5 — a tvOS addition)
+
+    /// ⚠⚠ **PUBLISHES WHAT IS PLAYING TO THE SYSTEM, WHICH IS WHAT THE TV's OWN SURFACES READ.**
+    /// The system's "what's playing" panel, the Siri Remote's play/pause while this app is not frontmost, and
+    /// *"Hey Siri, pause"* all come from `MPNowPlayingInfoCenter` — and a bare `AVPlayerLayer` (which is what
+    /// this screen draws, on purpose) publishes **nothing** on its own. `AVPlayerViewController` would do this
+    /// for free; this app does not use it, so it does it here.
+    ///
+    /// ⚠ It is called from the 0.5 s ticker, not from the time observer: elapsed time and rate have to stay
+    /// right on a PAUSED film too, and `AVPlayer`'s periodic observer stops firing when playback stops.
+    /// ⚠ Nothing here is a claim: `duration`, `elapsed` and `rate` are the player's own, and a value the
+    /// player has not reported yet is simply left out rather than defaulted to zero.
+    private func publishNowPlaying() {
+        guard player.currentItem != nil else { return }
+        var info: [String: Any] = [:]
+        info[MPMediaItemPropertyTitle] = store.title
+        if let series = store.seriesName { info[MPMediaItemPropertyAlbumTitle] = series }
+        let elapsed = player.currentTime().seconds
+        if elapsed.isFinite, elapsed >= 0 { info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = elapsed }
+        let duration = player.currentItem?.duration.seconds ?? 0
+        let total = duration.isFinite && duration > 0 ? duration : store.duration
+        if total > 0 { info[MPMediaItemPropertyPlaybackDuration] = total }
+        info[MPNowPlayingInfoPropertyPlaybackRate] = player.rate
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
     }
 
     // MARK: - Chrome visibility (the rule is `PlaybackRules`', the clock is this view's)
@@ -382,7 +537,10 @@ struct PlayerView: View {
             switching: store.isSwitching,
             failed: store.hasFailed,
             hoveringChrome: false,
-            panelOpen: store.panel != .none || isAnythingFocused,
+            // ⚠⚠ **THE UP NEXT CARD PINS THE CHROME ON, BECAUSE THE CARD IS A STATE SOMEBODY IS BEING ASKED
+            // ABOUT.** The viewer has fifteen seconds to answer it, and hiding the transport underneath would
+            // take away the only other thing they might want to do — the same reason a drawer does.
+            panelOpen: store.panel != .none || isAnythingFocused || store.upNextSecondsLeft != nil,
             idleSeconds: now.timeIntervalSince(lastInteraction))
     }
 

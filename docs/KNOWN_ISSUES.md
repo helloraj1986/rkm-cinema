@@ -213,3 +213,50 @@ whoever picks this up:
 **Cheapest investigation when we take it up:** reproduce on the phone with the debug overlay on, filter the
 console for `offline`, and read what the bridge emitted in the seconds after the tap — the overlay's `off`
 line IS the downloader's own state, so page and device can be compared directly.
+
+---
+
+## 10 · tvOS Library grid — the focus ring did not enclose the card, and the bottom corners showed black squares
+
+> *"when i hover over card by navigating, the yellow line should be covering the card, check the ux, also on
+> the card on the bottom left and right i can see square shape black background corners possibly coming from
+> the backgroound color check that as well"*
+
+**FIXED 2026-09-20 on `feat/tvos-ux` (`accda68`) — awaiting his eye.** ⚠ **One cause, two symptoms**, and both
+are visible in a zoom of his own screenshot:
+
+* `Browse/LibraryGridCard.swift`'s `LibraryCardStyle` applied `.scaleEffect` **before** the ring overlay, so the
+  ring was drawn on the **unscaled** label while the card grew to `1.14` *out of* it — the artwork and the
+  caption stuck out past the ring on every side, worst at the bottom. His CSS has it the other way round: a
+  transform scales the element **and its box-shadow**. ⇒ the ring and the shadows now sit inside the transform;
+* the caption's scrim is a `Rectangle` and was an `.overlay` on a view that had **already** been clipped, so its
+  square corners landed on the artwork's rounded ones. ⇒ one `clipShape` now closes over art **and** caption —
+  his own rule (`border-radius` + `overflow:hidden` on the card).
+
+⚠ Recorded in `PROGRESS.md`; **not yet confirmed on his screen**, so it stays here until he says so.
+
+## 11 · tvOS Library grid — after picking a genre, Down cannot reach the titles
+
+> *"when i filter by cliking on any tags, it rightly filters the titles but then i cant come to the titles by
+> pressing down arrow on my keyboard...it satys on the tag itself, i can move between the tags but cant select
+> the titles. i can select the titles only when the all tags is being selcted"*
+
+**OPEN — cause NOT proven, and deliberately not guessed at. One change made, offered as a hypothesis.**
+
+What is known, and what discriminates:
+
+* the chips row and the grid are both live — with **All** selected he reaches the cards and their focus ring
+  draws (his own screenshot is that state), so the cards ARE focusable in this structure;
+* the condition is the **filter**: filtering is exactly when the grid's content becomes **shorter than the
+  viewport**. With All (140 titles) the wall is 8+ rows; with a genre it may be one or two;
+* so the ONE structural difference between this grid and the app's **working** pattern (the Home's rails, where
+  Down into a shelf works) was a `GeometryReader` wrapped around the focusable, **lazily** laid-out grid. A
+  `LazyVGrid` decides which rows to materialise from the size it is **proposed**; a `GeometryReader` reports its
+  size only after layout. ⇒ **the reader is gone** (`accda68`): the card width now comes from
+  `TVTokens.u * 100` — the canvas is 100u wide by the definition of `u`, so no measurement was ever needed, and
+  the harness pins that identity.
+* ⚠⚠ **If Down still cannot enter the grid after this, the reader was not it.** The next step is NOT another
+  blind change: it is a **screenshot of the filtered state** (does the grid render? is it the empty state? how
+  tall is it?) plus one answer — **does a second Down press a moment later work?** (a stale focus-candidate
+  list behaves that way; a layout problem does not).
+

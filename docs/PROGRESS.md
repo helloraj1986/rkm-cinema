@@ -143,6 +143,17 @@ pinned**, and every one of them was a real defect in the *tests*, not the code:
 rules are run; the views are written and unbuilt. That is precisely what U5 exists for, and this table is
 type-and-rule evidence only.
 
+### ▶ HIS SCREEN ROUND ON PHASE V (2026-09-20) — one fixed from proof, one open with a falsifier
+
+He built it and ran it, and reported two things. ⚠ **Note what settled the first one: a ZOOM of his own
+screenshot** — the gold ring visibly inside the card with a black band below it — and not a log line. That is
+the rule this repo keeps re-learning: *his screenshot's tell IS the measurement.*
+
+| Report | State |
+|---|---|
+| *"the yellow line should be covering the card … on the card on the bottom left and right i can see square shape black background corners"* | **FIXED (`accda68`)** — ONE cause, two symptoms. `LibraryCardStyle` applied `.scaleEffect` **before** the ring overlay, so the ring was drawn on the unscaled label while the card grew to 1.14 out of it; and the caption's rectangular scrim was an `.overlay` on an **already-clipped** view, so its square corners landed on the artwork's rounded ones. ⇒ the ring and the shadows now sit **inside** the transform (which is what CSS does with a transform + box-shadow), and one `clipShape` closes over art **and** caption — his own `border-radius` + `overflow:hidden`. |
+| *"when i filter by clicking on any tags … i cant come to the titles by pressing down arrow … i can select the titles only when the all tags is being selected"* | ⚠ **OPEN — `KNOWN_ISSUES.md` #11, cause NOT proven.** Filtering is exactly when the grid's content becomes shorter than the viewport. The ONE structural difference from the app's working pattern (the Home's rails, where Down into a shelf works) was a `GeometryReader` wrapped around the focusable, **lazily** laid-out grid — gone in `accda68`, with the card width now taken from `TVTokens.u * 100` (the canvas is 100u wide by the definition of `u`, and the harness pins that identity). ⚠⚠ **If it recurs, the reader was not it: the next step is a screenshot of the FILTERED state plus "does a second Down press a moment later work?", not another blind change.** |
+
 ### ▶ ⚠⚠ TWO COMMITS LANDED ON THIS BRANCH FROM DIFFERENT HANDS ON 2026-09-20 — KNOW WHICH IS WHICH
 
 | Commit | Author | What it is |

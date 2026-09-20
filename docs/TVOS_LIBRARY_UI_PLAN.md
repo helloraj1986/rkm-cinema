@@ -203,6 +203,8 @@ the layouts.
 | V-F5 | the title screen's hero is **~two-thirds of the screen** with the title block over its lower part and a real backdrop | a 300 pt band, or the "no photo" marker |
 | V-F6 | the cast row is **round initials**, fits without scrolling, and nothing on the screen is a dead control | avatars are missing, the row scrolls with no way to reach it, or a press does nothing |
 | V-F7 | **no Play button anywhere on the title screen**, and Back has the default focus | a Play control is on screen (his decision, §1 row 4) |
+| **V-F8** | the gold ring **encloses** the focused card on all four sides, and no black square shows at its bottom corners | the ring sits inside the card, or a black rectangle pokes out below it (⚠ **his first round found exactly this** — `accda68`) |
+| **V-F9** | after picking a genre, **Down reaches the titles** | focus stays on the chip row (⚠ **his first round found exactly this** — `KNOWN_ISSUES.md` #11; the `GeometryReader` was removed in `accda68` and it is NOT yet proven to have been the cause) |
 
 ## 8. Open items handed to him with this phase
 

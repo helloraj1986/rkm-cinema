@@ -33,6 +33,20 @@ enum LibraryIcon: String, Equatable {
         default: return .folder
         }
     }
+
+    /// The SF Symbol a screen draws for this icon.
+    ///
+    /// ⚠ **ONE RULE, ONE PLACE, and it was moved here in U3 for that reason.** `BrowseView` had this mapping
+    /// as a private function, and the Home's poster badge needed the same three names — a second switch would
+    /// have been this repo's most-repeated defect (and a `String`, so it stays in the Foundation-only file and
+    /// can still be checked on Linux without SwiftUI).
+    var systemImage: String {
+        switch self {
+        case .film: return "film"
+        case .tv: return "tv"
+        case .folder: return "folder"
+        }
+    }
 }
 
 /// `lib.ts::LibraryNavEntry` — one library, ready to render as navigation.
@@ -104,6 +118,71 @@ enum BrowseRules {
                             folderID: folder.id,
                             warning: "")
         }
+    }
+
+    // ---------------------------------------------------------------- the top bar's tabs (ONE rule)
+
+    /// ⚠⚠ **WHERE THE CURRENT SCREEN IS, as a value — the input to ``tabPlan(entries:current:)``.**
+    enum LibraryTabTarget: Equatable {
+        case home
+        /// The Browse screen with no folder open — the library LIST.
+        case browse
+        /// One folder's wall.
+        case folder(String)
+    }
+
+    /// One tab of the top bar, as a VALUE (no closures), so "which tabs exist and which one is current" is a
+    /// rule a machine can check.
+    struct LibraryTabPlan: Equatable, Identifiable {
+        enum Kind: Equatable { case home, browse, library }
+
+        /// ⚠ Stable identity: `"home"` / `"browse"`, or the entry's own id (`"folder:<id>"` /
+        /// `"unresolved:<name>"` — `libraryNavEntries`' rule).
+        let id: String
+        let kind: Kind
+        let title: String
+        /// The folder this tab opens — `nil` for Home and for the Browse fallback.
+        let folderID: String?
+        /// True for the tab the viewer is on — the prototype's `[aria-current="true"]`.
+        let isCurrent: Bool
+        /// False for a library the server could not resolve: it keeps its tab and its warning and simply
+        /// cannot be selected (`browseEntries`' rule, on the bar as well as in the list).
+        let isEnabled: Bool
+        let warning: String
+    }
+
+    /// ⚠⚠ **THE TOP BAR'S TABS, EXTRACTED SO THERE IS ONE COPY OF THEM.** `HomeView` built this row inline
+    /// until Phase V, and the Library screen needs the same row with a different tab marked current — which
+    /// is exactly the shape of this repo's most-repeated defect ("one rule in two places"), the one that put
+    /// the `Add profile` tile off the edge of his screenshot and the one `TopBar`'s own header warns about
+    /// (*"the tabs are this profile's libraries, not a literal list"*). So the DECISION moved here — pure,
+    /// run in the harness — and both screens map it to `TopBarTab`s with their own closures.
+    ///
+    /// ⚠ **`Home` is always first, and the `Browse` tab exists ONLY when there are no libraries at all.**
+    /// That fallback is not cosmetic: without it a profile with no libraries would have an empty bar and **no
+    /// way into the one screen that explains the empty config**. It is never offered beside real tabs,
+    /// because then it would duplicate them.
+    static func tabPlan(entries: [LibraryNavEntry], current: LibraryTabTarget) -> [LibraryTabPlan] {
+        var tabs: [LibraryTabPlan] = [
+            LibraryTabPlan(id: "home", kind: .home, title: "Home", folderID: nil,
+                           isCurrent: current == .home, isEnabled: true, warning: ""),
+        ]
+
+        if entries.isEmpty {
+            tabs.append(LibraryTabPlan(id: "browse", kind: .browse, title: "Browse", folderID: nil,
+                                       isCurrent: current == .browse, isEnabled: true, warning: ""))
+            return tabs
+        }
+
+        tabs.append(contentsOf: entries.map { entry in
+            var isCurrent = false
+            if case .folder(let open) = current, let folderID = entry.folderID {
+                isCurrent = folderID == open
+            }
+            return LibraryTabPlan(id: entry.id, kind: .library, title: entry.name, folderID: entry.folderID,
+                                  isCurrent: isCurrent, isEnabled: entry.isOpenable, warning: entry.warning)
+        })
+        return tabs
     }
 
     /// `lib.ts::folderCountLabel` — `"6 titles"` / `"1 title"`. Plural, always.

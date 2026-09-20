@@ -182,6 +182,13 @@ a Siri Remote the primary text input.
 **But `AVPlayer`'s HLS segment requests are the risky part** — do not bet playback on cookie
 propagation.
 
+⚠⚠ **AMENDED 2026-09-20: read this as a CAUTION, not a measurement, and do not build B1–B3 up front on it.**
+Raising it to a build order is the same unproven claim from the other side — *assuming* propagation fails is
+exactly as untested as *assuming* it works, and the build would then be justified by nothing. The tvOS player
+phase is ordered so its round **measures** it (a `401` on a `…/hls/…` URL, named by `RKMLog.request`) and the
+carrier is built only on a red result: `docs/TVOS_PLAYER_PLAN.md` §3 · `docs/TVOS_UX_PLAN.md` §5. ⚠ This section's
+B1–B3 remain the right design if it IS needed — the change is *when* they are built, not what they are.
+
 Do not fight it. Extend the seam the architecture already declares (§11 — *the credential comes from
 `api/session.py` only*):
 

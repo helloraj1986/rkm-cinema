@@ -188,30 +188,57 @@ whichever scenario runs last, so the failing scenario MOVES.
 
 ---
 
-## 13 · The title screen — *"completely zoomed in… I can only see a portion of the page"*
+## 13 · The title screen — *"still zoomed: only part of the page is visible"*
 
-**✅ THE PAGE OVERFLOW IS FIXED AND MEASURED — the app's own file log is the proof (round 9):** `screen =
-1760x960 pt at x=80 y=60`, `bar = 1759x115 at x=80`, `hero = 1760x712 at x=80 y=175`, `page = 1760x844`. Every
-element sits inside `x = 80…1840` and none is wider than the container ⇒ nothing is off-screen and nothing is
-over-wide. His *"THE SCREEN IS NOW A LITTLE BIT ZOOMED OUT"* was this landing.
+**✅ FIXED IN PHASE W (2026-09-20) — AND THE FAULT WAS NOT ON THE TITLE SCREEN AT ALL: EVERY screen was drawn
+in a box 9.1 % narrower than the design it was transcribed from.** `KNOWN_ISSUES` #13 was open from round 6
+(`"THE WHOLE PAGE IS ZOOMED IN AND I CAN ONLY SEE A PORTION OF THE PAGE.. MAY BE IT'S A RESOLUTION ISSUE IN
+DETAILS PAGE"`) through rounds 7–9, and the three attempted fixes before this one — the cast row's width, the
+cast row's cap, and the focus default — were each a correct fix to a real defect that was not this one.
 
-⚠⚠ **THE MEASUREMENT THAT CLOSED IT: tvOS hands a view `1760 × 960`, not `1920 × 1080`** — the canvas minus its
-80 pt overscan inset per side (60 pt top/bottom). So `TVTokens.Metric.screenWidth` (1920) is the CANVAS and any
-rule about WHAT FITS must use the new **`TVTokens.Metric.layoutWidth`** (1760). The rail that broke the page was
-**ten of his `150px` items = 2208 pt against a 1598.7 pt content width**; the cap is now **7** (1534.68 pt, 28.8 pt
-of slack), and eight items provably overflow by 195.52 pt. ⚠ Round 7's *"an item was as wide as the name"* is
-**wrong** (`castItem` already carried his width — see PROGRESS.md's round-9 correction) and round 7 also
-squeezed the cast SECTION to 189 pt; both are repaired.
+**The measurement, and the reading of it that round 9 got half right.** Round 9's file log said
+`screen = 1760x960 pt at x=80 y=60`, and round 9 concluded *"nothing is off-screen and nothing is over-wide"* —
+true of the box, and **the box was the bug**. Those 1760 × 960 are tvOS's **safe area**; every prototype this app
+is built from is a full-screen page that indents by `4.2 %` of the screen itself (`4.2u` = set 2's `64px`). So
+the app was applying a safe margin **on top of** a design that already has one:
 
-**⚠ STILL OPEN — HIS VISUAL CALL, NOT A BUG I CAN SETTLE:** his `.hero` is full-bleed from `y = 0` with the top
-bar floating over it (`position: fixed`); the app draws both INSIDE the safe area — the hero at `x = 80…1840`,
-starting at `y = 175` (the 60 pt inset plus the 115 pt bar). So the artwork is **160 pt narrower** than his file
-and **175 pt lower**. ⚠ The cost of changing it: drawing into the overscan is what tvOS's safe area exists to
-prevent (some TVs crop it).
+| | arithmetic | result |
+|---|---|---|
+| the box his designs are drawn against | `1920 − 2 × 80.64` | **1758.7 pt** |
+| the box the app drew them in | `1760 − 2 × 80.64` | **1598.7 pt** — **9.1 % narrower** |
+| the title's first glyph | `80 + 80.64` | **160.64 pt** in, where his file puts it at **80.64** |
+| the hero | `712.8` of a **960 pt** box | **74.3 %**, where his `66vh` means 66 % |
+| ⇒ where `Play` landed | `932 of 960` | **off the bottom edge** — so the screen opened scrolled with its hero cut |
 
-**Round 8's focus fix — still to be confirmed by him:** `Play` is now the screen's DEFAULT FOCUS (his prototype's
-own decision) and MENU is a real Back (`.onExitCommand`). ⚠ The mechanism is a HYPOTHESIS — the falsifier is
-whether the ring starts on `Play`, whether Select plays the film, and whether the arrows reach the top bar.
+⚠ **Not one number in the token table was wrong.** `u` (19.2 pt) and `px` (1.26 pt) were always derived from
+the 1920 × 1080 canvas; the canvas is simply what the screens were never given. **The fix is one
+`ignoresSafeArea()` on the routing `ZStack` in `App/AppRootView.swift`**, plus the title screen's own rewrite to
+his file's structure (`docs/TVOS_TITLE_SCREEN_PLAN.md`).
+
+**His 4K question is answered by the layout being panel-independent:** tvOS gives every device the same
+1920 × 1080 **point** space — a 4K Apple TV renders those points at `scale = 2.0` — so no screen needs a panel
+check. **Artwork was the one exception** (the backdrop route's `1600 px` default is 2.4× short of a full-width
+hero on 4K); `PosterURL.width(points:scale:route:)` now asks for 3840 px on a 4K panel and 1920 px on a 1080p
+one.
+
+**⚠ AWAITING HIS ROUND — what to check, in order (`TVOS_TITLE_SCREEN_PLAN.md` §6, W-F1…W-F7):**
+
+1. **the whole page is on screen at once** — no clipped first letter, and the action row above the bottom edge;
+2. **the hero reaches both screen edges** (no 80 pt gutter of near-black down either side) and the title block
+   sits over its lower part;
+3. `Play` is reachable, starts the film, and the arrows reach the top bar from it (round 8's own fix, still
+   unconfirmed on his screen);
+4. the bar **floats over** the hero and `Back` still leaves the screen;
+5. the cast row is one row of round initials that fits;
+6. the backdrop is **sharp** on a 4K panel;
+7. **the app's own file log says `detail-size: screen = 1920x1080 pt at x=0 y=0`** — if it still says
+   `1760x960 at x=80 y=60`, the double inset is back and this phase did not land.
+   `find "$(xcrun simctl get_app_container booted com.helloraj1986.RKMCinemaTV data)" -name rkm-tvos.log`
+
+**⚠ THE TRADE THIS ACCEPTS, AND IT IS THE ONE THING THAT COULD REOPEN THIS:** the design's margin is **80.64 pt**
+from the panel edge and Apple's tvOS guidance is **90 pt**, so a television cropping more than 4.2 % of the frame
+(older panels crop 2–5 %) can clip the outer edge of the margin. That is the same exposure his HTML has when a
+browser draws it full screen, and the knob is **`Metric.safeMargin` — one number**.
 
 ---
 

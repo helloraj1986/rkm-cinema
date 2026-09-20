@@ -99,4 +99,23 @@ enum PosterURL {
     static func clamped(_ width: Int, route: Route = .poster) -> Int {
         min(max(width, route.widthRange.lowerBound), route.widthRange.upperBound)
     }
+
+    /// ⚠⚠ **THE WIDTH A BAND OF `points` NEEDS ON A PANEL OF `scale` — and it is the ONE place in this app
+    /// where the TELEVISION matters.** His question, 2026-09-20: *"the real tv screen resolution can be 4k or
+    /// less depends on tv so we have to take care of that scenario"*.
+    ///
+    /// tvOS's point space is fixed at 1920 × 1080 **points** on every device, so the LAYOUT is already
+    /// panel-independent — but the ARTWORK is not: an Apple TV 4K renders those points at `scale = 2.0`
+    /// (Apple's own Apple-TV-4K guidance: *"when attached to a 4K television, UIKit will now automatically
+    /// select retina assets"*), so a full-width hero is 3840 px there and 1920 px on a 1080p Apple TV. The
+    /// route's own default — `1600`, which is the WEB app's `backdropUrl` number — is **2.4× short** of a
+    /// full-width hero on a 4K panel, which is exactly what "the resolution is not right" looks like.
+    ///
+    /// ⚠ `scale` is the CALLER's `@Environment(\.displayScale)` and never a constant in here: a constant
+    /// would be right on exactly one television, which is the class of bug this file's header is about.
+    /// ⚠ `max(scale, 1)` because a scale below 1 is not a real display and must not SHRINK the request below
+    /// the point size it is filling.
+    static func width(points: CGFloat, scale: CGFloat, route: Route = .poster) -> Int {
+        clamped(Int((points * max(scale, 1)).rounded()), route: route)
+    }
 }

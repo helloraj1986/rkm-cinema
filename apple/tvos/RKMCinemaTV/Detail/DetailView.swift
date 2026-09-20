@@ -1,54 +1,46 @@
 import SwiftUI
 import RKMServerKit
 
-/// Item detail — screen #5, **redesigned in Phase V to `tvos_ux/2. LibraryViewandItemDetailsView/title-view.html`**.
+/// Item detail — screen #5, **rewritten in Phase W to `tvos_ux/2. LibraryViewandItemDetailsView/title-view.html`**.
 ///
-/// ⚠⚠ **READ-ONLY, AND IT SAYS SO — AND IN PHASE V THAT IS A DECISION HE MADE, NOT A DEFAULT.**
-/// His prototype opens with focus on **Play** (*"the one-button path to watching"*). ⚠ That control was
-/// deliberately ABSENT until 2026-09-20: the tvOS player was Phase C and parked (`Core/PlaybackAuth.swift`
-/// existed; C2–C5 did not), so he was asked and chose **no Play control until the player exists** —
-/// `docs/ARCHITECTURE.md` §11's rule is *"never OFFER what the server will refuse"*, and a focusable Play
-/// button that apologises when pressed
-/// is that lie told one press later.
+/// ⚠⚠ **WHY IT WAS REWRITTEN RATHER THAN PATCHED, IN HIS OWN WORDS (2026-09-20):** *"the details view screen
+/// is available but its resolution somehow not working … we should reuse the details screen component
+/// wherever we can … rewrite the code if it is required rather than just patching up the existing details
+/// screen"*. What the rewrite actually changed is STRUCTURAL, and that is the reason a patch could not have
+/// done it:
 ///
-/// ⇒ **NOTHING ON THIS SCREEN IS A BUTTON EXCEPT THE WAY OUT.** The top bar carries the app's own `TopBar`
-/// ⚠⚠ **PHASE C3 LANDED THE PLAYER, SO THE ROW IS NOW ONE REAL CONTROL** — `playAction` below, labelled by
-/// `DetailSnapshot.primaryVerb` and wired to `AppModel.openPlayer`. Everything else about this screen is
-/// unchanged: it still states where playback comes from, and the verb it offers is still a rule.
+///   1. **the top bar is an OVERLAY over the hero, not a band above it** — his `.topbar` is `position:fixed`
+///      and the hero runs from `y = 0` under it;
+///   2. **the hero is FULL-BLEED** — the app's screens now fill tvOS's 1920 × 1080 point canvas
+///      (`AppRootView`, W1), so the artwork reaches both screen edges exactly as his `.hero` does;
+///   3. **the action row is the first thing under the hero** (`padding: 36px 64px 0`), which is the band
+///      order his file draws.
 ///
-/// with ONE tab — `Back`, named by `AppModel.detailReturnLabel` — and the profile avatar; the avatar opens
-/// the Profile Switcher, which is where `Sign out`, `Change server` and `Manage profiles` already live (the
-/// move Home made in U3, accepted on his simulator). **`Back` therefore has the default focus**, which is
-/// B4's own rule — *"on a screen reached from somewhere else, the way back is the primary verb"* — and it
-/// also means the screen is neither a focus trap nor a dead end.
+/// ⚠⚠ **AND THE FAULT BEHIND HIS REPORT WAS NOT ON THIS SCREEN AT ALL.** `KNOWN_ISSUES` #13's *"the whole
+/// page is zoomed in and I can only see a portion of the page"* was the app laying this screen out inside
+/// tvOS's safe area (1760 × 960 at (80, 60)) and THEN indenting by his own `64px` margin — a double inset
+/// that left the content 9.1 % narrower than the design and made this screen's 712.8 pt hero **74 %** of the
+/// height instead of the `66vh` his file asks for, which pushed `Play` off the bottom edge and opened the
+/// screen scrolled with its hero cut. The fix is one `ignoresSafeArea()` at the root, and it applies to every
+/// screen in the app — see `AppRootView`, and the trade it accepts is recorded in `TVTokens.Metric`.
 ///
-/// ⚠⚠ **AND THE CAST ROW IS ONE ROW FOR THAT REASON.** The prototype's cast shelf scrolls horizontally, which
-/// on a television is *unreachable* unless something inside it can take focus (no focus, no scroll) — and
-/// making an avatar focusable would create a control whose only outcome is a press that does nothing. So the
-/// row is drawn at its own `150px` item pitch and has to FIT: `DetailRules.castRows` caps at
-/// **`DetailRules.castCapacity`**, which is how many of his `150px` items fit `1920 − 2 × 64px` — **seven**, and
-/// not the flat ten this line used to claim. ⚠ That claim was the defect: it took the item's width from the
-/// AVATAR (`110px`) instead of from his `.cast-item` (`150px`), so ten items came to 2208 pt of a 1758.7 pt
-/// content width, and the overflowing row made the whole PAGE wider than the canvas — every element on this
-/// screen drawn left of the screen edge and cut (KNOWN_ISSUES #13, his *"THE WHOLE PAGE IS ZOOMED IN AND I CAN
-/// ONLY SEE A PORTION OF THE PAGE"*). ⚠ It is information, not a
-/// control, and the round's falsifier **V-F6** is what checks that it reads that way.
+/// ⚠ **Every decision this screen obeys is still in `DetailRules.swift`** (pure, RUN on Linux): the meta
+/// line, the rating readout, the resume percentage, the season grouping, each episode's progress sentence,
+/// the credits lines, the cast cap and the four states. This type lays that out and nothing else.
 ///
-/// ⚠ **Every decision this screen obeys is in `DetailRules.swift`** (pure, RUN on Linux): the meta line, the
-/// rating readout, the resume percentage, the season grouping, each episode's progress sentence, the credits
-/// lines, the cast cap and the four states. This type lays that out and nothing else.
-///
-/// ⚠⚠ **WHAT IS DELIBERATELY NOT BUILT, so the next session does not "finish" it by accident:**
-///   * **the action row** (Play / Trailer / Add to Watchlist / More) — his decision, above. ⚠ `Trailer`
-///     cannot land with Phase C either: `ItemDetail` decodes 21 keys and **none of them is a trailer**
-///     (`Core/Models/DetailModels.swift`), so it needs a wire change of its own;
+/// ⚠⚠ **WHAT IS STILL DELIBERATELY NOT BUILT — his answer to this phase's own question, and §11's rule
+/// (*never offer what the server will refuse*) applies to each:**
+///   * **the other three action buttons.** `Trailer` needs `RemoteTrailers` on the detail payload —
+///     `ItemDetail` decodes 21 keys and none is a trailer (`Core/Models/DetailModels.swift`), so it is a
+///     wire change of its own. `Add to Watchlist` and `More` are the acquisition/administration half of
+///     rkm-cinema, which `apple/tvos/README.md` keeps on web/iOS and where a keyboard and forms exist;
 ///   * **the "Because you watched" shelf.** On the web it is not a library row at all — `SimilarRow.tsx`
 ///     **drops every title already in the library** and its cards open a TMDB page offering *Add to
 ///     watchlist* / *Download*, because `/api/jellyfin/similar` carries a **TMDB id and no Jellyfin item
 ///     id**. Replicating it on tvOS means building an acquisition surface, which is its own phase
 ///     (`docs/TVOS_LIBRARY_UI_PLAN.md` §1 row 3 and §5);
-///   * **the top bar's collapse-on-scroll** (his `.topbar.scrolled`). It is the same class of platform claim
-///     as the Home's F6, and the plan says the Home's round settles that first — not this screen.
+///   * **the bar's collapse-on-scroll** (his `.topbar` fades out with the page). It is the same class of
+///     platform claim as the Home's F6, and that round settles it first — not this screen.
 ///
 /// ⚠ **THE EPISODE LIST IS NOT IN HIS FILE AT ALL** (his title screen is a film), so a series keeps B4's
 /// episode rows: that is real data the screen would otherwise have nowhere to put, and it is the one place
@@ -59,48 +51,58 @@ struct DetailView: View {
     @ObservedObject var store: DetailStore
     let base: URL
 
-    /// ⚠⚠ **HIS PROTOTYPE'S OWN DECISION, AND HIS ROUND-8 REPORT IS WHY IT IS NOW LOAD-BEARING:** *"I CAN SE
+    /// ⚠⚠ **THE ONE PLACE A TELEVISION DIFFERS FROM ANOTHER TELEVISION (W3).** tvOS's point space is fixed
+    /// at 1920 × 1080 on every device — a 4K panel draws the same points at `scale = 2.0` — so no LAYOUT here
+    /// needs a panel check. ARTWORK does: a full-width hero is 3840 px on 4K and 1920 px on 1080p, and the
+    /// route's own default (1600, the web app's number) is 2.4× short of the first. `displayScale` is the
+    /// platform's own answer and is never a constant in this file.
+    @Environment(\.displayScale) private var displayScale
+
+    /// ⚠⚠ **HIS PROTOTYPE'S OWN DECISION, AND HIS ROUND-8 REPORT IS WHY IT IS LOAD-BEARING:** *"I CAN SE
     /// ETHE PLAY BUTTON BUT CANT NAVIGATE FROM TOP TO THE PLAY BUTTON"*. `Play` is the one focusable control
-    /// this screen draws and it sits ~758 pt into the ONE `ScrollView` — below a 712.8 pt hero that has nothing
-    /// focusable in it — while the focused `Back` tab is a SIBLING ABOVE that scroll container. The screen
-    /// therefore opens with the ring ON `Play` (`title-view.html`: *"default focus: play/pause"*, the same
-    /// reading the player screen took), so the primary verb is reachable even if the direction search down
-    /// from the bar is not.
+    /// this screen draws and it sits below a 712.8 pt hero that has nothing focusable in it, while the focused
+    /// `Back` tab is on the bar that floats over that hero. The screen therefore opens with the ring ON
+    /// `Play` (`title-view.html`: *"default focus: play/pause"*), so the primary verb is reachable even if a
+    /// direction search down from the bar is not.
     ///
-    /// ⚠⚠ **THE MECHANISM IS A HYPOTHESIS, STATED AS ONE.** No engine runs on this machine, and the app's own
-    /// record cuts both ways: the HOME's bar is a sibling of its scroll container and Down into the rails IS
-    /// confirmed on his simulator, while the LIBRARY's sibling filter row could not be returned to
-    /// (`BrowseView` moved it INTO the scroller, and he accepted that screen). What this change removes is the
-    /// only difference it can: the screen no longer depends on a search into a container whose sole focusable
-    /// item is 758 pt down. **The falsifier is his own:** does the ring start on `Play`, does Select play the
-    /// film, and can the arrows reach the top bar from there?
+    /// ⚠⚠ **THE MECHANISM IS A HYPOTHESIS, STATED AS ONE.** No engine runs on this machine. **The falsifier is
+    /// his own:** does the ring start on `Play`, does Select play the film, and can the arrows reach the top
+    /// bar from there?
     @FocusState private var playFocused: Bool
 
     var body: some View {
-        measured("screen", VStack(alignment: .leading, spacing: 0) {
-            measured("bar", topBar)
-
-            Group {
-                switch store.state {
-                case .loading:
-                    loading
-                case .content(let snapshot):
-                    content(snapshot)
-                case .notFound:
-                    notFound
-                case .failed(let message):
-                    failure(message)
+        // ⚠⚠ **THE BAR IS AN OVERLAY, WHICH IS HIS FILE'S OWN STRUCTURE** (`.topbar { position: fixed }`,
+        // drawn over a `.hero` that starts at `y = 0`). In the previous build the bar was a BAND above the
+        // scroller, which is the one difference that a rewrite can remove and a patch cannot: it changes where
+        // the hero starts, and therefore what the first screenful contains.
+        ZStack(alignment: .top) {
+            measured("screen", VStack(alignment: .leading, spacing: 0) {
+                Group {
+                    switch store.state {
+                    case .loading:
+                        loading
+                    case .content(let snapshot):
+                        content(snapshot)
+                    case .notFound:
+                        notFound
+                    case .failed(let message):
+                        failure(message)
+                    }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            })
+
+            VStack(spacing: 0) {
+                measured("bar", topBar)
+                Spacer(minLength: 0)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        })
+        }
         // ⚠⚠ The screen's default focus — see `playFocused`. `.defaultFocus` is the PLATFORM's way to say
         // this (the focus engine owns every move from there); nothing here computes a neighbour.
         .defaultFocus($playFocused, true)
-        // ⚠⚠ **AND THE SCREEN GETS ITS OWN WAY OUT.** The tvOS MENU button is the canonical Back and this
-        // screen's only other exit is the top bar's tab — which is INSIDE a `ScrollView` and therefore can
-        // scroll out of reach. `ARCHITECTURE.md` ranks a dead end above any cosmetic rule, and the player
-        // screen already answers MENU this way.
+        // ⚠⚠ **AND THE SCREEN GETS ITS OWN WAY OUT.** The tvOS MENU button is the canonical Back and the
+        // bar's tab is an OVERLAY at the top of a screen that scrolls — so the screen does not depend on it
+        // being reachable. `ARCHITECTURE.md` ranks a dead end above any cosmetic rule.
         .onExitCommand { app.closeDetail() }
         // ⚠ `.task`, not `.onAppear`: the load is async, and the store is built per item (`AppModel`), so
         // this runs once for the item that is open.
@@ -111,10 +113,10 @@ struct DetailView: View {
 
     // MARK: - The top bar
 
-    /// ⚠ **The app's own bar, with ONE tab.** His title screen draws *"the wordmark and a back link"* and no
-    /// library tabs, which is exactly what this is — and the bar is where `Back` lives so that the way out is
-    /// the first focusable thing on the screen, which is what makes the default focus honest rather than a
-    /// compromise.
+    /// ⚠ **The app's own bar, with ONE tab** — his title screen draws *"the wordmark and a back link"* and no
+    /// library tabs, which is exactly what this is. ⚠ It carries the profile avatar too, because the avatar
+    /// is where `Sign out`, `Change server` and `Manage profiles` already live and the bar is the only surface
+    /// on this screen that can hold them.
     private var topBar: some View {
         TopBar(tabs: [
             TopBarTab(id: "detail:back",
@@ -139,7 +141,11 @@ struct DetailView: View {
                 .font(.system(size: TVTokens.Title.metaSize))
                 .foregroundStyle(RKMColour.secondary)
         }
-        .padding(LibraryRules.marginFromPrototype)
+        // ⚠⚠ **THE BAR FLOATS OVER THE CONTENT NOW, SO EVERY STATE THAT IS NOT THE HERO HAS TO CLEAR IT.**
+        // `Title.blockPaddingBottom` would be a guess; `Bar.clearance` is the bar's own measured height off
+        // his round-9 log (`bar = 1759x115 pt`).
+        .padding(.top, TVTokens.Bar.clearance)
+        .padding(.leading, LibraryRules.marginFromPrototype)
     }
 
     // MARK: - The two failure states
@@ -174,25 +180,23 @@ struct DetailView: View {
             .padding(.top, TVTokens.Grid.gridTopPad)
         }
         .padding(.horizontal, LibraryRules.marginFromPrototype)
-        .padding(.vertical, TVTokens.Grid.emptyPaddingV)
+        .padding(.top, TVTokens.Bar.clearance)
+        .padding(.bottom, TVTokens.Grid.emptyPaddingV)
         .buttonStyle(.bordered)
     }
 
     // MARK: - The title
 
     private func content(_ snapshot: DetailSnapshot) -> some View {
-        // ⚠⚠ **NO `GeometryReader` — AND REMOVING IT IS A FOCUS FIX, NOT A TIDY-UP.** His round-3 report:
-        // *"i can not go to the play button on any title"*, and the Play control is the only focusable thing
-        // inside this scroll content. The reader was here to measure `66vh`, which is the SAME structure
-        // `BrowseView.cardWidth` blames for KNOWN_ISSUES #11 (*"i cant come to the titles by pressing down
-        // arrow"*): a `GeometryReader` reports its size only AFTER layout, and the frames it hands its children
-        // are what the focus engine navigates on. On tvOS the canvas is fixed at 1080 pt, so `66vh` is a
-        // CONSTANT (`TVTokens.Title.heroHeight`, pinned by the harness against the fraction it came from) and
-        // nothing needs measuring. ⚠ What is left is the app's own working shape — a `ScrollView` whose content
-        // is a plain `VStack`, exactly like the Home's rails.
+        // ⚠⚠ **NO `GeometryReader` WRAPPED AROUND THE CONTENT — AND THAT IS A FOCUS RULE, NOT A TIDY-UP.**
+        // The reader was removed in round 3: it was here to measure `66vh`, and on tvOS the box is FIXED
+        // (`TVTokens.Metric.screenHeight`), so the fraction is a constant and nothing needs measuring. A
+        // reader whose frames the focus engine navigates on is the structure `BrowseView.cardWidth` blames
+        // for his *"i cant come to the titles by pressing down arrow"* (KNOWN_ISSUES #11). What is left is
+        // the app's own working shape — a `ScrollView` whose content is a plain `VStack`.
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: 0) {
-                hero(snapshot, height: TVTokens.Title.heroHeight)
+                measured("hero", hero(snapshot))
 
                 below(snapshot)
 
@@ -211,14 +215,18 @@ struct DetailView: View {
     }
 
     /// `.hero` — the full-bleed backdrop with the title block over its lower part.
-    private func hero(_ snapshot: DetailSnapshot, height: CGFloat) -> some View {
+    ///
+    /// ⚠⚠ **FULL-BLEED IS THE POINT OF W1.** His `.hero` is the full width of the page and starts at `y = 0`,
+    /// and the app's screens now fill the canvas, so `maxWidth: .infinity` here really is the screen's two
+    /// edges — not the 1760 pt safe-area box that used to leave an 80 pt gutter of near-black down each side.
+    private func hero(_ snapshot: DetailSnapshot) -> some View {
         ZStack(alignment: .bottomLeading) {
-            artwork(snapshot, height: height)
+            artwork(snapshot)
             scrim
             titleBlock(snapshot)
         }
         .frame(maxWidth: .infinity)
-        .frame(height: height)
+        .frame(height: TVTokens.Title.heroHeight)
         .clipped()
     }
 
@@ -226,17 +234,27 @@ struct DetailView: View {
     /// the Home's hero band uses (same loader, same cookie handling, same log line, same poster fallback), so
     /// a hero whose artwork failed says why rather than showing a black band.
     ///
+    /// ⚠⚠ **AND IT ASKS FOR THE PIXELS THIS BAND ACTUALLY NEEDS** (`PosterURL.width(points:scale:route:)`,
+    /// W3): a full-width hero on a 4K panel is 3840 px, and the route's default of 1600 px — which is the WEB
+    /// app's `backdropUrl` number — would be upscaled 2.4× across it. On a 1080p Apple TV the same expression
+    /// asks for 1920 px and does not download more bytes than the screen can show.
+    ///
     /// ⚠ The prototype paints its hero with a two-tone CSS gradient and an `.hero-emblem` watermark because a
     /// mockup has no film behind it. Real keyart is strictly better, so the artwork is the source and the
     /// prototype's own wash is kept only as the fallback underneath it — the same trade `HeroBand` makes.
-    private func artwork(_ snapshot: DetailSnapshot, height: CGFloat) -> some View {
+    private func artwork(_ snapshot: DetailSnapshot) -> some View {
         ZStack {
             LinearGradient(colors: [RKMColour.surface2, RKMColour.background],
                            startPoint: .topLeading, endPoint: .bottomTrailing)
-            PosterImageView(base: base, itemID: snapshot.detail.itemID, route: .backdrop)
+            PosterImageView(base: base,
+                            itemID: snapshot.detail.itemID,
+                            route: .backdrop,
+                            width: PosterURL.width(points: TVTokens.Metric.screenWidth,
+                                                   scale: displayScale,
+                                                   route: .backdrop))
         }
         .frame(maxWidth: .infinity)
-        .frame(height: height)
+        .frame(height: TVTokens.Title.heroHeight)
         .clipped()
     }
 
@@ -328,15 +346,9 @@ struct DetailView: View {
 
     private func below(_ snapshot: DetailSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            // ⚠⚠ **THE ACTION ROW COMES FIRST — IT IS HIS FILE'S OWN ORDER, AND PUTTING IT LATER IS HIS
-            // ROUND-6 REPORT.** `title-view.html` runs `.hero` → `.actions` (`padding: 36px 64px 0`) →
-            // `.synopsis` → the shelves, and `.actions` holds the `Play` control his prototype OPENS ON (`the
-            // one-button path to watching`). Nothing competes with it: this screen is otherwise information
-            // only, and the top bar's `Back` is above it.
-            // ⚠ What it must NOT be is the THIRD thing down. The credits block below is not in his file at
-            // all, and with it first the primary verb landed at ≈1030 pt of a 1080 pt screen — at the bottom
-            // edge, on a screen whose only other focusable control is the top bar's `Back`. That is the shape
-            // he described as *"not able to navigate anywhere"*.
+            // ⚠⚠ **THE ACTION ROW COMES FIRST — IT IS HIS FILE'S OWN ORDER** (`.hero` → `.actions` → the
+            // shelves), and `.actions` holds the `Play` control his prototype OPENS ON. Nothing competes with
+            // it: this screen is otherwise information only, and the bar floats above it.
             playAction(snapshot)
                 .padding(.top, TVTokens.Title.actionTopPad)
 
@@ -378,6 +390,9 @@ struct DetailView: View {
     /// ⚠ **The bar is the reason a preplay screen is worth having**: identical artwork tells a viewer nothing
     /// about where they stopped. Drawn only when the state can be stated honestly (`DetailRules.resumePercent`
     /// is 0 for a finished title and for one with no runtime), so an absent bar means "unknown".
+    ///
+    /// ⚠ Not in his file — his mockup is an unwatched film — and kept because it is the one thing on this
+    /// screen that his file could not have had. Recorded rather than dropped as "not in the design".
     private func resumeBar(percent: Int) -> some View {
         HStack(spacing: TVTokens.Title.metaGap) {
             GeometryReader { geometry in
@@ -401,10 +416,11 @@ struct DetailView: View {
     /// "Resume S1E4" / "Play next") has been rendered by the Home's hero since B4, so the button and the
     /// sentence can never disagree about what pressing it does.
     ///
-    /// ⚠ **ONE control, not his prototype's four.** `Trailer` needs `RemoteTrailers` on the detail payload
-    /// and `Add to Watchlist` / `More` are acquisition/administration — the half of rkm-cinema that
-    /// `apple/tvos/README.md` keeps on web/iOS. A row of controls this screen cannot honour is the thing
-    /// this file's header has been refusing since B4.
+    /// ⚠ **ONE control, not his prototype's four** — see this file's header for the measurement behind each
+    /// of the three that are absent. ⚠ Its chrome is the app's ONE action-button implementation
+    /// (`CtaButtonStyle`) with set 2's own measurements (`metrics: .title`): his `.btn` is `19px / 16px 30px
+    /// / r14` with a `2px --gold-bright` ring and a glow, where set 1's hero CTA is `1.1u / 0.85u 1.8u / 0.9u`
+    /// with a white one.
     private func playAction(_ snapshot: DetailSnapshot) -> some View {
         Button {
             app.openPlayer(itemID: snapshot.detail.itemID, detail: snapshot.detail)
@@ -414,7 +430,7 @@ struct DetailView: View {
                 Text(snapshot.primaryVerb)
             }
         }
-        .buttonStyle(CtaButtonStyle(kind: .primary))
+        .buttonStyle(CtaButtonStyle(kind: .primary, metrics: .title))
         .focused($playFocused)
         .accessibilityLabel(snapshot.primaryVerb)
     }
@@ -437,7 +453,7 @@ struct DetailView: View {
 
     /// ⚠ **No headshots, and no scrolling.** tvOS draws the names on round initials — which is exactly what
     /// the prototype draws (`initials(name)` on a coloured field) and needs **no request per person**, where
-    /// the web's `personHeadshotUrl` is one proxy call each. See this file's header for why the row is one row.
+    /// the web's `personHeadshotUrl` is one proxy call each. See this file's header for why the row is ONE row.
     ///
     /// ⚠ The initial's letters come from `ProfileRules.initials` — the SAME function the Profile Switcher's
     /// tiles and the top bar's avatar use, so the app has one answer to "what are this name's initials".
@@ -460,27 +476,22 @@ struct DetailView: View {
         }
     }
 
-    // MARK: - ⚠⚠ A MEASUREMENT, NOT A LAYOUT (added 2026-09-20 to answer his round-6 report)
+    // MARK: - ⚠⚠ A MEASUREMENT, NOT A LAYOUT
 
-    /// ⚠⚠ **THIS EXISTS TO BE DELETED, AND IT ANSWERS A QUESTION NOTHING ON THIS MACHINE CAN.**
+    /// ⚠⚠ **THIS EXISTS TO BE DELETED, AND IN PHASE W IT ANSWERED THE QUESTION IT WAS ADDED FOR.**
     ///
     /// His round-6 report: *"THE WHOLE PAGE IS ZOOMED IN AND I CAN ONLY SEE A PORTION OF THE PAGE..MAY BE IT'S
-    /// A RESOLUTION ISSUE IN DETAILS PAGE NOT SURE"*.
+    /// A RESOLUTION ISSUE IN DETAILS PAGE NOT SURE"*. Round 9's file log answered it —
+    /// `detail-size: screen = 1760x960 pt at x=80 y=60` — i.e. the box was the canvas MINUS its overscan
+    /// inset, which the app's own margin was then added on top of. W1 fixed that at the root.
     ///
-    /// Measured from the screenshot he sent (3840 × 2160 = a 1920 × 1080 pt canvas at 2×, and **every font on it
-    /// measures at its token size, so the UI itself is not scaled**): the focused tab's label sits at x = 59.5 pt
-    /// where `Bar.paddingH` + the brand + `tabSpacing` put it at ≈293 pt, and the bar's right-hand content (the
-    /// profile avatar) is not on screen at all. That is a page WIDER than the canvas and shifted left — but
-    /// every element in this file has a bound, and reading them cannot say which one is the outlier. So the
-    /// round measures it instead of guessing:
+    /// ⚠ **W-F7 IS THE FALSIFIER AND IT IS THIS LINE**: after W1 the screen must report
+    /// **`1920x1080 pt at x=0 y=0`**. If it still reports `1760x960 at x=80 y=60`, the double inset is still
+    /// there and this phase did not land. The labels kept are the CANVAS (`screen`), the BAR (`bar` — which
+    /// now floats, so its `y` should be 0) and the HERO (`hero` — which should span the full width and start
+    /// at `y = 0` under the bar).
     ///
-    ///     detail-size: <label> = <w>×<h> pt at x=<global minX> y=<global minY>
-    ///
-    /// ⚠⚠ **TRIMMED TO THE THREE THAT MATTER** after his round 8 (he could not scroll the HUD panel to read
-    /// them, and the panel shows the newest lines, so the ones logged at appearance were buried): the CANVAS
-    /// (`screen` — ⚠ and it is **1760 × 960 at x = 80, y = 60**, i.e. the CANVAS MINUS tvOS's overscan inset:
-    /// that is the one number that explains the whole report, because it is the width the app's rules must
-    /// count against), the BAR (`bar`), and the ROW THIS SESSION BOUNDED (`cast-row`). ⚠ Read them from the FILE log, which needs no panel and no scrolling:
+    /// ⚠ Read them from the FILE log, which needs no panel and no scrolling:
     /// `find "$(xcrun simctl get_app_container booted com.helloraj1986.RKMCinemaTV data)" -name rkm-tvos.log`
     ///
     /// ⚠ **IT CANNOT AFFECT LAYOUT, WHICH IS THE ONLY REASON IT IS ALLOWED ON THIS SCREEN.** A `GeometryReader`

@@ -137,6 +137,15 @@ enum TVTokens {
         /// The ring a focused tab or icon button draws (§`box-shadow: 0 0 0 0.16u`).
         static let focusRing = u * 0.16
         static let focusScale: CGFloat = 1.08
+
+        /// ⚠⚠ **THE BAR'S OWN HEIGHT, SO A SCREEN CAN CLEAR IT — AND IT IS A MEASURED NUMBER, NOT A SUM.**
+        /// His round-9 file log: `detail-size: bar = 1759x115 pt at x=80 y=59`. ⚠ It cannot be derived from
+        /// this table: the bar's contents are a brand, a row of tabs, an icon button and their paddings, and
+        /// the MATERIAL behind them is extended upward by `.ignoresSafeArea(edges: .top)` — so the bar is
+        /// taller than its own content box and only a measurement says by how much.
+        /// ⚠ The one caller is the title screen (W2): its bar FLOATS over the hero, so every state that is
+        /// not the hero has to clear it. `u * 6` = 115.2 pt, rounded from the log's 115.
+        static let clearance = u * 6
     }
 
     // MARK: - A shelf (`.shelf` + `.card` in the prototype)
@@ -360,9 +369,13 @@ enum TVTokens {
 
         // ---- the hero (`.hero`)
         /// `.hero { height: 66vh; min-height: 520px }` — ⚠ a FRACTION of the screen and not a point value,
-        /// because that is what `vh` is: `0.66 × 1080 ≈ 712.8 pt`. The Home's hero is `32u = 614.4 pt`, so
-        /// the Title screen's backdrop is genuinely taller, which is the prototype's intent ("the title block
-        /// sits over the BACKDROP", where the Home's sits over a band).
+        /// because that is what `vh` is. ⚠⚠ **IT IS A FRACTION OF THE BOX THE SCREEN LAYS OUT IN, WHICH IS
+        /// THE CANVAS — and reading it as a fraction of the SAFE AREA was the whole of KNOWN_ISSUES #13.**
+        /// The screens fill tvOS's 1920 × 1080 point canvas (W1's root-level decision), so `66vh` is
+        /// `0.66 × 1080 = 712.8 pt` — the value this constant has always carried, now derived from the right
+        /// box. ⚠ While the screens were laid out inside the safe area it was 712.8 pt of a **960 pt** box,
+        /// i.e. 74.3 % of the height instead of 66 %, which pushed the action row off the bottom of the
+        /// screen and made the page open scrolled with its hero cut.
         static let heroHeightFraction: CGFloat = 0.66
         /// …and its `min-height`, which matters on no tvOS screen (1080 pt is fixed) but is transcribed so the
         /// two numbers stay side by side with their source.
@@ -377,9 +390,15 @@ enum TVTokens {
         ///
         ///     0.66 × 1080 = 712.8 pt, and 712.8 / 19.2 = **37.125u**  (u = 1 % of the 1920 pt width)
         ///
-        /// ⚠ The harness pins `heroHeight == 1080 × heroHeightFraction`, so this constant cannot drift from the
-        /// fraction it came from.
-        static let heroHeight = u * 37.125
+        /// ⚠⚠ **AND THE PROSE IS NOW THE ARITHMETIC (W1): `Metric.screenHeight × heroHeightFraction`.** The
+        /// constant used to be written as `u * 37.125` — a hand-converted point value with its derivation in
+        /// a comment, which is exactly what this file's own header forbids. The box is named instead, so if
+        /// the box ever moves the hero moves with it.
+        ///
+        /// ⚠ The harness pins `heroHeight == Metric.screenHeight × heroHeightFraction` **and**
+        /// `Metric.screenHeight == 1080`, so this constant cannot drift from either the fraction it came from
+        /// or the canvas it is a fraction OF.
+        static let heroHeight = Metric.screenHeight * heroHeightFraction
         /// `.hero::after`'s `linear-gradient(to top, var(--void) 0%, rgba(10,11,13,.65) 32%, transparent 68%)`.
         static let scrimSolidStop: CGFloat = 0
         static let scrimMidStop: CGFloat = 0.32
@@ -412,6 +431,33 @@ enum TVTokens {
         /// reason — with the wrong pad the primary verb of the whole screen sits 14px low, which is how a
         /// control ends up within a button's height of the bottom edge.
         static let actionTopPad = px * 36
+
+        // ---- the action button (`.btn`, and it is NOT the Home's `.hero-cta`)
+        /// ⚠⚠ **HIS TWO PROTOTYPES DRAW TWO DIFFERENT GOLD BUTTONS, AND BOTH ARE HIS.** Set 1's hero CTA is
+        /// `font-size:1.1u`, `padding:0.85u 1.8u`, `radius:0.9u` (`TVTokens.Hero.cta*`), and set 2's `.btn` —
+        /// the one on this screen — is absolute px:
+        ///
+        ///     padding: 16px 30px;  border-radius: 14px;  font-size: 19px;  font-weight: 600
+        ///     border: 2px solid transparent;  .is-focused { transform: scale(1.08); border-color: var(--gold-bright) }
+        ///
+        /// ⇒ `19px → 23.94 pt` against the hero's `1.1u = 21.12 pt`, and the padding is 30 px against
+        /// `1.8u = 34.56 pt`. Reading them as one button would be this file's header rule broken in the
+        /// direction it was written for. ⚠ What IS shared is the CHROME — one focus ring, one scale
+        /// animation, one place the gold fill is decided (`CtaButtonStyle`, which takes these as a preset).
+        static let btnFontSize = px * 19
+        static let btnPaddingH = px * 30
+        static let btnPaddingV = px * 16
+        static let btnRadius = px * 14
+        static let btnFocusScale: CGFloat = 1.08
+        /// `.btn { border: 2px solid transparent }` → `--gold-bright` on focus. ⚠ The app's `accentHover` IS
+        /// his `--gold-bright` (U6's palette table), which is why the ring is that token and not a new colour.
+        static let btnRingWidth = px * 2
+        /// `.btn.is-focused { box-shadow: 0 10px 26px rgba(0,0,0,.45), 0 0 26px rgba(232,179,61,.4) }` — the
+        /// second shadow only. ⚠ The first is a DROP shadow under a lifted control, and on a black screen at
+        /// three metres it is invisible; the gold one is the part that makes the focused button read as lit,
+        /// which is why it is the one kept (`26px → 41.16 pt`, its colour's own 0.4).
+        static let btnGlowRadius = px * 26
+        static let btnGlowOpacity: Double = 0.4
 
         // ---- the synopsis (`.synopsis`)
         static let synopsisTopPad = px * 40
@@ -631,23 +677,51 @@ enum TVTokens {
         /// 100u = the 1920 pt tvOS renders in. Named because a rule OUTSIDE this file now needs to say "the
         /// width of a screen" as arithmetic rather than by writing 1920 by hand — `DetailRules.castCapacity`
         /// is the caller, and its job is to make a row FIT.
+        ///
+        /// ⚠⚠ **AND SINCE W1 THIS IS THE BOX THE SCREENS ACTUALLY LAY OUT IN, NOT JUST THE CANVAS.** The app
+        /// fills tvOS's 1920 × 1080 point space (`AppRootView`) and applies each prototype's own margin itself,
+        /// so a rule about WHAT FITS counts from here. Before W1 the screens were laid out inside the safe area
+        /// and the prototypes' margins were added ON TOP of it — a double inset that cost this app four rounds
+        /// (KNOWN_ISSUES #13).
         static let screenWidth = u * 100
+
+        /// ⚠ **The canvas' height: 1080 pt, the same on every panel.** A 4K Apple TV renders these same
+        /// points at `scale = 2.0` (Apple's own Apple-TV-4K guidance) — so the tvOS point space is NOT a
+        /// property of the television, and no layout here needs a panel check. Named because two fractions of
+        /// the SCREEN depend on it and both used to carry a hand-multiplied constant: the title hero's `66vh`
+        /// (`Title.heroHeight`) and its `min-height`.
+        static let screenHeight = u * 56.25
 
         /// ⚠⚠ **THE OVERSCAN INSET tvOS PUTS AROUND EVERY VIEW — MEASURED, NOT ASSUMED.** His round-9 log,
         /// straight out of the app's own file log on the Apple TV 4K simulator:
         ///
         ///     detail-size: screen = 1760x960 pt at x=80 y=60
         ///
-        /// i.e. the view is handed the area INSIDE the screen's safe area: `80 pt` on each side of the 1920 pt
-        /// canvas, `60 pt` top and bottom. ⚠ **So `screenWidth` (1920) is the CANVAS, and it is NOT the width
-        /// anything the app lays out actually gets** — a rule about WHAT FITS must use `layoutWidth`.
+        /// i.e. a view that RESPECTS the safe area is handed `80 pt` inside each side of the 1920 pt canvas
+        /// (60 pt top and bottom). ⚠ Apple's own tvOS figure is **90 / 60** — a device and a simulator do not
+        /// agree, which is the reason this is a measurement and not a citation.
+        ///
+        /// ⚠⚠ **AND WHAT W1 CHANGED IS WHAT IT IS FOR: the app's screens do NOT respect it.** Every prototype
+        /// indents by `4.2u` of the SCREEN (`TVTokens.Metric.safeMargin`, set 2's `64px`), and adding tvOS's
+        /// inset to that put every word on the screen 160.64 pt from the panel edge instead of his 80.64 pt,
+        /// in a box 9.1 % narrower than the design — which is the fault he reported. So the inset is kept here
+        /// as the reason the ARTWORK may bleed and the MARGIN may not be doubled, and nothing subtracts it.
+        /// ⚠ The exposure this accepts, stated: a television cropping more than 4.2 % of the frame can clip the
+        /// outer edge of `safeMargin`. The knob if a round ever shows that is `safeMargin` — one number.
         static let overscanInsetX: CGFloat = 80
 
-        /// ⚠ **The width a screen's CONTENT really has: 1920 − 2 × 80 = 1760 pt.** Used by every rule that
-        /// decides whether a row FITS (`DetailRules.castCapacity` is the first) — ⚠ and it is deliberately the
-        /// SMALLER of the two numbers, because a row that comes up short is cosmetic while a row that is too
-        /// wide makes the whole PAGE wider than the screen, which is the defect he reported twice.
-        static let layoutWidth = screenWidth - 2 * overscanInsetX
+        /// …and the vertical half of the same measurement: **60 pt** top and bottom (`y=60` in the same log
+        /// line). ⚠ Used for ONE thing — putting the debug HUD back where it was before the screens gave the
+        /// safe area up (`AppRootView`), because a readout whose position moves between rounds stops being
+        /// comparable with the last round's screenshot.
+        static let overscanInsetY: CGFloat = 60
+
+        /// ⚠ **The width a screen's CONTENT really has: the canvas minus the design's own margin on each
+        /// side.** It is the number every fit rule counts against (`DetailRules.castCapacity` is the first),
+        /// and since W1 it is `screenWidth` minus nothing else — the safe area is NOT subtracted, because the
+        /// screens fill the canvas. ⚠ It used to be 1760 (the canvas minus 2 × 80), which is what the app's
+        /// layout box WAS while it respected the safe area: a correct reading of the wrong box.
+        static let layoutWidth = screenWidth
 
         /// The screens' horizontal margin.
         ///

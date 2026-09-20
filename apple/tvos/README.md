@@ -4,7 +4,32 @@ A **native SwiftUI client**. tvOS has no WebKit at all (Apple removed it; the gu
 embedding one), so there is no shell shortcut here — the UI is written for the TV. Full reasoning:
 [`../../docs/APPLE_CLIENTS_PLAN.md`](../../docs/APPLE_CLIENTS_PLAN.md) §4.
 
-**Status: PHASE C (THE PLAYER) IS BUILT on `feat/tvos-player` (2026-09-20) — C1 + C2 + C3 — AND IT PLAYS.**
+**Status: PHASE W — "THE BOX, NOT THE CANVAS" — IS BUILT on `feat/tvos-player` (2026-09-20), and it is the fix
+for the fault that had been open since round 6.** ⚠⚠ **THE APP NOW FILLS tvOS's 1920 × 1080 POINT CANVAS
+(`App/AppRootView.swift` — one `ignoresSafeArea()`), because every prototype this app is built from is a
+full-screen PAGE that indents by `4.2 %` of the screen itself.** Until W1 the screens were laid out inside
+tvOS's safe area (`1760 × 960 at (80, 60)`, his round-9 log) and the prototypes' own `4.2u` / `64px` margin was
+added ON TOP of it — so every screen was **9.1 % narrower than its design, 80 pt too far in from each edge**, and
+the title screen's hero was **74 % of the height instead of the `66vh` his file asks for**, which pushed `Play`
+off the bottom edge and opened the screen scrolled with the hero cut. That is `KNOWN_ISSUES` #13 in full; its
+entry records the arithmetic and the seven things his round has to check.
+⚠ **The screens now BREATHE the safe area rather than respect it**: artwork may bleed into the overscan and a
+WORD may not, so each screen keeps its prototype's own margin and nothing else is added. The exposure this
+accepts — Apple's guidance is 90 pt and his design's margin is 80.64 pt — and the one-number knob for it are in
+`TVTokens.Metric`.
+⚠ **AND THE TITLE SCREEN ITSELF IS REWRITTEN to `tvos_ux/2. …/title-view.html`'s structure**: the top bar is an
+**overlay over a full-bleed hero** (his `.topbar` is `position: fixed`), the action row is the first thing under
+the hero, and the artwork is now requested at **the panel's own pixel width** — 3840 px on a 4K Apple TV, 1920 px
+on a 1080p one (`PosterURL.width(points:scale:route:)`), which is the ONE place a television's resolution matters,
+because tvOS gives every device the same points. Plan, measurements and the round's seven falsifiers:
+[`../../docs/TVOS_TITLE_SCREEN_PLAN.md`](../../docs/TVOS_TITLE_SCREEN_PLAN.md).
+⚠ **`Trailer` / `Add to Watchlist` / `More` and the "Because you watched" shelf are NOT built — his instruction
+this phase, and each is a wire change or the acquisition half that stays on web/iOS.** The reasons are measured
+in that plan's §3.
+⚠ **BOTH OF THOSE ARE UNBUILT-UNTIL-HIS-MAC: not one SwiftUI view compiles on Linux**, and this phase changed
+`AppRootView`, `DetailView`, `HeroBand` and `PosterCard`.
+
+**Status before that: PHASE C (THE PLAYER) IS BUILT on the same branch — C1 + C2 + C3 — AND IT PLAYS.**
 His round 6 built and the film **resumed at its saved position**, which is **F2 answered GREEN by behaviour**
 (an unauthenticated HLS route `401`s and draws a black screen, so a playing film IS the segment test) — so
 **C5, the backend auth carrier, is NOT needed** and the phase needed no server change at all. ⚠ The same round

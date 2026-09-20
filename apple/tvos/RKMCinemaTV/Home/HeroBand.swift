@@ -205,14 +205,65 @@ struct HeroBand: View {
 /// ⚠ The two kinds are the prototype's own: `.primary` is a gold fill with near-black text (`#1a1300`), and
 /// `.secondary` is 12 % white with no border. Both take the same `0.9u` radius, the same `0.85u / 1.8u`
 /// padding, the same `1.09` focus lift and the same white ring, so they cannot drift apart.
+///
+/// ⚠⚠ **AND W2 ADDED THE MEASUREMENTS AS A PRESET, BECAUSE HIS TWO PROTOTYPES DRAW TWO DIFFERENT GOLD
+/// BUTTONS.** Set 1's `.hero-cta` is `1.1u` type in `1.8u / 0.85u` padding with a white ring; set 2's `.btn`
+/// — the title screen's action row — is `19px` type in `30px / 16px` padding with a **gold-bright** 2 px ring
+/// and a glow under it. The numbers are his, from two files, and reading them as one button would be
+/// `TVTokens`' own header rule broken in the direction it was written for. ⚠ What stays SHARED is the
+/// chrome — one gold fill, one focus ring, one scale animation, one place the label's weight is decided —
+/// so the parts that must not drift are still in one implementation.
 struct CtaButtonStyle: ButtonStyle {
 
     enum Kind { case primary, secondary }
 
+    /// The measurements, with one preset per prototype file that draws an action button.
+    struct Metrics {
+        let fontSize: CGFloat
+        let paddingH: CGFloat
+        let paddingV: CGFloat
+        let radius: CGFloat
+        let focusScale: CGFloat
+        let ringWidth: CGFloat
+        let ringColour: Color
+        /// The lift's shadow. `0` for a button his file draws without one — a preset that hard-coded a glow
+        /// would put one on the Home's CTA, which is a change to a screen he has already accepted.
+        let glowRadius: CGFloat
+        let glowOpacity: Double
+
+        /// `.hero-cta` — set 1 (`rkm-cinema-tvos-concept.html`): `1.1u` type, `0.85u / 1.8u` padding, `0.9u`
+        /// radius, `scale(1.09)`, a `0.16u` white ring, no glow.
+        static let hero = Metrics(fontSize: TVTokens.Hero.ctaFontSize,
+                                  paddingH: TVTokens.Hero.ctaPaddingH,
+                                  paddingV: TVTokens.Hero.ctaPaddingV,
+                                  radius: TVTokens.Hero.ctaRadius,
+                                  focusScale: 1.09,
+                                  ringWidth: TVTokens.Bar.focusRing,
+                                  ringColour: RKMColour.primary.opacity(0.85),
+                                  glowRadius: 0,
+                                  glowOpacity: 0)
+
+        /// `.btn` — set 2 (`title-view.html`): `19px` type, `16px 30px` padding, `14px` radius,
+        /// `scale(1.08)`, a `2px` `--gold-bright` ring, and the prototype's own
+        /// `box-shadow: 0 0 26px rgba(232,179,61,.4)` under it.
+        static let title = Metrics(fontSize: TVTokens.Title.btnFontSize,
+                                   paddingH: TVTokens.Title.btnPaddingH,
+                                   paddingV: TVTokens.Title.btnPaddingV,
+                                   radius: TVTokens.Title.btnRadius,
+                                   focusScale: TVTokens.Title.btnFocusScale,
+                                   ringWidth: TVTokens.Title.btnRingWidth,
+                                   ringColour: RKMColour.accentHover,
+                                   glowRadius: TVTokens.Title.btnGlowRadius,
+                                   glowOpacity: TVTokens.Title.btnGlowOpacity)
+    }
+
     let kind: Kind
+    /// ⚠ Defaults to set 1's, i.e. **the Home's CTA is untouched by this phase** — its call sites are
+    /// unchanged and its numbers are the same numbers.
+    var metrics: Metrics = .hero
 
     func makeBody(configuration: Configuration) -> some View {
-        CtaChrome(configuration: configuration, kind: kind)
+        CtaChrome(configuration: configuration, kind: kind, metrics: metrics)
     }
 
     // ⚠⚠ NOT `Body`: every `Style` protocol declares an associatedtype requirement called `Body`, so a
@@ -221,22 +272,23 @@ struct CtaButtonStyle: ButtonStyle {
     private struct CtaChrome: View {
         let configuration: ButtonStyle.Configuration
         let kind: Kind
+        let metrics: Metrics
         @Environment(\.isFocused) private var isFocused
 
         var body: some View {
             configuration.label
-                .font(.system(size: TVTokens.Hero.ctaFontSize, weight: kind == .primary ? .bold : .semibold))
+                .font(.system(size: metrics.fontSize, weight: kind == .primary ? .bold : .semibold))
                 .foregroundStyle(kind == .primary ? RKMColour.background : RKMColour.primary)
-                .padding(.horizontal, TVTokens.Hero.ctaPaddingH)
-                .padding(.vertical, TVTokens.Hero.ctaPaddingV)
-                .background(fill, in: RoundedRectangle(cornerRadius: TVTokens.Hero.ctaRadius,
-                                                       style: .continuous))
+                .padding(.horizontal, metrics.paddingH)
+                .padding(.vertical, metrics.paddingV)
+                .background(fill, in: RoundedRectangle(cornerRadius: metrics.radius, style: .continuous))
                 .overlay {
-                    RoundedRectangle(cornerRadius: TVTokens.Hero.ctaRadius, style: .continuous)
-                        .stroke(RKMColour.primary.opacity(0.85),
-                                lineWidth: isFocused ? TVTokens.Bar.focusRing : 0)
+                    RoundedRectangle(cornerRadius: metrics.radius, style: .continuous)
+                        .stroke(metrics.ringColour, lineWidth: isFocused ? metrics.ringWidth : 0)
                 }
-                .scaleEffect(isFocused ? 1.09 : 1)
+                .shadow(color: isFocused ? metrics.ringColour.opacity(metrics.glowOpacity) : .clear,
+                        radius: isFocused ? metrics.glowRadius : 0)
+                .scaleEffect(isFocused ? metrics.focusScale : 1)
                 .animation(.easeOut(duration: 0.2), value: isFocused)
         }
 

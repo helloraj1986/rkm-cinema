@@ -41,10 +41,34 @@ struct AppRootView: View {
                     Spacer(minLength: 0)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(28)
+                // ⚠⚠ **THE HUD KEEPS THE SAFE AREA THE SCREENS GAVE UP.** Since W1 the app fills the canvas,
+                // so this panel would otherwise move 80 pt left and 60 pt up into the overscan — and the HUD
+                // is the one surface whose POSITION is part of reading it (it is photographed over the real
+                // screen). Its own insets are re-added here from the tokens, so it lands exactly where every
+                // previous round's screenshots put it.
+                .padding(.top, TVTokens.Metric.overscanInsetY + 28)
+                .padding(.leading, TVTokens.Metric.overscanInsetX + 28)
+                .padding(.bottom, 28)
+                .padding(.trailing, 28)
                 .transition(.opacity)
             }
         }
+        // ⚠⚠ **THE ONE PLACE THIS APP DECIDES HOW BIG A SCREEN IS (W1, 2026-09-20).** tvOS hands a view that
+        // respects its safe area `1760 × 960 pt at (80, 60)` — the canvas minus the overscan inset — and this
+        // app's screens were then indenting by their prototypes' own `4.2u` margin ON TOP of it. Every
+        // screen was therefore drawn 80 pt too far in from each side and 60 pt too low, in a box 9.1 %
+        // narrower than the design it was transcribed from, which is `KNOWN_ISSUES` #13: *"the whole page is
+        // zoomed in and I can only see a portion of the page"*.
+        //
+        // His three prototypes are full-screen pages and each indents by `4.2 %` of the screen itself, so the
+        // canvas IS their page and the margin is theirs to apply. This modifier is how the app agrees with
+        // them, and it is applied HERE rather than per screen because a screen that forgets it is a screen
+        // that is 9.1 % wrong in a way nobody can see until it is on a television.
+        //
+        // ⚠ What it is NOT a licence for: the safe area still exists, and `TVTokens.Metric.overscanInset*`
+        // records it. ARTWORK may bleed into it (his `.hero` is full-bleed); a WORD may not — which is why
+        // every screen keeps its prototype's own margin and nothing else is added.
+        .ignoresSafeArea()
     }
 
     @ViewBuilder

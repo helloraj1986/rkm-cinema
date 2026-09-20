@@ -1765,6 +1765,47 @@ check(abs(TVTokens.Title.heroHeight - 1080 * TVTokens.Title.heroHeightFraction) 
       "the title hero is 66% of the platform's 1080 pt canvas — no measurement needed",
       "got \(TVTokens.Title.heroHeight), want \(1080 * TVTokens.Title.heroHeightFraction)")
 
+// ⚠⚠ ---- W1: THE BOX A SCREEN LAYS OUT IN, WHICH IS THE WHOLE OF KNOWN_ISSUES #13.
+//
+// The fault was never on the title screen: the app laid every screen out inside tvOS's safe area
+// (`1760 × 960 at (80, 60)`) and then indented by the prototype's own `4.2u` margin ON TOP of it, so the
+// design was drawn 80 pt too far in from each side in a box 9.1 % narrower than the file it came from. The
+// fix is one `ignoresSafeArea()` at the root, and what makes it checkable HERE is that the box is now named:
+// `screenWidth`/`screenHeight` are the canvas the screens fill, and `layoutWidth` — the number every fit rule
+// counts against — must be that same canvas, NOT the canvas minus the inset.
+checkEqual(TVTokens.Metric.screenWidth, 1920, "the tvOS point space is 1920 pt wide, on every panel")
+checkEqual(TVTokens.Metric.screenHeight, 1080,
+           "…and 1080 pt tall: a 4K panel changes the PIXEL density (scale 2.0), not these points")
+checkEqual(TVTokens.Metric.layoutWidth, TVTokens.Metric.screenWidth,
+           "the width a fit rule counts against IS the canvas — the screens fill it, so nothing is subtracted")
+
+// ⚠ The inset is still recorded, and this is the assertion that keeps it honest: it is a MEASUREMENT from his
+// round-9 log, it is what the ARTWORK may bleed into, and no rule may subtract it from the layout box.
+checkEqual(TVTokens.Metric.overscanInsetX, 80,
+           "tvOS's overscan inset stays recorded — it is why artwork may bleed, not a second margin")
+checkEqual(TVTokens.Metric.overscanInsetY, 60, "…and its vertical half, from the same log line")
+
+// ⚠ The bar's height, which the title screen clears because its bar floats over the hero.
+checkEqual(TVTokens.Bar.clearance, TVTokens.u * 6, "the bar's clearance is the height his log measured")
+
+// ⚠⚠ ---- W3: THE ONE PLACE THE PANEL MATTERS — ARTWORK.
+//
+// The layout is panel-independent (tvOS gives every device the same points), but a 4K Apple TV renders those
+// points at `scale = 2.0`, so a full-width hero needs 3840 px there against the route's default of 1600 — the
+// WEB app's number, 2.4× short of the band it fills.
+checkEqual(PosterURL.width(points: TVTokens.Metric.screenWidth, scale: 2, route: .backdrop), 3840,
+           "a full-width hero on a 4K panel asks for 3840 px, not the route's 1600 default")
+checkEqual(PosterURL.width(points: TVTokens.Metric.screenWidth, scale: 1, route: .backdrop), 1920,
+           "the same hero on a 1080p panel asks for 1920 px — no more bytes than the screen can show")
+checkEqual(PosterURL.width(points: 189, scale: 2), 378,
+           "a 2:3 card's art is asked for at its own point width times the panel's scale")
+checkEqual(PosterURL.width(points: TVTokens.Metric.screenWidth, scale: 4, route: .backdrop), 4000,
+           "a scale that would exceed the route's ceiling is clamped, not refused with a 422")
+checkEqual(PosterURL.width(points: 0, scale: 2), PosterURL.Route.poster.widthRange.lowerBound,
+           "a zero-width band cannot ask for a zero-width image")
+checkEqual(PosterURL.width(points: TVTokens.Metric.screenWidth, scale: 0), 1920,
+           "a panel reporting no scale still asks for the band's own points")
+
 section("the route: which mode this client should ask the api for")
 
 checkEqual(PlaybackRules.StreamMode.allCases.map(\.rawValue),

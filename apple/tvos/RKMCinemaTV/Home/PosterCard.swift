@@ -244,14 +244,21 @@ struct PosterImageView: View {
     /// second image view: the cookie handling, the log line, the fallback and the failure mark are the parts
     /// that must not drift.
     var route: PosterURL.Route = .poster
+    /// ⚠⚠ **The PIXEL width to ask for, where the band's own size is known (W3).** `nil` keeps the route's
+    /// default (500 for a card, 1600 for a backdrop) — which is right for a CARD, whose art is a couple of
+    /// hundred points wide, and wrong for the title screen's full-width hero on a 4K panel. The caller that
+    /// knows how wide its band is passes `PosterURL.width(points:scale:route:)` with its own
+    /// `@Environment(\.displayScale)`; everything else keeps the default and does not double its bytes.
+    var width: Int?
 
     @StateObject private var loader: PosterLoader
 
-    init(base: URL, itemID: String, route: PosterURL.Route = .poster) {
+    init(base: URL, itemID: String, route: PosterURL.Route = .poster, width: Int? = nil) {
         self.base = base
         self.itemID = itemID
         self.route = route
-        _loader = StateObject(wrappedValue: PosterLoader(base: base, itemID: itemID, route: route))
+        self.width = width
+        _loader = StateObject(wrappedValue: PosterLoader(base: base, itemID: itemID, width: width, route: route))
     }
 
     var body: some View {

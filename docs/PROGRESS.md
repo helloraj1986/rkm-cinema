@@ -1,4 +1,57 @@
-## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-20) · ✅ **PHASE C — THE PLAYER — IS BUILT ON `feat/tvos-player`: C1 + C2 + C3, and C4 IS HIS ROUND** · ✅✅ **ROUNDS 6–9: THE PLAYER WORKS (F2 GREEN, C5 RETIRED) · `Back` FIXED + rule 9 · THE TITLE SCREEN'S PAGE OVERFLOW IS GONE and the app's own log PROVES it (his round-9 numbers: every element inside `x=80..1840`, nothing over-wide) · ⚠ **the app's container is 1760×960, not 1920×1080 — tvOS's overscan inset, now a token** · `Play` is the screen's default focus (round 8) — KNOWN_ISSUES #13** · ⚠ **the branch carries ONE MERGE COMMIT from `dev` (`e0eadef`, bringing Phases U and V in) and the working tree IS on it** · ⚠ **`dev` does NOT have this branch** · **nothing needs `apply`**: no file under `backend/`, `frontend/` or `nginx/` changed
+## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-20) · ✅✅ **PHASE W — "THE BOX, NOT THE CANVAS" — IS BUILT: the WHOLE APP now fills tvOS's 1920 × 1080 point canvas and applies each prototype's own margin ONCE** · **⚠⚠ THAT IS THE FAULT BEHIND `KNOWN_ISSUES` #13, WHICH HAS BEEN OPEN SINCE ROUND 6** — the screens were drawn inside the safe area (1760 × 960 at (80, 60)) and THEN indented by his own `64px` margin, so every screen was **9.1 % narrower than its design, 80 pt too far in, and the title hero was 74 % of the height instead of `66vh`** · the **title screen is REWRITTEN** to `title-view.html`'s structure (bar OVERLAYS the full-bleed hero, action row first) · **artwork is now asked for at the panel's own pixel width** (3840 px on 4K) · ⚠ **branch `feat/tvos-player` carries it; `dev` does NOT** · **nothing needs `apply`**: no file under `backend/`, `frontend/` or `nginx/` changed · **HIS ROUND IS THE NEXT THING** — the seven falsifiers are `docs/TVOS_TITLE_SCREEN_PLAN.md` §6
+
+### 🎬 PHASE W — THE SCREENS WERE DRAWN IN THE WRONG BOX, AND THE TITLE SCREEN IS NOW HIS FILE'S STRUCTURE (2026-09-20)
+
+His instruction, a new session: *"there is problem with details screen … can we implement the title view as it is
+in html file for the tvos screen only, the details view screen is available but its resolution somehow not
+working … we should reuse the details screen component wherever we can … rewrite the code if it is required
+rather than just patching up the existing details screen"*. Plan (committed first): **`docs/TVOS_TITLE_SCREEN_PLAN.md`**.
+
+**⚠⚠ THE DIAGNOSIS, AND IT CONTRADICTS ROUND 9's OWN CONCLUSION — WHICH IS THE POINT OF RECORDING IT.** Round 9
+read `screen = 1760x960 pt at x=80 y=60` off his file log and concluded *"nothing is off-screen and nothing is
+over-wide"*, then set `layoutWidth = 1760` so the fit rules counted the smaller box. **Both halves were right
+about the box and wrong about what the box should be.** Those 1760 × 960 are tvOS's safe area, and every
+prototype this app is built from is a **full-screen page** that indents by `4.2 %` of the screen itself
+(`4.2u`, set 2's `64px`) — so the app was applying a safe margin ON TOP of a design that already has one:
+
+| | arithmetic | result |
+|---|---|---|
+| the box his designs are drawn against | `1920 − 2 × 80.64` | **1758.7 pt** |
+| the box the app was drawing them in | `1760 − 2 × 80.64` | **1598.7 pt** — 9.1 % narrower |
+| the title's first glyph | `80` (safe area) `+ 80.64` (his margin) | **160.64 pt** from the panel edge, where his file puts it at **80.64** |
+| the hero's height | `712.8` of a **960 pt** box | **74.3 %**, where his `66vh` means 66 % |
+
+⇒ `Play` lands at ≈932 pt of a 960 pt box, i.e. **off the bottom edge**, so the screen opens scrolled with its
+hero cut — *"still zoomed: only part of the page is visible"* (his answer, this session). ⚠ **Not one number in
+the token table was wrong**: `u` (19.2) and `px` (1.26) were always derived from the canvas, and the canvas is
+what the screens were never given. **The fix is ONE `ignoresSafeArea()` at the routing root.**
+
+⚠⚠ **AND HIS 4K QUESTION, ANSWERED FROM APPLE'S OWN CONTRACT RATHER THAN BY A SPECIAL CASE:** tvOS gives every
+device the **same 1920 × 1080 point space** — an Apple TV 4K renders those points at `scale = 2.0` — so the
+layout is panel-independent and no screen needs a panel check. **Artwork is the one thing that is not:** the
+backdrop route's default of `1600 px` is the WEB app's number and is **2.4× short of a full-width hero on a 4K
+panel**, so `PosterURL.width(points:scale:route:)` now derives it from the band's own width and the caller's
+`@Environment(\.displayScale)` — 3840 px on 4K, 1920 px on 1080p, clamped by the route's own 4000 ceiling.
+
+| | |
+|---|---|
+| **Files changed** | `App/AppRootView.swift` (**the one place a screen's box is decided** — `.ignoresSafeArea()` on the routing `ZStack`, and the debug HUD's insets re-added so it stays where every previous round photographed it) · `Design/TVTokens.swift` (`Metric.screenHeight`, `Metric.layoutWidth == screenWidth`, `Bar.clearance` = his log's 115 pt, `Title.heroHeight = screenHeight × fraction`, and set 2's `.btn*` tokens) · `Core/PosterURL.swift` (`width(points:scale:route:)`) · `Home/PosterCard.swift` (`PosterImageView(width:)`) · `Home/HeroBand.swift` (`CtaButtonStyle` gains a `Metrics` preset — **the Home's call sites and numbers are untouched**) · `Detail/DetailView.swift` (**rewritten**) · `Core/DetailRules.swift` (the fit rule's box) · `apple/scripts/tvos-core-tests/main.swift` (+12 pins) · `apple/scripts/check-tvos-core.py` (2 new mutations, 1 re-pointed) |
+| **The rewrite, structurally** | his `.topbar { position: fixed }` → **the bar is an OVERLAY over the scroller**, not a band above it (so the hero starts at `y = 0`); **the hero is full-bleed** (both screen edges, no 80 pt gutter); the action row is the first thing under the hero at `36px 64px 0`; the synopsis, the credits, the cast shelf and the series' episode rows follow in his order |
+| **Reused, not re-drawn** | `TopBar` · `PosterImageView`/`PosterLoader`/`PosterURL` (one artwork path, one log line, one fallback) · `CtaButtonStyle` (one chrome — the ring, the fill, the scale animation; set 2's `.btn` numbers arrive as a preset) · `RKMColour`, `LibraryRules.marginFromPrototype`, `ProfileRules.initials` · and the whole `DetailStore`/`DetailRules`/`DetailSnapshot` layer, whose four states are untouched. `AppModel.openDetail` remains the ONE way in, so Home's hero, Home's rails and the library grid all reach this screen through one component |
+| **NOT built, on his instruction** | `Trailer` (needs `RemoteTrailers` on the detail payload — a wire change), `Add to Watchlist` / `More` (the acquisition + administration half, web/iOS by `apple/tvos/README.md`'s scope rule) and the "Because you watched" shelf (`/api/jellyfin/similar` carries a TMDB id and **no Jellyfin item id**). Each is named with its measurement in the plan's §3 |
+| **Gates, live on this commit** | `check-tvos-core.py` **620 checks / 0 failures** (⚠ read the count live — it moves with every pin) · `check-tvos-members.py` **PASS — 35 pairs, 36 types, 9 rules** · `check-tvos-models.py` **PASS — 4 files, 180 keys, 25 endpoints** · `check-apple-typecheck.sh` **PASS** · `check-imports.py` **PASS — 49 files** · `check-design-tokens.py` **PASS (R1/R2/R3)** · `check_md_links.py` **73 files, 70 links, all resolve** · ⚠⚠ **`--falsify` was NOT run — his standing rule is dev + unit tests, then his round — so the two NEW mutations (the box, and the artwork's scale floor) are written and UNEXERCISED.** |
+| **⚠ NOT verified — and this is the whole of what a round is for** | **not one SwiftUI view is compiled on this machine.** `AppRootView`, `DetailView`, `HeroBand` and `PosterCard` are Mac-only, and this phase changed all four. What IS executed here is the arithmetic: the box is 1920 × 1080, the fit rule counts it, the hero is 66 % of it, and a full-width hero asks for 3840 px on a 4K panel |
+
+⚠⚠ **THE TRADE THIS PHASE ACCEPTS, STATED WHERE THE NEXT SESSION WILL TRIP OVER IT:** the design's margin is
+**80.64 pt** from the panel edge and Apple's own tvOS guidance is **90 pt**, so a television cropping more than
+4.2 % of the frame can clip the outer edge of the margin (older panels crop 2–5 %). That is the same exposure
+his HTML has when a browser draws it full screen — *"its geometry is the spec — transcribe it"* — and the knob
+if a round ever shows it is **`Metric.safeMargin`, one number**, never a per-metric re-derivation.
+
+⚠ **AND THE ONE THING THE MEASUREMENT INSTRUMENTATION IS STILL FOR:** after W1 the title screen must log
+**`detail-size: screen = 1920x1080 pt at x=0 y=0`**. If it still says `1760x960 at x=80 y=60`, the double inset
+is still there and this phase did not land (`DetailView.measured`, falsifier **W-F7**).
+
 
 ### 🐞 HIS ROUND 5 ON THE PLAYER FAILED — ONE STRAY BACKSLASH, AND A RULE FOR THE CLASS (2026-09-20, `6e71c67`)
 

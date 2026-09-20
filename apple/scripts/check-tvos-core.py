@@ -599,9 +599,21 @@ MUTATIONS = [
      "        let key = person.name",
      "one person id is one colour, whatever else the row says"),    # ---- C3: the screen's own geometry, in the unit the prototype uses
     ("the title hero drifting from its fraction", "TVTokens.swift",
-     "        static let heroHeight = u * 37.125",
-     "        static let heroHeight = u * 33",
+     "        static let heroHeight = Metric.screenHeight * heroHeightFraction",
+     "        static let heroHeight = Metric.screenHeight * 0.5",
      "the title hero is 66% of the platform's 1080 pt canvas — no measurement needed"),
+    # ⚠⚠ ---- W1: THE BOX. This is the one that reverts the phase: put the safe area back into the fit rule
+    # and the app is 9.1 % too small for its own design again (KNOWN_ISSUES #13).
+    ("the fit rule counting a smaller box than the screen", "TVTokens.swift",
+     "        static let layoutWidth = screenWidth",
+     "        static let layoutWidth = screenWidth - 2 * overscanInsetX",
+     "the width a fit rule counts against IS the canvas — the screens fill it, so nothing is subtracted"),
+    # ⚠⚠ ---- W3: ARTWORK'S OWN SCALE, which is the ONE place the panel matters: without the floor a panel
+    # reporting no scale would shrink the request to the route's floor instead of the band's own points.
+    ("artwork trusting a panel that reports no scale", "PosterURL.swift",
+     "        clamped(Int((points * max(scale, 1)).rounded()), route: route)",
+     "        clamped(Int((points * scale).rounded()), route: route)",
+     "a panel reporting no scale still asks for the band's own points"),
     # ⚠⚠ ---- PHASE C2: THE PLAYER'S RULES. Every one of these reverts a decision the SCREEN would have made
     # invisibly: a mode chosen for the wrong client, a URL that turns a query into a path, a subtitle that
     # silently does not apply. What is NOT here: the SwiftUI itself, which no gate on this machine can compile.

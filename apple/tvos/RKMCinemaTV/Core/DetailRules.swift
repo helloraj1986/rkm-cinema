@@ -284,11 +284,12 @@ enum DetailRules {
     static var castCapacity: Int {
         let item = TVTokens.Title.castItemWidth
         let gap = TVTokens.Title.trackGap
-        // ⚠⚠ **THE WIDTH THE APP ACTUALLY GETS, NOT THE CANVAS.** His round-9 log (the app's own file log,
-        // Apple TV 4K simulator) is `screen = 1760x960 pt at x=80 y=60` — tvOS hands a view the area inside the
-        // screen's overscan safe area, so the CONTENT is 1760 − 2 × 64px = **1598.7 pt**, not the 1758.7 pt this
-        // line first used. ⚠ The first figure was wrong in the direction that matters (it over-stated what fits
-        // by 160 pt), which is exactly why the measurement replaced it.
+        // ⚠⚠ **THE WIDTH THE SCREEN ACTUALLY LAYS OUT IN — WHICH SINCE W1 IS THE CANVAS.** The app fills
+        // tvOS's 1920 × 1080 point space and applies his own `64px` margin itself (`AppRootView`), so the
+        // CONTENT is 1920 − 2 × 64px = **1758.7 pt**, and seven of his `150px` items are 1534.68 pt of it.
+        // ⚠ `Metric.layoutWidth` was `screenWidth − 2 × overscanInsetX` = 1760 between round 9 and W1,
+        // because the screens were then laid out inside the safe area: a correct reading of the wrong box,
+        // and the reason this line's answer did not change even though its input did.
         let content = TVTokens.Metric.layoutWidth - 2 * LibraryRules.marginFromPrototype
         return max(1, Int(content / (item + gap)))
     }

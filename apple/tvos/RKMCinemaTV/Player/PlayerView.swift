@@ -63,6 +63,19 @@ struct PlayerView: View {
             overlayPanels
 
             // ⚠ One source for "why is this not playing", from the store — see `failureSentence`.
+            // ⚠⚠ **THE TOAST IS PLACED HERE, AND IT WAS DECLARED AND FORGOTTEN UNTIL ROUND 2** — the store's
+            // feedback (a saved position, a track change, a refused write) had nowhere to appear. His
+            // prototype's `.toast` sits at `bottom:6%`, centred, above the transport row.
+            if let toast = store.toast {
+                VStack {
+                    Spacer(minLength: 0)
+                    PlayerToast(text: toast)
+                        .padding(.bottom, TVTokens.Player.toastBottom)
+                }
+                .allowsHitTesting(false)
+                .transition(.opacity)
+            }
+
             if let sentence = store.failureSentence {
                 failureNotice(sentence)
             } else if store.load == .loading {
@@ -93,9 +106,11 @@ struct PlayerView: View {
         // screen you cannot leave is a dead end, which `ARCHITECTURE.md` ranks above any cosmetic rule.
         .onExitCommand { leave() }
         .onPlayPauseCommand { togglePlay() }
+        // ⚠ The 0.5 s tick exists for the CHROME's idle clock (`PlaybackRules.shouldHideChrome` reads it) and
+        // to force a re-render so the top bar's clock and the save line update. The PLAYHEAD is the time
+        // observer's job (`installTimeObserver`) — one clock each, so neither can drift the other.
         .onReceive(ticker) { date in
             now = date
-            pushPlayerTime()
         }
         .onChange(of: store.url) { _, _ in attachItem(reason: "route changed") }
         .onChange(of: store.isPlaying) { _, playing in

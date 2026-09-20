@@ -79,6 +79,43 @@ the screen's error branch pattern-matched inside a `ViewBuilder` (`else if case 
 and `PlaybackAuth` all appear as successful `SwiftCompile` jobs in `apple/logs/build-tvos-20260920-124924.log`.
 The failure was in the ONE file no gate on this machine can compile, which is exactly what the round is for.
 
+### 🐞 HIS ROUND 2 ON THE PLAYER FAILED TOO — THREE CLASSES, AND TWO NEW GATE RULES (2026-09-20)
+
+`BUILD FAILED (exit 65)`. **Every error was in one of the player's two SwiftUI files** — and the log shows
+everything else compiling (`PlayerChrome`, `DetailView`, `AppModel`, `AppRootView`, and the whole of
+`Core/` and `Design/` are successful `SwiftCompile` jobs):
+
+| Errors | The class |
+|---|---|
+| `cannot find '$focus' in scope` ×3, `cannot assign to property: 'focus' is a 'let' constant` ×2 | ⚠⚠ **A sub-view that RECEIVES a `FocusState` binding is not a property-wrapper site.** `$focus` exists only where the wrapper is DECLARED (`PlayerView`); a `let focus: FocusState<X?>.Binding` parameter takes `focus`, and assignment goes through `focus.wrappedValue` — because the binding itself is a `let`. |
+| `'async' call in a function that does not support concurrency` ×4 | ⚠ The drawer's row actions called `chooseLocalSubtitle` / `searchSubtitles` / `chooseRemoteSubtitle` (all `async`) from a synchronous `Button` closure. The correct form is three characters away: `Task { await … }`. |
+| `cannot find 'pushPlayerTime' in scope` ×1 | A call left behind when the playhead's reporting moved into the time observer. ⚠ The two clocks are now separate on purpose: the 0.5 s ticker drives the CHROME's idle rule and the top bar's clock, the time observer drives the PLAYHEAD. |
+
+⚠⚠ **TWO WARNINGS in the same log are PRE-EXISTING and not this phase's** — recorded so a next session does not
+read them as new damage: `Core/HomeRails.swift:59` (*call to main actor-isolated static method
+`isContinueWatching` in a synchronous nonisolated context*) and `RKMCinemaTVApp.swift:35` (`onChange(of:perform:)`
+deprecated in tvOS 17). Neither file is the player's.
+
+⚠⚠ **THE FIXES ARE CLASSES, AND THE GATE GREW TO MATCH — `check-tvos-members.py` is now SEVEN rules.** Six and
+seven exist because of THIS round, and each is proved in `--selftest` to fire on the defect **and to stay silent
+on the correct form beside it**:
+* **rule 6** — `$name` or `name = …` where `name` is a declared `FocusState<…>.Binding` parameter;
+* **rule 7** — an `async` store call from a line that neither awaits it nor runs in a `Task`.
+⚠⚠ **Rule 7's first draft CRIED WOLF, and running it on the real tree is what caught that** — it flagged
+`PlaybackAPI.swift`'s own `func searchSubtitles(…) async` DECLARATION (no receiver at all) and two calls to a
+view's private `start()`, because some store elsewhere in the app has a method of that name. A gate that reports
+a correct file as broken is worse than no gate, so it was tightened to require **both** halves: the method is
+declared `async` in one of the app's stores, **and** the call goes through a variable THIS FILE declares as a
+store. That is the same discipline the whole gate exists for, applied to the gate itself.
+
+⚠ **AND ONE REAL GAP FOUND WHILE FIXING IT:** `PlayerToast` was declared and **never placed** — the store's
+feedback (a saved position, a refused write, a quality change) had nowhere to appear on screen. It is placed now
+(`.toast`, `bottom:6%`, centred, exactly his prototype's position).
+
+⚠ **Still a BUILD round: F1–F10 have not been attempted.** What the two failed rounds HAVE proved is real and
+narrow — the sandbox-compiled surface builds on the Mac, and the only failures are SwiftUI in the two files no
+gate on this machine can compile.
+
 ### ▶ WHAT HIS THIRD DESIGN INPUT CANNOT GIVE THIS APP (measured, not a preference)
 
 ⚠⚠ **Two things in his file are drawn from data that does not exist on the wire**, and both are recorded in the

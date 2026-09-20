@@ -486,6 +486,125 @@ def check_namespaces(root: pathlib.Path) -> list[str]:
     return problems
 
 
+#: ⚠⚠ RULE 6 — A PASSED `FocusState` BINDING IS NOT A PROPERTY WRAPPER. Bought by Phase C's SECOND Mac round
+#: (2026-09-20), all in one file:
+#:
+#:     PlayerSettingsPanel.swift:102: error: cannot find '$focus' in scope
+#:     PlayerSettingsPanel.swift:48:  error: cannot assign to property: 'focus' is a 'let' constant
+#:
+#: A sub-view that RECEIVES the binding writes `let focus: FocusState<X?>.Binding`, and then `$focus` does not
+#: exist (there is no wrapper in this file to project) and `focus = .value` fails (the binding is a `let`; the
+#: assignment goes through `focus.wrappedValue`). Three call sites and two assignments in one file, and no gate
+#: here could see any of them — `$` and `wrappedValue` are syntax, not a namespaced member.
+#:
+#: ⚠ The rule is deliberately narrow: it fires only in a file that DECLARES a `FocusState<…>.Binding` parameter,
+#: so the ordinary `@FocusState` form (where `$focus` IS correct) can never be flagged.
+FOCUS_BINDING_DECL = re.compile(r"\blet\s+(\w+)\s*:\s*FocusState<")
+
+
+def check_focus_binding(root: pathlib.Path) -> list[str]:
+    """⚠ A `$name` or a bare `name = ` where `name` is a DECLARED `FocusState<…>.Binding` parameter."""
+    problems: list[str] = []
+    for path in sorted(root.rglob("*.swift")):
+        if ".build" in path.parts:
+            continue
+        text = path.read_text(encoding="utf-8")
+        for line in text.splitlines():
+            found = FOCUS_BINDING_DECL.search(line)
+            if not found:
+                continue
+            name = found.group(1)
+            for number, body in enumerate(text.splitlines(), start=1):
+                if body.lstrip().startswith("//"):
+                    continue
+                if re.search(rf"\${re.escape(name)}\b", body):
+                    problems.append(
+                        f"{path.relative_to(root)}:{number}: `${name}` — this file takes `{name}` as a "
+                        f"`FocusState` BINDING, so it has no property wrapper to project: pass `{name}`, and "
+                        f"assign through `{name}.wrappedValue`"
+                    )
+                elif re.search(rf"(?<![.\w]){re.escape(name)}\s*=\s*\.", body):
+                    problems.append(
+                        f"{path.relative_to(root)}:{number}: `{name} = …` — a passed binding is a `let`; assign "
+                        f"through `{name}.wrappedValue`"
+                    )
+    return problems
+
+
+#: ⚠⚠ RULE 7 — AN `async` STORE CALL FROM A SYNCHRONOUS VIEW CLOSURE. Bought by the same round, four errors in
+#: one file (`store.chooseLocalSubtitle(index:)` and friends inside a `Button` action):
+#:
+#:     PlayerSettingsPanel.swift:242: error: 'async' call in a function that does not support concurrency
+#:
+#: ⚠ It resolves the async method names from the app's OWN stores rather than guessing, and it reports only a
+#: call that is NOT already inside a `Task`/`await` on the same line — which is the shape the compiler rejects
+#: and the shape that is three characters from the correct one (`Task { await … }`).
+ASYNC_DECL = re.compile(r"\bfunc\s+(\w+)\s*\([^)]*\)\s*(?:async|->\s*)?[^\n]*\basync\b")
+
+
+def async_store_methods(root: pathlib.Path) -> set[str]:
+    names: set[str] = set()
+    for path in sorted(root.rglob("*Store.swift")):
+        if ".build" in path.parts:
+            continue
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if line.lstrip().startswith("//"):
+                continue
+            found = ASYNC_DECL.search(line)
+            if found:
+                names.add(found.group(1))
+    return names
+
+
+def check_async_calls(root: pathlib.Path) -> list[str]:
+    """⚠ A call to an `async` store method through a STORE-VALUED RECEIVER the same file declares.
+
+    ⚠⚠ **THE FIRST DRAFT CRIED WOLF, AND IT WAS CAUGHT BY RUNNING IT ON THE REAL TREE** (the discipline this
+    gate exists to enforce): it flagged `PlaybackAPI.swift`'s own `func searchSubtitles(…) async` DECLARATION
+    (no receiver at all) and two calls to a view's private `start()` — because a store somewhere in the app has
+    a method of that name. A gate that reports a correct file as broken is worse than no gate
+    (`docs/…`: *a gate that cries wolf is worse than an honestly absent one*), so the rule now requires BOTH
+    halves: the method is declared `async` in one of the app's stores, **and** the call goes through a variable
+    THIS FILE declares as a store (`@ObservedObject var store: PlaybackStore`, `let store = PlaybackStore()`).
+    """
+    names = async_store_methods(root)
+    if not names:
+        return []
+    methods = "|".join(sorted(map(re.escape, names)))
+    problems: list[str] = []
+    for path in sorted(root.rglob("*.swift")):
+        if ".build" in path.parts or path.name.endswith("Store.swift"):
+            continue
+        lines = path.read_text(encoding="utf-8").splitlines()
+        receivers = set()
+        for line in lines:
+            if line.lstrip().startswith("//"):
+                continue
+            found = re.search(r"\b(?:let|var)\s+(\w+)\s*(?::\s*\w*Store\b|=\s*\w*Store\s*\()", line)
+            if found:
+                receivers.add(found.group(1))
+            found = re.search(r"@ObservedObject\s+var\s+(\w+)\s*:\s*\w*Store\b", line)
+            if found:
+                receivers.add(found.group(1))
+        if not receivers:
+            continue
+        call = re.compile(rf"\b({'|'.join(sorted(map(re.escape, receivers)))})"
+                          rf"\.({methods})\s*\(")
+        for number, line in enumerate(lines, start=1):
+            if line.lstrip().startswith("//"):
+                continue
+            found = call.search(line)
+            if not found:
+                continue
+            if "await" in line or "Task" in line:
+                continue
+            problems.append(
+                f"{path.relative_to(root)}:{number}: `{found.group(1)}.{found.group(2)}(…)` is `async` and "
+                f"neither awaited nor run in a `Task` — wrap it: `Task {{ await … }}`"
+            )
+    return problems
+
+
 #: ⚠⚠ RULE 4 — `Body` IS NOT A SAFE NAME TO NEST, and this is the SECOND round U6 spent on the same blind
 #: spot. Every `Style` protocol (and `View`) declares an associatedtype requirement called `Body`, so a helper
 #: view nested inside a conformer and named `Body` collides with it. Measured on his Mac, 2026-09-20:
@@ -676,6 +795,10 @@ def selftest() -> int:
             failures.append("rule 4 fires on the REAL tree, so its red above proved nothing")
         if check_style_ownership(TVOS):
             failures.append("rule 5 fires on the REAL tree, so its red above proved nothing")
+        if check_focus_binding(TVOS):
+            failures.append("rule 6 fires on the REAL tree, so its red above proved nothing")
+        if check_async_calls(TVOS):
+            failures.append("rule 7 fires on the REAL tree, so its red above proved nothing")
 
         # Rule 5: the defect he found — chrome on the Button rather than in the style.
         profile = scratch / "Auth" / "ProfilesView.swift"
@@ -684,6 +807,48 @@ def selftest() -> int:
                            encoding="utf-8")
         if not any("PillButtonStyle" in problem for problem in check_style_ownership(scratch)):
             failures.append("it did not fire on chrome applied to a Button that uses a style we own")
+
+        # Rule 6: a PASSED FocusState binding used as if it were a property wrapper.
+        panel = scratch / "Player" / "PlayerSettingsPanel.swift"
+        panel.write_text(
+            "import SwiftUI\n\nstruct P: View {\n"
+            "    let focus: FocusState<Int?>.Binding\n"
+            "    var body: some View {\n"
+            "        Button(\"x\") { focus = .row(1) }.focused($focus, equals: .row(1))\n    }\n}\n",
+            encoding="utf-8")
+        focus_reports = check_focus_binding(scratch)
+        if not any("`$focus`" in problem for problem in focus_reports):
+            failures.append("rule 6 did not fire on `$focus` in a file that takes `focus` as a BINDING")
+        if not any("wrappedValue" in problem for problem in focus_reports):
+            failures.append("rule 6 did not fire on `focus = …` against a `let` binding")
+        # ⚠ And the edge that would make it cry wolf: the ordinary `@FocusState` form, where `$focus` is RIGHT.
+        panel.write_text(
+            "import SwiftUI\n\nstruct P: View {\n"
+            "    @FocusState private var focus: Int?\n"
+            "    var body: some View {\n"
+            "        Button(\"x\") { focus = .row(1) }.focused($focus, equals: .row(1))\n    }\n}\n",
+            encoding="utf-8")
+        if check_focus_binding(scratch):
+            failures.append("rule 6 fires on a file that DECLARES `@FocusState` — where `$focus` is correct")
+
+        # Rule 7: an `async` store call with no `await` and no `Task`.
+        store = scratch / "Core" / "PlaybackStore.swift"
+        store.parent.mkdir(parents=True, exist_ok=True)
+        store.write_text("import Foundation\n\nfinal class PlaybackStore {\n"
+                         "    func chooseLocalSubtitle(index: Int?) async {}\n}\n", encoding="utf-8")
+        view = scratch / "Player" / "Screen.swift"
+        view.write_text("import SwiftUI\n\nstruct S: View {\n    let store = PlaybackStore()\n"
+                        "    var body: some View {\n"
+                        "        Button(\"x\") { store.chooseLocalSubtitle(index: nil) }\n    }\n}\n",
+                        encoding="utf-8")
+        if not any("chooseLocalSubtitle" in problem for problem in check_async_calls(scratch)):
+            failures.append("rule 7 did not fire on a bare `async` store call in a view action")
+        view.write_text("import SwiftUI\n\nstruct S: View {\n    let store = PlaybackStore()\n"
+                        "    var body: some View {\n"
+                        "        Button(\"x\") { Task { await store.chooseLocalSubtitle(index: nil) } }\n"
+                        "    }\n}\n", encoding="utf-8")
+        if check_async_calls(scratch):
+            failures.append("rule 7 fires on the CORRECT form (`Task { await … }`) — it would cry wolf")
 
         # Rule 4: the name a `Style` protocol already owns.
         rail = scratch / "Home" / "RailView.swift"
@@ -704,7 +869,7 @@ def selftest() -> int:
         for line in failures:
             print(f"  · {line}")
         return 1
-    print("selftest: fires on all FIVE defects (member, call label, static name, nested `Body`, chrome on a styled Button), stays silent on the real tree.")
+    print("selftest: fires on all SEVEN defects (member, call label, static name, nested `Body`, chrome on a styled Button, a passed `FocusState` binding used as a wrapper, an unawaited `async` store call) — and each rule is also proved SILENT on the correct form beside it, which is what stops it crying wolf.")
     return 0
 
 
@@ -722,7 +887,8 @@ def main(argv: list[str]) -> int:
 
     try:
         problems = (check(TVOS) + check_calls(TVOS) + check_namespaces(TVOS)
-                    + check_nested_body(TVOS) + check_style_ownership(TVOS))
+                    + check_nested_body(TVOS) + check_style_ownership(TVOS)
+                    + check_focus_binding(TVOS) + check_async_calls(TVOS))
     except (FileNotFoundError, ValueError) as error:
         print(f"cannot run: {error}", file=sys.stderr)
         return 2
@@ -735,10 +901,13 @@ def main(argv: list[str]) -> int:
     print(f"PASS — {len(USES)} view/type pair(s) checked: every member a view names exists on its model, "
           f"and every call to one of the {len(VIEW_TYPES)} app view/type names uses a label it takes.")
     print("⚠ Not covered: TYPES (a value of the wrong type still needs the compiler), argument ORDER, and")
-    print("  behaviour. FIVE rules, every one bought by a defect that reached his Mac:")
+    print("  behaviour. SEVEN rules, every one bought by a defect that reached his Mac:")
     print("  1 a member a view names that its model lacks;  2 a call using a label its type does not take;")
     print("  3 a static-namespace name (HomeRules.*, TVTokens.* …) declared nowhere;  4 a nested `struct Body`")
-    print("  (a `Style` protocol owns that name);  5 chrome applied to a `Button` whose style already draws it.")
+    print("  (a `Style` protocol owns that name);  5 chrome applied to a `Button` whose style already "
+          "draws it;  6 `$name` / `name = …` where `name` is a PASSED `FocusState` binding (no "
+          "wrapper to project, and a binding is a `let`);  7 an `async` store call from a line that "
+          "neither awaits it nor runs in a `Task`.")
     return 0
 
 

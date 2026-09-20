@@ -11,6 +11,14 @@ import SwiftUI
 /// that offered it anyway would be offering what the server will refuse.
 struct PlayerSettingsPanel: View {
 
+    // ⚠⚠ **`focus` IS A PASSED `FocusState` BINDING, AND ALL THREE OF ITS RULES COST A BUILD ROUND
+    // (2026-09-20, round 2):** (1) it is **not** a property wrapper here, so there is **no `$focus`** —
+    // `$` exists only where the wrapper is DECLARED (`PlayerView`); (2) assigning goes through
+    // `focus.wrappedValue = …`, because the binding itself is a `let`; (3) `.focused(focus, equals:)` takes
+    // the binding, which is why every call site passes `focus`. ⚠ All three failures are compile errors on the
+    // Mac and invisible to every gate on this machine — `check-tvos-members.py` sees the file's MEMBER NAMES,
+    // and `$`/`wrappedValue` are syntax, not a namespaced member.
+
     @ObservedObject var store: PlaybackStore
     /// ⚠⚠ **A `FocusState` BINDING, NOT A `@Binding`** — `.focused(_:equals:)` takes only
     /// `FocusState<Value?>.Binding`, and a plain `Binding<DrawerFocus?>` compiles right up until that call.
@@ -45,13 +53,13 @@ struct PlayerSettingsPanel: View {
             ForEach(PlaybackRules.SettingsCategory.allCases, id: \.self) { category in
                 Button {
                     store.selectCategory(category)
-                    focus = .category(category)
+                    focus.wrappedValue = .category(category)
                 } label: {
                     Text(category.title)
                         .font(.system(size: TVTokens.Player.navItemSize, weight: .semibold))
                 }
                 .buttonStyle(DrawerNavStyle(isCurrent: store.category == category))
-                .focused($focus, equals: .category(category))
+                .focused(focus, equals: .category(category))
             }
         }
         .frame(width: TVTokens.Player.navWidth, alignment: .leading)
@@ -93,13 +101,13 @@ struct PlayerSettingsPanel: View {
                     // `activateSettingsItem` leaves the viewer able to do next (up/down changes category).
                     // Nothing about this is retro-fitted maths: the platform moves focus, the app only says
                     // where it should be.
-                    focus = .category(store.category)
+                    focus.wrappedValue = .category(store.category)
                 } label: {
                     Text(segment.title)
                         .font(.system(size: TVTokens.Player.segSize, weight: .bold))
                 }
                 .buttonStyle(DrawerSegmentStyle(isSelected: segment.isSelected))
-                .focused($focus, equals: .row(index))
+                .focused(focus, equals: .row(index))
             }
         }
 
@@ -132,7 +140,7 @@ struct PlayerSettingsPanel: View {
                     }
                 }
                 .buttonStyle(DrawerListStyle(isSelected: row.isSelected, isAction: row.isAction))
-                .focused($focus, equals: .row(index))
+                .focused(focus, equals: .row(index))
             }
         }
 
@@ -238,24 +246,29 @@ struct PlayerSettingsPanel: View {
             }
         case .subtitles:
             var rows: [Row] = [
+                // ⚠⚠ **"Off" IS A WRITE, NOT A LOCAL TOGGLE.** The api's own description of
+                // `POST /jellyfin/subtitle-disable`: *"Turn subtitles off for an item without forgetting which
+                // one was chosen."* A client-side "off" would be undone by the next load, and the viewer would
+                // watch the app re-apply a subtitle they had turned off — which is why this goes through the
+                // store's `disableSubtitles()` (and why that call re-reads `playback-info` afterwards).
                 Row(title: "Off", isSelected: store.subtitleIndex == nil, isAction: false) {
-                    store.chooseLocalSubtitle(index: nil)
+                    Task { await store.disableSubtitles() }
                 },
             ]
             rows += store.localSubtitleRows.map { track in
                 Row(title: track.name, isSelected: store.subtitleIndex == track.index, isAction: false) {
-                    store.chooseLocalSubtitle(index: track.index)
+                    Task { await store.chooseLocalSubtitle(index: track.index) }
                 }
             }
             if store.subtitleSearchEnabled {
                 rows.append(Row(title: "Search OpenSubtitles…", isSelected: false, isAction: true) {
-                    store.searchSubtitles()
+                    Task { await store.searchSubtitles() }
                 })
             }
             rows += store.remoteSubtitleRows.map { row in
                 Row(title: "\(row.displayTitle) · \(row.language.uppercased())",
                     isSelected: false, isAction: false) {
-                    store.chooseRemoteSubtitle(row)
+                    Task { await store.chooseRemoteSubtitle(row) }
                 }
             }
             return rows

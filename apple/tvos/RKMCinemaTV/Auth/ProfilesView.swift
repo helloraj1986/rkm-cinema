@@ -41,7 +41,14 @@ struct ProfilesView: View {
     /// prototype's controls and they are ADMIN-GATED; what they open is stated rather than faked.
     @State private var showingAdminNotice = false
 
+    /// ⚠ The password card's field. ⚠⚠ Focus is claimed on the card's `onAppear` rather than left to the
+    /// engine, and that is not decoration: the moment the card appears the screen behind it is `.disabled`, so
+    /// the view that had focus has just left the chain and something has to say where it goes.
     @FocusState private var passwordFocused: Bool
+
+    /// ⚠ The administrator notice's `Close` — the same rule as `passwordFocused`, for the same reason: that
+    /// notice has exactly ONE control and the pill that opened it is disabled underneath.
+    @FocusState private var noticeFocused: Bool
 
     /// ⚠⚠ **The focus state the dimming rule needs, and the ONE thing on this screen that is new
     /// machinery.** The prototype takes the unfocused tiles down to `opacity:.72` so the focused one reads as
@@ -54,6 +61,28 @@ struct ProfilesView: View {
     @FocusState private var focusedProfile: String?
 
     var body: some View {
+        // ⚠⚠ **ONE FLAG DECIDES WHETHER THE SCREEN BEHIND IS REACHABLE AT ALL, AND IT EXISTS BECAUSE OF HIS
+        // REPORT (2026-09-20):** *"while changing profile when you enter password and press down button to
+        // actual switching … it looses focus and the cursor goes to back while the user stuck on the password
+        // overlay"*.
+        //
+        // **The defect was that the two panels are drawn as `.overlay`s and an overlay is VISUAL ONLY.** The
+        // `ScrollView` under the card keeps every one of its controls in the focus chain — the profile tiles,
+        // `Manage profiles`, `Sign out`, `Reload profiles`, `Change server` — so `Down` out of the `SecureField`
+        // found a candidate BEHIND the dimmed card and moved the ring onto it. The card stayed on screen, the
+        // field had lost focus, and nothing on the card could be reached to dismiss it: literally stuck.
+        //
+        // ⚠⚠ **AND THE OLD COMMENT JUSTIFIED EXACTLY THE THING THAT BROKE** (*"a plain overlay keeps the row's
+        // focus model visible behind it"*) — it does, and on device that is not a feature: a focusable control
+        // the viewer cannot see is a dead end, which `ARCHITECTURE.md` ranks above any cosmetic rule.
+        //
+        // ⇒ `.disabled` is the fix and it is the app's own precedent for "out of the focus chain"
+        // (`BrowseView.libraryRow`'s unresolved library, the top bar's unresolved tabs): on tvOS a disabled
+        // control is not a focus candidate, so while a panel is up the ONLY reachable controls are the ones on
+        // card. ⚠ It greys nothing either: the custom `ButtonStyle`s do not read `isEnabled`, and the content
+        // sits under the panel's own scrim regardless.
+        let panelPresented = asking != nil || showingAdminNotice
+
         ZStack {
             background
 
@@ -83,6 +112,9 @@ struct ProfilesView: View {
                 .padding(.vertical, TVTokens.Profile.screenPaddingV)
                 .frame(maxWidth: .infinity)
             }
+            // ⚠⚠ The focus trap's fix — see this body's own note. While a panel is up, nothing behind it may
+            // take focus, and nothing behind it can be pressed.
+            .disabled(panelPresented)
         }
         .background(RKMColour.background)
         .overlay {
@@ -375,6 +407,12 @@ struct ProfilesView: View {
                     .foregroundStyle(RKMColour.accent)
 
                 pill("Close") { showingAdminNotice = false }
+                    // ⚠⚠ **AND THIS PANEL GETS THE FOCUS THE PASSWORD CARD GETS, FOR THE SAME REASON:** it is an
+                    // overlay too, it has exactly one control, and `Manage profiles` — the pill that opened it —
+                    // is `.disabled` the moment it appears (see `body`), so without this the notice could come up
+                    // with focus nowhere. ⚠ `Close` is given focus explicitly rather than left to the engine's
+                    // relocation, for the same reason the field is: the platform's guess is not a design.
+                    .focused($noticeFocused)
             }
             .padding(TVTokens.u * 2.3)
             .background(RKMColour.surface3, in: RoundedRectangle(cornerRadius: TVTokens.u,
@@ -383,12 +421,28 @@ struct ProfilesView: View {
                 RoundedRectangle(cornerRadius: TVTokens.u, style: .continuous)
                     .stroke(RKMColour.border, lineWidth: 1)
             )
+            .focusSection()
+            .onExitCommand { showingAdminNotice = false }
         }
+        .onAppear { noticeFocused = true }
     }
 
-    /// ⚠ The password card is an **overlay, not a sheet**, and that is deliberate on tvOS: a modal has to
-    /// own focus to be dismissible with the remote's Back, and a plain overlay keeps the row's focus model
-    /// visible behind it. It carries its own `Cancel`, so there is always a way out.
+    /// ⚠⚠ **THE CARD IS AN OVERLAY — BUT IT OWNS ITS OWN FOCUS, AND THAT IS THE PART THE FIRST VERSION GOT
+    /// WRONG.** The original note here read *"a modal has to own focus to be dismissible with the remote's
+    /// Back, and a plain overlay keeps the row's focus model visible behind it"* — and the second half is
+    /// exactly his report (2026-09-20): *"it looses focus and the cursor goes to back while the user stuck on
+    /// the password overlay"*. A `.overlay` is **visual only**: the row behind stayed focusable, so `Down` out
+    /// of the field moved the ring onto a control hidden behind the card.
+    ///
+    /// ⇒ Three things make the card own its focus, and none of them is focus arithmetic:
+    ///   1. **the screen behind is `.disabled` while the card is up** (see `body`) — it is no longer a
+    ///      candidate, so the field and the two pills are the only controls in the chain;
+    ///   2. **`.focusSection()` on the card** — the field and the buttons are one group, which is the
+    ///      modifier `View.focusSection()` exists for (tvOS 15+);
+    ///   3. **`.onExitCommand` on the card** — MENU is the remote's Back, and while this card is up Back must
+    ///      CLOSE THE CARD. Without it his *"stuck"* is literal: the only control that can dismiss the panel
+    ///      is inside the panel. ⚠ It is attached to the CARD rather than the screen so MENU keeps its
+    ///      normal meaning when no panel is up.
     private func passwordPrompt(for profile: ProfileUser) -> some View {
         ZStack {
             RKMColour.background.opacity(0.75)
@@ -449,6 +503,17 @@ struct ProfilesView: View {
                 RoundedRectangle(cornerRadius: TVTokens.u, style: .continuous)
                     .stroke(RKMColour.border, lineWidth: 1)
             )
+            // ⚠⚠ **THE CARD OWNS ITS FOCUS — see this function's own note for the three parts and the report
+            // they answer.** The section is what tells the engine the field and the two pills are ONE group, so
+            // `Down` from the field lands on `Watch as …` instead of leaving the card.
+            .focusSection()
+            // ⚠ MENU closes the CARD while it is up. ⚠ On the card and not on the screen, so MENU keeps its
+            // normal meaning when no panel is showing.
+            .onExitCommand {
+                password = ""
+                asking = nil
+                passwordFocused = false
+            }
         }
         .onAppear { passwordFocused = true }
     }

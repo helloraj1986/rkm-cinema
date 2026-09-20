@@ -1,4 +1,4 @@
-## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-20, ROUND 10) · ⚠⚠ **THE TITLE SCREEN'S DEAD END IS OPEN AGAIN — W3's ANSWER IS DISPROVED AND HAS BEEN REVERTED, AND THE ROUND NOW READS ONE LINE OF THE LOG INSTEAD OF GUESSING** · **`KNOWN_ISSUES` #15 is the open item**: his round-10 words are *"still stuck on back to browse cannot come down using keyboard"*, i.e. the bar-inside-the-scroller shape fails exactly as the bar-as-a-sibling shape did · **⇒ the bar is an OVERLAY again (his `.topbar { position: fixed }`) and `Bar.clearance` is back on the three message states** — ⚠ because as a BAND the bar added its own 115.2 pt to a page `DetailRules.titlePageHeight` budgets as **1058.5 of 1080 with the bar counted as ZERO**, i.e. the scroller's content was **1173.7 pt: 93.7 pt over a screen nothing can scroll** · **the dead end is attacked with `.focusSection()` on the bar and on the content group — A HYPOTHESIS, NOT PROVED** (no focus engine runs on this machine) · ✅ **`TopBar` NOW PUBLISHES ITS OWN FOCUS** (`bar-focus: <id|nil>`) beside the screen's `detail-focus: play=…`, so **his round produces EVIDENCE rather than another guess**: `bar-focus: nil` + `play=true` = it moved; `bar-focus: back` with no `play=true` = the engine found no candidate, and the next lever is his own Option A (art behind the whole page, the 313 pt hero band deleted) · ⚠ branch `feat/tvos-player` carries it; `dev` does NOT · **nothing needs `apply`**: no file under `backend/`, `frontend/` or `nginx/` changed
+## ⚡ NEXT SESSION — RESUME EXACTLY HERE (2026-09-20, ROUND 10) · ⚠⚠ **THE TITLE SCREEN'S DEAD END IS OPEN AGAIN — W3's ANSWER IS DISPROVED AND HAS BEEN REVERTED, AND THE ROUND NOW READS ONE LINE OF THE LOG INSTEAD OF GUESSING** · **`KNOWN_ISSUES` #15 is the open item**: his round-10 words are *"still stuck on back to browse cannot come down using keyboard"*, i.e. the bar-inside-the-scroller shape fails exactly as the bar-as-a-sibling shape did · **⇒ the bar is an OVERLAY again (his `.topbar { position: fixed }`) and `Bar.clearance` is back on the three message states** — ⚠ because as a BAND the bar added its own 115.2 pt to a page `DetailRules.titlePageHeight` budgets as **1058.5 of 1080 with the bar counted as ZERO**, i.e. the scroller's content was **1173.7 pt: 93.7 pt over a screen nothing can scroll** · **the dead end is attacked with `.focusSection()` on the bar and on the content group — A HYPOTHESIS, NOT PROVED** (no focus engine runs on this machine) · ✅ **`TopBar` NOW PUBLISHES ITS OWN FOCUS** (`bar-focus: <id|nil>`) beside the screen's `detail-focus: play=…`, so **his round produces EVIDENCE rather than another guess**: `bar-focus: nil` + `play=true` = it moved; `bar-focus: back` with no `play=true` = the engine found no candidate, and the next lever is his own Option A (art behind the whole page, the 313 pt hero band deleted) · ⚠ branch `feat/tvos-player` carries it; `dev` does NOT · **nothing needs `apply`**: no file under `backend/`, `frontend/` or `nginx/` changed · ✅ **AND `KNOWN_ISSUES` #17 IS FIXED, AWAITING HIS ROUND** — the profile-switch password card lost focus out of the `SecureField` and stranded him, because **an `.overlay` is VISUAL ONLY** and left the screen behind in the focus chain (`Auth/ProfilesView.swift`: `.disabled` while a panel is up · `.focusSection()` on each card · `.onExitCommand` on each card · both cards claim focus)
 
 ### 🔁 ROUND 10 — the fix was reverted on arithmetic, and the falsifier finally exists (2026-09-20)
 
@@ -24,6 +24,27 @@ established**, and no gate could see it because the budget and the view are the 
 BUDGET IS ABOUT ARE TWO HALVES NO GATE JOINS.** `titlePageHeight` was correct, pinned and green while the screen
 it describes grew 115.2 pt taller than the number it was measured against. ⇒ When a view's STRUCTURE changes,
 re-derive the budget by hand in the same round — the harness cannot notice.
+
+### 📝 ROUND 10, second defect — the password card stranded him, and the cause was a comment that was wrong (2026-09-20)
+
+His second report the same round: *"while changing profile when you enter password and press down button to
+actual switching...it looses focus and the cursor goes to back while the user stuck on the password overlay"*.
+Filed, fixed and closed out as **`KNOWN_ISSUES` #17**. ⚠ **The mechanism is `.overlay` — it is VISUAL ONLY.**
+`ProfilesView.body` draws the card over `ZStack { background; ScrollView { tiles · notices · exits } }`, and the
+overlay left every control underneath **in the focus chain**, so `Down` out of the `SecureField` moved the ring
+onto a control hidden behind the card — with the only control that could dismiss the card inside the card.
+
+⚠⚠ **AND THE FILE'S OWN COMMENT WAS THE BUG, WRITTEN DOWN:** *"a modal has to own focus to be dismissible with the
+remote's Back, and a plain overlay keeps the row's focus model visible behind it."* It does exactly that, and on a
+television it is a dead end. ⇒ the fix is three parts and none is focus arithmetic: **`.disabled(panel)` on the
+`ScrollView`** (the app's own "out of the focus chain" precedent), **`.focusSection()` on each card**, and
+**`.onExitCommand` on each card** — plus both cards claiming focus on `onAppear`, which is now load-bearing
+because the moment a card appears the view that HAD focus is disabled. ⚠ The `adminNotice` had the identical shape
+and went with it: fixing one and not the other leaves the same trap one press away.
+
+⚠ **The generalisable rule: an overlay does not remove anything from the focus graph.** Any panel drawn over
+focusable content needs the content disabled (or the panel needs to be a real modal) — and a `MENU` handler on
+the panel, because MENU is the only Back a television has.
 
 ### 🎬 PHASE W — THE SCREENS WERE DRAWN IN THE WRONG BOX, AND THE TITLE SCREEN IS NOW HIS FILE'S STRUCTURE (2026-09-20)
 

@@ -59,7 +59,7 @@ Read-only audit, 2026-09-25. Everything here is a fact about the committed tree,
 | `DEVELOPMENT_ASSET_PATHS` | `grep` in pbxproj | not set | Fine — `Preview Content/` exists but nothing requires it. |
 | Debug-only code | `grep -rn "#if DEBUG" apple/ios` | `DebugHUD`, `OfflineDebugPanel`, `OfflineServerProbe`, `OfflineBridge`, `WebShellModel`, `AppLog` | ⚠ **This decides the configuration** — §3.1. |
 | Existing IPA tooling | `grep -rn -iE "\.ipa\|exportArchive\|xcarchive\|sideload"` | **nothing** | Nothing to build on; `ExportOptions.plist` does not exist. |
-| Round script | `apple/scripts/mac-round.sh` | builds only — no archive, no export, no packaging | New script required; the round script stays as it is. |
+| Round script | `apple/scripts/mac-round.sh` | builds only — no archive, no export, no packaging. ⚠ **Updated 2026-09-25**: it gained an `ipa` verb that `exec`s `build-ipa.sh`, so the Mac keeps ONE command (`mac-round.sh ios\|tvos\|ipa`) and the recipe stays in one file. The verb is placed *before* its own `git pull`, so it is a forwarder, not a round (§4.9). |
 | gitignore | `.gitignore` | already covers `build/`, `dist/`, `*.log` | But the IPA still goes **outside** the repo — §4.7. |
 
 **The three findings that shape the plan:** no entitlements (so a re-sign is safe), a free account is
@@ -239,6 +239,36 @@ comes back to chat is the summary.
 ⚠ `set -euo pipefail` + a `grep` that matches nothing **ends the script silently** — every `grep` in a
 pipeline gets `|| true` and an explicit branch, exactly as `mac-round.sh` documents (§7e rule 5).
 
+**4.9 The verb, and which machine gets it** — decided 2026-09-25, his choice from three options.
+
+`mac-round.sh` gains a third verb, and it is a **forwarder**:
+
+```bash
+./apple/scripts/mac-round.sh ipa              # Debug  → ~/dev/rkm-cinema-dist/RKMCinema-unsigned.ipa
+./apple/scripts/mac-round.sh ipa --release
+```
+
+- ⚠ **Placed before its own `git pull`, and it `exec`s** — so no `git fetch`/`pull`, no project generation,
+  no build, no simulator, no device selection, and nothing of the round can run after the hand-off. A change
+  to the recipe is still a change in **one file** (`build-ipa.sh`).
+- ⚠ **It is NOT a verb in `rkm-cinema.ps1`, and that is not an oversight.** `rkm-cinema.ps1` is PowerShell 5.1
+  on **Windows**, and `xcodebuild` exists only on **macOS** — the Windows CLI cannot build an IPA at all.
+  `apple/WORKFLOW.md` states the boundary the repo already lives by: *"GitHub is the only bridge to the
+  Mac"*, the Mac being testing-only. So the three candidate shapes were:
+
+  | Option | Verdict |
+  |---|---|
+  | Mac-side verb on `mac-round.sh` | ✅ **chosen** — zero new infrastructure; the Mac already has exactly one command, and this adds to it rather than inventing a second |
+  | `.\rkm-cinema.ps1 apple ipa` over **SSH** to the Mac, pulling the IPA back | ✗ for now — it is the best UX (one command, and the IPA lands next to Sideloadly), but it makes SSH a **second bridge** where GitHub is the only one. Worth revisiting if walking to the Mac becomes the annoyance |
+  | An `apple` verb group in both CLIs, Windows refusing with the Mac command | ✗ — two surfaces to keep in sync for discoverability alone |
+
+- ⚠ A verb on the Windows CLI that *silently* did nothing would be worse than no verb: it either does the job
+  or it says plainly that the job belongs on the Mac. Recorded so it is not "fixed" later by adding a
+  no-op that looks like a feature.
+- ⚠ **tvOS is not in this verb.** A portless Apple TV can only be sideloaded from macOS, so its route stays
+  `xcodebuild` + `xcrun devicectl` over Wi-Fi (§3.5) — an IPA step there would be packaging work with nowhere
+  to go.
+
 ---
 
 ## 5. Phases
@@ -246,18 +276,19 @@ pipeline gets `|| true` and an explicit branch, exactly as `mac-round.sh` docume
 | Phase | What | Who runs it | Done when |
 |---|---|---|---|
 | **1a** | Write `apple/scripts/build-ipa.sh` | me (sandbox) | ✅ **DONE 2026-09-25** — `bash -n` clean, 8 numbered steps, every guard commented with the failure it prevents |
-| **1b** | Write `apple/scripts/test-build-ipa.sh` — the stub harness | me (sandbox) | ✅ **DONE — 12 cases, 12 green, run for real** (§6.1) |
+| **1b** | Write `apple/scripts/test-build-ipa.sh` — the stub harness | me (sandbox) | ✅ **DONE — 14 cases, 14 green, run for real** (§6.1) |
 | **1c** | Prove the packaging + verification half against a synthetic `.app` | me (sandbox) | ✅ **DONE** — the `ditto` stub makes a genuine zip, so step 7's structure assertions ran against a real archive. Packer settled as **`ditto`** (§6.2) |
 | **1d** | **Falsify** the harness — break each guard, require the matching case to go red | me (sandbox) | ✅ **DONE** — 3 guards disabled in 3 copies, each turning **exactly** its own case red (§6.1) |
+| **1e** | **The verb** — `mac-round.sh ipa`, a forwarder, and its falsification | me (sandbox) | ✅ **DONE** — 2 more cases (M/N), and falsified twice: a forwarder that stops `exec`ing, and one placed *after* the round's `git pull` (§4.9, §6.1) |
 | **2** | Run the script once on the Mac | **him** — one command | an `.ipa` exists; sha256 + summary pasted back |
 | **3** | Sideload from RKM-HP | **him** | the app opens on the iPad from the IPA, not from Xcode |
-| **4** | Docs: one paragraph in `apple/WORKFLOW.md` + `apple/ios/README.md`; record in `docs/PROGRESS.md` | me | the next session does not rediscover this |
+| **4** | Docs: `apple/WORKFLOW.md` §3 + the command table, `apple/README.md`'s script list, and the record in `docs/PROGRESS.md` | me | ✅ **DONE (except PROGRESS.md, which is written once Phase 3 passes)** — the next session does not rediscover this |
 
-⚠ **Phases 1a–1d are finished and were executed here.** Phase 2 needs Xcode; Phase 3 needs Windows and the
+⚠ **Phases 1a–1e are finished and were executed here.** Phase 2 needs Xcode; Phase 3 needs Windows and the
 iPad. Neither is done and neither will be described as done. What that means concretely: **the script has
 never run against a real `xcodebuild`.** Everything Xcode-side is argued from the project's own history and
-the `apple-platform-clients` skill — the harness proves the *script's* logic and the *archive's* structure,
-and proves nothing about Xcode's behaviour.
+the `apple-platform-clients` skill — the harness proves the *script's* logic, the *archive's* structure and
+the *hand-off*, and proves nothing about Xcode's behaviour.
 
 ---
 
@@ -285,8 +316,10 @@ The new harness needs these cases, each of which is a bug this plan exists to pr
 | **J** | `file` reports `x86_64` | fails on architecture | ✅ |
 | **K** | `codesign` reports **`Signature=adhoc`** | **exit 0** — ⚠ the false-positive guard: an Apple-Silicon ad-hoc signature must not block a good build | ✅ |
 | **L** | `codesign` output the script does not recognise | fails — refuses to guess on the property the artefact is named after | ✅ |
+| **M** | `mac-round.sh ipa` (the forwarder) | exit 0, IPA produced, the call log shows `CODE_SIGNING_ALLOWED=NO` **and no `git` at all** — i.e. the hand-off happened *before* the round's pull | ✅ |
+| **N** | `mac-round.sh ipa --release` | exit 0, and `-configuration Release` survived the forward | ✅ |
 
-**Run 2026-09-25: `12 passed, 0 failed`, exit 0.**
+**Run 2026-09-25: `14 passed, 0 failed`, exit 0.**
 
 ⚠ **Falsified, and the first attempt at falsifying was itself wrong — which is the point.** Disabling all
 three guards at once turned only **A** and **G** red: breaking the `platform 2` accept-case made B and C die
@@ -298,9 +331,12 @@ cascade is not a detection. Redone one guard at a time, on three fresh copies of
 | products-dir simulator check | **B** — and only B |
 | real-identity rejection | **C** — and only C |
 | `LC_BUILD_VERSION platform 7` | **G** — and only G |
+| the forwarder's `exec` (it prints and returns) | **M, N** |
+| the forwarder's *placement* (a `git fetch` inserted above it) | **M, N** |
 
-Each guard now has exactly one case that fails without it — which is what makes the other eleven green
-results mean something.
+Each guard now has a case that fails without it — which is what makes the other green results mean something.
+⚠ M and N both go red for either forwarder fault, deliberately: they are the two faces of one hand-off
+(does it reach `build-ipa.sh`, and do the arguments survive), and neither is meaningful alone.
 
 ⚠ **Also found: a temp directory that cannot `exec` makes every stub fail.** This sandbox's `/tmp` is a tmpfs
 mounted `noexec`, so all stubs died with `Permission denied` (rc 126) — which reads as a broken harness

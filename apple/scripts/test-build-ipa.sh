@@ -59,7 +59,13 @@ BIN="$HARNESS/bin"
 SKEL="$HARNESS/repo"
 mkdir -p "$STUB" "$BIN" "$SKEL/apple/scripts" "$SKEL/apple/ios/RKMCinema.xcodeproj" "$HARNESS/home"
 cp "$SRC_SCRIPT" "$SKEL/apple/scripts/build-ipa.sh"
-chmod +x "$SKEL/apple/scripts/build-ipa.sh"
+# ⚠ mac-round.sh too: the `ipa` verb is a forwarder into build-ipa.sh, and that hand-off is a real
+# integration point — it is what makes `./apple/scripts/mac-round.sh ipa` the single Mac command. A
+# forwarder that silently stopped working would look exactly like "the IPA recipe broke".
+MAC_ROUND="$(dirname "$SRC_SCRIPT")/mac-round.sh"
+[ -f "$MAC_ROUND" ] || { echo "cannot find mac-round.sh beside build-ipa.sh" >&2; exit 1; }
+cp "$MAC_ROUND" "$SKEL/apple/scripts/mac-round.sh"
+chmod +x "$SKEL/apple/scripts/build-ipa.sh" "$SKEL/apple/scripts/mac-round.sh"
 
 # ================================================================================================
 # The stubs. Each logs its invocation, then behaves according to the STUB STATE a case has set.
@@ -127,6 +133,11 @@ exit 1'
 
 write_stub file 'cat "$STUB/file_out"'
 
+# ⚠ A git stub, so the FORWARDER cases can prove the round's own `git fetch`/`git pull` never ran.
+# Without a stub the real `git` would run in the skeleton (a non-repo), fail, and the assertion would be
+# about git's error message rather than about whether mac-round.sh got past its hand-off.
+write_stub git 'exit 0'
+
 write_stub otool '
 case "$(cat "$STUB/otool_mode" 2>/dev/null || echo normal)" in
   empty) exit 0 ;;
@@ -192,6 +203,10 @@ chmod +x "$BIN/ditto"
 
 PASS=0; FAILED=0; FAILED_NAMES=""
 
+# Which script under test, and with what arguments. A case may repoint these at the forwarder.
+ENTRY_CMD="apple/scripts/build-ipa.sh"
+ENTRY_ARGS=""
+
 # case <name> <mode> <devdir> <products> <otool_platform> <otool_mode> <codesign_mode> <file_out> <project> <expect_rc>
 case_run() {
   local name="$1" mode="$2" devdir="$3" products="$4" oplatform="$5" omode="$6" csign="$7" fout="$8" proj="$9" expect="${10}"
@@ -220,7 +235,7 @@ case_run() {
       PATH="$BIN:/usr/local/bin:/usr/bin:/bin" \
       HOME="$HARNESS/home" \
       TMPDIR="$TMP" \
-      bash "$SKEL/apple/scripts/build-ipa.sh" 2>&1)"
+      bash "$SKEL/$ENTRY_CMD" $ENTRY_ARGS 2>&1)"
   rc=$?
   set -e
 
@@ -269,6 +284,16 @@ case_run() {
     L-codesign-unrecognised)
       printf '%s\n' "$out" | grep -q "does not recognise" || problems="$problems stdout: unrecognised codesign output not treated as a failure;"
       ;;
+    M-forwarded-from-mac-round)
+      printf '%s\n' "$out" | grep -q "forwarding to apple/scripts/build-ipa.sh" || problems="$problems stdout: the hand-off was not announced;"
+      grep -q "CODE_SIGNING_ALLOWED=NO" "$STUB/calllog" || problems="$problems calllog: build-ipa.sh never ran — the forwarder did not reach it;"
+      grep -q "^git " "$STUB/calllog" && problems="$problems calllog: the round's git pull RAN — the forwarder is placed too late;"
+      printf '%s\n' "$out" | grep -q "platform: 2 (iOS device)" || problems="$problems stdout: the full recipe did not run after the hand-off;"
+      ;;
+    N-forwarder-passes-release)
+      grep -q -- "-configuration Release" "$STUB/calllog" || problems="$problems calllog: --release did not survive the forward;"
+      grep -q "^git " "$STUB/calllog" && problems="$problems calllog: the round's git pull RAN;"
+      ;;
     F-build-fail)
       printf '%s\n' "$out" | grep -q "cannot find RKMLog in scope" || problems="$problems stdout: compiler error not surfaced;"
       printf '%s\n' "$out" | grep -q "BUILD FAILED"                || problems="$problems stdout: failure not announced;"
@@ -303,6 +328,13 @@ case_run L-codesign-unrecognised happy xcode "Debug-iphoneos" 2 normal unrecogni
 
 echo "  the FALSE-POSITIVE path — an Apple Silicon ad-hoc signature must NOT block the build"
 case_run K-adhoc-signature       happy xcode "Debug-iphoneos" 2 normal adhoc    "Mach-O 64-bit executable arm64" present 0
+
+echo "  the forwarder — ./apple/scripts/mac-round.sh ipa is the ONE command on the Mac"
+ENTRY_CMD="apple/scripts/mac-round.sh"; ENTRY_ARGS="ipa"
+case_run M-forwarded-from-mac-round happy xcode "Debug-iphoneos" 2 normal unsigned "Mach-O 64-bit executable arm64" present 0
+ENTRY_CMD="apple/scripts/mac-round.sh"; ENTRY_ARGS="ipa --release"
+case_run N-forwarder-passes-release  happy xcode "Debug-iphoneos" 2 normal unsigned "Mach-O 64-bit executable arm64" present 0
+ENTRY_CMD="apple/scripts/build-ipa.sh"; ENTRY_ARGS=""
 
 echo "  pre-flight and build failures"
 case_run D-no-xcode    happy clt           "Debug-iphoneos" 2 normal unsigned "Mach-O 64-bit executable arm64" present 1

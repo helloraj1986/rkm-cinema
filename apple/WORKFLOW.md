@@ -31,7 +31,7 @@ is no second Windows copy. **GitHub is the only bridge to the Mac.**
 |---|---|---|
 | Does | **writes all the code**, commits, pushes | pulls, creates the projects **once**, builds, runs, signs, screenshots, streams logs |
 | Edits | every source file | **only**: the two projects (once) · signing · one Info.plist setting |
-| Command | `bash .git/push_branch.sh feat/apple-clients` | `./apple/scripts/mac-round.sh ios\|tvos` |
+| Command | `bash .git/push_branch.sh feat/apple-clients` | `./apple/scripts/mac-round.sh ios\|tvos\|ipa` |
 
 ---
 
@@ -159,8 +159,29 @@ It pulls, builds, and drops a plain-text build log into `apple/logs/`, printing 
 then the tail) — a full `xcodebuild` log is thousands of lines. Add `--sim` to install and launch on a simulator.
 (If we ever move to XcodeGen it also regenerates the project first — the script handles both.)
 
-⚠ **It has not been run yet** — no Xcode on the Windows side, so it is written-but-unverified; expect one round
-of fixing its flags on first real use.
+**`ipa` is the third verb, and it is a FORWARDER — not a round:**
+
+```bash
+cd ~/dev/rkm-cinema && ./apple/scripts/mac-round.sh ipa        # add --release for the stripped build
+```
+
+It `exec`s `apple/scripts/build-ipa.sh` — the ONE implementation of the recipe
+([`../docs/UNSIGNED_IPA_PLAN.md`](../docs/UNSIGNED_IPA_PLAN.md)) — so this path does **no `git pull`, no project
+generation, no build, no simulator and no signing**. Output: `~/dev/rkm-cinema-dist/RKMCinema-unsigned.ipa`.
+
+⚠ **That file is NOT installable as-is.** iOS validates signatures at install, so an unsigned IPA is an **input
+to a signer** — Sideloadly on RKM-HP, which is also where it renews. No Apple ID, team or provisioning profile
+is involved on the Mac at all, and the free-account 7-day clock is unchanged either way: what changes is that
+renewal no longer needs this laptop and a cable.
+
+⚠ **Why the verb is here and NOT in `rkm-cinema.ps1`:** `xcodebuild` only exists on macOS, so the Windows CLI
+literally cannot build an IPA. Do not add it there as if it could — see the plan's §3.5 for why the tvOS
+client is on a different route again (a portless Apple TV can only be sideloaded from macOS).
+
+⚠ **A correction, made 2026-09-25:** this section used to say `mac-round.sh` *"has not been run yet … written
+but unverified"*. That was stale — it has run on his Mac many times since 2026-09-14 (`PROGRESS.md` records the
+rounds), and `test-mac-round.sh` exercises it against stubbed tooling. The note is removed rather than left to
+mislead the next reader.
 
 Then: Xcode for run/install/screenshot, plus `log stream` per `LOGGING.md` §7.
 

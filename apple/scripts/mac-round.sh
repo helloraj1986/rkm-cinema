@@ -4,6 +4,15 @@
 #   ./apple/scripts/mac-round.sh ios        # pull · (generate) · build iOS
 #   ./apple/scripts/mac-round.sh tvos       # pull · (generate) · build tvOS
 #   ./apple/scripts/mac-round.sh ios --sim  # ...then install+launch on a simulator
+#   ./apple/scripts/mac-round.sh ipa        # build the UNSIGNED IPA (nothing else — see below)
+#   ./apple/scripts/mac-round.sh ipa --release
+#
+# ⚠ `ipa` IS A FORWARDER, NOT A FOURTH ROUND. It `exec`s apple/scripts/build-ipa.sh, which is the ONE
+# implementation of the IPA recipe (docs/UNSIGNED_IPA_PLAN.md). So: no `git pull`, no simulator, no
+# signing, no device selection — and a change to the recipe is a change in exactly one file. It needs no
+# Apple ID and no provisioning profile; the file it produces is not installable as-is, it is an input to
+# a signer (Sideloadly on RKM-HP). That is the whole reason it exists here rather than on Windows:
+# **this is the only machine that can run `xcodebuild`.**
 #
 # ⚠ ANY FURTHER ARGUMENTS ARE PASSED TO THE APP AT LAUNCH (simulator only), so a spike or a debug
 # switch can be turned on for one round without editing a scheme:
@@ -27,6 +36,25 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT"
 
 TARGET="${1:-}"
+
+# ---------------------------------------------------------------- the `ipa` verb: forward and get out
+# ⚠ PLACED HERE, BEFORE `WANT_SIM`/`EXTRA` ARE PARSED AND BEFORE STEP 1 (`git pull`) — on purpose. `exec`
+# replaces this process, so none of the round's own work can run: no pull, no project generation, no
+# build, no device selection. The `shift` drops `ipa` and everything after it goes through untouched, so
+# `ipa --release` reaches build-ipa.sh as `--release` — and any junk it does not understand (`ipa --sim`)
+# is rejected by that script's own argument check rather than silently ignored here.
+if [ "$TARGET" = "ipa" ]; then
+  shift
+  IPA_SCRIPT="$REPO_ROOT/apple/scripts/build-ipa.sh"
+  if [ ! -x "$IPA_SCRIPT" ]; then
+    echo "ipa: $IPA_SCRIPT is missing or not executable." >&2
+    echo "     The IPA recipe is the ONE implementation of it — see docs/UNSIGNED_IPA_PLAN.md." >&2
+    exit 1
+  fi
+  echo "== ipa: forwarding to apple/scripts/build-ipa.sh (no pull, no simulator, no signing)"
+  exec "$IPA_SCRIPT" "$@"
+fi
+
 WANT_SIM="${2:-}"
 
 # ⚠ Shift by hand rather than `shift 2`: with fewer than two arguments that FAILS under `set -e`, and
@@ -47,7 +75,7 @@ case "$TARGET" in
   # family), so leaving this empty makes "the first available Apple TV" the honest, always-correct answer,
   # and the script prints which one it chose. See the device-selection block below.
   tvos) PROJ="apple/tvos/RKMCinemaTV.xcodeproj"; SCHEME="RKMCinemaTV";  PLATFORM="tvOS";    SIM_DEVICE="";           PRODUCT_SUFFIX="appletvsimulator" ; BUNDLE_SUFFIX="tvos" ;;
-  *) echo "usage: $0 ios|tvos [--sim] [app arguments…]" >&2; exit 2 ;;
+  *) echo "usage: $0 ios|tvos [--sim] [app arguments…]   |   $0 ipa [--release]" >&2; exit 2 ;;
 esac
 
 SPEC_DIR="$(dirname "$PROJ")"

@@ -17,6 +17,9 @@ apple/
                          frozen contract, + the frontend's interfaces for the item shape),
                          check-tvos-core.py (RUNS the poster URL + the item models against fixtures),
                          check-apple-typecheck.sh, check-imports.py,
+                         build-ipa.sh (the UNSIGNED IPA — the Mac's third verb,
+                         `mac-round.sh ipa`; docs/UNSIGNED_IPA_PLAN.md),
+                         test-build-ipa.sh (that one, stubbed, 14 cases),
                          test-mac-round.sh (the round script, stubbed), and generate-api.sh
                          ⚠ superseded — see its header
 ```

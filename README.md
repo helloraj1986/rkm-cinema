@@ -220,17 +220,20 @@ Full runbook — failure modes, recovery ladders, where state lives: **[`docs/OP
 
 ```powershell
 # Backend (from backend/)
-python -m pytest tests/ -q        # 1177 tests, no live LAN required
+python -m pytest tests/ -q        # 1366 tests, no live LAN required
 ruff check api application config core domain infrastructure jobs services
 
 # Frontend (from frontend/)
 npm ci
 npm run dev                       # Vite dev server (proxies /api to 127.0.0.1:8000)
-npm test                          # 551 Vitest tests / 20 files
+npm test                          # 589 Vitest tests / 23 files
 npm run typecheck                 # tsc --noEmit
 npm run build                     # production build (baked into the web image)
 npm run generate:types            # regenerate TS types from the frozen contract
 ```
+
+> Counts verified **2026-09-25**. They move every session — if a number here disagrees with your run,
+> **the run is right** and this comment is the stale thing. The commands are the contract, not the totals.
 
 ⚠ **That is not the whole gate.** The Apple halves (an offline core executed on Linux, a per-file
 typecheck), the browser checks and the docs link check are separate commands —
@@ -243,7 +246,7 @@ typecheck/test/build plus a contract-drift check on every push.
 ```bash
 bash apple/scripts/test-build-ipa.sh           # the unsigned IPA recipe — 14 cases, stubbed tooling
 bash apple/scripts/test-mac-round.sh           # the Mac round script — 10 cases, stubbed tooling
-python3 apple/scripts/check-offline-core.py    # the pure Apple core, EXECUTED (517 checks)
+python3 apple/scripts/check-offline-core.py    # the pure Apple core, EXECUTED (558 checks)
 bash apple/scripts/check-apple-typecheck.sh    # the iOS sources, one compiler run per file
 python3 tools/check_md_links.py                # every relative link in every markdown file
 ```

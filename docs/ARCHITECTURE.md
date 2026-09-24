@@ -581,17 +581,21 @@ architecture exists to prevent. ⚠ `layouts/desktop/index.ts` is a **thin re-ex
 
 ⚠ **"Done" means the gate ran and its output is in the transcript** — never that the code looks right.
 Verify the numbers below on the day (§"counts move"); the commands are the contract, not the totals.
+⚠ **The counts in this table were last verified 2026-09-25** — several had drifted badly (pytest 1177→**1366**,
+vitest 551/20→**589/23**, md links 61→**81 files**, offline-core 517→**558 checks** and 67→**86 rules**), so
+treat every number here as a label for the command, never as an expectation. What matters is that the
+*command* runs and its output is pasted.
 
 | Command (from the given dir) | What it proves | Falsification direction |
 |---|---|---|
-| `cd backend && python -m pytest tests/ -q` | **1177 passed** — route levels + identity rail, the status machine, acquisition routing, the library service, the offline API, the config renderer, subtitles, auth. All with injected fakes: **no live LAN, no real keys** | mutate the rule under test and require RED |
+| `cd backend && python -m pytest tests/ -q` | **1366 passed** — route levels + identity rail, the status machine, acquisition routing, the library service, the offline API, the config renderer, subtitles, auth. All with injected fakes: **no live LAN, no real keys** | mutate the rule under test and require RED |
 | `cd backend && ruff check api application config core domain infrastructure jobs services` | lint, **F rules only** (undefined names, unused imports, shadowing) — the real-bug class | inject an undefined name |
 | `cd frontend && npm run typecheck` | TS types and call shapes (`tsc --noEmit`) | — |
-| `cd frontend && npx vitest run` | **551 passed / 20 files** — the layout switch (`LayoutMode.test.tsx`), the mobile import ban (`imports.test.ts`), `lib.ts` rules, sheet rules, query policy | break the rule in `lib.ts`, require RED |
+| `cd frontend && npx vitest run` | **589 passed / 23 files** — the layout switch (`LayoutMode.test.tsx`), the mobile import ban (`imports.test.ts`), `lib.ts` rules, sheet rules, query policy | break the rule in `lib.ts`, require RED |
 | `cd frontend && npm run build` | the production bundle builds — it IS the web image (`frontend/Dockerfile`) | — |
 | `cd frontend && npm run generate:types && git diff --exit-code src/lib/api/types.ts` | the committed TS types still match the frozen contract | also runs in CI |
-| `python3 tools/check_md_links.py` | **61 markdown files, every relative link resolves** — this is what keeps a doc move honest | break a link |
-| `python3 apple/scripts/check-offline-core.py` | the pure Apple core **executed on Linux**: **517 checks** (bridge contract, ranges, manifest, cookie rules, planner) | `--falsify` reverts **all 67 rules** one at a time and requires each to go RED — that IS the falsification |
+| `python3 tools/check_md_links.py` | **81 markdown files, every relative link resolves** — this is what keeps a doc move honest | break a link |
+| `python3 apple/scripts/check-offline-core.py` | the pure Apple core **executed on Linux**: **558 checks** (bridge contract, ranges, manifest, cookie rules, planner) | `--falsify` reverts **all 86 rules** one at a time and requires each to go RED — that IS the falsification |
 | `bash apple/scripts/test-build-ipa.sh` | the **unsigned IPA recipe**, stubbed (`xcodebuild`/`otool`/`codesign`/`file`/`ditto`): **14 cases, 0 failed** — the two silent failures are gated (a simulator binary, a stale signed `.app`), plus the Mac's `ipa` forwarder. ⚠ `unzip`, `shasum` and `grep` are **not** stubbed, so the archive assertions are evidence | disable any single guard → exactly its own case goes RED (`docs/UNSIGNED_IPA_PLAN.md` §6.1) |
 | `bash apple/scripts/check-apple-typecheck.sh` | the iOS sources typecheck on Linux, **one compiler invocation per file**, with the 2 Darwin-only API errors filtered by name | re-introduce a real error and require it to be named |
 | `python3 tools/check_*.py` (browser checks) | the REAL views in a real browser over a stubbed api (login, picker, nav, household, password, library scan, CTA, poster-watched, offline page, subtitle panel, item modal) | most accept `--expect-broken`: run the SAME assertions against the pre-fix source and require failures |

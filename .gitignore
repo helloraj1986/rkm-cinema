@@ -18,6 +18,7 @@ venv/
 htmlcov/
 build/
 dist/
+.rkm-ipa-harness/
 
 # Runtime data / state — watchlist data + dashboard output live outside the repo
 watchlist.json

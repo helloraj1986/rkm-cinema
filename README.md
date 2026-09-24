@@ -118,6 +118,67 @@ are one-line forwarders kept for older notes).
 
 ---
 
+## The apps — iPhone, iPad, Apple TV
+
+The stack serves three clients from **one UI**: the browser, the **iOS/iPadOS app**
+(`apple/ios/` — a `WKWebView` shell around the live React UI, so a web change appears on the phone with no
+rebuild), and the **tvOS app** (`apple/tvos/` — native SwiftUI, because **Apple TV has no browser at all**).
+
+⚠ **All Apple work happens on the MacBook Pro.** Xcode exists only on macOS, and
+[`apple/WORKFLOW.md`](apple/WORKFLOW.md) states the boundary the whole repo lives by: **GitHub is the only
+bridge to the Mac.** There is no `apple` verb in `.\rkm-cinema.ps1` because that script is PowerShell on
+Windows and *cannot* run `xcodebuild`.
+
+| | Windows (RKM-HP) | MacBook Pro |
+|---|---|---|
+| Does | writes and deploys the stack | builds, runs, screenshots, streams logs |
+| Command | `.\rkm-cinema.ps1 …` | `./apple/scripts/mac-round.sh ios\|tvos\|ipa` |
+
+### On the Mac — one command for all three
+
+```bash
+cd ~/dev/rkm-cinema
+git fetch origin && git switch dev && git merge --ff-only origin/dev
+
+./apple/scripts/mac-round.sh ios --sim     # build, INSTALL and launch on the iPhone simulator
+./apple/scripts/mac-round.sh tvos --sim    # ...the Apple TV simulator
+./apple/scripts/mac-round.sh ipa           # the unsigned IPA for the iPad
+```
+
+`ios` and `tvos` pull, build, write the full `xcodebuild` log to `apple/logs/` and print a **short** summary
+(the errors, then the tail); `--sim` also installs and launches. Extra arguments after `--sim` reach the app
+at launch (e.g. `-RKMDebugHUD YES`).
+
+**`ipa` is a different thing — a forwarder**, not a round: no pull, no project generation, no simulator, no
+signing. It hands off to the one recipe ([`docs/UNSIGNED_IPA_PLAN.md`](docs/UNSIGNED_IPA_PLAN.md)) and writes
+`~/dev/rkm-cinema-dist/RKMCinema-unsigned.ipa`. Add `--release` for the stripped build (⚠ Debug is the default
+on purpose — it keeps the debug HUD, the offline panel and the probe, which are the only way to see inside a
+sideloaded app).
+
+### Getting it onto the iPhone / iPad (Sideloadly)
+
+⚠⚠ **An unsigned IPA cannot be installed on its own.** iOS validates signatures at install — no setting or
+trick changes that — so the file is an **input to a signer**, and that is the whole point of building it
+unsigned: no Apple ID, team or provisioning profile is needed on the Mac.
+
+1. On the Mac: `./apple/scripts/mac-round.sh ipa`
+2. Copy `~/dev/rkm-cinema-dist/RKMCinema-unsigned.ipa` to RKM-HP.
+3. **Sideloadly** → cable the iPad → drag the IPA in → sign with your **dedicated sideloading Apple ID**.
+   ⚠ It asks for the password — that is expected. Never give it to a "free signing service".
+4. On the iPad: **Settings → General → VPN & Device Management** → trust the profile.
+   (Developer Mode is already on.)
+5. **The signature lasts 7 days** on a free Apple ID. Sideloadly's daemon re-signs it automatically when the
+   iPad is next seen — no Mac, no cable, no rebuild.
+
+⚠ **An expired profile blocks the app from *launching* while its icon stays on the home screen.** That reads
+as "the app is broken" and it is the renewal, not a bug.
+⚠ **Keep the bundle id** (`com.helloraj1986.rkmcinema.ios`). A new one creates a new App ID (10 per 7 days)
+*and* a new app container, so the stored server address is lost and the app opens on the setup screen.
+⚠ **The Mac still has to be reachable by GitHub**, so a source change reaches the iPad by: commit → push →
+pull on the Mac → `ipa` → Sideloadly. A web-only change needs none of that.
+
+---
+
 ## Configuration
 
 One `.env` at the repo root is the single source of truth — see **[`.env.example`](.env.example)** for
@@ -177,6 +238,20 @@ typecheck), the browser checks and the docs link check are separate commands —
 to falsify it. CI (`.github/workflows/ci.yml`) runs the backend lint/test and the frontend
 typecheck/test/build plus a contract-drift check on every push.
 
+**The Apple gates need no Mac — they run right here:**
+
+```bash
+bash apple/scripts/test-build-ipa.sh           # the unsigned IPA recipe — 14 cases, stubbed tooling
+bash apple/scripts/test-mac-round.sh           # the Mac round script — 10 cases, stubbed tooling
+python3 apple/scripts/check-offline-core.py    # the pure Apple core, EXECUTED (517 checks)
+bash apple/scripts/check-apple-typecheck.sh    # the iOS sources, one compiler run per file
+python3 tools/check_md_links.py                # every relative link in every markdown file
+```
+
+⚠ Run `test-mac-round.sh` after touching `mac-round.sh`, and `test-build-ipa.sh` after touching either
+`build-ipa.sh` or the `ipa` verb. ⚠ **What they cannot prove:** that the Swift compiles (only a Mac can),
+or that an IPA installs (only a device can). Neither is ever described as verified from here.
+
 The `/api` contract is **frozen** per [ADR-0001](docs/adr/ADR-0001-freeze-api-contract.md) — additive
 only; regenerate types from `docs/api/openapi.v1.json` rather than hand-writing shapes. A **new route**
 needs a line in `backend/tests/test_route_protection.py::ROUTE_LEVELS` (the suite fails without one).
@@ -187,6 +262,7 @@ needs a line in `backend/tests/test_route_protection.py::ROUTE_LEVELS` (the suit
 backend/     FastAPI app + pytest suite (api · domain · services · infrastructure · jobs · config)
 frontend/    React 18 + TypeScript + Vite — the only UI (built into the web image)
 nginx/       web container: the shell, the /api proxy, artwork cache policy
+apple/       the iOS + tvOS apps, and their scripts — ⚠ built and run on the Mac only
 tools/       diagnostics and probes (Python; work inside the container and on Windows)
 scripts/     backup / restore / scheduled-task PowerShell
 docs/        architecture, runbook, ADRs, plans, frozen contract, session history
